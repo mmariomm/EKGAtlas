@@ -37,7 +37,8 @@ funzionare col dialogo di stampa.
      `%LOCALAPPDATA%\PSAssist\stampa`.
    - Copia l'estensione dello zip in `%LOCALAPPDATA%\PSAssist\estensione` (mai indietro: una più
      nuova già lì resta), e alla fine dice di caricarla **una volta** da lì in `chrome://extensions`
-     («Carica estensione non pacchettizzata»). Da lì **⋯ → «Aggiorna app»** la aggiorna con un tocco.
+     («Carica estensione non pacchettizzata»). Da lì si aggiorna da sola (all'avvio di Chrome e ogni
+     sei ore), o subito con **⋯ → «Aggiorna app»**.
    - **SumatraPDF**: è già in questa cartella (`SumatraPDF.exe`, l'ufficiale 3.6.1, software
      libero GPLv3: vedi `SumatraPDF-LEGGIMI.txt`), quindi non si scarica niente. Se mancasse, lo
      prende da `SumatraPDF-3.6.1-64.zip` in questa cartella o in Download, e solo alla fine dal
@@ -130,14 +131,15 @@ caricala di nuovo con **Carica estensione non pacchettizzata**, scegliendo la ca
   | «Esito della stampa sconosciuto» | nessuna risposta, tempo scaduto, SumatraPDF fermato a metà, la stampante fermata in errore **mentre stampava** (`Printing`, o una pagina già stampata: una parte può essere uscita, o restare nella memoria della stampante e uscire dopo): il foglio **può essere uscito** | **mai** un secondo foglio da solo: controlla la stampante, e se non c'è, **Ristampa** |
 
 - Risponde anche a due domande: «ci sei?» (la versione: la 4 fa le copie in un lavoro solo) e
-  «che stampanti ci sono?». Un aiutante nuovo arriva con **«Aggiorna app»**, che rinnova
+  «che stampanti ci sono?». Un aiutante nuovo arriva con l'aggiornamento dell'estensione, che rinnova
   `host.ps1` insieme all'estensione; chi carica l'estensione dalla cartella dello zip (non da
   `%LOCALAPPDATA%\PSAssist\estensione`) rilancia `installa.cmd` dello zip nuovo. (Con una regola
   AppLocker/WDAC **per hash**, il nuovo `host.ps1` va riconsentito; per percorso, niente.)
-- **«Aggiorna app»** (⋯): dice che versione c'è in `%LOCALAPPDATA%\PSAssist\estensione`, e riceve
+- **L'aggiornamento** (da sé, o ⋯ → «Aggiorna app»): dice che versione c'è in `%LOCALAPPDATA%\PSAssist\estensione`, e riceve
   lo zip nuovo, che ha scaricato **Chrome** (l'aiutante non usa la rete). Lo apre in
   `%TEMP%\psassist-agg-*`, controlla che sia di PS Assist (la stessa chiave nel manifest) e più
-  nuovo, mette la cartella vecchia in `estensione.prima` (una sola) e la nuova al suo posto, e
+  nuovo, mette la cartella vecchia in `estensione.prima` (una sola) e la nuova al suo posto
+  (`manifest.json` per ultimo: a metà copia la versione detta è ancora la vecchia), e
   rinnova i suoi file (SumatraPDF solo se l'impronta è quella attesa). Se la versione nuova non
   parte: doppio clic su **`ripristina.cmd`**, poi ⟳ su PS Assist in `chrome://extensions`.
 - **Dove scrive, e basta:** in `%LOCALAPPDATA%\PSAssist` (`estensione`, `estensione.prima`,

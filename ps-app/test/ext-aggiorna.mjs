@@ -17,6 +17,14 @@
  * cartella temporanea rimasta, chrome.runtime.reload() e l'estensione nuova
  * che parte (e lo dice all'aiutante), la pillola «Ricarica la pagina» nella
  * scheda col pannello vecchio, e il tocco sulla pillola che la riapre.
+ * Da sé (3.85.3, anche la build completa): la sveglia ogni sei ore; mai con un
+ * ordine o una registrazione in corso; VERSION.txt riletta subito prima dello
+ * scambio; una prova andata male aspetta sei ore, senza riscaricare lo zip;
+ * l'aiutante che non risponde: niente ricarica, e dopo «già nella cartella»
+ * (solo la ricarica, niente zip); la sveglia che suona con la scheda del
+ * gestionale aperta: aggiornata, e la pillola; un ordine premuto mentre
+ * l'aiutante scambia la cartella: «Non partita · niente inviato», mai perso in
+ * silenzio né mandato due volte.
  *   node test/ext-aggiorna.mjs
  */
 import { chromium } from "playwright";
@@ -59,7 +67,7 @@ function zipDi(versione, { chiave } = {}) {
   execFileSync("zip", ["-q", "-r", z, "extension", "stampa"], { cwd: STAGE });
   return readFileSync(z);
 }
-const gh = { versione: MIA, zip: null, richieste: [] };
+const gh = { versione: MIA, zip: null, richieste: [], dopoZip: null, zipDato: false };
 
 function chromiumPath() {
   for (const p of ["/opt/pw-browsers/chromium-1194/chrome-linux/chrome", "/opt/pw-browsers/chromium"]) {
@@ -114,8 +122,9 @@ await ctx.route("https://smarthealth.multimedica.it/**", async (r) => {
 await ctx.route("https://raw.githubusercontent.com/**", async (r) => {
   const u = r.request().url();
   gh.richieste.push({ url: u, cookie: r.request().headers().cookie || "" });
-  if (u.endsWith("/mmariomm/EKGAtlas/main/ps-app/dist/VERSION.txt")) return r.fulfill({ status: 200, contentType: "text/plain", body: gh.versione + "\n" });
-  if (u.endsWith("/mmariomm/EKGAtlas/main/ps-app/dist/ps-assist-latest.zip") && gh.zip) return r.fulfill({ status: 200, contentType: "application/zip", body: gh.zip });
+  // (`dopoZip`: quello che dice VERSION.txt dopo che lo zip è stato scaricato — una versione ritirata)
+  if (u.endsWith("/mmariomm/EKGAtlas/main/ps-app/dist/VERSION.txt")) return r.fulfill({ status: 200, contentType: "text/plain", body: (gh.dopoZip && gh.zipDato ? gh.dopoZip : gh.versione) + "\n" });
+  if (u.endsWith("/mmariomm/EKGAtlas/main/ps-app/dist/ps-assist-latest.zip") && gh.zip) { gh.zipDato = true; return r.fulfill({ status: 200, contentType: "application/zip", body: gh.zip }); }
   return r.fulfill({ status: 404, body: "no" });
 });
 // qualunque altra cosa fuori: annotata (non deve essercene)
@@ -138,6 +147,9 @@ const dimentica = () => sw.evaluate(() => chrome.storage.local.remove("aggiorna"
 const controlla = () => sw.evaluate(() => aggControlla(true));
 const nessunOrdine = () => sw.evaluate(() => chrome.storage.session.set({ ordini: [] }));
 const temporanei = () => readdirSync(tmpdir()).filter((f) => /^psassist-agg-/.test(f));
+const AGG_ALLARME = "psassist-aggiorna";
+// (la sveglia vera, spostata lontano: durante le prove non suona da sola)
+const svegliaLontana = () => sw.evaluate((n) => chrome.alarms.create(n, { delayInMinutes: 360, periodInMinutes: 360 }), AGG_ALLARME).catch(() => {});
 
 const doc = await ctx.newPage();
 await doc.goto(A.patientUrl);
@@ -161,6 +173,10 @@ console.log("\naggiorna: la versione su GitHub");
 {
   check(await sw.evaluate(() => typeof chrome.runtime.getManifest().key === "string" && chrome.runtime.getManifest().key.length > 100),
     "il manifest dice la sua chiave (si confronta con quella dello zip)");
+  // anche la build completa si aggiorna da sé: la sveglia ogni sei ore
+  const sveglia = await finche(() => sw.evaluate((n) => chrome.alarms.get(n), AGG_ALLARME), 5000);
+  check(!!sveglia && sveglia.periodInMinutes === 360, `la build completa ha la sua sveglia, ogni sei ore (got ${JSON.stringify(sveglia)})`);
+  await svegliaLontana();
   // il pannello, all'apertura, guarda una volta al giorno
   await finche(async () => gh.richieste.length > 0, 10000);
   check(gh.richieste.length >= 1 && gh.richieste.every((x) => /VERSION\.txt$/.test(x.url) && !x.cookie),
@@ -294,8 +310,190 @@ console.log("\naggiorna: il tocco");
   check(!(await doc.evaluate(() => !!document.getElementById("psassist-aggiornata"))) && giri.length === 0,
     `un tocco: la pagina riaperta (una GET, nessun modulo rimandato), il pannello nuovo (got ${giri.length} POST)`);
   if (nuovo) sw = nuovo;
+  await svegliaLontana();
   const dopo = await memoria();
   check(!dopo || !dopo.nuova, `dopo: nessuna versione nuova da offrire (got ${JSON.stringify(dopo)})`);
+}
+
+// ---- da sé (3.85.3): anche la build completa, anche con le schede aperte ----
+const NUOVA2 = "99.2.0", NUOVA3 = "99.3.0", NUOVA4 = "99.4.0";
+const zipChiesti = () => gh.richieste.filter((x) => /\.zip$/.test(x.url)).length;
+const scambi = () => lavori().filter((x) => x.aggiorna).length;
+const versioneSw = () => sw.evaluate(() => chrome.runtime.getManifest().version).catch(() => "");
+const versioneCartella = () => JSON.parse(readFileSync(join(EST, "manifest.json"), "utf8")).version;
+// quello che fa la sveglia (aggAuto), aspettato: null se non c'era niente da fare
+const daSe = () => sw.evaluate(() => (typeof aggAuto === "function" ? aggAuto() : { manca: "aggAuto" })).catch((e) => ({ errore: String(e) }));
+const pausa = () => sw.evaluate(() => chrome.storage.local.get("aggiornaPausa").then((o) => o.aggiornaPausa || null));
+const togliPausa = () => sw.evaluate(() => chrome.storage.local.remove("aggiornaPausa"));
+const pillola = (p) => p.evaluate(() => document.getElementById("psassist-aggiornata")?.shadowRoot?.querySelector("button")?.textContent || "").catch(() => "");
+async function riapriDallaPillola(p) {
+  await p.evaluate(() => document.getElementById("psassist-aggiornata")?.shadowRoot?.querySelector("button")?.click());
+  await p.waitForLoadState("load");
+  await p.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
+}
+
+console.log("\naggiorna: da sé, mai a metà di qualcosa");
+{
+  gh.versione = NUOVA2;
+  gh.zip = zipDi(NUOVA2);
+  azzeraLavori();
+  await dimentica();
+  await togliPausa();
+  const z0 = zipChiesti();
+  await sw.evaluate(() => chrome.storage.session.set({ ordini: [{ id: "o9", stato: "corre", agg: Date.now(), ts: Date.now() }] }));
+  let r = await daSe();
+  check(!!r && r.why === "Dopo l'ordine in corso", `un ordine che gira: la sveglia non aggiorna (got ${JSON.stringify(r)})`);
+  await sw.evaluate(() => chrome.storage.session.set({ ordini: [{ id: "tel-9", stato: "coda", agg: Date.now(), ts: Date.now() }] }));
+  r = await daSe();
+  check(!!r && r.why === "Dopo l'ordine in corso", `un ordine in coda: nemmeno (got ${JSON.stringify(r)})`);
+  await nessunOrdine();
+  // la registrazione automatica che aspetta il suo minuto prima di salvarsi (REG_INC)
+  await sw.evaluate(() => chrome.storage.session.set({ "registra.incidente": { ts: Date.now(), motivi: ["prova"] } }));
+  r = await daSe();
+  check(!!r && r.why === "Dopo la registrazione in corso", `una registrazione che aspetta di salvarsi: nemmeno (got ${JSON.stringify(r)})`);
+  await sw.evaluate(() => chrome.storage.session.remove("registra.incidente"));
+  check(zipChiesti() === z0 && !scambi() && (await versioneSw()) === NUOVA,
+    "niente zip scaricato, niente all'aiutante, la versione è quella di prima");
+}
+
+console.log("\naggiorna: VERSION.txt riletta subito prima dello scambio");
+{
+  azzeraLavori();
+  await dimentica();
+  await togliPausa();
+  // VERSION.txt cambia fra lo zip e lo scambio (una versione ritirata, o una più nuova): niente scambio
+  gh.dopoZip = "99.1.5";
+  gh.zipDato = false;
+  const r = await sw.evaluate(() => aggiorna());
+  gh.dopoZip = null;
+  check(!r.ok && /Su GitHub adesso c'è la 99\.1\.5, non la 99\.2\.0/.test(r.why || "") && !scambi() && (await versioneSw()) === NUOVA,
+    `non dice più quella scaricata: niente all'aiutante, niente ricarica (got ${JSON.stringify(r)})`);
+  const m = await memoria();
+  check(!!m && m.nuova === "99.1.5", `quella di adesso si prova al giro dopo (got ${JSON.stringify(m)})`);
+}
+
+console.log("\naggiorna: da sé, andata male aspetta sei ore");
+{
+  azzeraLavori();
+  await dimentica();
+  await togliPausa();
+  comportati({ aggiornaNo: "la cartella è in uso" });
+  let r = await daSe();
+  check(!!r && !r.ok && /la cartella è in uso/.test(r.why || ""), `l'aiutante dice di no (got ${JSON.stringify(r)})`);
+  const p = await pausa();
+  check(!!p && p.v === NUOVA2 && /la cartella è in uso/.test(p.why), `annotata: la ${NUOVA2}, e perché (got ${JSON.stringify(p)})`);
+  comportati();
+  const z0 = zipChiesti(), s0 = scambi();
+  await dimentica();
+  r = await daSe();
+  check(r === null && zipChiesti() === z0 && scambi() === s0, `la sveglia dopo: per sei ore niente, nemmeno lo zip (got ${JSON.stringify(r)})`);
+  await togliPausa();
+}
+
+console.log("\naggiorna: l'aiutante che non risponde — niente ricarica; poi «già nella cartella»");
+{
+  azzeraLavori();
+  await dimentica();
+  await togliPausa();
+  // lo scambio lo fa, ma la risposta non arriva (Chrome ha chiuso l'aiutante, o il tempo è scaduto)
+  await sw.evaluate(() => {
+    self.ospiteVero = ospite;
+    ospite = async (m, ms) => {
+      if (m.t !== "aggiorna") return self.ospiteVero(m, ms);
+      await self.ospiteVero(m, ms);
+      return { ok: false, why: "l'aiutante di stampa si è chiuso senza rispondere", ignoto: true };
+    };
+  });
+  const r = await sw.evaluate(() => aggiorna());
+  await sospendi(1500);
+  check(!r.ok && !r.ricarica && /non ha risposto/.test(r.why || "") && (await versioneSw()) === NUOVA,
+    `nessuna risposta: niente ricarica (potrebbe essere a metà della copia), gira la versione di prima (got ${JSON.stringify(r)})`);
+  check(versioneCartella() === NUOVA2 && ((await pausa()) || {}).v === NUOVA2, "(la copia, qui, era finita) e la pausa: da sé, non prima di sei ore");
+  check((await daSe()) === null, "la sveglia intanto: niente");
+  // a mano, dopo: l'aiutante dice che nella cartella c'è già la nuova — niente zip, solo la ricarica
+  const z0 = zipChiesti(), s0 = scambi();
+  await dimentica();
+  const nasce = ctx.waitForEvent("serviceworker", { timeout: 30000 }).catch(() => null);
+  await sw.evaluate(() => { aggiorna(); });
+  const nuovo = await nasce;
+  const v = nuovo ? await nuovo.evaluate(() => chrome.runtime.getManifest().version).catch(() => "") : "";
+  check(v === NUOVA2 && zipChiesti() === z0 && scambi() === s0, `già nella cartella: solo la ricarica, niente zip né scambio (got ${v || "nessun service worker nuovo"}, ${zipChiesti() - z0} zip)`);
+  if (nuovo) { sw = nuovo; await svegliaLontana(); }
+  if (await finche(() => pillola(doc), 15000)) await riapriDallaPillola(doc);
+}
+
+console.log("\naggiorna: da sé, con la scheda del gestionale aperta");
+{
+  gh.versione = NUOVA3;
+  gh.zip = zipDi(NUOVA3);
+  azzeraLavori();
+  await dimentica();
+  await togliPausa();
+  check(await doc.evaluate(() => !!document.getElementById("psassist-host") && !document.getElementById("psassist-aggiornata")), "(la scheda del gestionale è aperta, col pannello)");
+  const nasce = ctx.waitForEvent("serviceworker", { timeout: 60000 }).catch(() => null);
+  // la sveglia vera, che suona fra mezzo secondo
+  await sw.evaluate((n) => chrome.alarms.create(n, { when: Date.now() + 500, periodInMinutes: 360 }), AGG_ALLARME);
+  const nuovo = await nasce;
+  const v = nuovo ? await nuovo.evaluate(() => chrome.runtime.getManifest().version).catch(() => "") : "";
+  check(v === NUOVA3 && lavori().filter((x) => x.aggiorna && x.ok).length === 1,
+    `la sveglia: aggiornata da sé alla ${NUOVA3}, con la scheda del gestionale aperta (got ${v || "nessun service worker nuovo"})`);
+  const pill = await finche(() => pillola(doc), 15000);
+  check(pill === "PS Assist aggiornata · Ricarica la pagina", `nella scheda aperta la pillola «Ricarica la pagina» (got «${pill}»)`);
+  if (nuovo) { sw = nuovo; await svegliaLontana(); }
+  if (pill) await riapriDallaPillola(doc);
+}
+
+console.log("\naggiorna: un ordine premuto mentre l'aiutante scambia la cartella");
+{
+  gh.versione = NUOVA4;
+  gh.zip = zipDi(NUOVA4);
+  azzeraLavori();
+  await dimentica();
+  await togliPausa();
+  await controlla();
+  comportati({ lento: 8000 });   // l'aiutante ci mette otto secondi a scambiarla
+  // «Aggiorna app» da un'altra scheda del gestionale
+  const altra = await ctx.newPage();
+  await altra.goto(A.patientUrl);
+  await altra.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
+  if (!(await $panel(altra, ".card").count())) { await $panel(altra, "#expand").click(); await altra.waitForSelector("#psassist-host .card", { timeout: 8000 }); }
+  await $panel(altra, "#menubtn").click();
+  await altra.waitForSelector("#psassist-host #aggapp", { timeout: 5000 });
+  const nasce = ctx.waitForEvent("serviceworker", { timeout: 60000 }).catch(() => null);
+  const z0 = zipChiesti();
+  await $panel(altra, "#aggapp").click();
+  await finche(async () => zipChiesti() > z0, 15000);
+  // lo scambio è deciso (l'aiutante sta copiando)
+  await finche(() => sw.evaluate(() => typeof aggScambio !== "undefined" && aggScambio === true), 4000);
+  const prima = A.state.requests.length;
+  // il medico, nella sua scheda, manda un ordine
+  await apriPannello();
+  if (!(await $panel(doc, "#q").count())) await $panel(doc, '[data-seg="richieste"]').click();
+  await $panel(doc, "#q").fill("dolore toracico");
+  for (const e of ["CREATININEMIA", "TROPONINA"]) await $panel(doc, `.opt[title*="${e}"]`).click();
+  await $panel(doc, "#goconfirm").click();
+  const nuovo = await nasce;
+  const v = nuovo ? await nuovo.evaluate(() => chrome.runtime.getManifest().version).catch(() => "") : "";
+  check(v === NUOVA4, `l'aggiornamento è andato (got ${v || "nessun service worker nuovo"})`);
+  await sospendi(6000);   // (una scheda d'ordine aperta prima della ricarica avrebbe avuto il tempo di mandare)
+  const striscia = await doc.evaluate(() => {
+    const r = document.getElementById("psassist-host")?.shadowRoot;
+    return ((r?.querySelector(".gchip")?.dataset.riga || "") + " " + (r?.querySelector(".pill")?.innerText || "")).replace(/\s+/g, " ").trim();
+  }).catch(() => "");
+  const nuovi = A.state.requests.slice(prima);
+  const ins = nuovi.filter((q) => q.params.Insert === "Inserisci"), conf = nuovi.filter((q) => q.method === "POST" && (q.params.ccsForm || "").startsWith("Prestazioni"));
+  const nonPartita = /Non partita/.test(striscia) && /niente inviato/.test(striscia) && /si stava aggiornando/.test(striscia);
+  // (prima: l'ordine partiva subito dopo lo scambio, in una scheda che la ricarica lasciava orfana —
+  // mandato a metà o tutto, senza etichette e senza che il medico lo sapesse)
+  check(nonPartita && ins.length === 0 && conf.length === 0,
+    `mai perso in silenzio: «Non partita · niente inviato», e davvero niente mandato (got «${striscia}» · ${ins.length} inserimenti, ${conf.length} conferme)`);
+  check(ins.length <= 2 && conf.length <= 1, `mai due volte (got ${ins.length} inserimenti, ${conf.length} conferme)`);
+  const resta = nuovo ? await nuovo.evaluate(() => chrome.storage.session.get("ordini").then((o) => o.ordini || [])).catch(() => null) : null;
+  check(Array.isArray(resta) && (resta.length === 0 || ins.length === 2), `nessun ordine fantasma dopo la ricarica (got ${JSON.stringify(resta)})`);
+  check(await finche(async () => (await pillola(doc)) === "PS Assist aggiornata · Ricarica la pagina", 15000), "e la pillola «Ricarica la pagina»");
+  comportati();
+  await altra.close().catch(() => {});
+  if (nuovo) { sw = nuovo; await svegliaLontana(); }
 }
 
 check(fuori.length === 0, `nessun'altra richiesta fuori dall'ospedale (got ${fuori.slice(0, 3).join(", ")})`);
