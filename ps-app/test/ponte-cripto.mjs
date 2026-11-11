@@ -982,5 +982,74 @@ await blocco(async () => {
   check(!nota.some((x) => x.re === 2 && x.solaLettura), "sul PC normale una scrittura (nota) non è bloccata da «sola lettura»");
 });
 
+// ⋯ → Dispositivi sul telefono: chi è questo PC (il tipo, il nome, la versione) e la sua stazione di
+// stampa (il nome, se c'è adesso, l'ultimo foglio). Nella sessione con `dispositivo` (una lettura, che
+// non tiene aperta la sessione), e — per un PC che non è quello attivo — al saluto «sonda» del telefono
+// dell'associazione: la stessa risposta, senza una sessione dopo, e qui non cambia niente.
+await blocco(async () => {
+  const ora = Date.now();
+  const pc = await pcFinto({
+    locale: { "stazione.coppia": { k: "x", nome: "Infermeria", dal: ora - 864e5, via: "telefono", codice: "123 456" } },
+    sessione: {
+      stazione: { nome: "Infermeria", presente: true },
+      "ponte.operatore": { nome: "DOTT. CHIARA NERI", ts: ora },
+      // il giornale delle stampe (bg.js): l'ultimo foglio FINITO mandato alla stazione è quello di 4 minuti fa
+      ordini: [
+        { id: "telAAAA1111l", fogli: [{ stato: "stampato", stazione: true, ts: ora - 9 * 60e3 }, { stato: "fallito", stazione: true, nonRisponde: true, ts: ora - 4 * 60e3 }] },
+        { id: "telBBBB2222l", fogli: [{ stato: "stampato", ts: ora - 60e3 }, { stato: "attesa", stazione: true, ts: ora - 30e3 }] },
+      ],
+    },
+  });
+  pc.ctx.chrome.runtime.getManifest = () => ({ version: "3.85.3" });
+  const r1 = await pc.pagina({ t: "ponteAssocia" });
+  await sospendi(30);
+  const k = kDalQr(r1.qr);
+  const t = await telFinto(pc, k, DEV);
+  const ciao = (await t.manda({ id: 1, cmd: "ciao" })).find((x) => x.re === 1);
+  check(ciao && ciao.ok && ciao.dati.versione === "3.85.3", `il saluto «ciao» dice anche la versione di PS Assist sul PC (${ciao && ciao.dati && ciao.dati.versione})`);
+  pc.pt().sessione.ultimo = Date.now() - 2 * 60e3;
+  const d = (await t.manda({ id: 2, cmd: "dispositivo" })).find((x) => x.re === 2);
+  const dd = d && d.ok && d.dati;
+  check(dd && dd.kind === "completo" && dd.nome === "PC completo" && dd.versione === "3.85.3" && dd.stazione && dd.stazione.nome === "Infermeria" && dd.stazione.presente === true
+    && dd.stazione.ultimo.esito === "fallito" && dd.stazione.ultimo.nonRisponde === true && Math.abs(dd.stazione.ultimo.fa - 4 * 60e3) < 5000,
+    `«dispositivo»: il tipo, il nome, la versione, e la stazione col suo ultimo foglio finito (non quello che aspetta, non uno del PC) (${JSON.stringify(dd)})`);
+  check(dd && !("operatore" in dd) && !/NERI|CHIARA/.test(JSON.stringify(dd)), "…e niente di chi è loggato nel gestionale: lì non serve");
+  check(Date.now() - pc.pt().sessione.ultimo > 100e3, "«dispositivo» non tiene aperta la sessione (lo manda l'app da sé)");
+
+  // il saluto «sonda»: la stessa risposta, e nessuna sessione — né nuova, né al posto di quella che c'è
+  const sonda = async (dev) => {
+    const n = P.b64u(P.casuale(16));
+    pc.tira();
+    await pc.consegna(await P.sigilla(t.ch.salutoTel, P.TIPO.SALUTO_TEL, 0, { v: 1, n, dev, sonda: true }));
+    for (const f of pc.tira()) { try { const x = (await P.apri(t.ch.salutoPc, f, P.TIPO.SALUTO_PC)).dati; if (x.eco === n) return x; } catch { /* altro */ } }
+    return null;
+  };
+  const sessione = pc.pt().sessione, registro = pc.pt().registro.length, coppia = JSON.stringify(pc.locale["ponte.coppia"]);
+  const s1 = await sonda(DEV);
+  const senzaFa = (x) => JSON.stringify(x, (k, v) => (k === "fa" ? Math.round(v / 60e3) : v));   // (i millisecondi passati intanto)
+  check(s1 && s1.sonda && !s1.n && !s1.no && senzaFa(s1.sonda) === senzaFa(dd),
+    `la sonda del telefono dell'associazione: la stessa risposta di «dispositivo», e niente numero di sessione (${JSON.stringify(s1)})`);
+  check(pc.pt().sessione === sessione && !pc.pt().attesa && pc.pt().registro.length === registro && JSON.stringify(pc.locale["ponte.coppia"]) === coppia,
+    "…e sul PC non cambia niente: la sessione di prima resta, nessuna attesa, niente nel registro, l'associazione com'era");
+  check((await t.manda({ id: 3, cmd: "pazienti" })).some((x) => x.re === 3 && x.ok), "la sessione di prima risponde ancora");
+  const s2 = await sonda(DEV2);
+  check(s2 && s2.no && !s2.sonda, "la sonda di un altro telefono, anche con la chiave: «no», e niente di questo PC");
+  // la stazione scollegata (o mai collegata): niente stazione
+  pc.locale["stazione.coppia"].revoca = Date.now();
+  const d2 = (await t.manda({ id: 4, cmd: "dispositivo" })).find((x) => x.re === 4);
+  check(d2 && d2.ok && d2.dati.stazione === null, "con la stazione scollegata: «stazione: null»");
+});
+// La build mini: «dispositivo» è una lettura e passa il muro della sola lettura; la sonda pure
+await blocco(async () => {
+  const pc = await pcFinto({ solaLettura: true });
+  const r1 = await pc.pagina({ t: "ponteAssocia" });
+  await sospendi(30);
+  const t = await telFinto(pc, kDalQr(r1.qr), DEV);
+  await t.manda({ id: 1, cmd: "ciao" });
+  const d = (await t.manda({ id: 2, cmd: "dispositivo" })).find((x) => x.re === 2);
+  check(d && d.ok && d.dati.kind === "lettura" && d.dati.nome === "Sola lettura" && d.dati.stazione === null && !("versione" in d.dati),
+    `sul PC di sola lettura «dispositivo» risponde (kind: lettura; senza manifest, niente versione) (${JSON.stringify(d)})`);
+});
+
 console.log(fail ? `\nPONTE-CRIPTO: ${fail} CHECK FALLITI\n` : "\nPONTE-CRIPTO: TUTTO OK\n");
 process.exit(fail ? 1 : 0);

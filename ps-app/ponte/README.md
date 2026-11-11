@@ -163,6 +163,16 @@ sessione. Vedi:
   PC»). **Cancella** chiede «Cancello dal PC? Tocca di nuovo» e la toglie dal PC. Il PC dà e
   cancella solo quelle elencate nella sessione; il registro del ponte annota elenco, scarico e
   cancellazione.
+- **Dispositivi** (⋯) — i PC associati a questo telefono, una riga ciascuno, l'attivo in cima: il nome e
+  il tipo (**PC**, o **Lettura e stampa**: la build mini), la versione di PS Assist, e com'è adesso —
+  «Collegato a questo iPhone» (la sessione viva), «Disponibile», o «Non disponibile · visto alle 14:32»
+  (l'ultima volta che il telefono l'ha sentito) —; sotto, la sua **stazione di stampa**, se ne ha una: il
+  nome, se il PC la raggiunge, e l'ultimo foglio mandato lì («stampato alle 14:32», «mandato», «forse
+  stampato», «non arrivato», «NON stampato»). Si guarda e basta. Il PC della sessione lo dice nella
+  sessione; gli altri il telefono li prova **solo quando si apre questa pagina**, con una presa breve
+  per PC che si chiude subito (riaperta entro 20 secondi, la risposta di prima): mai in sottofondo,
+  perché ogni presa sveglia il ripetitore. Un PC che in quel momento non è sul ponte (spento, il browser
+  chiuso, il ponte a riposo) è «Non disponibile».
 
 Di notte l'app è scura, come il telefono. Ogni bottone è grande almeno 44 punti. Sul telefono c'è
 solo quello che serve: niente etichette di sezione, conteggi o testi di contorno (vedi «L'app del
@@ -316,6 +326,16 @@ che porta il `nTel` dell'ultima sessione e la frase del perché: il telefono lo 
 della *sua* sessione (ripetuto più tardi non chiude niente), chiude e offre «Riapri». La fine di una
 sessione porta la sua frase («Chiusa dal PC con «Scollega»»): il telefono la mostra così com'è.
 
+**La sonda** (⋯ → Dispositivi, per un PC della lista che non è quello della sessione). Il telefono entra
+nella stanza di quel PC con una presa sua, breve: se il ripetitore dice `{"pari": false}` il PC non c'è,
+e la presa si chiude. Se c'è, il telefono manda un saluto come gli altri, con la chiave di quel PC e il
+suo `dev`, più `sonda: true`; il PC risponde `{v, eco, sonda: {kind, nome, versione, stazione}}` — quello
+che dà il comando `dispositivo` — e nient'altro: niente `n`, quindi nessuna sessione, e sul PC non cambia
+niente (né l'attesa di un saluto, né il telefono dell'associazione, né il registro). A un altro
+telefono, `{v, eco, no}` come sempre. Avuta la risposta (o dopo 6 secondi) la presa si chiude
+(`close(1000)`). Un PC più vecchio risponde alla sonda come a un saluto qualunque: c'è, e il telefono
+non ne sa di più (l'attesa del saluto, sul PC, scade da sola).
+
 **Vivi o morti.** Tutte e due le parti battono: il PC ogni 20 secondi, il telefono ogni 20 secondi
 mentre l'app è davanti e subito quando ci torna. Se il `pong` non torna entro 10 secondi la presa è
 morta anche se sembra aperta (un proxy che la lascia cadere senza dirlo), e se ne apre un'altra; il
@@ -336,7 +356,7 @@ Senza rete la testata dice «Senza rete», quello che il telefono ha in memoria 
 chiesto al PC è in grigio, finché il collegamento non torna. L'app stessa si apre dalla sua copia se la
 rete non risponde in 3 secondi. Sul telefono non resta niente di più.
 
-**I 3 minuti** contano solo i comandi del medico: quelli che l'app manda da sé (`auto`, e `ciao`,
+**I 3 minuti** contano solo i comandi del medico: quelli che l'app manda da sé (`auto`, e `ciao`, `dispositivo`,
 `ordini`) non tengono aperta la sessione, né sul PC né sul telefono.
 
 **Dove gira.** La presa sta nel **service worker** dell'estensione (`extension/ponte-sw.js`,
@@ -358,7 +378,10 @@ ordine o un promemoria non passa poi alla scheda dopo (sarebbero due). Mai un si
 `aggiornaValori(ep)`, `richieste` (il catalogo; con una stazione di stampa collegata, `stampa: {stazione, dove}`), `ordina(ep, oid, esami, quesito, mio, nato, dest?)`, `nota(ep,
 testo)`, `promemoria(ep, testo)`, `fatto(ep, id)`, `cartella(ep, rileggi?)`, `cartellaSalva(ep, campi: {NOME:
 {prima, dopo}})`, `terapie(ep, rileggi?)`, `terapiaCerca(ep, q)`, `terapiaAggiungi(ep, rq, voce, visti)`, `accetta(k | ep, rq)`, `ristampe(ep)` (per richiesta anche `et` e `fo`: quante etichette e quanti fogli), `ristampa(ep, rid, oid, dest?, quali?)` (`quali`: `etichette` | `foglio` | `tutto`), `pdf(ep, ref, i)`, `stampa(rid, i, n, size, b)`, `stampaReferto(ep, ref, rid, dest?)`, `stazioneCollega(sta, nome)`,
-più `ciao`/`esci`/`ordini` per la sessione e lo stato degli ordini. Niente navigazione libera, niente script, niente appunti. L'ordine passa per
+più `ciao`/`esci`/`ordini` per la sessione e lo stato degli ordini, e `dispositivo` (⋯ → Dispositivi: `{kind, nome,
+versione, stazione: {nome, presente, ultimo: {esito, fa}} | null}` — `presente` è la stazione nella sua stanza adesso,
+`ultimo` l'ultimo foglio finito mandato lì, dal giornale delle stampe, `fa` i millisecondi da allora —; una lettura, anche
+sulla build mini; `ciao` dice anche `versione`). Niente navigazione libera, niente script, niente appunti. L'ordine passa per
 `ordineNuovo` come «Conferma e stampa», col numero `"tel" + oid` (l'`oid` lo fa il telefono quando
 arma «Conferma», `^[\w-]{8,24}$`: chiesto due volte, è un ordine solo — `ordiniVisti` in `bg.js`),
 con tutti i controlli del motore — episodio, richiesta, presidio, carrello identico alla ricevuta,
@@ -473,7 +496,8 @@ in `localStorage`, IndexedDB o nelle cache; il suo service worker tiene solo i f
 manifest ha `display: "standalone"`: l'icona della schermata Home apre l'app a tutto schermo, con una
 memoria sua, separata da Safari. Per questo il QR si inquadra **dentro l'app** («Scansiona il QR»):
 la chiave resta lì, e l'icona si ricollega da sola, senza scadenza. La chiave di ogni PC sta nella
-**lista** (`psassist.ponte.pcs.v1`): un QR nuovo **aggiunge** quel PC e ci passa (non tocca gli altri),
+**lista** (`psassist.ponte.pcs.v1`, con il tipo e il nome che il PC ha detto, la sua versione e quando si è fatto sentire
+l'ultima volta, per ⋯ → Dispositivi: niente pazienti): un QR nuovo **aggiunge** quel PC e ci passa (non tocca gli altri),
 e si cambia PC dal menu; lo stesso PC riscansionato aggiorna la sua riga, non ne fa una nuova.
 
 **«Scansiona il QR»** apre la fotocamera nella pagina (`getUserMedia`, la fotocamera posteriore; la
