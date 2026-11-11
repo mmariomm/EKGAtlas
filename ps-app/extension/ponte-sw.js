@@ -1757,7 +1757,11 @@ function ponteDaPagina(msg, sender, reply) {
       if (ok && cosa === "aggiungi") esito.riga = (ponteTerapiaPulita({ righe: [msg.riga] }) || { righe: [] }).righe[0] || null;
       // (una ricerca riuscita — il foglio «＋ Farmaco» è aperto sul telefono —: la scheda resta, ferma sulla pagina, per
       // il lavoro dopo; una lettura sola e un'aggiunta la chiudono)
-      return { ok: await ponteTerapiaFine(id, esito, ok && cosa === "cerca") };
+      const fatto = await ponteTerapiaFine(id, esito, ok && cosa === "cerca");
+      // Non la si tiene più: finita per tempo (o da ponteControlla) mentre lavorava, e non chiusa perché il medico
+      // c'era entrato. La «Lasciata» le è arrivata a metà lavoro, e lì non conta: glielo si dice adesso.
+      if (!fatto && !w) return { ok: false, lasciata: true };
+      return { ok: fatto };
     });
   }
   // la scheda di «Accetta in ambulatorio» ha la riga, e sta per cliccare la sua freccia:

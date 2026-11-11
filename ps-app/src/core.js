@@ -18061,7 +18061,18 @@
   async function ponteTerapiaQui() {
     const c = PONTE_TERAPIA;
     // (finito il lavoro, la scheda tenuta per il telefono aspetta il prossimo: il suo PONTE_TERAPIA è «fermo»)
-    const fine = (esito) => { PONTE_TERAPIA = c ? { ep: c.ep, fase: "fermo" } : null; return ask({ t: "ponteTerapiaFatto", ...esito }); };
+    // (…o, se il service worker l'aveva già lasciata a metà lavoro — finita per tempo, col medico entrato —, da
+    // adesso è una pagina come le altre, qui com'è: come «ponteTerapiaLasciata»)
+    const fine = (esito) => {
+      PONTE_TERAPIA = c ? { ep: c.ep, fase: "fermo" } : null;
+      return ask({ t: "ponteTerapiaFatto", ...esito }).then((r) => {
+        if (r && r.lasciata && PONTE_TERAPIA && PONTE_TERAPIA.fase === "fermo") {
+          PONTE_TERAPIA = null;
+          ask({ t: "ordineChi" }).then((x) => bootGestionale(x && x.ok ? x : null));
+        }
+        return r;
+      });
+    };
     if (c && c.fase === "fermo") return;
     if (!c || c.fase === "perso") return fine({ ok: false, testo: "la scheda non sa più che cosa fare" });
     const dopo = c.fase === "inviato", ordine = "un ordine sta ancora lavorando sul PC: riprova fra poco";
