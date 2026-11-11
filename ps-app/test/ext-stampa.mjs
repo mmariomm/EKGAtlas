@@ -425,6 +425,15 @@ if (await prova("la forma del pannello si sceglie in Impostazioni, e la scheda l
   installa(false);
   await scelte(null);
   await sw.evaluate(() => chrome.storage.local.remove("forma"));
+  // una scheda del portale aperta per prima dopo l'aggiornamento (un'altra origine, con una memoria
+  // sua, vuota) non sceglie la forma per il gestionale: la scelta di prima la porta solo il gestionale
+  await ctx.route("http://10.11.0.151/**", (r) => r.fulfill({ status: 200, headers: { "content-type": "text/html" }, body: "<!doctype html><title>Portale</title><body><p>portale</p></body>" }));
+  const por = await ctx.newPage();
+  await por.goto("http://10.11.0.151/clin-port/elenco-documenti");
+  const giraLi = await por.waitForSelector("#psassist-attesa", { state: "attached", timeout: 8000 }).then(() => true).catch(() => false);
+  check(giraLi && (await formaSw()) === undefined, `una scheda del portale aperta per prima (lì l'estensione gira: ${giraLi}) non scrive la forma (got ${await formaSw()})`);
+  await por.close();
+  await ctx.unroute("http://10.11.0.151/**");
   await suPagina(doc, A.patientUrl);
   await doc.evaluate(() => { localStorage.removeItem("psassist:forma.v1"); localStorage.removeItem("psassist:win.v1"); });
   await suPagina(doc, A.patientUrl);

@@ -14261,7 +14261,8 @@
     // disegno legge. Affianca mette la finestra nella colonna a destra; Al
     // passaggio la rimette al centro, se era lì. Finché in Impostazioni non
     // c'è una scelta, si scrive quella di qui (anche quella migrata dalla
-    // Finestra): la pagina mostra la forma com'è.
+    // Finestra): la pagina mostra la forma com'è. (Solo il gestionale: sul
+    // portale, un'altra origine con una memoria sua, il pannello non c'è.)
     seguiForma() {
       const metti = (f) => {
         if (TABELLONE || !FORME_PANNELLO.includes(f) || f === formaOra()) return;
