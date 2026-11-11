@@ -146,7 +146,7 @@ check(/ROSSI MARIO/.test(await aspettaTel(/ROSSI MARIO/, 20000)), "inquadrato il
 const kindTel = await tel.evaluate(() => { const o = JSON.parse(localStorage.getItem("psassist.ponte.pcs.v1") || "null"); const a = o && o.v.find((p) => p.id === o.attivo); return a ? a.kind : ""; });
 check(kindTel === "lettura", `il telefono sa che il PC è di sola lettura (kind: ${kindTel})`);
 // sola lettura: un segno piccolo nella testata (👁️, la scritta nel suo nome), nessuna barra larga quanto lo schermo
-check(await finche(async () => /^Sola lettura · gestionale di UTENTE1/.test(await tel.locator(".top .sola").getAttribute("aria-label").catch(() => "") || ""), 8000)
+check(await finche(async () => (await tel.locator(".top .sola").getAttribute("aria-label").catch(() => "") || "") === "Sola lettura · gestionale di UTENTE1", 8000)
   && await tel.locator(".top .sola").innerText() === "👁️" && await tel.locator(".solabar").count() === 0,
   "sola lettura: nella testata un 👁️ piccolo, la scritta «Sola lettura · gestionale di UTENTE1» solo nel suo nome (l'operatore loggato, letto dalla pagina)");
 const segno = await tel.locator(".top .sola").evaluate((e) => { const r = e.getBoundingClientRect(), s = getComputedStyle(e); return { w: r.width, h: r.height, f: parseFloat(s.fontSize), o: Number(s.opacity) }; });

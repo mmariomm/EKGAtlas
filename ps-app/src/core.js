@@ -18346,7 +18346,11 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
   function reportOperatore() {
     if (!hasExt()) return;
     try {
-      const testo = document.body ? document.body.textContent.slice(0, 20000) : "";
+      // (nel suo testo soltanto: il textContent di tutta la pagina incolla la cella dopo — l'episodio, il nome
+      // e il codice fiscale del paziente — come se fossero il nome dell'operatore)
+      const giro = document.body ? document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT) : null;
+      let testo = "";
+      for (let n = giro && giro.nextNode(), k = 0; n && k < 4000; n = giro.nextNode(), k++) if (/connesso come/i.test(n.nodeValue)) { testo = n.nodeValue; break; }
       const m = /connesso come[^:]*:\s*([^<\n]{1,60})/i.exec(testo);
       const nome = m ? m[1].replace(/\s+/g, " ").trim() : "";
       if (nome) ask({ t: "ponteOperatore", nome }).catch(() => {});
