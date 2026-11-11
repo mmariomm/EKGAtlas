@@ -2766,7 +2766,7 @@
     const anni = Number.isInteger(eta) && eta >= 0 && eta < 130 ? eta : prima?.eta;
     // riaprire un paziente archiviato lo riporta fra i vivi: se sei sulla sua
     // pagina, è di lui che ti stai occupando
-    list.unshift({ ep, name: ((name || "").trim() || prima?.name || "").slice(0, 60), url: url || "", ts: Date.now(),
+    list.unshift({ ep, name: ((name || "").trim() || prima?.name || "").slice(0, 60), url: (url || "").split("#")[0], ts: Date.now(),
                    pk: prima?.pk || "", ...tr, ...(Number.isInteger(anni) ? { eta: anni } : {}),
                    ...(sesso === "M" || sesso === "F" ? { sesso } : prima?.sesso ? { sesso: prima.sesso } : {}),
                    ...(nato || prima?.nato ? { nato: nato || prima.nato } : {}), ...(prima?.lista ? { lista: prima.lista } : {}),
@@ -17784,7 +17784,7 @@
         if (m.t === "ponteCartellaAggiornata") {
           if (!LAVORO && !PONTE_VALORI && !PONTE_CARTELLA && !PONTE_TERAPIA && !PONTE_ACCETTA && PANNELLO && typeof m.ep === "string" && formCartella(document, m.ep)) {
             PONTE_AGG = m.ep;
-            if (paginaToccata()) { if (!PANNELLO.root.activeElement) PANNELLO.render(); }
+            if (paginaToccata()) pontePill();
             else ponteRicarica();
           }
           reply({ ok: true });
@@ -17795,6 +17795,16 @@
           const ok = !!PONTE_TERAPIA && !!m.lavoro && m.lavoro.ep === PONTE_TERAPIA.ep && PONTE_TERAPIA.fase === "fermo" && eTerapie();
           reply({ ok });
           if (ok) { PONTE_TERAPIA = m.lavoro; ponteTerapiaQui().catch(() => ask({ t: "ponteTerapiaFatto", ok: false, incerto: PONTE_TERAPIA.fase === "inviato", testo: "errore nella scheda" })); }
+          return;
+        }
+        // …in cui il medico è entrato: da adesso è sua — una pagina come le altre, la pill e i suoi controlli (una
+        // riga scritta qui ferma il telefono), così com'è: niente ricaricato, niente di quello che c'è scritto perso
+        if (m.t === "ponteTerapiaLasciata") {
+          reply({ ok: true });
+          if (PONTE_TERAPIA && PONTE_TERAPIA.fase === "fermo") {
+            PONTE_TERAPIA = null;
+            ask({ t: "ordineChi" }).then((r) => bootGestionale(r && r.ok ? r : null));
+          }
           return;
         }
         if (m.t !== "ponteEsegui") return;
@@ -17937,15 +17947,24 @@
   }
   // C'è qui qualcosa scritto e non salvato — un testo, una spunta, una scelta, in un modulo qualunque della
   // pagina —, o il medico ha il cursore in un campo (anche del pannello)? Allora la pagina non si ricarica da
-  // sola: si perderebbe. Nel dubbio, «toccata» (resta ferma e lo dice).
+  // sola: si perderebbe. Nel dubbio, «toccata» (resta ferma e lo dice). (Il fuoco su un TASTO del pannello
+  // non conta: ci resta da solo, ridisegno dopo ridisegno, dall'ultimo clic.)
+  const campoCursore = (a) => !!a && (a.isContentEditable || a.tagName === "TEXTAREA" || a.tagName === "SELECT" || (a.tagName === "INPUT" && !/^(hidden|submit|button|image|reset)$/.test(a.type)));
   function paginaToccata() {
-    if (PANNELLO && PANNELLO.root.activeElement) return true;
-    const a = document.activeElement;
-    if (a && (a.isContentEditable || a.tagName === "TEXTAREA" || a.tagName === "SELECT" || (a.tagName === "INPUT" && !/^(hidden|submit|button|image|reset)$/.test(a.type)))) return true;
+    if (PANNELLO && campoCursore(PANNELLO.root.activeElement)) return true;
+    if (campoCursore(document.activeElement)) return true;
     return [...document.querySelectorAll("textarea, input, select")].some((el) =>
       el.tagName === "SELECT" ? (el.multiple ? [...el.options].some((o) => o.selected !== o.defaultSelected) : el.options.length > 0 && el.selectedIndex !== Math.max(0, [...el.options].findIndex((o) => o.defaultSelected)))
       : el.type === "checkbox" || el.type === "radio" ? el.checked !== el.defaultChecked
       : !/^(hidden|submit|button|image|reset|file)$/.test(el.type) && normTesto(el.value) !== normTesto(el.defaultValue));
+  }
+  // La pill «Aggiornato dal telefono · Ricarica», adesso: il ridisegno rimette il fuoco sul tasto del pannello
+  // dov'era. Un campo del pannello col cursore dentro non si ridisegna sotto le dita (quello che c'è scritto
+  // potrebbe non sopravvivere): la pill arriva appena lo si lascia — e il «Conferma» è fermo da subito.
+  function pontePill() {
+    if (!PANNELLO || !PONTE_AGG) return;
+    if (!campoCursore(PANNELLO.root.activeElement)) { PANNELLO.render(); return; }
+    PANNELLO.root.addEventListener("focusout", () => setTimeout(pontePill, 0), { once: true });
   }
   // Il «Conferma» della cartella di una pagina di prima (il telefono l'ha salvata dopo che si è aperta): fermo,
   // anche cliccato da qualcun altro (un tasto, il pannello), finché la pagina non si ricarica — mai i testi
@@ -17962,10 +17981,13 @@
       { testo: "Ricarica", fai: ponteRicarica }, "Cartella");
   }
   // «Ricarica» sulla pill: la pagina del paziente, con l'indirizzo che il
-  // gestionale ha dato (una GET: mai il modulo inviato di nuovo)
+  // gestionale ha dato (una GET: mai il modulo inviato di nuovo). Senza il
+  // «#…» (i link «href="#"» della pagina lo lasciano): con quello sarebbe solo
+  // un salto nella stessa pagina, e la pagina di prima resterebbe.
   function ponteRicarica() {
-    const u = ponteUrlPaziente(pontePaziente(PONTE_AGG));
-    location.assign(u || location.href);
+    const v = new URL(ponteUrlPaziente(pontePaziente(PONTE_AGG)) || location.href);
+    v.hash = "";
+    location.assign(v.href);
   }
   // La scheda aperta dal ponte per salvare. Prima volta («compila»): ogni
   // campo dev'essere ancora scrivibile e uguale a quello che il telefono ha

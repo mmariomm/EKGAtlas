@@ -69,9 +69,11 @@ const FARMACI = [
 ];
 // (per il telefono: `pazienti` le pagine del paziente chieste; `ignora` una Conferma che il server non salva;
 // `ricarica` la scheda ricaricata mentre il server risponde alla Conferma; `ritocca` la pagina che cambia la
-// quantità quando si scrive la frequenza; `senza` un farmaco sparito dalla tendina)
+// quantità quando si scrive la frequenza; `senza` un farmaco sparito dalla tendina; `login` la sessione del gestionale
+// scaduta: ogni pagina è quella d'accesso)
 const srv = { salvate: { [PZ.ep]: [], [ALTRO.ep]: [] }, conferme: [], termini: [], pagineTer: [], nomeAltro: false, epAltro: false, occupaSuTerapie: false,
-  pazienti: 0, ignora: false, ricarica: false, ritocca: false, senza: "" };
+  pazienti: 0, ignora: false, ricarica: false, ritocca: false, senza: "", login: false };
+const LOGIN = `<html><head><title>Accesso</title></head><body><form name="Login" method="post" action="login.do"><input name="username"><input type="password" name="password"><input type="submit" value="Accedi"></form></body></html>`;
 const RITOCCA = `<script>document.addEventListener("change", function (e) {
   var m = /^FREQUENZA_(\\d+)$/.exec(e.target.name || "");
   if (m) document.querySelector('[name="QUANTITA_' + m[1] + '"]').value = "2";
@@ -185,6 +187,7 @@ await ctx.route(`${ORIGIN}/**`, async (r) => {
     const q = (u.searchParams.get("term") || "").toUpperCase();
     return r.fulfill({ status: 200, headers: { "content-type": "application/json" }, body: JSON.stringify(FARMACI.filter((f) => f.label.includes(q) && !(srv.senza && f.label.includes(srv.senza))).slice(0, 20)) }).catch(() => {});
   }
+  if (srv.login && req.method() === "GET" && /menuPsoEpisodio\.do$/.test(u.pathname)) return html(LOGIN);
   if (mvpg === "PsoEpisodioTerapieImposta" && req.method() === "POST") {
     const b = new URLSearchParams(req.postDataBuffer()?.toString("latin1") || "");
     const tasto = b.has("Update") ? "Conferma" : b.has("Chiudi") ? "Chiudi" : "?";
@@ -502,7 +505,7 @@ try {
   check(await finche(async () => (await tel.locator(".seg button").allInnerTexts()).join("|") === "Richieste|Esiti|Cartella|Terapia", 15000),
     `sul paziente, una quarta scheda «Terapia» (${(await tel.locator(".seg button").allInnerTexts()).join("|")})`);
 
-  // ---- 11. leggere: una scheda di sottofondo apre la Terapia col pulsante del paziente, legge, e resta (ferma) per il foglio
+  // ---- 11. leggere: una scheda di sottofondo apre la Terapia col pulsante del paziente, legge, e si chiude (resta solo per il foglio «＋ Farmaco»)
   const n0 = schede().length, p0 = srv.pagineTer.length, c0 = conferme(), z0 = srv.pazienti;
   const aperte = [];   // le schede che il PC apre per la Terapia, da qui alla fine della 13
   const contaAperte = (p) => aperte.push(p);
@@ -516,7 +519,7 @@ try {
   check(srv.pagineTer.length === p0 + 1 && /MVPG=PsoEpisodioTerapieImposta&MODALITA=PRESCRIZIONE&EPISODIO_ID=700001&returnPage=PsoEpisodio$/.test(srv.pagineTer.at(-1)),
     `la pagina Terapia aperta dal pulsante del paziente, col suo indirizzo (${srv.pagineTer.at(-1)})`);
   await sospendi(800);
-  check(schede().length === n0 + 1 && conferme() === c0, "la scheda di sottofondo resta, ferma sulla pagina Terapia (per il «＋ Farmaco» dopo); niente premuto");
+  check(await finche(async () => schede().length === n0, 8000) && conferme() === c0, "una lettura sola: la scheda di sottofondo si chiude (resta solo col foglio «＋ Farmaco» aperto); niente premuto");
   const m11 = await memo();
   const chiavi = m11 && [Object.keys(m11).sort().join(), Object.keys(m11.righe[0] || {}).sort().join(), Object.keys(m11.opz || {}).sort().join()];
   check(!!m11 && chiavi[0] === "ep,letto,opz,righe" && chiavi[1] === "bisogno,continua,descr,dil,freq,ora,prog,qta,um,via" && chiavi[2] === "dil,um,via"
@@ -537,9 +540,9 @@ try {
   await tel.locator("#tq").fill("metoc");
   check(await finche(async () => await tel.locator('[data-a="tvoce"]').count() === 1, 30000) && await tel.locator('[data-a="tvoce"]').innerText() === "METOCLOPRAMIDE 10 MG/2 ML FL",
     "scritto «metoc»: le voci della tendina della pagina, cercate dal PC");
-  check(srv.termini.slice(q0).some((t) => t.term === "metoc" && t.tipo === "xhr") && srv.pagineTer.length === p12 && srv.pazienti === z0 + 1 && conferme() === c0,
-    `…la ricerca è la XHR della pagina, nella stessa scheda di sottofondo: nessuna pagina in più, né del paziente né Terapia (${srv.termini.slice(q0).map((t) => t.term).join(" | ")})`);
-  check(schede().length === n0 + 1 && aperte.length === 1, "…che resta aperta: una scheda sola");
+  check(srv.termini.slice(q0).some((t) => t.term === "metoc" && t.tipo === "xhr") && srv.pagineTer.length === p12 + 1 && srv.pazienti === z0 + 2 && conferme() === c0,
+    `…la ricerca è la XHR della pagina, in una scheda di sottofondo (la pagina del paziente, il suo pulsante «Terapia») (${srv.termini.slice(q0).map((t) => t.term).join(" | ")})`);
+  check(schede().length === n0 + 1 && aperte.length === 2, "…che resta aperta, col foglio «＋ Farmaco»");
   await tel.locator('[data-a="tvoce"]').click();
   await tel.waitForSelector("#tqta", { timeout: 5000 });
   check(await tel.locator(".tnome").innerText() === "METOCLOPRAMIDE 10 MG/2 ML FL" && await tel.locator("#tqta").inputValue() === "" && await tel.locator("#tdil").count() === 0
@@ -564,8 +567,8 @@ try {
     && nuova.durata === "1" && srv.conferme.at(-1).serializzata && srv.conferme.at(-1).note === 0,
     `un solo «Conferma» (Update), TERAPIA_SERIALIZED composto dalla pagina, niente note: la riga è fra le terapie del server (${JSON.stringify(nuova)})`);
   check(await finche(async () => schede().length === n0, 8000), "la scheda di sottofondo si è chiusa");
-  check(aperte.length === 1 && srv.pazienti === z0 + 1 && srv.pagineTer.length === p13 + 1,
-    `leggere, cercare e aggiungere: una scheda sola (${aperte.length}), una pagina del paziente (${srv.pazienti - z0}); prima di scrivere la pagina Terapia riletta col suo pulsante, una volta (${srv.pagineTer.length - p13})`);
+  check(aperte.length === 2 && srv.pazienti === z0 + 2 && srv.pagineTer.length === p13 + 1,
+    `leggere, poi cercare e aggiungere nella stessa scheda: due in tutto (${aperte.length}), una pagina del paziente ciascuna (${srv.pazienti - z0}); prima di scrivere la pagina Terapia riletta col suo pulsante, una volta (${srv.pagineTer.length - p13})`);
   ctx.off("page", contaAperte);
   await tel.locator('.foglio .capo [data-a="tchiudi"]').click();
   check((await righeTel())[0] === "METOCLOPRAMIDE 10 MG/2 ML FL" && !(await tel.locator(".foglio").count()), "chiuso il foglio, la nuova terapia in cima alla lista (riletta dopo Conferma)");
@@ -724,6 +727,63 @@ try {
   const dalTel = srv.conferme.slice(daTelefono);
   check(dalTel.length === 6 && dalTel.every((x) => x.tasto === "Conferma" && x.serializzata && !x.note),
     `dal telefono 6 Conferme in tutto, ognuna col TERAPIA_SERIALIZED composto dalla pagina, mai note né Chiudi (${dalTel.map((x) => x.tasto).join(",")})`);
+
+  // ---- 23. la scheda tenuta in cui il medico entra (la sceglie lui, o Chrome gliela dà chiudendo la sua): da lì è sua
+  const nate23 = [];
+  const conta23 = (p) => nate23.push(p);
+  ctx.on("page", conta23);
+  await tel.locator('[data-a="tnuovo"]').click();
+  await tel.locator("#tq").fill("panto");
+  await finche(async () => await tel.locator('[data-a="tvoce"]').count() === 1, 30000);
+  const tenuta = nate23.find((p) => !p.isClosed() && /PsoEpisodioTerapieImposta/.test(p.url()));
+  check(!!tenuta, "(cercato «panto»: la scheda di sottofondo resta, ferma sulla pagina Terapia)");
+  await tenuta.bringToFront();
+  check(await finche(async () => await tenuta.locator("#psassist-host").count() === 1, 8000),
+    "il medico entra nella scheda tenuta: diventa una pagina come le altre, col pannello (la pill)");
+  const nT = await tenuta.evaluate(() => document.getElementById("DESCRIZIONE").name.split("_")[1]);
+  await tenuta.fill(`[name="QUANTITA_${nT}"]`, "2");
+  await doc.bringToFront();   // (scrive e se ne va: la scheda torna dietro)
+  const quantita = () => tenuta.inputValue(`[name="QUANTITA_${nT}"]`).catch(() => "chiusa");
+  await tel.locator('.foglio .capo [data-a="tchiudi"]').click();
+  await sw.evaluate(() => { const v = Date.now; Date.now = () => v() + 2 * 60e3 + 30e3; return ponteControlla().finally(() => { Date.now = v; }); });
+  await sospendi(1500);
+  check(!tenuta.isClosed() && await quantita() === "2", "…e resta sua: né il foglio chiuso sul telefono né 2 minuti senza lavoro la chiudono, e quello che ha scritto c'è");
+  const c23 = conferme(), pT = srv.pagineTer.length;
+  check(/Non confermata: sul PC la Terapia di questo paziente è aperta e già toccata/.test(await dalTelefono("PARACETAMOLO")) && conferme() === c23 && srv.pagineTer.length === pT && await quantita() === "2",
+    `un farmaco dal telefono per lo stesso paziente: la sua pagina scritta lo ferma — mai riusata, niente premuto, il suo testo resta (${await esito()})`);
+  await tel.locator('.foglio .capo [data-a="tchiudi"]').click();
+  await tenuta.close();   // (il medico la chiude)
+  const giaNate = nate23.length;
+  check(/Confermata/.test(await dalTelefono("PARACETAMOLO")) && conferme() === c23 + 1 && nate23.length > giaNate,
+    `chiusa la sua pagina, il farmaco passa da una scheda di sottofondo nuova (${await esito()})`);
+  await tel.locator('.foglio .capo [data-a="tchiudi"]').click();
+  ctx.off("page", conta23);
+
+  // ---- 24. la scheda tenuta finisce sulla pagina d'accesso (la sessione del gestionale scaduta): lasciata andare, senza errori
+  const tenutaCerca = async (q) => {
+    const nate = [];
+    const conta = (p) => nate.push(p);
+    ctx.on("page", conta);
+    if (!(await tel.locator(".foglio #tq").count())) await tel.locator('[data-a="tnuovo"]').click();
+    await tel.locator("#tq").fill(q);
+    await finche(async () => await tel.locator('[data-a="tvoce"]').count() >= 1 && !!nate.find((p) => !p.isClosed() && /PsoEpisodioTerapieImposta/.test(p.url())), 30000);
+    ctx.off("page", conta);
+    return nate.find((p) => !p.isClosed() && /PsoEpisodioTerapieImposta/.test(p.url())) || null;
+  };
+  const t24 = await tenutaCerca("metoc");
+  const idT = await sw.evaluate(() => ([...pt.terapie].find(([, w]) => w.fermo) || [0])[0]);
+  // quello che dice la scheda tenuta dalla pagina d'accesso: «fatto», senza un lavoro in corso
+  const r24 = await sw.evaluate(({ id, url }) => new Promise((res) => ponteDaPagina({ t: "ponteTerapiaFatto", ok: false, testo: "il gestionale chiede di rifare l'accesso" }, { tab: { id }, url }, res)),
+    { id: idT, url: URL_PAZ(PZ.ep) });
+  check(!!t24 && !!idT && r24 && r24.ok === true && !r24.why && await finche(async () => t24.isClosed() && !(await sw.evaluate((id) => pt.terapie.has(id), idT)), 8000),
+    `la scheda tenuta (ferma, senza lavoro) dice «fatto» dalla pagina d'accesso: lasciata andare e chiusa, nessun errore (${JSON.stringify(r24)})`);
+  // …e davvero: la scheda tenuta ricaricata trova la pagina d'accesso
+  const t24b = await tenutaCerca("ketor");
+  srv.login = true;
+  await t24b?.reload().catch(() => {});
+  check(!!t24b && await finche(async () => t24b.isClosed() && (await sw.evaluate(() => pt.terapie.size)) === 0, 10000),
+    "ricaricata, la scheda tenuta trova la pagina d'accesso: chiusa, e il PC non la tiene più");
+  srv.login = false;
   await pc2.close();
 } catch (e) {
   console.error(e);

@@ -198,7 +198,8 @@ esami per ROSSI MARIO…»), e la pagina ⋯ → iPhone ha il registro del ponte
 chiuse, comandi, un altro telefono rifiutato).
 
 **La sessione finisce** dopo **3 minuti senza comandi del medico** (quello che l'app chiede da sé —
-rileggere l'elenco, gli ordini — non conta; un tocco o uno scorrere con l'app davanti sì, al più uno al
+rileggere l'elenco, gli ordini — non conta; un tocco con l'app davanti sì (anche quello che comincia a
+scorrere; uno «scroll» da solo no: lo fa anche il ridisegno, che rimette la mappa dov'era), al più uno al
 minuto: `tocco`, che sul PC sposta l'orologio dei 3 minuti e basta — il telefono in mano non si chiude, uno
 lasciato lì sì), con «Scollega» sul PC,
 con la revoca, se l'estensione o il browser si riavviano, o se **una scheda del gestionale torna
@@ -424,22 +425,30 @@ rimanderebbe il modulo intero coi testi vecchi); poi la pagina si apre in una sc
 controlla ogni campo — ancora scrivibile, e uguale a `prima` (spazi e a capo normalizzati) —, scrive
 i testi e clicca il **«Conferma»** della pagina (`name="Update"`): il modulo lo manda il browser, mai
 un invio costruito a mano. Ricaricata, la scheda rilegge e verifica campo per campo, e si chiude.
-Poi le schede del medico con la pagina di quel paziente (`ponteCartellaAggiornata`): la pagina è di
+Dopo un «Conferma» premuto — provato, provato a metà o incerto: il gestionale può avere già i testi
+nuovi — le schede del medico con la pagina di quel paziente (`ponteCartellaAggiornata`): la pagina è di
 prima, e da subito il suo «Conferma» della cartella è fermo (`confermaFerma`: clic e invio fermati
-prima della pagina); senza niente scritto né un cursore in un campo si ricarica da sola (una GET
-dell'indirizzo del paziente); se no la pill, e il «Conferma» resta fermo finché non la si ricarica.
+prima della pagina); senza niente scritto né un cursore in un campo (della pagina o del pannello: il
+fuoco rimasto su un suo tasto non conta) si ricarica da sola (una GET dell'indirizzo del paziente,
+senza «#…»: con quello sarebbe solo un salto nella stessa pagina); se
+no la pill (col cursore in un campo del pannello, appena lo si lascia), e il «Conferma» resta fermo
+finché non la si ricarica.
 Rimandato dopo una risposta persa, lo stesso salvataggio trova `prima` cambiato e non parte due
 volte. Nel registro degli errori (`segnaErrore`) solo il perché e i nomi dei campi, mai un testo.
 
 **La Terapia.** La pagina Terapia del gestionale (`PsoEpisodioTerapieImposta`), sempre da una scheda
 di sottofondo (`ponte.terapie`, una sola) aperta sulla pagina del paziente, che preme il suo
-pulsante «Terapia» e fa il lavoro chiesto (`ponteTerapiaQui` in `core.js`). Finita bene una lettura o
-una ricerca, la scheda resta ferma sulla pagina Terapia (`fermo`) e il lavoro dopo la riusa
-(`ponteTerapiaLavoro`): una ricerca lì dov'è, nella tendina della pagina; una lettura o un'aggiunta
-prima rileggono la pagina col suo pulsante «Prescrizione» (una GET: lo stato di adesso, subito prima
-di scrivere). Si chiude dopo un'aggiunta, a ogni dubbio, quando il foglio «＋ Farmaco» si chiude sul
-telefono (`terapiaFine`), a fine sessione, per un altro paziente, dopo 2 minuti senza lavoro; una
-scheda in cui il medico è entrato non si riusa. `terapie` dà l'ultima
+pulsante «Terapia» e fa il lavoro chiesto (`ponteTerapiaQui` in `core.js`). Una lettura sola si
+chiude. Finita bene una ricerca (cioè col foglio «＋ Farmaco» aperto sul telefono; un PC di sola
+lettura non cerca), la scheda resta ferma sulla pagina Terapia (`fermo`) e il lavoro dopo la riusa
+(`ponteTerapiaLavoro`): una ricerca lì dov'è, nella tendina della pagina; un'aggiunta prima rilegge
+la pagina col suo pulsante «Prescrizione» (una GET: lo stato di adesso, subito prima di scrivere).
+Si chiude dopo un'aggiunta, a ogni dubbio, quando il foglio «＋ Farmaco» si chiude sul
+telefono (`terapiaFine`), a fine sessione, per un altro paziente, dopo 2 minuti senza lavoro. Una
+scheda in cui il medico entra (la sceglie lui, o Chrome gliela dà chiudendo la sua: `tabs.onActivated`,
+il fuoco della finestra) da lì è sua: mai riusata né chiusa dal ponte, e torna una pagina come le altre
+(`ponteTerapiaLasciata`: la pill e i controlli, senza ricaricarla — niente di scritto si perde); una
+che lavorava finisce il suo lavoro, poi lo stesso. `terapie` dà l'ultima
 lettura (`ponte.terapia`: le righe confermate e le voci delle tendine, niente note né nascosti; dalla
 pagina aperta dal medico o da una scheda così, con un iPhone associato, via a fine sessione) o, con
 `rileggi`, la pagina riletta, più i preferiti del PC; senza `ep` dice solo che il comando c'è (un PC
@@ -632,7 +641,7 @@ suo aiutante non l'ha stampato (e il suo file temporaneo, come per ogni foglio).
   un'altra estensione.
 - **La stazione di stampa** riceve i fogli degli ordini e risponde; non comanda e non legge niente.
   Chi ha il telefono sbloccato e associato può collegare una stazione al PC, ma solo inquadrando il suo
-  QR (sullo schermo della stazione, cinque minuti): il PC lo dice (⋯ → Stampanti, il Registro del ponte).
+  QR (sullo schermo della stazione, cinque minuti): il PC lo dice (⋯ → Impostazioni, il Registro del ponte).
 - **Un PDF da stampare** passa cifrato come tutto il resto, e chi ha il telefono sbloccato può far
   uscire fogli dalla stampante A4 del PC (uno per richiesta, al massimo 15 MB): il registro del ponte
   lo dice.

@@ -80,7 +80,8 @@ const riquadro = (nome, triage, ep, cf, nascita) => `<table><tr><td title="${tri
 // La cartella di ROSSI: il modulo AmbulatorioPSO com'è nella pagina vera (i
 // cinque campi, l'esame obiettivo di sola lettura se l'ha scritto un altro
 // medico, «Conferma»), e il gestionale che lo riceve. Accesa solo nella sua sezione.
-const CART = { on: false, lento: 0, eoRo: true, ignora: "", post: [], campi: {}, arrivati: 0 };
+// (`altrove`: dopo «Conferma» il gestionale salva, ma risponde con un'altra pagina invece di quella del paziente)
+const CART = { on: false, lento: 0, eoRo: true, ignora: "", altrove: false, post: [], campi: {}, arrivati: 0 };
 let ALLERGIE_B = false;   // la pagina di BIANCHI porta il campo delle allergie (il suo «aperto dal telefono»)
 let TRATTIENI = null;     // una promessa: la pagina di ROSSI, aperta in una scheda, arriva quando si compie (una lettura vista mentre va)
 const TRATTENUTE = [];    // …e le schede che l'hanno chiesta intanto
@@ -154,6 +155,10 @@ await ctx.route("https://smarthealth.multimedica.it/**", async (r) => {
     const f = decodificaModulo(req.postDataBuffer());
     CART.post.push(f);
     for (const n of CART_NOMI) if (n in f && n !== CART.ignora) CART.campi[n] = f[n].replace(/\r\n/g, "\n");
+    if (CART.altrove) {
+      try { await r.fulfill({ status: 200, headers: { "content-type": "text/html; charset=windows-1252" }, body: Buffer.from("<html><head><title>PRONTO SOCCORSO - LISTA</title></head><body><p>Lista</p></body></html>", "latin1") }); } catch { /* chiusa */ }
+      return;
+    }
     metodo = "GET";
   }
   const mock = quale(u);
@@ -1270,17 +1275,82 @@ sezione("la cartella dal telefono: leggere, scrivere col «Conferma» della pagi
 
   // il gestionale non salva un campo: la verifica lo dice, campo per campo
   CART.ignora = "FARMACI_ASSUNTI";
+  // (la pagina di ROSSI aperta sul PC, pulita: quella ricaricata dopo il salvataggio di prima)
+  await finche(async () => (await doc.locator('textarea[name="ESAME_OBIETTIVO"]').inputValue().catch(() => "")).includes("dispnoico"), 15000);
+  await finche(() => doc.evaluate(() => { window.__aMeta = true; return true; }).catch(() => false), 10000);
   await tel.locator("#cc-FARMACI_ASSUNTI").fill("Ramipril OMEGAFARM 10 mg");
   await tel.locator("#cc-MALATTIE_PREGRESSE").fill("Ipertensione SIGMAREMOTA, diabete");
   await salvaTel();
   check(/Salvato: Anamnesi remota · Non salvato sul PC: Farmaci/.test(await aspettaTel(tel, /Non salvato sul PC/, 60000)),
     "riletta la pagina dopo «Conferma»: «Salvato: Anamnesi remota · Non salvato sul PC: Farmaci»");
+  check(await finche(async () => !(await doc.evaluate(() => window.__aMeta === true).catch(() => true))
+    && (await doc.locator('textarea[name="MALATTIE_PREGRESSE"]').inputValue().catch(() => "")).includes("diabete"), 15000),
+    "salvato a metà, la pagina di ROSSI sul PC è di prima lo stesso (il gestionale ha già una parte dei testi nuovi): pulita, si ricarica");
+  await doc.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
   CART.ignora = "";
   const err = await errori();
   check(err.length >= 4 && err.every((x) => Array.isArray(x.dati.campi) && x.dati.campi.every((n) => CART_NOMI.includes(n))) && !/KAPPAZETA|NUOVAZETA|OMEGAFARM|BETALLERG|SIGMAREMOTA|TAUOBIETT|medico scrive/.test(JSON.stringify(err)),
     `ogni no nel registro degli errori: il perché e i nomi dei campi, mai un testo (${err.map((x) => x.dati.perche).join(" · ")})`);
   const memTel = await tel.evaluate(() => JSON.stringify({ ...localStorage }) + JSON.stringify({ ...sessionStorage }));
   check(!/KAPPAZETA|NUOVAZETA|OMEGAFARM|BETALLERG|SIGMAREMOTA|TAUOBIETT/.test(memTel), "sul telefono niente della cartella fuori dalla memoria della pagina");
+
+  // la pagina di ROSSI sul PC, salvata dal telefono: ricaricata (la stessa pagina di prima non c'è più) col testo nuovo
+  const anamnesiPc = () => doc.locator('textarea[name="ANAMNESI"]').inputValue().catch(() => "");
+  const segnaPagina = () => finche(() => doc.evaluate(() => { window.__diPrima = true; return true; }).catch(() => false), 10000);
+  const ricaricata = (testo) => finche(async () => !(await doc.evaluate(() => window.__diPrima === true).catch(() => true)) && (await anamnesiPc()).includes(testo), 15000);
+  const fuocoPannello = () => doc.evaluate(() => document.getElementById("psassist-host")?.shadowRoot?.activeElement?.id || "").catch(() => "");
+  const salvaAnamnesi = async (testo) => { await tel.locator("#cc-ANAMNESI").fill(testo); await salvaTel(); return salvato(); };
+  // il medico ha cliccato un tasto del pannello (il fuoco ci resta, ridisegno dopo ridisegno) e se n'è andato: la pagina, pulita, si ricarica lo stesso
+  await suPagina(doc, A.patientUrl);
+  if (await $panel(doc, "#expand").count()) { await $panel(doc, "#expand").click(); await doc.waitForSelector("#psassist-host .card", { timeout: 8000 }); }
+  await $panel(doc, "#menubtn").click();
+  await $panel(doc, "#menubtn").click();
+  const sulTasto = await fuocoPannello();
+  await segnaPagina();
+  check(sulTasto === "menubtn" && await salvaAnamnesi("Dolore toracico TASTOZETA"), `(il fuoco sul tasto ⋯ del pannello: «${sulTasto}»; il telefono salva)`);
+  check(await ricaricata("TASTOZETA"), "il fuoco su un tasto del pannello non è un testo da perdere: la pagina pulita si ricarica da sola, col testo del telefono");
+  await doc.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
+  // il cursore in un campo del pannello, con un testo: la pagina non si ricarica; il «Conferma» è fermo, e la pill arriva lasciato il campo
+  if (await $panel(doc, "#expand").count()) { await $panel(doc, "#expand").click(); await doc.waitForSelector("#psassist-host .card", { timeout: 8000 }); }
+  if (!(await $panel(doc, "#q").count())) await $panel(doc, '[data-seg="richieste"]').click();
+  await $panel(doc, "#q").fill("QUESITOZETA");
+  await segnaPagina();
+  check(await fuocoPannello() === "q" && await salvaAnamnesi("Dolore toracico CAMPOZETA"), "(il cursore nel «Quesito» del pannello, con un testo; il telefono salva)");
+  await sospendi(1500);
+  check(await doc.evaluate(() => window.__diPrima === true) && await fuocoPannello() === "q" && await $panel(doc, "#q").inputValue() === "QUESITOZETA",
+    "col cursore in un campo del pannello la pagina non si ricarica: il campo ha ancora il cursore e il testo");
+  // lascia il campo (riduce il pannello col suo tasto): la pill; poi il «Conferma» della pagina è fermo
+  await $panel(doc, "#collapse").click();
+  check(await finche(async () => /Aggiornato dal telefono/.test((await $panel(doc, ".pontespia").allInnerTexts().catch(() => [])).join(" ")), 5000),
+    "…lasciato il campo, la pill «Aggiornato dal telefono · Ricarica»");
+  const postC = CART.post.length;
+  await doc.locator('input[name="Update"]').click();
+  await sospendi(1000);
+  const fermoC = await doc.locator("#psassist-terapia").evaluate((h) => h.shadowRoot.querySelector(".b").textContent).catch(() => "");
+  check(CART.post.length === postC && /Niente inviato/.test(fermoC), `…e il «Conferma» della pagina è fermo: niente inviato (${fermoC.replace(/\s+/g, " ").slice(0, 80)})`);
+  if (await $panel(doc, "#expand").count()) { await $panel(doc, "#expand").click(); await doc.waitForSelector("#psassist-host .card", { timeout: 8000 }); }
+  await $panel(doc, "#q").fill("");
+  await $panel(doc, "#ponterica").click();
+  check(await ricaricata("CAMPOZETA"), "(«Ricarica»: la pagina col testo del telefono)");
+  await doc.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
+  // la pagina aperta con un «#» in fondo (un suo link «href="#"», poi un F5): ricaricarla è ricaricarla, non un salto nella stessa pagina
+  await suPagina(doc, A.worklistUrl);
+  await suPagina(doc, A.patientUrl + "#");
+  const conCancelletto = doc.url();
+  await segnaPagina();
+  check(/#$/.test(conCancelletto) && await salvaAnamnesi("Dolore toracico CANCELLETTOZETA"), `(la pagina di ROSSI col «#» in fondo: ${conCancelletto.slice(-30)}; il telefono salva)`);
+  check(await ricaricata("CANCELLETTOZETA"), `l'indirizzo col «#» in fondo: la pagina si ricarica davvero (${doc.url().slice(-30)})`);
+  await doc.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
+  // «Conferma» premuto, e dopo il gestionale non mostra la pagina del paziente: non si sa se è salvato — ma può
+  // esserlo, e la pagina di ROSSI sul PC (pulita) si ricarica lo stesso: il suo «Conferma» non rimanda i testi di prima
+  CART.altrove = true;
+  await segnaPagina();
+  await tel.locator("#cc-ANAMNESI").fill("Dolore toracico DUBBIOZETA");
+  await salvaTel();
+  check(!!(await aspettaTel(tel, /Non so se è salvato: guarda la cartella sul PC prima di rifarlo/, 90000)), "dopo «Conferma» un'altra pagina: «Non so se è salvato: guarda la cartella sul PC prima di rifarlo»");
+  CART.altrove = false;
+  check(await ricaricata("DUBBIOZETA"), "…e la pagina di ROSSI sul PC, pulita, si ricarica: il gestionale aveva salvato");
+  await doc.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
   // via la cartella: le sezioni dopo hanno la pagina di sempre
   ctx.off("page", contaSchede);
   CART.on = false;
@@ -2166,11 +2236,15 @@ rete.muta = rete.ultima;
 await tel.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));   // tornati sull'app: si prova subito la presa
 check(await finche(async () => relay.entrate().tel > prese1, 14000), "nessun «pong» entro 10 secondi: il telefono rifà la presa");
 check(/ROSSI MARIO/.test(await aspettaTel(tel, /ROSSI MARIO/, 10000)), "e l'elenco resta");
-// tornati sull'app: l'elenco si rilegge da solo
-const lettiPrima = await registroRighe(doc);
+// tornati sull'app: l'elenco si rilegge da solo (contato sul PC, al comando: il Registro del pannello tiene le
+// ultime 200 righe, e pieno non cresce più — contarci le righe non dice se ne è arrivata una nuova)
+await sw.evaluate(() => {
+  self.__elenchi = 0;
+  if (!self.__suScheda) { self.__suScheda = ponteSuScheda; ponteSuScheda = (c, ...a) => { if (c === "pazienti") self.__elenchi++; return self.__suScheda(c, ...a); }; }
+});
 await tel.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
-check(await finche(async () => righeDopo(lettiPrima, await registroRighe(doc)).some((x) => /iPhone · elenco dei pazienti/.test(x)), 10000),
-  `tornati sull'app, l'elenco si rilegge da solo (registro: ${lunghezze(await registroRighe(doc))}; ultime: ${JSON.stringify(righeDopo(lettiPrima, await registroRighe(doc)).slice(-4))})`);
+check(await finche(async () => (await sw.evaluate(() => self.__elenchi)) > 0, 10000),
+  "tornati sull'app, l'elenco si rilegge da solo");
 // …e sulla pagina di un paziente, i suoi esiti (un referto arrivato intanto), senza contare come un comando del medico
 await tocca(tel, '.paz[data-ep="999001"]');
 await aspettaTel(tel, /Rileggi/, 15000);
@@ -2186,20 +2260,52 @@ await aspettaTel(tel, /ROSSI MARIO/, 10000);
 sezione("3 minuti senza comandi");
 const avanti = (ms) => sw.evaluate((x) => { self.__oraVera = self.__oraVera || Date.now; const v = self.__oraVera; Date.now = () => v() + x; return ponteControlla(); }, ms);
 const orologio = () => sw.evaluate(() => { if (self.__oraVera) Date.now = self.__oraVera; });
+// il telefono che nessuno tocca, sulla Mappa ingrandita e spostata: il ridisegno di ogni 30 secondi la rimette dov'era
+// (uno «scroll» che non è il medico) — niente al PC, e ai 3 minuti si chiude
+{
+  const ultimoPc = () => sw.evaluate(() => pt.sessione && pt.sessione.ultimo);
+  const posMappa = () => tel.evaluate(() => { const m = document.querySelector(".mappa"); return m ? [Math.round(m.scrollLeft), Math.round(m.scrollTop)] : null; });
+  await tocca(tel, '[data-a="modo"][data-m="mappa"]');
+  await tel.waitForSelector(".mappa .letto.vuoto", { timeout: 10000 });
+  await tel.locator(".mappa .letto.vuoto").first().click();   // (ingrandita)
+  await tel.evaluate(() => { const m = document.querySelector(".mappa"); m.scrollLeft = 150; m.scrollTop = 120; });
+  await sospendi(500);
+  const u0 = await ultimoPc(), p0 = await posMappa();
+  await tel.evaluate(() => {
+    const v = Date.now; window.__oraVera = v; Date.now = () => v() + 70e3;   // (passato più di un minuto dall'ultimo comando)
+    window.__ridisegni = 0;
+    new MutationObserver(() => { window.__ridisegni++; }).observe(document.getElementById("app"), { childList: true });
+  });
+  const ridisegnata = await finche(async () => (await tel.evaluate(() => window.__ridisegni)) > 0, 35000);
+  await sospendi(1500);
+  check(ridisegnata && p0 && p0[0] > 0 && JSON.stringify(await posMappa()) === JSON.stringify(p0) && await ultimoPc() === u0,
+    `nessuno tocca, sulla Mappa spostata: il ridisegno la rimette dov'era (${JSON.stringify(p0)}), e non è un comando — niente al PC`);
+  await tel.evaluate(() => { Date.now = () => window.__oraVera() + 3 * 60e3 + 10e3; });
+  check(!!(await aspettaTel(tel, /Sessione chiusa/, 35000)) && await finche(async () => !(await statoPonte())?.sessione, 10000),
+    "…e ai 3 minuti senza un tocco si chiude, sul telefono e sul PC");
+  await tel.evaluate(() => { Date.now = window.__oraVera; document.dispatchEvent(new Event("visibilitychange")); });   // tornati sull'app: si riapre
+  await finche(async () => !!(await statoPonte())?.sessione && await tel.locator('[data-a="modo"][data-m="lista"]').count() === 1, 20000);
+  await tocca(tel, '[data-a="modo"][data-m="lista"]');
+  await tel.evaluate(() => localStorage.removeItem("psassist.ponte.modo"));
+  await aspettaTel(tel, /BIANCHI ANNA/, 10000);
+}
 // (12) il telefono è su un paziente, scheda Esiti: dopo i 3 minuti si riapre lì
 await tocca(tel, '.paz[data-ep="999001"]'); await aspettaTel(tel, /Richieste/, 10000);
 await tocca(tel, '[data-a="scheda"][data-s="esiti"]');
-// il telefono in mano: un tocco o uno scorrere (anche su niente) è il medico che legge — conta come un comando, al più uno al minuto
+// il telefono in mano: un tocco (anche su niente, anche quello che comincia a scorrere) è il medico che legge — conta come un comando, al più uno al minuto
 {
   await sospendi(500);
   const ultimoPc = () => sw.evaluate(() => pt.sessione && pt.sessione.ultimo);
   const u0 = await ultimoPc();
-  await tel.evaluate(() => { document.querySelector("main").dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })); window.dispatchEvent(new Event("scroll")); });
+  await tel.evaluate(() => { const m = document.querySelector("main"); m.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })); m.dispatchEvent(new TouchEvent("touchstart", { bubbles: true })); });
   await sospendi(1200);
   check(await ultimoPc() === u0, "un tocco subito dopo un comando: niente al PC (al più uno al minuto)");
-  // un minuto dopo, sul telefono: scorrere i valori (lo scroll, non un bottone) conta
+  // un minuto dopo, sul telefono: uno «scroll» da solo no (lo fa anche un ridisegno); il dito che comincia a scorrere i valori sì
   await tel.evaluate(() => { const v = Date.now; window.__oraVera = v; Date.now = () => v() + 70e3; document.querySelector("main").dispatchEvent(new Event("scroll")); });
-  check(await finche(async () => (await ultimoPc()) > u0, 6000), "passato un minuto, scorrere col telefono in mano conta come un comando: anche il PC sposta il suo orologio dei 3 minuti");
+  await sospendi(1200);
+  check(await ultimoPc() === u0, "passato un minuto, uno «scroll» senza un dito (lo fa anche il ridisegno): niente al PC");
+  await tel.evaluate(() => document.querySelector("main").dispatchEvent(new TouchEvent("touchstart", { bubbles: true })));
+  check(await finche(async () => (await ultimoPc()) > u0, 6000), "…il dito che comincia a scorrere i valori conta come un comando: anche il PC sposta il suo orologio dei 3 minuti");
   const u1 = await ultimoPc();
   await tel.evaluate(() => document.querySelector("main").dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })));
   await sospendi(1200);

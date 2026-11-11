@@ -1512,7 +1512,7 @@ che non può leggere niente: cifrato da un capo all'altro, nessun dato su nessun
   non si ripreme. Le regole: [Perché è robusto](#perché-è-robusto-regole-di-sicurezza-nel-codice), 22.
 - **Si vede sul PC**: finché il telefono è collegato, ogni scheda mostra **«iPhone collegato ·
   Scollega»** (la spia è ferma), e ogni comando va nel **Registro**. Dopo **3 minuti senza comandi** del medico la
-  sessione si chiude da sola — un tocco o uno scorrere col telefono in mano conta come un comando (al più
+  sessione si chiude da sola — un tocco col telefono in mano (anche per scorrere) conta come un comando (al più
   uno al minuto, `tocco`): mentre leggi non si chiude —; tornando sull'app si riapre da sola, sul paziente e sulla scheda dov'eri
   (in memoria, mai su disco, dopo che il PC ha risposto). Così anche se l'estensione sul PC si riavvia: il
   telefono si ricollega da solo, senza «Sessione chiusa».
@@ -2186,12 +2186,14 @@ nella tendina del gestionale») — poi **Prepara nel gestionale** (o Ctrl+Invio
   riporta solo le scritte delle voci; due voci uguali dal telefono non si scelgono). Dose, unità e
   via in vista; diluizione, frequenza, durata, continua e al bisogno dietro «Altro»; mai le note,
   mai l'ora. Un riepilogo col nome, e **«Conferma per ROSSI M.»**: un farmaco per Conferma.
-  Il PC fa il giro di sempre in **una scheda di sottofondo**, la stessa per leggere, cercare e
-  aggiungere (comandi `terapie`, `terapiaCerca`, `terapiaAggiungi`): la pagina del paziente, il **suo**
-  pulsante «Terapia» (mai un indirizzo fatto da noi), e lì resta, ferma, finché serve — le ricerche nella
-  sua tendina, senza ricaricare; prima di aggiungere la pagina si rilegge col suo pulsante
+  Il PC fa il giro di sempre in **una scheda di sottofondo** (comandi `terapie`, `terapiaCerca`,
+  `terapiaAggiungi`): la pagina del paziente, il **suo** pulsante «Terapia» (mai un indirizzo fatto da
+  noi). Per una lettura sola si chiude; col foglio «＋ Farmaco» aperto resta, ferma, la stessa per
+  cercare e aggiungere — le ricerche nella sua tendina, senza ricaricare; prima di aggiungere la pagina si rilegge col suo pulsante
   «Prescrizione», e il controllo di quello che il telefono ha visto si fa su quella. Si chiude dopo
-  l'aggiunta, a ogni dubbio, col foglio chiuso sul telefono, o dopo 2 minuti senza lavoro. Gli stessi controlli (un altro paziente: «Errore grave», niente scritto), la voce con la
+  l'aggiunta, a ogni dubbio, col foglio chiuso sul telefono, o dopo 2 minuti senza lavoro. Se ci entri
+  (anche perché Chrome te la mostra chiudendo la tua) è tua: una pagina come le altre, mai riusata né
+  chiusa dal telefono, e quello che ci scrivi ferma le sue aggiunte. Gli stessi controlli (un altro paziente: «Errore grave», niente scritto), la voce con la
   stessa scritta (una sola, se no si ferma), ogni campo scritto e **riletto** — qualunque cosa non
   torni: si ferma, niente confermato. Poi **preme il «Conferma» della pagina**
   (`TERAPIA_SERIALIZED` lo compone lei; i nascosti non si toccano) e guarda la pagina che torna:
