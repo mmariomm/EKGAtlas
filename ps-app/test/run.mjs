@@ -26,10 +26,14 @@ if (SHOTS) mkdirSync(SHOTS, { recursive: true });
 const SORGENTE = readFileSync(join(root, "src/core.js"), "utf8");
 // (`dove`: quello che la funzione prende dal resto del file, finto)
 function prendi(nome, dove = {}) {
-  const i = SORGENTE.indexOf(`function ${nome}(`);
-  if (i < 0) throw new Error("non trovata: " + nome);
+  const i0 = SORGENTE.indexOf(`function ${nome}(`);
+  if (i0 < 0) throw new Error("non trovata: " + nome);
+  const i = SORGENTE.slice(i0 - 6, i0) === "async " ? i0 - 6 : i0;
+  // (il corpo comincia dopo i parametri, che possono avere graffe loro)
+  let p = SORGENTE.indexOf("(", i0), tonde = 0;
+  for (; p < SORGENTE.length; p++) if (SORGENTE[p] === "(") tonde++; else if (SORGENTE[p] === ")" && !--tonde) break;
   let livello = 0;
-  for (let k = SORGENTE.indexOf("{", i); k < SORGENTE.length; k++) {
+  for (let k = SORGENTE.indexOf("{", p); k < SORGENTE.length; k++) {
     if (SORGENTE[k] === "{") livello++;
     else if (SORGENTE[k] === "}" && !--livello) return new Function(...Object.keys(dove), `${SORGENTE.slice(i, k + 1)}\nreturn ${nome};`)(...Object.values(dove));
   }
@@ -3272,6 +3276,26 @@ async function scenarioDurataConferma() {
   check(scen, caso({ responseStart: 2500 }, t0) === 2500, "con l'ora della risposta: quanto ci ha messo");
   check(scen, caso({ responseStart: 0 }, t0 - 100) === undefined && caso(null, t0 - 100) === undefined,
     `senza l'ora della risposta (o senza la voce della navigazione): nessuna durata, la strada lenta — mai «0,1 s» (got ${caso({ responseStart: 0 }, t0 - 100)})`);
+}
+
+// Il corpo di un PDF si ferma quando si ferma chi lo chiede: la scadenza delle
+// etichette di un ordine (il prossimo ordine non parte con una lettura in
+// volo), la scheda di stampa chiusa. Prima, arrivata la risposta, il corpo
+// restava in volo quanto voleva.
+async function scenarioPdfFermato() {
+  const scen = "pdf-fermato";
+  const O = "https://smarthealth.multimedica.it";
+  class StopError extends Error {}
+  // un PDF che comincia ad arrivare e non finisce mai (il corpo si ferma solo col segnale della richiesta)
+  const fetch = (u, init) => Promise.resolve(new Response(new ReadableStream({
+    start(c) { c.enqueue(new TextEncoder().encode("%PDF-1.4\n")); init.signal.addEventListener("abort", () => c.error(init.signal.reason)); } }),
+  { status: 200, headers: { "content-type": "application/pdf" } }));
+  const fetchPdf = prendi("fetchPdf", { location: { href: `${O}/sa4pso/x`, origin: O }, StopError, cancelloMotore: async () => {}, TIMEOUT_MS: 20000, fetch });
+  const ctl = new AbortController();
+  const p = fetchPdf(`${O}/sa4pso/RcsStampaEtichetteLISHMIMU.do?RICHIESTA_ID=1`, { signal: ctl.signal });
+  setTimeout(() => ctl.abort(), 100);
+  const esito = await Promise.race([p.then(() => "arrivato", (e) => e.name), new Promise((r) => setTimeout(() => r("ancora in volo"), 2000))]);
+  check(scen, esito === "AbortError", `fermato a metà corpo: la lettura si ferma subito, niente resta in volo (got ${esito})`);
 }
 
 async function scenarioPrintHardViewer(browser) {
@@ -8143,6 +8167,7 @@ const scenarios = [
   ["richiesta tutta a mano: la Conferma del gestionale non stampa", scenarioConfermaTuttaAMano],
   ["stampa l'ultima richiesta", scenarioStampaUltima],
   ["durata della Conferma: senza l'ora della risposta, la strada lenta", scenarioDurataConferma],
+  ["un PDF fermato a metà corpo: niente resta in volo", scenarioPdfFermato],
   ["wrong resource refused", scenarioWrongResourceRefused],
   ["missing quesito refused", scenarioMissingQuesito],
   ["quesito RX distinto", scenarioQuesitoRx],

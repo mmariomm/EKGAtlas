@@ -2147,7 +2147,7 @@
       if (signal.aborted) { clearTimeout(tid); throw new DOMException("Aborted", "AbortError"); }
       signal.addEventListener("abort", onAbort, { once: true });
     }
-    let res;
+    let res, buf;
     try {
       try {
         res = await fetch(target.href, { signal: ctl.signal, credentials: "same-origin", cache: "no-store", redirect: "follow" });
@@ -2165,12 +2165,14 @@
         throw new StopError("Il documento sta su un altro server", `rimanda a ${new URL(res.url).origin}`);
       }
       if (!res.ok) throw new StopError(`Il server ha risposto HTTP ${res.status}`, res.statusText || "");
+      // (il tempo è per la risposta; il corpo lo ferma chi chiama — la scheda di stampa chiusa, la scadenza delle etichette di un ordine)
+      clearTimeout(tid);
+      buf = await res.arrayBuffer();
     } finally {
       clearTimeout(tid);
       if (signal) signal.removeEventListener("abort", onAbort);
     }
     const ctype = (res.headers.get("content-type") || "").toLowerCase();
-    const buf = await res.arrayBuffer();
     // Il tipo dichiarato è un'etichetta; i primi cinque byte sono il
     // documento. Un servlet che manda un PDF chiamandolo «text/html» o
     // «application/force-download» manda comunque un PDF, e buttarlo via per
@@ -16431,19 +16433,31 @@
     // ha i suoi (`presi`: le etichette di un ordine in sottofondo — il prossimo
     // ordine aspetta questo, mai a metà: ordinePresi). Chiudere li ferma.
     const ctlPre = new AbortController(), pre = new Map();
+    // (le etichette di un ordine, `presi`: UNA scadenza per tutto quello che si
+    // comincia a leggere per loro — ogni rinvio, il corpo del PDF, anche un
+    // foglio chiesto prima del tempo dal dialogo —, PRESA_SCHEDA_MAX +
+    // TIMEOUT_MS dall'inizio: quanto il service worker aspetta al più prima del
+    // prossimo ordine (PRESA_PDF_MAX). Un foglio chiesto dopo passa dal
+    // cancello del motore, come ogni lettura.)
+    const ctlPresa = new AbortController();
+    if (opzioni.presi) {
+      const t = setTimeout(() => ctlPresa.abort(new DOMException("Timeout", "TimeoutError")), PRESA_SCHEDA_MAX + TIMEOUT_MS);
+      ctlPre.signal.addEventListener("abort", () => { clearTimeout(t); ctlPresa.abort(); }, { once: true });
+    }
     const prendi = (k) => {
       if (!pre.has(k)) {
-        const j = jobs[k];
-        const p = j.diretto ? fetch(j.url, { signal: ctlPre.signal }).then((r) => r.blob()).then((blob) => ({ blob, via: "estensione" }))
-          : fetchPdf(j.url, { signal: ctlPre.signal });
+        const j = jobs[k], signal = opzioni.presi && !ctlPresa.signal.aborted ? ctlPresa.signal : ctlPre.signal;
+        const p = j.diretto ? fetch(j.url, { signal }).then((r) => r.blob()).then((blob) => ({ blob, via: "estensione" }))
+          : fetchPdf(j.url, { signal });
         pre.set(k, p.catch((e) => { pre.delete(k); throw e; }));   // (non arrivato: lo si richiede, se lo si richiede)
       }
       return pre.get(k);
     };
-    // (passati PRESA_SCHEDA_MAX non se ne comincia un altro: quello in volo
-    // finisce entro il suo TIMEOUT_MS, e il service worker aspetta al più la
-    // somma — PRESA_PDF_MAX —, così il prossimo ordine non parte mai mentre una
-    // lettura di questa scheda sposta la richiesta corrente della sessione)
+    // (passati PRESA_SCHEDA_MAX non se ne comincia un altro: quello in volo,
+    // rinvii e corpo compresi, si ferma alla scadenza — ctlPresa —, e il
+    // service worker aspetta al più tanto — PRESA_PDF_MAX —, così il prossimo
+    // ordine non parte mai mentre una lettura di questa scheda sposta la
+    // richiesta corrente della sessione)
     (async () => {
       const t0 = Date.now();
       for (let k = 0; k < jobs.length && !chiuso; k++) {
