@@ -2107,20 +2107,52 @@ await aspettaTel(tel, /ROSSI MARIO/, 10000);
 sezione("3 minuti senza comandi");
 const avanti = (ms) => sw.evaluate((x) => { self.__oraVera = self.__oraVera || Date.now; const v = self.__oraVera; Date.now = () => v() + x; return ponteControlla(); }, ms);
 const orologio = () => sw.evaluate(() => { if (self.__oraVera) Date.now = self.__oraVera; });
+// il telefono che nessuno tocca, sulla Mappa ingrandita e spostata: il ridisegno di ogni 30 secondi la rimette dov'era
+// (uno «scroll» che non è il medico) — niente al PC, e ai 3 minuti si chiude
+{
+  const ultimoPc = () => sw.evaluate(() => pt.sessione && pt.sessione.ultimo);
+  const posMappa = () => tel.evaluate(() => { const m = document.querySelector(".mappa"); return m ? [Math.round(m.scrollLeft), Math.round(m.scrollTop)] : null; });
+  await tocca(tel, '[data-a="modo"][data-m="mappa"]');
+  await tel.waitForSelector(".mappa .letto.vuoto", { timeout: 10000 });
+  await tel.locator(".mappa .letto.vuoto").first().click();   // (ingrandita)
+  await tel.evaluate(() => { const m = document.querySelector(".mappa"); m.scrollLeft = 150; m.scrollTop = 120; });
+  await sospendi(500);
+  const u0 = await ultimoPc(), p0 = await posMappa();
+  await tel.evaluate(() => {
+    const v = Date.now; window.__oraVera = v; Date.now = () => v() + 70e3;   // (passato più di un minuto dall'ultimo comando)
+    window.__ridisegni = 0;
+    new MutationObserver(() => { window.__ridisegni++; }).observe(document.getElementById("app"), { childList: true });
+  });
+  const ridisegnata = await finche(async () => (await tel.evaluate(() => window.__ridisegni)) > 0, 35000);
+  await sospendi(1500);
+  check(ridisegnata && p0 && p0[0] > 0 && JSON.stringify(await posMappa()) === JSON.stringify(p0) && await ultimoPc() === u0,
+    `nessuno tocca, sulla Mappa spostata: il ridisegno la rimette dov'era (${JSON.stringify(p0)}), e non è un comando — niente al PC`);
+  await tel.evaluate(() => { Date.now = () => window.__oraVera() + 3 * 60e3 + 10e3; });
+  check(!!(await aspettaTel(tel, /Sessione chiusa/, 35000)) && await finche(async () => !(await statoPonte())?.sessione, 10000),
+    "…e ai 3 minuti senza un tocco si chiude, sul telefono e sul PC");
+  await tel.evaluate(() => { Date.now = window.__oraVera; document.dispatchEvent(new Event("visibilitychange")); });   // tornati sull'app: si riapre
+  await finche(async () => !!(await statoPonte())?.sessione && await tel.locator('[data-a="modo"][data-m="lista"]').count() === 1, 20000);
+  await tocca(tel, '[data-a="modo"][data-m="lista"]');
+  await tel.evaluate(() => localStorage.removeItem("psassist.ponte.modo"));
+  await aspettaTel(tel, /BIANCHI ANNA/, 10000);
+}
 // (12) il telefono è su un paziente, scheda Esiti: dopo i 3 minuti si riapre lì
 await tocca(tel, '.paz[data-ep="999001"]'); await aspettaTel(tel, /Richieste/, 10000);
 await tocca(tel, '[data-a="scheda"][data-s="esiti"]');
-// il telefono in mano: un tocco o uno scorrere (anche su niente) è il medico che legge — conta come un comando, al più uno al minuto
+// il telefono in mano: un tocco (anche su niente, anche quello che comincia a scorrere) è il medico che legge — conta come un comando, al più uno al minuto
 {
   await sospendi(500);
   const ultimoPc = () => sw.evaluate(() => pt.sessione && pt.sessione.ultimo);
   const u0 = await ultimoPc();
-  await tel.evaluate(() => { document.querySelector("main").dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })); window.dispatchEvent(new Event("scroll")); });
+  await tel.evaluate(() => { const m = document.querySelector("main"); m.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })); m.dispatchEvent(new TouchEvent("touchstart", { bubbles: true })); });
   await sospendi(1200);
   check(await ultimoPc() === u0, "un tocco subito dopo un comando: niente al PC (al più uno al minuto)");
-  // un minuto dopo, sul telefono: scorrere i valori (lo scroll, non un bottone) conta
+  // un minuto dopo, sul telefono: uno «scroll» da solo no (lo fa anche un ridisegno); il dito che comincia a scorrere i valori sì
   await tel.evaluate(() => { const v = Date.now; window.__oraVera = v; Date.now = () => v() + 70e3; document.querySelector("main").dispatchEvent(new Event("scroll")); });
-  check(await finche(async () => (await ultimoPc()) > u0, 6000), "passato un minuto, scorrere col telefono in mano conta come un comando: anche il PC sposta il suo orologio dei 3 minuti");
+  await sospendi(1200);
+  check(await ultimoPc() === u0, "passato un minuto, uno «scroll» senza un dito (lo fa anche il ridisegno): niente al PC");
+  await tel.evaluate(() => document.querySelector("main").dispatchEvent(new TouchEvent("touchstart", { bubbles: true })));
+  check(await finche(async () => (await ultimoPc()) > u0, 6000), "…il dito che comincia a scorrere i valori conta come un comando: anche il PC sposta il suo orologio dei 3 minuti");
   const u1 = await ultimoPc();
   await tel.evaluate(() => document.querySelector("main").dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })));
   await sospendi(1200);

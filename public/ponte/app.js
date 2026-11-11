@@ -2420,15 +2420,17 @@
   setInterval(() => {
     if (!scadenze() && S.fase === "pronta" && !document.activeElement?.id) render();   // i tempi dei promemoria
   }, 30e3);
-  // Il telefono in mano conta: un tocco o uno scorrere, con l'app davanti, è il medico che legge — un referto, i
-  // valori, la mappa — come un comando, al più uno al minuto (`tocco`: il PC sposta il suo orologio dei 3 minuti
-  // come per ogni comando, e non fa altro). Un telefono che nessuno tocca si chiude ai 3 minuti, come prima.
+  // Il telefono in mano conta: un tocco, con l'app davanti, è il medico che legge — un referto, i valori, la
+  // mappa — come un comando, al più uno al minuto (`tocco`: il PC sposta il suo orologio dei 3 minuti come per
+  // ogni comando, e non fa altro). Uno scorrere comincia sempre da un dito che tocca; lo «scroll» da solo no:
+  // lo fa anche il ridisegno, rimettendo la mappa o il foglio dov'erano. Un telefono che nessuno tocca si
+  // chiude ai 3 minuti, come prima.
   const TOCCO_OGNI = 60e3;
   function tocco() {
     if (document.visibilityState !== "visible" || S.fase !== "pronta" || !pronto() || Date.now() - S.ultimo < TOCCO_OGNI) return;
     chiedi("tocco").catch(() => {});
   }
-  for (const t of ["pointerdown", "touchstart", "keydown", "input", "scroll"]) document.addEventListener(t, tocco, { capture: true, passive: true });
+  for (const t of ["pointerdown", "touchstart", "keydown", "input"]) document.addEventListener(t, tocco, { capture: true, passive: true });
 
   // Un QR nuovo inquadrato con l'app già aperta cambia solo il frammento: si
   // riparte da capo, e la partenza decide (anche se chiedere prima).

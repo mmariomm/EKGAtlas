@@ -192,7 +192,8 @@ esami per ROSSI MARIO…»), e la pagina ⋯ → iPhone ha il registro del ponte
 chiuse, comandi, un altro telefono rifiutato).
 
 **La sessione finisce** dopo **3 minuti senza comandi del medico** (quello che l'app chiede da sé —
-rileggere l'elenco, gli ordini — non conta; un tocco o uno scorrere con l'app davanti sì, al più uno al
+rileggere l'elenco, gli ordini — non conta; un tocco con l'app davanti sì (anche quello che comincia a
+scorrere; uno «scroll» da solo no: lo fa anche il ridisegno, che rimette la mappa dov'era), al più uno al
 minuto: `tocco`, che sul PC sposta l'orologio dei 3 minuti e basta — il telefono in mano non si chiude, uno
 lasciato lì sì), con «Scollega» sul PC,
 con la revoca, se l'estensione o il browser si riavviano, o se **una scheda del gestionale torna
