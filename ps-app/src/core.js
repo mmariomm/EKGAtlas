@@ -17684,6 +17684,13 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
           reply({ ok: true });
           return;
         }
+        // la scheda della Terapia tenuta per il telefono (ferma sulla pagina Terapia di quel paziente): il lavoro nuovo, qui
+        if (m.t === "ponteTerapiaLavoro") {
+          const ok = !!PONTE_TERAPIA && !!m.lavoro && m.lavoro.ep === PONTE_TERAPIA.ep && PONTE_TERAPIA.fase === "fermo" && eTerapie();
+          reply({ ok });
+          if (ok) { PONTE_TERAPIA = m.lavoro; ponteTerapiaQui().catch(() => ask({ t: "ponteTerapiaFatto", ok: false, incerto: PONTE_TERAPIA.fase === "inviato", testo: "errore nella scheda" })); }
+          return;
+        }
         if (m.t !== "ponteEsegui") return;
         ponteEsegui(m).then(reply, (e) => reply({ ok: false, errore: `Errore sul PC: ${e?.head || e?.message || e}` }));
         return true;
@@ -17885,7 +17892,9 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
   // (o si ricarica) si guarda e basta.
   async function ponteTerapiaQui() {
     const c = PONTE_TERAPIA;
-    const fine = (esito) => ask({ t: "ponteTerapiaFatto", ...esito });
+    // (finito il lavoro, la scheda tenuta per il telefono aspetta il prossimo: il suo PONTE_TERAPIA è «fermo»)
+    const fine = (esito) => { PONTE_TERAPIA = c ? { ep: c.ep, fase: "fermo" } : null; return ask({ t: "ponteTerapiaFatto", ...esito }); };
+    if (c && c.fase === "fermo") return;
     if (!c || c.fase === "perso") return fine({ ok: false, testo: "la scheda non sa più che cosa fare" });
     const dopo = c.fase === "inviato", ordine = "un ordine sta ancora lavorando sul PC: riprova fra poco";
     if (!eTerapie()) {
@@ -17905,6 +17914,16 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     const altro = terapiaDiChi(form, c.ep, c.nome);
     if (altro) return fine({ ok: false, incerto: dopo, grave: altro });
     if (form.querySelector('table[id^="TerapiaTable"]')?.id !== "TerapiaTable" + c.ep) return fine({ ok: false, incerto: dopo, testo: "non riconosco la tabella delle terapie" });
+    // la scheda tenuta, prima di leggere o di scrivere: la pagina di adesso, col SUO pulsante «Prescrizione» (una
+    // GET) — e il lavoro si fa sulla pagina che torna, coi controlli di sempre
+    if (c.fase === "rileggo") {
+      const a = linkTerapia(c.ep);
+      if (!a) return fine({ ok: false, testo: "nella pagina Terapia non c'è il pulsante «Prescrizione»" });
+      if (!(await terapiaAspetta())) return fine({ ok: false, testo: ordine });
+      const via = await ask({ t: "ponteTerapiaPagina" });
+      if (via && via.ok) a.click();
+      return;
+    }
     const lettura = terapieLette(form, c.ep), v = c.voce;
     // dopo «Conferma»: la terapia è fra le confermate, con un TERAPIA_PROG che prima non c'era?
     if (dopo) {

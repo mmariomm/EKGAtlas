@@ -2308,7 +2308,8 @@
     else if (a === "ristampaQ") ristampa(ep, b.dataset.id, ["etichette", "foglio"].includes(b.dataset.q) ? b.dataset.q : "tutto");
     else if (a === "trileggi") { if (S.tf && !S.tf.stato) S.tf = null; caricaTerapie(ep, false, true); }
     else if (a === "tnuovo") apriFarmaco(ep);
-    else if (a === "tchiudi") { S.tf = null; render(); }
+    // (chiuso il foglio: la scheda della Terapia che il PC teneva aperta per la ricerca non serve più)
+    else if (a === "tchiudi") { S.tf = null; render(); chiedi("terapiaFine", {}, TEMPO, true).catch(() => {}); }
     else if (a === "tpref") scegliFarmaco((S.terapie.get(ep)?.pref || [])[Number(b.dataset.i)]);
     else if (a === "tvoce") scegliFarmaco({ descr: b.dataset.t });
     else if (a === "tscegli") { if (S.tf && !S.tf.stato) { S.tf.passo = "scegli"; S.tf.esito = null; render(); } }

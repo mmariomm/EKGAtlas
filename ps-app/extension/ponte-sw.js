@@ -56,10 +56,11 @@ const PONTE_ALTROVE_MS = 5e3;               // finita su un'altra pagina: tanto 
 const PONTE_PAGINE = { PsoPazienti: "la lista dei pazienti", PsoPazientiAmbulatorio: "la lista dei pazienti", PsoPazientiTriage: "la lista del triage",
   PsoEpisodioClinicoTriage: "la pagina del triage", PsoPsoImposta: "la scelta dell'area", PsoPazientiSmart: "la lista dell'ospedale" };
 const PONTE_CARTELLA_MAX = 60e3;            // salvare la cartella: aprire, controllare, «Conferma», rileggere
-const PONTE_TERAPIE = "ponte.terapie";      // storage.session: le schede aperte per la pagina Terapia (solo { ep, ts })
+const PONTE_TERAPIE = "ponte.terapie";      // storage.session: le schede aperte per la pagina Terapia (solo { ep, ts, fermo? })
 const PONTE_TERAPIA = "ponte.terapia";      // storage.session: l'ultima lettura delle terapie di ogni paziente (memoria, mai disco)
 const PONTE_TERAPIA_RQ = "ponte.terapia.rq"; // storage.session: le terapie mandate dal telefono, per numero: { fase, esito }
 const PONTE_TERAPIA_MAX = 90e3;             // la pagina Terapia: il paziente, il pulsante, la tendina, «Conferma», rileggere
+const PONTE_TERAPIA_FERMA = 2 * 60e3;       // la scheda della Terapia tenuta per il telefono: 2 minuti senza lavoro, e si chiude
 // i campi della cartella (modulo AmbulatorioPSO) che il telefono può chiedere di scrivere:
 // se lo sono davvero lo dice la pagina, campo per campo (readonly, disabled)
 const PONTE_CARTELLA_CAMPI = { ANAMNESI: "Anamnesi", MALATTIE_PREGRESSE: "Anamnesi remota", FARMACI_ASSUNTI: "Farmaci", ALLERGIE: "Allergie", ESAME_OBIETTIVO: "Esame obiettivo" };
@@ -236,7 +237,8 @@ async function ponteControlla() {
     if (ora - v.ts > PONTE_CARTELLA_MAX + 5e3) await ponteCartellaFine(Number(id), { ok: false, incerto: true, testo: "la scheda non ha finito in tempo" });
   }
   for (const [id, v] of Object.entries(await ponteTerapieTutte())) {
-    if (ora - v.ts > PONTE_TERAPIA_MAX + 5e3) await ponteTerapiaFine(Number(id), { ok: false, incerto: true, testo: "la scheda non ha finito in tempo" });
+    // (tenuta, senza lavoro: dopo 2 minuti si chiude — anche se il service worker è ripartito e non lo sa più)
+    if (v.fermo ? ora - v.ts > PONTE_TERAPIA_FERMA : ora - v.ts > PONTE_TERAPIA_MAX + 5e3) await ponteTerapiaFine(Number(id), { ok: false, incerto: !v.fermo, testo: "la scheda non ha finito in tempo" });
   }
   for (const [id, v] of Object.entries(await ponteAccetteTutte())) {
     if (ora - v.ts > PONTE_ACCETTA_MAX + 5e3) await ponteAccettaFine(Number(id), { ok: false, incerto: true, testo: "la scheda non ha finito in tempo" });
@@ -367,6 +369,7 @@ async function ponteFine(perche) {
   if (!s) return;
   pt.sessione = null;
   await chrome.storage.session.remove([PONTE_CARTELLA, PONTE_TERAPIA]).catch(() => {});   // le cartelle e le terapie lette per il telefono: via con la sessione
+  await ponteTerapiaBasta().catch(() => {});   // (e la scheda della Terapia tenuta per il telefono)
   pt.fine = { perche, testo: ponteFrase(perche), ts: ponteOra() };
   ponteNota(`Sessione con l'iPhone chiusa — ${pt.fine.testo}`);
   try { ponteManda(await s.canale.cifra({ evento: "fine", perche, testo: pt.fine.testo })); } catch { /* la presa è giù: lo saprà dal «riparti» */ }
@@ -415,7 +418,7 @@ const PONTE_DA_SE = new Set(["ciao", "ordini"]);
 const PONTE_LETTURA = new Set([
   "ciao", "esci", "ordini", "tocco",
   "pazienti", "triage", "mappa", "eo",
-  "esiti", "aggiornaValori", "richieste", "cartella", "terapie",
+  "esiti", "aggiornaValori", "richieste", "cartella", "terapie", "terapiaFine",
   "pdf", "ristampe", "ristampa", "stampa",   // «stampa»: un PDF del telefono sull'A4 di QUESTO PC (non scrive nel gestionale)
   "stampaReferto",                            // un referto già salvato su questo PC, stampato (non scrive nel gestionale)
 ]);
@@ -493,6 +496,7 @@ async function ponteRisposta(s, d) {
     if (d.cmd === "terapie") return await ponteTerapie(ponteArgomenti(d));
     if (d.cmd === "terapiaCerca") return await ponteTerapiaCerca(d);
     if (d.cmd === "terapiaAggiungi") return await ponteTerapiaAggiungi(d);
+    if (d.cmd === "terapiaFine") return await ponteTerapiaBasta();
     if (d.cmd === "accetta") return await ponteAccetta(d);
     // il QR di una stazione di stampa, inquadrato dal telefono: il PC la collega (stazione-sw.js)
     if (d.cmd === "stazioneCollega" && typeof stazioneCollega === "function") {
@@ -873,9 +877,9 @@ async function ponteLavoroDi(tabId) {
   if (c) return { ponteCartella: { ep: c.ep, fase: c.fase, campi: c.campi } };
   const a = (await ponteCartelleTutte())[tabId];
   if (a) return { ponteCartella: { ep: a.ep, fase: "perso" } };
-  // la scheda della Terapia: che cosa fare, e a che punto (dopo «Conferma» si guarda e basta)
+  // la scheda della Terapia: che cosa fare, e a che punto (dopo «Conferma» si guarda e basta; tenuta, aspetta)
   const w = pt.terapie.get(tabId);
-  if (w) return { ponteTerapia: { ep: w.ep, nome: w.nome, fase: w.fase, cosa: w.job.cosa, q: w.job.q, voce: w.job.voce, visti: w.job.visti, prima: w.prima } };
+  if (w) return { ponteTerapia: w.fermo ? { ep: w.ep, fase: "fermo" } : ponteTerapiaLavoro(w) };
   const b = (await ponteTerapieTutte())[tabId];
   if (b) return { ponteTerapia: { ep: b.ep, fase: "perso" } };
   // la scheda di «Accetta in ambulatorio»: chi, e a che punto (dopo il clic si guarda e basta)
@@ -1184,18 +1188,66 @@ const ponteTerapieCambia = (fn) => (ponteFilaTerapie = ponteFilaTerapie.then(asy
   await chrome.storage.session.set({ [PONTE_TERAPIE]: v });
   return r;
 }).catch(() => null));
-// la scheda di sottofondo, come quella della cartella — una alla volta
+// la scheda di sottofondo, come quella della cartella — una alla volta. Finita
+// bene una lettura o una ricerca, resta ferma sulla pagina Terapia (`fermo`) e
+// il lavoro dopo la riusa: la ricerca lì dov'è (la tendina della pagina), una
+// lettura o un'aggiunta prima rileggono la pagina col suo pulsante «Prescrizione»
+// (una GET: lo stato di adesso, `visti` compreso, subito prima di scrivere).
+// Si chiude dopo un'aggiunta, a ogni dubbio, col foglio «＋ Farmaco» chiuso sul
+// telefono (`terapiaFine`), a fine sessione, per un altro paziente, e dopo 2
+// minuti senza lavoro. Una scheda in cui il medico è entrato non si riusa più.
 let ponteFilaTerapia = Promise.resolve();
 function ponteTerapiaSotto(url, ep, nome, job) {
   const p = ponteFilaTerapia.then(() => ponteTerapiaSottoOra(url, ep, nome, job));
   ponteFilaTerapia = p.catch(() => {});
   return p;
 }
+// che cosa deve fare la scheda (quello che risponde a «chi sono?», e il lavoro nuovo di una scheda tenuta)
+const ponteTerapiaLavoro = (w) => ({ ep: w.ep, nome: w.nome, fase: w.fase, cosa: w.job.cosa, q: w.job.q, voce: w.job.voce, visti: w.job.visti, prima: w.prima });
+// la scheda tenuta per questo paziente: ferma, ancora sulla sua pagina Terapia, e il medico non la sta guardando
+async function ponteTerapiaTenuta(ep) {
+  for (const [id, w] of pt.terapie) {
+    if (!w.fermo || w.ep !== ep) continue;
+    const t = await chrome.tabs.get(id).catch(() => null);
+    let suo = false;
+    try { suo = !!t && sulGestionale(t.url) && new URL(t.url).searchParams.get("MVPG") === "PsoEpisodioTerapieImposta" && new URL(t.url).searchParams.get("EPISODIO_ID") === ep; } catch { /* no */ }
+    if (t && suo && !t.active && !t.discarded) return id;
+  }
+  return 0;
+}
+// un lavoro nuovo alla scheda tenuta; null se non lo prende (allora se ne apre un'altra)
+async function ponteTerapiaRiusa(id, nome, job) {
+  const w = pt.terapie.get(id);
+  if (!w || !w.fermo) return null;
+  let risolvi;
+  const promessa = new Promise((r) => { risolvi = r; });
+  Object.assign(w, { nome, job, fase: job.cosa === "cerca" ? "pagina" : "rileggo", fermo: false, prima: [], risolvi });
+  await ponteTerapieCambia((v) => { v[id] = { ep: w.ep, ts: ponteOra() }; });
+  const tempo = setTimeout(() => ponteTerapiaFine(id, { ok: false, incerto: pt.terapie.get(id)?.fase === "inviato", testo: "la scheda non ha finito in tempo" }), PONTE_TERAPIA_MAX);
+  const r = await chrome.tabs.sendMessage(id, { t: "ponteTerapiaLavoro", lavoro: ponteTerapiaLavoro(w) }).catch(() => null);
+  if (!r || !r.ok) {
+    clearTimeout(tempo);
+    if (pt.terapie.get(id) === w) { w.risolvi = null; await ponteTerapiaFine(id, { ok: false }); }
+    return null;
+  }
+  const esito = await promessa;
+  clearTimeout(tempo);
+  return esito;
+}
+// la scheda tenuta non serve più (il foglio chiuso sul telefono, la sessione finita, un altro paziente): via;
+// una che lavora ancora, finito il lavoro, si chiude invece di restare
+async function ponteTerapiaBasta() {
+  for (const [id, w] of [...pt.terapie]) { if (w.fermo) await ponteTerapiaFine(id, { ok: false }); else w.basta = true; }
+  return { ok: true };
+}
 async function ponteTerapiaSottoOra(url, ep, nome, job) {
   let u;
   try { u = new URL(url); } catch { return { ok: false, testo: "indirizzo del paziente non valido" }; }
   if (!leggibileOrd(url) || u.searchParams.get("EPISODIO_ID") !== ep) return { ok: false, testo: "indirizzo del paziente inatteso" };
   if (typeof dopoIlMotore === "function") await dopoIlMotore();   // (mai una pagina del gestionale mentre un motore inserisce: bg.js)
+  const tenuta = await ponteTerapiaTenuta(ep);
+  if (tenuta) { const e = await ponteTerapiaRiusa(tenuta, nome, job); if (e) return e; }
+  await ponteTerapiaBasta();   // (una scheda sola: quella di un altro paziente, o non più buona, via)
   const davanti = (await ponteSchede())[0];
   const vuota = { url: "about:blank", active: false };
   const t = await chrome.tabs.create(davanti ? { ...vuota, windowId: davanti.windowId, index: davanti.index + 1 } : vuota)
@@ -1214,14 +1266,23 @@ async function ponteTerapiaSottoOra(url, ep, nome, job) {
   clearTimeout(tempo);
   return esito;
 }
-async function ponteTerapiaFine(id, esito) {
+// finita: la risposta a chi aspetta, e la scheda chiusa (se il medico non la sta guardando) — o, con `tieni`
+// (una lettura o una ricerca riuscite, sulla pagina Terapia), tenuta lì, ferma, per il lavoro dopo
+async function ponteTerapiaFine(id, esito, tieni = false) {
   const w = pt.terapie.get(id);
+  if (tieni && w && !w.basta) {
+    const risolvi = w.risolvi;
+    Object.assign(w, { fase: "fermo", fermo: true, job: null, risolvi: null, prima: [] });
+    await ponteTerapieCambia((v) => { v[id] = { ep: w.ep, ts: ponteOra(), fermo: true }; });
+    if (risolvi) risolvi(esito);
+    return true;
+  }
   pt.terapie.delete(id);
   const c = await ponteTerapieCambia((v) => { const c = v[id]; delete v[id]; return c; });
   if (!c && !w) return false;
   const t = await chrome.tabs.get(id).catch(() => null);
   if (t && !t.active) await chrome.tabs.remove(id).catch(() => {});
-  if (w) w.risolvi(esito);
+  if (w && w.risolvi) w.risolvi(esito);
   return true;
 }
 
@@ -1510,11 +1571,11 @@ function ponteDaPagina(msg, sender, reply) {
       return { ok: true };
     });
   }
-  // la scheda della Terapia sta per premere il pulsante «Terapia» del paziente
+  // la scheda della Terapia sta per premere il pulsante «Terapia» del paziente (o, tenuta, il «Prescrizione» della pagina)
   if (msg.t === "ponteTerapiaPagina" && gestionale) {
     return fai(async () => {
       const w = pt.terapie.get(sender.tab.id);
-      if (!w || w.fase !== "apro") return { ok: false };
+      if (!w || (w.fase !== "apro" && w.fase !== "rileggo")) return { ok: false };
       w.fase = "pagina";
       return { ok: true };
     });
@@ -1543,7 +1604,8 @@ function ponteDaPagina(msg, sender, reply) {
       if (l && l.ep === w.ep) esito.lettura = l;
       if (ok && cosa === "cerca") esito.voci = (Array.isArray(msg.voci) ? msg.voci : []).filter((x) => typeof x === "string").map((x) => x.slice(0, 200)).slice(0, 40);
       if (ok && cosa === "aggiungi") esito.riga = (ponteTerapiaPulita({ righe: [msg.riga] }) || { righe: [] }).righe[0] || null;
-      return { ok: await ponteTerapiaFine(id, esito) };
+      // (una lettura o una ricerca riuscite: la scheda resta, ferma sulla pagina, per il lavoro dopo; un'aggiunta la chiude)
+      return { ok: await ponteTerapiaFine(id, esito, ok && cosa !== "aggiungi") };
     });
   }
   // la scheda di «Accetta in ambulatorio» ha la riga, e sta per cliccare la sua freccia:

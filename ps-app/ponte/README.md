@@ -377,7 +377,7 @@ ordine o un promemoria non passa poi alla scheda dopo (sarebbero due). Mai un si
 **I comandi** (e solo questi, con argomenti controllati uno per uno): `pazienti`, `esiti(ep)`,
 `aggiornaValori(ep)`, `richieste` (il catalogo, con `ultimi`: per paziente ed esame quello che il PC scrive accanto al nome — ore tornate, in attesa da quando, rosso da quando; con una stazione di stampa collegata, `stampa: {stazione, dove}`), `ordina(ep, oid, esami, quesito, mio, nato, dest?)`, `nota(ep,
 testo)`, `promemoria(ep, testo)`, `fatto(ep, id)`, `cartella(ep, rileggi?)`, `cartellaSalva(ep, campi: {NOME:
-{prima, dopo}})`, `terapie(ep, rileggi?)`, `terapiaCerca(ep, q)`, `terapiaAggiungi(ep, rq, voce, visti)`, `accetta(k | ep, rq)`, `ristampe(ep)` (per richiesta anche `et` e `fo`: quante etichette e quanti fogli), `ristampa(ep, rid, oid, dest?, quali?)` (`quali`: `etichette` | `foglio` | `tutto`), `pdf(ep, ref, i)`, `stampa(rid, i, n, size, b)`, `stampaReferto(ep, ref, rid, dest?)`, `stazioneCollega(sta, nome)`,
+{prima, dopo}})`, `terapie(ep, rileggi?)`, `terapiaCerca(ep, q)`, `terapiaAggiungi(ep, rq, voce, visti)`, `terapiaFine` (il foglio «＋ Farmaco» chiuso), `accetta(k | ep, rq)`, `ristampe(ep)` (per richiesta anche `et` e `fo`: quante etichette e quanti fogli), `ristampa(ep, rid, oid, dest?, quali?)` (`quali`: `etichette` | `foglio` | `tutto`), `pdf(ep, ref, i)`, `stampa(rid, i, n, size, b)`, `stampaReferto(ep, ref, rid, dest?)`, `stazioneCollega(sta, nome)`,
 più `ciao`/`esci`/`tocco`/`ordini` per la sessione e lo stato degli ordini. Niente navigazione libera, niente script, niente appunti. L'ordine passa per
 `ordineNuovo` come «Conferma e stampa», col numero `"tel" + oid` (l'`oid` lo fa il telefono quando
 arma «Conferma», `^[\w-]{8,24}$`: chiesto due volte, è un ordine solo — `ordiniVisti` in `bg.js`),
@@ -418,8 +418,14 @@ Rimandato dopo una risposta persa, lo stesso salvataggio trova `prima` cambiato 
 volte. Nel registro degli errori (`segnaErrore`) solo il perché e i nomi dei campi, mai un testo.
 
 **La Terapia.** La pagina Terapia del gestionale (`PsoEpisodioTerapieImposta`), sempre da una scheda
-di sottofondo (`ponte.terapie`, una alla volta) aperta sulla pagina del paziente, che preme il suo
-pulsante «Terapia» e fa una cosa sola (`ponteTerapiaQui` in `core.js`). `terapie` dà l'ultima
+di sottofondo (`ponte.terapie`, una sola) aperta sulla pagina del paziente, che preme il suo
+pulsante «Terapia» e fa il lavoro chiesto (`ponteTerapiaQui` in `core.js`). Finita bene una lettura o
+una ricerca, la scheda resta ferma sulla pagina Terapia (`fermo`) e il lavoro dopo la riusa
+(`ponteTerapiaLavoro`): una ricerca lì dov'è, nella tendina della pagina; una lettura o un'aggiunta
+prima rileggono la pagina col suo pulsante «Prescrizione» (una GET: lo stato di adesso, subito prima
+di scrivere). Si chiude dopo un'aggiunta, a ogni dubbio, quando il foglio «＋ Farmaco» si chiude sul
+telefono (`terapiaFine`), a fine sessione, per un altro paziente, dopo 2 minuti senza lavoro; una
+scheda in cui il medico è entrato non si riusa. `terapie` dà l'ultima
 lettura (`ponte.terapia`: le righe confermate e le voci delle tendine, niente note né nascosti; dalla
 pagina aperta dal medico o da una scheda così, con un iPhone associato, via a fine sessione) o, con
 `rileggi`, la pagina riletta, più i preferiti del PC; senza `ep` dice solo che il comando c'è (un PC

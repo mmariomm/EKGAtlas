@@ -2042,9 +2042,12 @@ nella tendina del gestionale») — poi **Prepara nel gestionale** (o Ctrl+Invio
   riporta solo le scritte delle voci; due voci uguali dal telefono non si scelgono). Dose, unità e
   via in vista; diluizione, frequenza, durata, continua e al bisogno dietro «Altro»; mai le note,
   mai l'ora. Un riepilogo col nome, e **«Conferma per ROSSI M.»**: un farmaco per Conferma.
-  Il PC fa il giro di sempre in una **scheda di sottofondo** (comandi `terapie`, `terapiaCerca`,
-  `terapiaAggiungi`): la pagina del paziente, il **suo** pulsante «Terapia» (mai un indirizzo fatto
-  da noi), gli stessi controlli (un altro paziente: «Errore grave», niente scritto), la voce con la
+  Il PC fa il giro di sempre in **una scheda di sottofondo**, la stessa per leggere, cercare e
+  aggiungere (comandi `terapie`, `terapiaCerca`, `terapiaAggiungi`): la pagina del paziente, il **suo**
+  pulsante «Terapia» (mai un indirizzo fatto da noi), e lì resta, ferma, finché serve — le ricerche nella
+  sua tendina, senza ricaricare; prima di aggiungere la pagina si rilegge col suo pulsante
+  «Prescrizione», e il controllo di quello che il telefono ha visto si fa su quella. Si chiude dopo
+  l'aggiunta, a ogni dubbio, col foglio chiuso sul telefono, o dopo 2 minuti senza lavoro. Gli stessi controlli (un altro paziente: «Errore grave», niente scritto), la voce con la
   stessa scritta (una sola, se no si ferma), ogni campo scritto e **riletto** — qualunque cosa non
   torni: si ferma, niente confermato. Poi **preme il «Conferma» della pagina**
   (`TERAPIA_SERIALIZED` lo compone lei; i nascosti non si toccano) e guarda la pagina che torna:
@@ -2443,7 +2446,8 @@ nella tendina del gestionale») — poi **Prepara nel gestionale** (o Ctrl+Invio
 20. **Una terapia dal telefono: un «Conferma», una volta, e visto.** È l'unica Conferma che il
     programma preme nella pagina Terapia, perché il medico l'ha scelto: il suo tocco su
     «Conferma per …» dopo il riepilogo. Prima del clic: la pagina aperta col pulsante del
-    paziente, l'episodio (indirizzo e modulo), il nome e la tabella — se no «Errore grave» —; la
+    paziente (o, nella scheda tenuta dalla ricerca, riletta col suo pulsante «Prescrizione» subito
+    prima: mai una pagina di prima), l'episodio (indirizzo e modulo), il nome e la tabella — se no «Errore grave» —; la
     voce della tendina con la stessa scritta, una sola; ogni campo riletto (quello non scritto
     com'era, le note e l'ora sempre vuote); nessuna terapia con quel farmaco confermata dopo la
     lettura del telefono; nessun ordine al lavoro; la Terapia di quel paziente non toccata in una
