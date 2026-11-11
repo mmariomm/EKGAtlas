@@ -1110,15 +1110,21 @@
   // dire com'è fatto è la sua pagina. La si copia SENZA numeri
   // (identificativi, date, token) e senza i valori dei campi: resta la
   // struttura, che è quello che serve per adattare il lettore.
+  // Il codice fiscale e le date intere, prima delle cifre: «VRDCRL50C12F###Z» e
+  // «12/03/###» direbbero ancora nome, nascita e sesso.
   function mascheraDiagnosi(html) {
     return String(html || "")
       .replace(/(value\s*=\s*")[^"]*(")/gi, "$1…$2")
       .replace(/(value\s*=\s*')[^']*(')/gi, "$1…$2")
+      .replace(/(?<![A-Za-z0-9])(?=[A-Za-z]{0,15}\d)[A-Za-z]{6}[\dLMNPQRSTUV]{2}[A-Za-z][\dLMNPQRSTUV]{2}[A-Za-z][\dLMNPQRSTUV]{3}[A-Za-z](?![A-Za-z0-9])/g, "[CF]")
+      .replace(/(?<![\d/.-])\d{1,2}([/.-])\d{1,2}\1(?:\d{4}|\d{2})(?!\d)/g, "[data]")
+      .replace(/(?<!\d)(?:1[89]|20)\d{2}-\d{1,2}-\d{1,2}(?!\d)/g, "[data]")
       .replace(/\d{3,}/g, "###")
       .slice(0, 16000);
   }
-  // il quesito è l'unico testo clinico che può finire nel Registro: fuori dalla pagina (⧉ Copia, lo zip) non esce
-  const senzaQuesito = (t) => String(t).replace(/(quesito[^:]*:\s*)"[^"]*"/gi, '$1"…"');
+  // il quesito è l'unico testo clinico che può finire nel Registro: fuori dalla pagina (⧉ Copia, lo zip) non esce.
+  // Una riga del Registro alla volta: da «quesito …: "» alla fine, anche se il quesito ha altre virgolette o un a capo.
+  const senzaQuesito = (t) => String(t).replace(/(quesito[^:\n]*:\s*)"[\s\S]*/i, '$1"…"');
   function diagnosiTesto(d) {
     if (!d) return "";
     let dove = String(d.url || "");
@@ -12780,10 +12786,12 @@
       const cfs = [...new Set(testo.match(new RegExp(CF_UNO.source, "g")) || [])].slice(0, 3);
       const date = [...new Set(testo.match(/\b\d{1,2}\/\d{1,2}\/\d{4}\b/g) || [])].slice(0, 3);
       const chi = this.identitaPaz();
+      // (della nascita solo se torna: le date sono poche, la loro impronta si rovescia in un attimo)
+      const lette = date.map(improntaNascita).filter(Boolean), sua = improntaNascita(chi.nascita);
       const voce = { ts: Date.now(), ep: String(this.episodeId || ""), referto: e.id, via: id.via || "",
-        cfLetti: cfs.map(impronta), cfPaziente: chi.cfImp || "", nascitaLette: date.map(improntaNascita).filter(Boolean), nascitaPaziente: improntaNascita(chi.nascita) };
+        cfLetti: cfs.map(impronta), cfPaziente: chi.cfImp || "", nascita: !lette.length || !sua ? "non confrontate" : lette.includes(sua) ? "uguali" : "diverse" };
       segnaErrore("identita", voce);
-      this.log(`${now()}  ERRORE GRAVE: il PDF di ${shortLabel(e.label)} (referto ${e.id}) è di un altro paziente (${voce.via}) — non tenuto, non mostrato · impronte CF ${voce.cfLetti.join(",") || "—"} contro ${voce.cfPaziente || "—"} · nascita ${voce.nascitaLette.join(",") || "—"} contro ${voce.nascitaPaziente || "—"}`);
+      this.log(`${now()}  ERRORE GRAVE: il PDF di ${shortLabel(e.label)} (referto ${e.id}) è di un altro paziente (${voce.via}) — non tenuto, non mostrato · impronte CF ${voce.cfLetti.join(",") || "—"} contro ${voce.cfPaziente || "—"} · date di nascita ${voce.nascita}`);
       this.segnala({ tag: "Errore grave", testo: GRAVE_ALTRO, tono: "err", paziente: this.nomePaziente() || "", ...this.avvisoVisto() });
     }
     async leggiTesto(e, buf, { soloIdentita = false } = {}) {
@@ -14020,7 +14028,7 @@
     // can end up in it, so it is masked out before leaving the page.
     async copyLog() {
       const head = [`PS Assist ${VERSION} · pagina ${this.pageType}`, `${navigator.userAgent}`, `${new Date().toLocaleString("it-IT")}`, ""].join("\n");
-      const text = head + senzaQuesito(this.logLines.join("\n"));
+      const text = head + this.logLines.map(senzaQuesito).join("\n");
       const ok = await copiaTesto(text);
       const b = this.root.querySelector("#copylog");
       segnaCopia(b, ok);

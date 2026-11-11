@@ -1864,8 +1864,9 @@ e i tempi veri e costruire una «palestra» che si comporti come il gestionale. 
 menu, **⋯ → Registrazioni**: in cima **● Registra / Ferma e salva**, poi le registrazioni salvate
 (**Scarica** c'è sempre, anche con «restano N dati da controllare»), e in fondo, chiuso, il
 **Registro** delle operazioni con **⧉ Copia**. Ogni zip porta da sé il Registro dei pannelli di quei
-minuti (`testi/registro.txt`, senza il quesito) e la **diagnosi** di ogni documento che non si è
-lasciato leggere (`testi/diagnosi-N.txt`: la struttura, senza numeri né valori), anonimizzati come
+minuti (`testi/registro.txt`, senza il quesito, col testo dei promemoria inventato e ogni numero di 5
+cifre o più rimappato come un identificativo) e la **diagnosi** di ogni documento che non si è
+lasciato leggere (`testi/diagnosi-N.txt`: la struttura, senza numeri né valori, codici fiscali e date come `[CF]` e `[data]`), anonimizzati come
 le pagine e ricontrollati dal cancello. Col preferito (bookmarklet) la voce mostra solo il Registro.
 
 - **● Registra** (solo con l'**estensione**) fa partire; la pill e
@@ -1914,7 +1915,7 @@ le pagine e ricontrollati dal cancello. Col preferito (bookmarklet) la voce most
   stesso indirizzo appena aperto — il riepilogo lo dice.
 - **Il registro degli errori** (`errori.json` nello zip, e quanti in `riepilogo.txt`): l'estensione
   annota da sola, in un posto solo (`storage.local`, «errori.v1», al più 500 voci), ogni errore suo
-  — un PDF di un altro paziente (impronte di codice fiscale e data di nascita, mai i dati), un
+  — un PDF di un altro paziente (impronte di codice fiscale e, della nascita, solo «diverse», mai i dati), un
   ordine fermato o non confermato, un foglio non stampato o l'aiutante che non risponde, un
   referto non preso, un errore del Ponte, un'eccezione del pannello o del service worker. Ogni
   voce: ora, tipo, versione, pagina (solo l'MVPG) e numeri, codici, messaggi del nostro codice —
@@ -1933,7 +1934,10 @@ le pagine e ricontrollati dal cancello. Col preferito (bookmarklet) la voce most
   e ne esce solo anonimizzato, nello zip, **qui**, con lo stesso metodo di `tools/esempi.mjs`: ogni
   testo diventa inventato a meno che sia vocabolario del programma (compare per almeno **due
   pazienti diversi**, o nelle pagine di esempio, o nel catalogo); nomi → nomi finti sempre uguali
-  per la stessa persona; personale e utenti → `OPERATORE n` / `UTENTEn`; codici fiscali, date di
+  per la stessa persona — anche i pazienti che l'estensione conosce (la lista del pannello, quelli
+  aperti, gli ordini) dove nessuna pagina li mostra, come il Registro di un'altra scheda; nel
+  Registro un COGNOME NOME in maiuscolo senza parole del programma o cliniche diventa un nome finto
+  solo lì (mai nelle pagine, né dentro il markup della diagnosi); personale e utenti → `OPERATORE n` / `UTENTEn`; codici fiscali, date di
   nascita, tessere, telefoni, indirizzi, email tolti; anamnesi, esame obiettivo, diario, note,
   allergie → testo inventato della stessa lunghezza; episodi, richieste, referti → altri numeri,
   sempre gli stessi (i collegamenti restano); ospedale e fornitore → `OSPEDALE ESEMPIO`. Dei PDF

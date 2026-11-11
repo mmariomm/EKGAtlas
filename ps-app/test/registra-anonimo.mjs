@@ -432,7 +432,18 @@ check(!nomi.includes("eviewer.json") && !/Visualizzatore di immagini/.test(riep)
   const fintoRossi = (/<h1>([^<]+)<\/h1>/.exec(rf.files["pagine/001-PsoEpisodioClinicoAmbulatorio.html"]) || [])[1];
   check(fintoRossi && rf.files["pagine/001-PsoEpisodioClinicoAmbulatorio.html"].includes(`Cartella di ${fintoRossi.split(" ").reverse().join(" ")} aperta`),
     `il nome girato diventa il nome finto girato (${fintoRossi})`);
-  check(/s_ASSISTITO=ESEMPIO&amp;NOME=ESEMPIO/.test(tf), "e nell'indirizzo il nome vero non c'è più");
+  // e nell'indirizzo (la ricerca per nome della lista Smart): il nome finto di quella persona, lo stesso della pagina
+  const nell = [1, 2, 3].map((i) => { const p = rf.files[`pagine/00${i}-PsoEpisodioClinicoAmbulatorio.html`] || "", f = ((/<h1>([^<]+)<\/h1>/.exec(p) || [])[1] || "").replace(/ /g, "+");
+    return [f, !!f && p.includes(`s_ASSISTITO=${f}&amp;NOME=${f}`)]; });
+  check(nell.every(([, ok]) => ok), `e nell'indirizzo il nome vero non c'è più: c'è il nome finto della stessa persona (${nell.map(([f]) => f).join(", ")})`);
+  // …anche nei moduli inviati, per un paziente che l'estensione conosce
+  const rq = anonimizza({ inizio: T3, origini: { gestionale: G }, nomi: ["GRECO OTTAVIO"], pagine: [pagA("150101", "ROSSI MARIO", 1)],
+    flusso: [{ metodo: "POST", url: `${G}/sa4pso/restrict/menuPsoEpisodio.do?ccsForm=Ricerca&MVPG=PsoPazientiSmart&s_ASSISTITO=GRECO+OTTAVIO`, tipo: "main_frame", scheda: 1,
+      inizio: T3 + 3000, fine: T3 + 3100, stato: 200, corpo: { s_ASSISTITO: ["GRECO OTTAVIO"], s_ALTRO: ["ROSSI"] } }],
+    testi: [{ nome: "registro.txt", testo: "08:00  cercato Greco Ottavio" }] }, { vocabolario, sfasamento: 30, diagnosi: true });
+  const rqf = JSON.parse(rq.files["flusso.json"]).richieste[0], fg = (/cercato (\S+ \S+)/.exec(rq.files["testi/registro.txt"]) || [])[1] || "";
+  check(fg && fg !== "Greco Ottavio" && rqf.corpo.s_ASSISTITO[0] === fg.toUpperCase() && rqf.url.endsWith(`s_ASSISTITO=${fg.toUpperCase().replace(" ", "+")}`) && rqf.corpo.s_ALTRO[0] === "ESEMPIO" && rq.gate.ok,
+    `nel modulo e nell'indirizzo del flusso lo stesso nome finto del Registro (${fg}); quello che non è una persona vista resta ESEMPIO`);
 }
 
 // -------------- date, numeri, telefoni e email scritti in un altro modo, in attributi e script
@@ -467,6 +478,139 @@ check(!nomi.includes("eviewer.json") && !/Visualizzatore di immagini/.test(riep)
   check(tt.includes(`per ${fintoP1} ,`) || tt.includes(`per ${fintoP1},`), `il paziente delle pagine ha lo stesso nome finto (${fintoP1})`);
   check(tt.includes(`EPISODIO_ID=${epFinto}`) && /09:12 /.test(tt) && /09:30 Conferma 2\/2 provata/.test(tt), "lo stesso episodio finto, e orari e frasi del programma restano");
   check(rt.gate.ok, `e il cancello passa (${rt.gate.punti})`);
+}
+
+// -------------- il Registro e la diagnosi in maiuscolo: le parole cliniche e il markup restano
+// Un COGNOME NOME in maiuscolo in mezzo a una riga del Registro è solo un indizio: si sostituisce
+// lì, mai nelle pagine; non se ha parole del programma o cliniche («ERRORE GRAVE», «SCOMPENSO
+// CARDIACO»), né dentro il markup («DOCTYPE HTML PUBLIC», «TD CLASS»), né nella diagnosi (che è la
+// struttura di una pagina). I pazienti che l'estensione conosce (`raccolta.nomi`) sono persone
+// come quelle delle pagine: lo stesso nome finto ovunque, e il cancello li cerca ovunque.
+{
+  const T5 = Date.UTC(2026, 9, 29, 8, 0, 0);
+  const pag = { url: `${G}/sa4pso/restrict/menuPso.do?MVPG=PsoEpisodioClinicoAmbulatorio&EPISODIO_ID=150101`, ts: T5 + 1000, scheda: 1, alto: true,
+    html: `<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"><html><head><meta http-equiv="Content-Type" content="text/html; charset=windows-1252"><title>x</title>
+  <script language="JavaScript">function f(){}</script></head><body><table border="0"><tr><td class="AFCColumnTD">Assistito</td><td>${P1.nome}</td></tr></table>
+  <form><input type="hidden" name="EPISODIO_ID" value="150101"></form><table><tr><td class="AFCDataTD">Fibrillazione atriale</td><td>EMOCROMO COMPLETO</td></tr></table></body></html>` };
+  const pdf = { url: `${G}/sa4/restrict2/Sa4ViewerExtRedirect.do?REFERTO_ID=1234567`, ts: T5 + 2000, righe: ["REFERTO", `Paziente: ${P1.nome}`, "Terapia: KETOROLAC TROMETAMINA 30 MG"], origine: "estensione" };
+  const marcato = `<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN"><HTML><HEAD><META HTTP-EQUIV="Content-Type" CONTENT="text/html"><SCRIPT LANGUAGE="JavaScript">var a=1;</SCRIPT></HEAD>
+<BODY><TABLE BORDER="0"><TR><TD CLASS="x">FIBRILLAZIONE ATRIALE</TD></TR><TR><TD>EMOCROMO COMPLETO</TD></TR></TABLE><INPUT TYPE="hidden" NAME="x" VALUE="…"></BODY></HTML>`;
+  const diag = ["PS Assist 3.86 · 08:01 · referto EMOCROMO COMPLETO (LIS)", "/sa4/restrict2/Sa4ViewerExtRedirect.do?REFERTO_ID", "il visualizzatore non ha dato il PDF", "---", marcato].join("\n");
+  const clinico = ["08:00  aggiungo → EMOCROMO", "08:00  «KETOROLAC TROMETAMINA» è entrato come «KETOROLAC TROMETAMINA 30MG» (###)",
+    `08:01  pagina inattesa dopo Crea: "PRONTO SOCCORSO MEDICINA GENERALE Diagnosi: SCOMPENSO CARDIACO"`,
+    "08:02  ERRORE GRAVE: il PDF di TC CRANIO (referto 777) è di un altro paziente (cf)",
+    "08:03  valori: non in elenco (scritti per esteso): VOLUME PIASTRINICO MEDIO, GRANULOCITI IMMATURI — righe non lette: SODIO = 140",
+    "08:03  risorse offerte qui: «MEDICINA GENERALE» 001PS, «CARDIOLOGIA» 002PS", `08:04  ${marcato.split("\n")[0]}`];
+  const persone = [`08:05  ordine di 2 esami per ${P1.nome} dato a una scheda di sottofondo`, "08:06  iPhone · nota di Greco Ottavio",
+    "08:07  ── iPhone: «Aggiorna i valori» per Greco Ottavio ──", "08:08  ordine per TRAVERSI GIOVANNA: non partiti EMOCROMO"];
+  const base = { versione: "9.9.9", inizio: T5, fine: T5 + 60e3, origini: { gestionale: G }, pagine: [pag], flusso: [], pdf: [pdf], schede: [], clic: [], errori: [] };
+  const opz = { vocabolario, sfasamento: 30, diagnosi: true };
+  const senza = anonimizza(base, opz);
+  const con = anonimizza({ ...base, nomi: ["GRECO OTTAVIO", `${P1.nome} (M, 76)`], testi: [{ nome: "registro.txt", testo: ["── scheda 1 ──", ...clinico, ...persone].join("\n") }, { nome: "diagnosi-1.txt", testo: diag }] }, opz);
+  const reg = con.files["testi/registro.txt"] || "", dia = con.files["testi/diagnosi-1.txt"] || "";
+  const pSenza = senza.files["pagine/001-PsoEpisodioClinicoAmbulatorio.html"], pCon = con.files["pagine/001-PsoEpisodioClinicoAmbulatorio.html"];
+  check(clinico.every((r) => reg.includes(r)), `le righe cliniche del Registro restano com'erano, parola per parola («ERRORE GRAVE», «SCOMPENSO CARDIACO», gli analiti fuori elenco, il markup) (${reg.split("\n").filter((r) => !clinico.includes(r)).slice(0, 4).join(" | ")})`);
+  check(dia.endsWith(marcato) && dia.startsWith("PS Assist 3.86 · 08:01 · referto EMOCROMO COMPLETO (LIS)\n"), `la diagnosi: doctype, tag in maiuscolo e testo clinico restano byte per byte (${dia.split("\n")[4].slice(0, 80)})`);
+  // le pagine, i PDF e il flusso: come senza il Registro — l'indizio non li tocca
+  const tags = (h) => RegistraAnonimo.pezzi(h.replace(/^<!--[^\n]*-->\n/, "")).filter((x) => x.k !== "testo").map((x) => x.k === "doctype" ? x.s : `${x.k}:${x.nome}:${(x.attrs || []).map((a) => a.k).join(",")}`).join(" ");
+  check(pCon === pSenza && tags(pCon) === tags(pag.html),
+    `la pagina è la stessa con e senza il Registro, e si legge (pezzi) con gli stessi tag, attributi e doctype dell'originale (${pCon.split("\n")[1].slice(0, 70)})`);
+  check(con.files["pdf/001.json"] === senza.files["pdf/001.json"] && !/VERDONE/.test(con.files["pdf/001.json"]), "e il PDF è lo stesso, con e senza il Registro");
+  // le persone: quella delle pagine, quelle che l'estensione conosce, quella trovata solo qui
+  const finto = (/<td>([A-Z]+ [A-Z]+)<\/td>/.exec(pCon) || [])[1];
+  const fintoGreco = (/nota di ([A-Z][a-z]+ [A-Z][a-z]+)$/m.exec(reg) || [])[1];
+  check(finto && reg.includes(`ordine di 2 esami per ${finto} dato`) && !/VERDONE|GRECO|OTTAVIO|TRAVERSI|GIOVANNA/i.test(reg),
+    `nel Registro il paziente delle pagine ha il suo nome finto (${finto}), e nessun nome vero resta (${persone.map((r) => reg.split("\n").find((x) => x.startsWith(r.slice(0, 6))) || "—").join(" | ")})`);
+  check(fintoGreco && fintoGreco !== "Greco Ottavio" && reg.includes(`per ${fintoGreco} ──`),
+    `un paziente che l'estensione conosce, che nessuna pagina mostra e che nel Registro è scritto Greco Ottavio: lo stesso nome finto in ogni riga (${fintoGreco})`);
+  check(con.gate.ok && senza.gate.ok, `e il cancello passa (${con.gate.punti}: ${JSON.stringify(con.gate.dove)})`);
+  // il cancello cerca i pazienti noti dappertutto, e le persone trovate solo nei testi nei testi
+  const piantato = anonimizza({ ...base, nomi: ["GRECO OTTAVIO"], testi: [{ nome: "registro.txt", testo: persone.join("\n") }] },
+    { ...opz, aggiungi: { "pagine/099-piantata.html": "<p>Greco&nbsp;Ottavio</p>", "testi/piantato.txt": "ancora TRAVERSI GIOVANNA" } });
+  check(!piantato.gate.ok && piantato.gate.dove["pagine/099-piantata.html"]?.nome === 1 && piantato.gate.dove["testi/piantato.txt"]?.nome === 1 && piantato.gate.punti === 2,
+    `un paziente noto lasciato in una pagina, una persona del Registro lasciata in un testo: il cancello li conta (${JSON.stringify(piantato.gate.dove)})`);
+}
+
+// ------------- i numeri e il testo libero del Registro che nessuna pagina registrata mostra
+// «la richiesta 880777», «(referto 4567890)»: identificativi, rimappati come gli stessi altrove;
+// non le ore, la versione, i byte, i decimali, i codici del catalogo. Il testo di un promemoria
+// dal telefono: inventato (l'ora resta). L'ospedale in una pagina citata: quello d'esempio.
+{
+  const T6 = Date.UTC(2026, 9, 29, 8, 0, 0);
+  const ESAME = "0-109 ESAME COLTURALE SU TAMPONE FARINGEO (12171)";
+  const pag = { url: `${G}/sa4pso/restrict/menuPsoEpisodio.do?MVPG=RcsRichiestaPrestazioniRicercaErogatore&RICHIESTA_ID=880777&EPISODIO_ID=150101`, ts: T6 + 1000, scheda: 1, alto: true,
+    html: `<html><body><table><tr><td class="AFCDataTD">${ESAME}</td></tr></table></body></html>` };
+  const registro = ["08:03  la richiesta 880777 delle 08:01 non risulta confermata", "08:04  ERRORE GRAVE: il PDF di EMOCROMO (referto 4567890) è di un altro paziente (cf)",
+    "08:04  il referto 4567890 non si riprende da solo", `08:05  aggiunto ✓ ${ESAME}`, "08:05  PS Assist 3.85.2 · 08:05:12 · 1282229 byte · PLT 250.000 · 123456.7",
+    `08:06  iPhone · promemoria per ${P1.nome}: 10:30 · chiamare la figlia Lucia, dolore toracico dopo morfina · tra 25 min`,
+    "08:07  iPhone · promemoria fatto per Greco Ottavio: richiamare il fratello al 3471112223",
+    `08:08  pagina inattesa dopo Crea: "Gruppo MULTIMEDICA IRCCS PRONTO SOCCORSO — Smarthealth"`,
+    "08:09  Il gestionale ha risposto: ORA-20965: AMB_RICHIESTA: Progressivo richiesta già utilizzato"].join("\n");
+  const r6 = anonimizza({ inizio: T6, origini: { gestionale: G }, pagine: [pag], nomi: ["GRECO OTTAVIO"], testi: [{ nome: "registro.txt", testo: registro }] }, { vocabolario, sfasamento: 30, diagnosi: true });
+  const t6 = r6.files["testi/registro.txt"] || "", p6 = r6.files["pagine/001-RcsRichiestaPrestazioniRicercaErogatore.html"] || "";
+  const ric = (/RICHIESTA_ID=(\d+)/.exec(p6) || [])[1], ref = (/\(referto (\d+)\)/.exec(t6) || [])[1];
+  check(ric && ric !== "880777" && t6.includes(`la richiesta ${ric} delle 08:01`), `una richiesta vista nelle pagine: lo stesso numero finto nel Registro (${ric})`);
+  check(ref && ref !== "4567890" && ref.length === 7 && t6.includes(`il referto ${ref} non si riprende`), `un referto che nessuna pagina mostra: un numero finto, lo stesso ogni volta (${ref})`);
+  check(t6.includes(`aggiunto ✓ ${ESAME}`) && p6.includes(ESAME) && t6.includes("PS Assist 3.85.2 · 08:05:12 · 1282229 byte · PLT 250.000 · 123456.7") && t6.includes("ORA-20965: AMB_RICHIESTA"),
+    "i codici del catalogo, la versione, le ore, i byte, i decimali e i codici d'errore («ORA-20965») restano");
+  check(/promemoria per [A-Z]+ [A-Z]+: 10:30 · [^·]+ · tra 25 min$/m.test(t6) && /promemoria fatto per [A-Z][a-z]+ [A-Z][a-z]+: \S/.test(t6) && !/Lucia|figlia|morfina|fratello|3471112223|Greco|VERDONE/.test(t6),
+    `il testo dei promemoria è inventato, l'ora e il «tra …» restano (${t6.split("\n").filter((x) => /promemoria/.test(x)).join(" | ")})`);
+  check(!/MULTIMEDICA|IRCCS|Smarthealth/i.test(t6) && /OSPEDALE ESEMPIO/.test(t6), `l'ospedale e il fornitore in una pagina citata: quelli d'esempio (${t6.split("\n").pop()})`);
+  check(r6.gate.ok, `e il cancello passa (${r6.gate.punti}: ${JSON.stringify(r6.gate.dove)})`);
+  // …e nel markup di una diagnosi una parola sola: un attributo senza virgolette resta un attributo
+  const marcato = `<TABLE><TR><TD TITLE="Multimedica IRCCS"><IMG SRC=/img/multimedica.gif ALT=MULTIMEDICA BORDER=0>Gruppo MultiMedica</TD></TR></TABLE>`;
+  const d6 = (anonimizza({ inizio: T6, origini: { gestionale: G }, pagine: [], testi: [{ nome: "diagnosi-1.txt", testo: `---\n${marcato}` }] }, { vocabolario, sfasamento: 30 }).files["testi/diagnosi-1.txt"] || "").split("\n")[1] || "";
+  const attr = (h) => RegistraAnonimo.pezzi(h).filter((x) => x.k === "tag").map((x) => `${x.nome}:${x.attrs.map((a) => a.k).join(",")}`).join(" ");
+  check(!/multimedica|irccs/i.test(d6) && attr(d6) === attr(marcato) && d6.includes("Gruppo OSPEDALE ESEMPIO"), `l'ospedale nel markup della diagnosi: gli stessi tag e attributi (${d6})`);
+  const r7 = anonimizza({ inizio: T6, origini: { gestionale: G }, pagine: [pag], testi: [{ nome: "registro.txt", testo: registro }] },
+    { vocabolario, sfasamento: 30, diagnosi: true, aggiungi: { "pagine/099-piantata.html": "<p>referto 4567890</p>" } });
+  check(!r7.gate.ok && r7.gate.dove["pagine/099-piantata.html"]?.identificativo === 1, `e il cancello cerca quel numero ovunque (${JSON.stringify(r7.gate.dove)})`);
+}
+
+// ------------- quello che il pannello manda (core.js): la diagnosi, il Registro, l'errore grave
+// Le funzioni VERE, prese da src/core.js così come sono (come fa tools/build.mjs per registra-pdf.js).
+const core = readFileSync(join(root, "src/core.js"), "utf8");
+const corpoDi = (i) => { let d = 0; for (let k = core.indexOf("{", i); k < core.length; k++) { if (core[k] === "{") d++; else if (core[k] === "}" && !--d) return core.slice(i, k + 1); } return ""; };
+const funzione = (nome) => corpoDi(core.indexOf(`function ${nome}(`));
+const riga = (inizio) => { const i = core.indexOf(inizio); return core.slice(i, core.indexOf(";\n", i) + 1); };
+{
+  const VERSION = "9.9.9", location = { href: `${G}/sa4pso/x` };
+  const { mascheraDiagnosi, diagnosiTesto, senzaQuesito, improntaNascita, impronta } = new Function("VERSION", "location",
+    `${funzione("mascheraDiagnosi")}\n${riga("const senzaQuesito =")}\n${funzione("diagnosiTesto")}\n${funzione("improntaNascita")}\n${funzione("impronta")}
+     return { mascheraDiagnosi, diagnosiTesto, senzaQuesito, improntaNascita, impronta };`)(VERSION, location);
+  // (le pagine vere: il codice fiscale nell'indirizzo, nel testo, in uno script; la nascita con / - .)
+  const html = `<!DOCTYPE html><html><head><title>Referto</title></head><body><a href="/sa4/restrict2/Sa4ViewerExtRedirect.do?CODICE_FISCALE=${P1.cf}&amp;REFERTO_ID=123456">apri</a>
+    <p>Paziente: Verdone Carlo, nato il ${P1.nato} — CF ${P1.cf}</p><p>${P1.nato.replace(/\//g, "-")} · ${P1.nato.replace(/\//g, ".")} · 1950-03-12 · cf ${P1.cf.toLowerCase()}</p><script>var cf = '${P1.cf}';</script></body></html>`;
+  const d = diagnosiTesto({ cosa: "referto TC CRANIO (RIS)", url: `${G}/sa4/restrict2/Sa4ViewerExtRedirect.do?REFERTO_ID=123456`, html, diag: "nessun PDF", quando: "08:01" });
+  const corpo = d.split("\n---\n")[1] || "";
+  check(!/VRDCRL|vrdcrl|12[/.-]03|03-12|C12F/.test(corpo) && (corpo.match(/\[CF\]/g) || []).length === 4 && (corpo.match(/\[data\]/g) || []).length === 4 && /<a href="[^"]*CODICE_FISCALE=\[CF\]/.test(corpo),
+    `la diagnosi: il codice fiscale e la data di nascita diventano [CF] e [data] PRIMA delle cifre, non «${P1.cf.slice(0, 12)}###Z» né «12/03/###» (${corpo.replace(/\s+/g, " ").slice(60, 230)})`);
+  // un codice fiscale con le cifre coperte, comunque arrivato: il cancello lo conta, la ripulitura lo toglie
+  const coperto = P1.cf.replace(/\d{3}(?=[A-Z]$)/, "###");
+  const cp = cancello({ "testi/diagnosi-1.txt": `CF ${coperto} e <a href="x?CF=${P1.cf.slice(0, 12)}***${P1.cf.slice(-1)}">` }, {});
+  check(!cp.ok && cp.punti === 2 && cp.dove["testi/diagnosi-1.txt"]["codice fiscale"] === 2, `il cancello vede anche il codice fiscale con le cifre coperte («…F###Z», «…F***Z»: ${cp.punti} punti)`);
+  const rcp = anonimizza({ inizio: T0, origini: { gestionale: G }, pagine: [], testi: [{ nome: "diagnosi-1.txt", testo: `---\n<p>CF ${coperto}</p>` }] }, { vocabolario, sfasamento: 30 });
+  check(/<p>CF ESMPIO80A01Z\d{3}X<\/p>/.test(rcp.files["testi/diagnosi-1.txt"]) && rcp.gate.ok, `…e la ripulitura lo sostituisce con uno finto (${rcp.files["testi/diagnosi-1.txt"].split("\n")[1]}; cancello ${rcp.gate.punti})`);
+  // il quesito del triage con le virgolette dentro (o un a capo): non esce niente, fino alla fine della riga
+  for (const q of ['Dolore "forte" al torace da ieri', "Dolore toracico\nirradiato al braccio"]) {
+    const s = senzaQuesito(`08:01  quesito del triage mantenuto: "${q}"`);
+    check(s === '08:01  quesito del triage mantenuto: "…"', `senza quesito: ${JSON.stringify(q)} → ${JSON.stringify(s)}`);
+  }
+  check(senzaQuesito("08:02  quesito del triage sostituito col tuo, scritto nel pannello") === "08:02  quesito del triage sostituito col tuo, scritto nel pannello"
+    && senzaQuesito("08:03  aggiunto ✓ EMOCROMO") === "08:03  aggiunto ✓ EMOCROMO", "…e le righe senza quesito restano com'erano");
+  // l'errore grave «di un altro paziente»: nel Registro e nel registro degli errori la nascita solo «diverse», mai la sua impronta
+  const metodo = corpoDi(core.indexOf("    erroreIdentita(e, id, righe) {") + 4);
+  const righe = [], voci = [];
+  const pannello = new Function("CF_UNO", "impronta", "improntaNascita", "segnaErrore", "now", "shortLabel", "GRAVE_ALTRO", `return { ${metodo} };`)(
+    /[A-Z]{6}\d{2}[A-Z]\d{2}[A-Z]\d{3}[A-Z]/, impronta, improntaNascita, (t, v) => voci.push(v), () => "08:02", (s) => s, "grave");
+  Object.assign(pannello, { episodeId: P1.ep, log: (l) => righe.push(l), segnala: () => {}, avvisoVisto: () => ({}), nomePaziente: () => P1.nome,
+    identitaPaz: () => ({ cf: P1.cf, cfImp: impronta(P1.cf), nome: P1.nome, nascita: P1.nato }) });
+  pannello.erroreIdentita({ label: "TC CRANIO", id: "777" }, { via: "data di nascita" }, ["REFERTO", `Paziente: ${P2.nome} nato il ${P2.nato}`, `CF ${P2.cf}`]);
+  const impronte = [improntaNascita(P1.nato), improntaNascita(P2.nato)];
+  const fuori = righe.join("\n") + JSON.stringify(voci);
+  check(righe.length === 1 && /ERRORE GRAVE: il PDF di TC CRANIO \(referto 777\) è di un altro paziente \(data di nascita\)/.test(righe[0]) && /· date di nascita diverse$/.test(righe[0])
+    && !impronte.some((x) => fuori.includes(x)) && voci[0] && voci[0].nascita === "diverse" && !("nascitaLette" in voci[0]),
+    `l'errore grave dice «date di nascita diverse», senza l'impronta della data (che si rovescia: ${impronte.join(", ")}) — ${righe[0] && righe[0].slice(-90)}`);
 }
 
 // --------------------------------------------------------------- lo zip

@@ -308,6 +308,8 @@
   }
 
   const CF_RE = /(?<![A-Za-z0-9])[A-Z]{6}\d{2}[A-Z]\d{2}[A-Z]\d{3}[A-Z](?![A-Za-z0-9])/g;
+  // un codice fiscale con le cifre coperte («VRDCRL50C12F###Z»): nome, nascita e sesso ci sono ancora
+  const CF_PARZ_RE = /(?<![A-Za-z0-9#*])(?=[A-Z0-9]*[#*])[A-Z]{6}[\d#*]{2}[A-Z][\d#*]{2}[A-Z][\d#*]{3}[A-Z](?![A-Za-z0-9#*])/g;
   const EMAIL_RE = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;
   const TEL_RE = [
     /(?:\+39[\s.]?)?(?<![\d])3\d{2}[\s.-]?\d{6,7}(?!\d)/g,                       // cellulare
@@ -554,14 +556,18 @@
     // ------------------------------------------------------- persone
     const nomiVisti = new Map();     // NORMA(originale) → { cat: "nomi"|"personale", orig }
     const paroleDiNomi = new Set();
+    // (mentre si leggono i testi liberi, le persone trovate solo lì vanno qui: si sostituiscono solo nei testi)
+    let nomiLocali = null;
     const registraNome = (s, cat) => {
       const t = pulisci(s).replace(/\s+/g, " ").trim();
       if (t.length < 4 || !/\s/.test(t) && cat !== "personale") return;
       if (MARCHI.some((re) => re.test(t))) return;
       if (sissOra && (SISS_STATICO.has(t) || tuttoSiss(t))) return;
       const k = norma(t);
-      const prima = nomiVisti.get(k);
-      if (!prima || (prima.cat === "nomi" && cat === "personale")) nomiVisti.set(k, { cat, orig: t });
+      if (nomiLocali && nomiVisti.has(k)) return;   // (già una persona di tutto lo zip)
+      const dove = nomiLocali || nomiVisti;
+      const prima = dove.get(k);
+      if (!prima || (prima.cat === "nomi" && cat === "personale")) dove.set(k, { cat, orig: t });
       for (const w of MAIUSC(t).split(/[^A-Z']+/)) if (w.length >= 2) paroleDiNomi.add(w);
     };
     const paroleApp = (t) => PAROLE_APP.test(MAIUSC(t));
@@ -586,9 +592,8 @@
     };
 
     // ------------------------------------------- le scoperte (prima passata)
-    const scopri = (s) => {
-      const t = pulisci(s);
-      if (!t.trim()) return;
+    // i dati che si sostituiscono per quello che sono (codici fiscali, email, telefoni, tessere, date, numeri)
+    const scopriValori = (t) => {
       for (const m of t.matchAll(CF_RE)) if (!FINTO_CF.test(m[0])) visto.cf.add(m[0]);
       for (const m of t.matchAll(EMAIL_RE)) if (!/@esempio\.it$/i.test(m[0])) visto.email.add(m[0]);
       for (const re of TEL_RE) for (const m of t.matchAll(re)) { const v = (m[1] || m[0]).trim(); if ((v.match(/\d/g) || []).length >= 7) visto.telefoni.add(v); }
@@ -597,11 +602,20 @@
       for (const m of t.matchAll(ISO_RE)) { if (Number(m[1]) < annoRif - 1 && valida(m[3], m[2], Number(m[1]))) visto.nascita.add(m[0]); }
       for (const m of t.matchAll(NOSO_RE)) registraId(m[0]);
       for (const m of t.matchAll(NRE_RE)) registraSegreto(m[0]);
+    };
+    // le persone dette per quello che sono: «Sig. …», «Paziente: …», «ROSSI MARIO nato…»
+    const scopriPersone = (t) => {
       for (const m of t.matchAll(NOME_KW)) {
         const nome = m[1].trim();
         if (!paroleApp(nome) && !tutteStatiche(nome) && !/^(il|la|lo|gli|le|un|una|del|della|di|da|in|con|per|non|nel|nella|e|ed|al|alla)\b/i.test(nome)) registraNome(nome, KW_PERSONALE.test(m[0]) ? "personale" : "nomi");
       }
       for (const m of t.matchAll(NATO_RE)) if (formaNome(m[1])) registraNome(m[1], "nomi");
+    };
+    const scopri = (s) => {
+      const t = pulisci(s);
+      if (!t.trim()) return;
+      scopriValori(t);
+      scopriPersone(t);
       const k = t.trim();
       if (k.length <= 80) {
         if (formaNome(k)) registraNome(k, "nomi");
@@ -680,6 +694,7 @@
     const motivi = (s) => {
       let t = String(s);
       t = t.replace(CF_RE, (v) => cfFinto(v));
+      t = t.replace(CF_PARZ_RE, (v) => cfFinto(v));
       t = t.replace(EMAIL_RE, (v) => (/@esempio\.it$/i.test(v) ? v : (conta.email++, "utente@esempio.it")));
       for (const re of TESSERA_RE) t = t.replace(re, (all, g) => { const v = typeof g === "string" && g ? g : all; if (!/\d/.test(v)) return all; conta.tessere++; return all.replace(v, "0".repeat(v.length)); });
       for (const re of TEL_RE) t = t.replace(re, (all, g) => { const v = typeof g === "string" && g ? g : all; if ((v.match(/\d/g) || []).length < 7) return all; conta.telefoni++; return all.replace(v, v.replace(/\d/g, "0")); });
@@ -696,7 +711,7 @@
     const contaDentro = (s) => {
       const t = String(s);
       const n = (re) => { re.lastIndex = 0; const c = (t.match(re) || []).length; re.lastIndex = 0; return c; };
-      conta.cf += n(CF_RE); conta.email += n(EMAIL_RE); conta.indirizzi += n(INDIRIZZO_RE);
+      conta.cf += n(CF_RE) + n(CF_PARZ_RE); conta.email += n(EMAIL_RE); conta.indirizzi += n(INDIRIZZO_RE);
       for (const re of TEL_RE) conta.telefoni += n(re);
       for (const re of TESSERA_RE) conta.tessere += n(re);
       for (const v of visto.nascita) if (t.includes(v)) conta.nascita++;
@@ -962,7 +977,11 @@
       if (!v) return v;
       if (credenziale(k) || VIEWER_SEGRETO.test(k) || tokenLike(v)) { conta.url++; return ""; }   // il gettone: via, del tutto
       if (/^[0-2](?:\.\d+){4,}$/.test(v)) return remapUid(v);
-      if (VIEWER_NOME.test(k)) { const nn = nomiDicom(v); conta.url++; return nn.length ? nomeDicomFinto(nn[0].comps) : "ESEMPIO"; }
+      if (VIEWER_NOME.test(k)) {
+        const nn = nomiDicom(v), nv = nomiVisti.get(norma(v));
+        if (nv && !nn.length) return nomeFinto(v.replace(/\s+/g, " ").trim(), nv.cat);
+        conta.url++; return nn.length ? nomeDicomFinto(nn[0].comps) : "ESEMPIO";
+      }
       if (VIEWER_ID.test(k)) return idViewer(v);
       if (VIEWER_CACHEBUSTER.test(k) && /^\d{1,16}$/.test(v)) return v.replace(/\d/g, "0");
       if (VIEWER_TECNICO.test(k) && /^[A-Za-z0-9./+:,_ -]{1,80}$/.test(v) && !/(?<!\d)\d{5,}(?!\d)/.test(v)) return v;
@@ -1070,6 +1089,9 @@
       if (/^(BLOBFIELD|WHERECONDITION)$/.test(K)) return remapCifre(v);
       if (/^\d{1,3}$/.test(v) || CODICI.has(v) || vocabolo(v)) return remapCifre(v);
       if (/^\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}/.test(v) || /^\d{4}-\d{2}-\d{2}/.test(v)) return date(v);
+      // una persona vista (s_ASSISTITO=ROSSI+MARIO): il suo nome finto, lo stesso delle pagine
+      const nv = nomiVisti.get(norma(v));
+      if (nv) return nomeFinto(v.replace(/\s+/g, " ").trim(), nv.cat);
       conta.url++;
       return "ESEMPIO";
     };
@@ -1272,6 +1294,14 @@
     }
 
     // ------------------------------------------ prima passata: osservare
+    // I pazienti che l'estensione conosce già (la lista del pannello, quelli
+    // aperti, gli ordini: `raccolta.nomi`, li dà il service worker): persone
+    // come quelle viste nelle pagine, lo stesso nome finto ovunque — anche dove
+    // nessuna pagina registrata li mostra (il Registro di un'altra scheda).
+    for (const n of Array.isArray(raccolta.nomi) ? raccolta.nomi : []) {
+      const t = String(n || "").replace(/\s*[(\[].*$/, "").replace(/[^A-Za-zÀ-ÿ'’ -]+/g, " ").replace(/\s+/g, " ").trim(), w = t.split(" ");
+      if (t.length <= 60 && w.length >= 2 && w.length <= 5 && w.every((x) => x.length >= 2 && (/^[A-ZÀ-Ù]/.test(x) || /^(?:de|di|da|del|della|dello|dei|degli|la|lo|le|van|von)$/.test(x)))) registraNome(t, "nomi");
+    }
     const pagine = (raccolta.pagine || []).slice().sort((a, b) => a.ts - b.ts);
     const flusso = (raccolta.flusso || []).slice().sort((a, b) => a.inizio - b.inizio);
     const pdf = (raccolta.pdf || []).slice().sort((a, b) => a.ts - b.ts);
@@ -1486,18 +1516,56 @@
     for (const c of clic) { idDaUrl(c.url, true); const t = c.bersaglio && c.bersaglio.testo; if (t) { scopri(String(t)); scopriViewer(t); } }
 
     // i testi che portano altri pezzi dell'estensione (il registro, la diagnosi):
-    // `raccolta.testi = [{ nome, testo }]`, escono come testi/<nome>. Le persone che
-    // vi compaiono sono cercate come altrove, più i COGNOME NOME in maiuscolo in mezzo a una riga.
+    // `raccolta.testi = [{ nome, testo }]`, escono come testi/<nome>. Codici fiscali,
+    // date, telefoni, numeri: come altrove. Le persone: quelle di tutto lo zip (le
+    // pagine, `raccolta.nomi`), più quelle che si trovano solo qui — «Paziente: …»,
+    // «Sig. …», e (non nella diagnosi, che è la struttura di una pagina) un COGNOME
+    // NOME in maiuscolo in mezzo a una riga, senza parole del programma o cliniche.
+    // Queste ultime sono indizi, non certezze: si sostituiscono solo nei testi, mai
+    // nelle pagine, nei PDF o nel flusso; e mai dentro il markup (tag, doctype).
     const testiLiberi = (Array.isArray(raccolta.testi) ? raccolta.testi : []).filter((x) => x && typeof x.testo === "string");
     const URL_IN_TESTO = /https?:\/\/[^\s"'<>)]*[^\s"'<>).,;:]/g;
     const MAIUSCOLE_RE = /(?<![A-Za-zÀ-ÿ'’])[A-ZÀ-Ù][A-ZÀ-Ù'’]+(?:[ \t]+[A-ZÀ-Ù][A-ZÀ-Ù'’]+){1,3}(?![A-Za-zÀ-ÿ'’])/g;
+    const MARKUP_RE = /<!--[\s\S]*?-->|<(script|style)\b[^>]*>[\s\S]*?<\/\1\s*>|<[!?/]?[A-Za-z][^<>]*>/gi;
+    const diagnosi = (x) => /^diagnosi/i.test(String(x.nome || ""));
+    // fn sul testo fuori dal markup; il markup resta com'è, byte per byte (o passa da fnM)
+    const fuoriDalMarkup = (s, fn, fnM = (m) => m) => { let out = "", i = 0; for (const m of s.matchAll(MARKUP_RE)) { out += fn(s.slice(i, m.index)) + fnM(m[0]); i = m.index + m[0].length; } return out + fn(s.slice(i)); };
+    const PARTICELLE = new Set(["DEL", "DELLA", "DELLE", "DELLO", "DEI", "DEGLI", "DAL", "DALLA", "DALLE", "DALLO", "VAN", "VON", "SAN", "SANTA", "SANTO", "MAC"]);
+    // un COGNOME NOME in mezzo a una riga: nessuna parola del programma, del catalogo, delle pagine di esempio, clinica
+    const nomeNeiTesti = (t) => {
+      if (areaVoce(t) || etichetta(t) || paroleApp(t)) return false;
+      const w = MAIUSC(t).split(/[^A-Z']+/).filter(Boolean);
+      return w.length >= 2 && !w.some((x) => x.length >= 3 && !PARTICELLE.has(x) && (PAROLE_STATICHE.has(x) || SISS_PAROLE.has(x) || VIEWER_PAROLE.has(x)));
+    };
+    const nomiTesti = new Map();          // NORMA → { cat, orig }: le persone trovate solo nei testi
+    // Un numero di 5 o più cifre in un testo («la richiesta 880777», «(referto 4567890)») è un
+    // identificativo anche se nessuna pagina registrata lo mostra: rimappato come lo stesso altrove.
+    // Non un decimale, una misura in byte, un codice d'errore («ORA-20965»), un numero del vocabolario
+    // (i codici negli esami del catalogo).
+    const ID_TESTO_RE = /(?<![\dA-Za-z]|\d[.,]|[A-Za-z]-)\d{5,}(?![\dA-Za-z]|[.,]\d|\s?(?:B|byte|bytes|KB|kB|MB)\b)/g;
+    const numeriVoc = new Set();
+    if (testiLiberi.length) {
+      for (const s of STATICO) for (const m of s.matchAll(/\d{5,}/g)) numeriVoc.add(m[0]);
+      for (const [s, u] of testi) if (u.size >= 2) for (const m of s.matchAll(/\d{5,}/g)) numeriVoc.add(m[0]);
+    }
     for (const x of testiLiberi) {
       for (const riga of String(x.testo).split(/\r?\n/)) {
-        const r = decodifica(riga);
-        scopri(r); scopri(decURI(r));
+        const r = pulisci(decodifica(riga));
+        scopriValori(r); scopriValori(pulisci(decURI(r)));
         for (const u of r.match(URL_IN_TESTO) || []) idDaUrl(u);
-        for (const m of r.matchAll(MAIUSCOLE_RE)) if (formaNome(m[0])) registraNome(m[0], "nomi");
+        for (const m of r.replace(URL_IN_TESTO, " ").matchAll(ID_TESTO_RE)) if (!numeriVoc.has(m[0])) registraId(m[0]);
       }
+      nomiLocali = nomiTesti;
+      try {
+        const testo = String(x.testo).replace(MARKUP_RE, " ");
+        for (const riga of testo.split(/\r?\n/)) {
+          const r = pulisci(decodifica(riga));
+          scopriPersone(r);
+          // (le righe dei valori elencano analiti, le «…» etichette del gestionale: mai persone)
+          if (diagnosi(x) || /\bvalori: /.test(r)) continue;
+          for (const m of r.replace(URL_IN_TESTO, " ").replace(/«[^»]*»/g, " ").matchAll(MAIUSCOLE_RE)) if (nomeNeiTesti(m[0])) registraNome(m[0], "nomi");
+        }
+      } finally { nomiLocali = null; }
     }
 
     // --------------------------------------- seconda passata: trasformare
@@ -1659,11 +1727,26 @@
     const errori = (Array.isArray(raccolta.errori) ? raccolta.errori : []).map(({ ts, ...x }) => ({ t: Math.round(((ts || 0) - (raccolta.inizio || 0)) / 1000), ...x }));
     files["errori.json"] = JSON.stringify({ unita: "secondi dall'inizio della registrazione", errori }, null, 1);
     // i testi liberi: riga per riga indirizzi, codici fiscali, email, telefoni, numeri e date
-    // come per il resto; i nomi li sostituisce la ripulitura qui sotto, come per ogni file
+    // come per il resto; i nomi li sostituisce la ripulitura qui sotto, come per ogni file.
+    // In più: il testo che il medico ha scritto e che il programma riporta nel Registro (un
+    // promemoria dal telefono: «promemoria per X: 10:30 · <testo> · tra 25 min») diventa
+    // testo inventato della stessa lunghezza — l'ora e il «tra …» restano; e l'ospedale e il
+    // fornitore (una pagina inattesa citata per intero) diventano quelli d'esempio.
+    const PROMEMORIA_RE = /(\bpromemoria(?: fatto)? per [^:\n]{1,80}: )(.+)$/;
+    const promemoriaFinto = (riga) => riga.replace(PROMEMORIA_RE, (all, testa, resto) => testa + resto.split(" · ").map((p) => {
+      const q = p.trim();
+      if (!q || /^(?:(?:domani|ieri) )?\d{1,2}:\d{2}$|^(?:tra|in ritardo di) \d+ (?:h|min)\b|^adesso$/.test(q)) return p;
+      conta.liberi++; contaDentro(q);
+      return p.replace(q, sintetico(q));
+    }).join(" · "));
+    // (nel markup di una diagnosi una parola sola, senza spazi: un attributo resta un attributo)
+    const MARCHI_TESTI = MARCHI.filter((re) => !/PS Assist|connesso/i.test(re.source)).map((re) => new RegExp(re.source, "gi"));
+    const marchiFinti = (s, tag = false) => MARCHI_TESTI.reduce((t, re) => t.replace(re, (m) => (conta.testo++, tag ? "esempio" : /diritti|AFC|java/i.test(m) ? "software di esempio" : "OSPEDALE ESEMPIO")), s);
     testiLiberi.forEach((x, i) => {
       const base = String(x.nome || "testo.txt").replace(/[^\w.-]/g, "_").replace(/\.{2,}/g, ".").replace(/^\./, "_").slice(0, 60) || "testo.txt";
       const nome = files[`testi/${base}`] != null ? `testi/${i + 1}-${base}` : `testi/${base}`;
-      files[nome] = String(x.testo).split(/\r?\n/).map((riga) => motivi(riga.replace(URL_IN_TESTO, (u) => anonUrl(u, "flusso")))).join("\n");
+      const t = String(x.testo).split(/\r?\n/).map((riga) => motivi(promemoriaFinto(riga).replace(URL_IN_TESTO, (u) => anonUrl(u, "flusso")))).join("\n");
+      files[nome] = fuoriDalMarkup(t, (s) => marchiFinti(s), (m) => marchiFinti(m, true));
     });
 
     // ------------------------------------------ terza passata: ripulire
@@ -1757,7 +1840,15 @@
       t = t.replace(/(?<![\dA-Za-z])\d{5,}(?![\dA-Za-z])/g, (d) => (idOriginali.has(d) ? fintoId(d) : d));
       return t;
     };
-    for (const k of Object.keys(files)) files[k] = ripulisci(files[k]);
+    // le persone trovate solo nei testi: sostituite lì (fuori dal markup), e solo lì
+    const locali = [...nomiTesti.values()].filter((x) => !nomiVisti.has(norma(x.orig)));
+    const reLocali = locali.length ? new RegExp(`(?<![A-Za-zÀ-ÿ])(?:${locali.map((x) => x.orig).sort((a, b) => b.length - a.length)
+      .map((o) => o.split(/\s+/).map(escRe).join(SEP)).join("|")})(?![A-Za-zÀ-ÿ])`, "gi") : null;
+    const localiNeiTesti = (s) => (!reLocali ? s : fuoriDalMarkup(s, (t) => t.replace(reLocali, (m) => {
+      const v = m.replace(/&nbsp;|%[0-9A-Fa-f]{2}|[^A-Za-z0-9À-ÿ'’]+/g, " ").trim();
+      return nomeFinto(v, (nomiTesti.get(norma(v)) || {}).cat || "nomi");
+    })));
+    for (const k of Object.keys(files)) files[k] = ripulisci(k.startsWith("testi/") ? localiNeiTesti(files[k]) : files[k]);
 
     // ------------------------------------------------- il riepilogo
     const conteggi = {
@@ -1956,6 +2047,17 @@
     Object.assign(files, opz.aggiungi || {});
     const prova = { ...files, "riepilogo.txt": riepilogo({ ok: true, punti: 0 }) };
     const gate = cancello(prova, sensibili, { finti: [...finti.values()], diagnosi: opz.diagnosi });
+    // (e le persone trovate solo nei testi: là le cerca)
+    if (locali.length) {
+      const g = cancello(Object.fromEntries(Object.entries(prova).filter(([k]) => k.startsWith("testi/"))),
+        { nomi: locali.filter((x) => x.cat !== "personale").map((x) => x.orig), personale: locali.filter((x) => x.cat === "personale").map((x) => x.orig) },
+        { finti: [...finti.values()], diagnosi: opz.diagnosi, soloSensibili: true });
+      for (const [f, c] of Object.entries(g.dove)) for (const [k, n] of Object.entries(c)) {
+        const d = (gate.dove[f] = gate.dove[f] || {});
+        d[k] = k === "valori" ? [...(d[k] || []), ...n] : (d[k] || 0) + n;
+      }
+      gate.punti += g.punti; gate.ok = gate.punti === 0;
+    }
     files["riepilogo.txt"] = riepilogo(gate);
     // nessuna stringa vera nel riepilogo stesso: si ricontrolla
     const g2 = cancello({ "riepilogo.txt": files["riepilogo.txt"] }, sensibili, { finti: [...finti.values()] });
@@ -1993,7 +2095,11 @@
     }
     for (const [file, contenuto] of Object.entries(files)) {
       const L = lettura(contenuto), raw = L.d;
-      for (const m of raw.matchAll(CF_RE)) if (!FINTO_CF.test(m[0])) segna(file, "codice fiscale");
+      if (!opz.soloSensibili) {
+        for (const m of raw.matchAll(CF_RE)) if (!FINTO_CF.test(m[0])) segna(file, "codice fiscale");
+        const coperti = (raw.match(CF_PARZ_RE) || []).length;   // (anche con le cifre coperte)
+        if (coperti) segna(file, "codice fiscale", coperti);
+      }
       if (!indice.size) continue;
       const w = L.parole.map((x) => x.w);
       for (let i = 0; i < w.length; i++) {

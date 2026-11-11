@@ -44,10 +44,19 @@ async function finche(fn, timeout = 30000) {
 const A = createMock({ carrelloPerso: [3, 3] });
 const B = createMock({ name: "BIANCHI ANNA", episodeId: "999002" });
 B.state.nextRichiestaId = 800001;
+// VERDI GIUSEPPE (in fondo): il visualizzatore del suo referto di radiologia non dà il PDF, ed è
+// una pagina in maiuscolo — doctype HTML 4.01, <TD CLASS>, nome, nascita e codice fiscale dentro
+const C = createMock({ name: "VERDI GIUSEPPE", episodeId: "999003" });
 const quale = (url) => {
   const p = new URL(url).searchParams;
-  return p.get("EPISODIO_ID") === "999002" || Number(p.get("RICHIESTA_ID")) >= 800000 ? B : A;
+  return p.get("EPISODIO_ID") === "999003" ? C : p.get("EPISODIO_ID") === "999002" || Number(p.get("RICHIESTA_ID")) >= 800000 ? B : A;
 };
+let visoreMaiuscolo = false, istantanea = null;
+const VISORE = `<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML><HEAD><META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=windows-1252"><TITLE>REFERTO</TITLE></HEAD>
+<BODY><TABLE BORDER="0" WIDTH="100%"><TR><TD CLASS="AFCFieldCaptionTD">PAZIENTE</TD><TD CLASS="AFCDataTD">VERDI GIUSEPPE</TD></TR>
+<TR><TD CLASS="AFCFieldCaptionTD">NATO IL</TD><TD>07/09/1951</TD><TD>VRDGPP51P07F205X</TD></TR>
+<TR><TD COLSPAN="3">EMOCROMO COMPLETO - SCOMPENSO CARDIACO</TD></TR></TABLE><INPUT TYPE="hidden" NAME="REFERTO" VALUE="PSOWEB_HL7_2026"></BODY></HTML>`;
 async function apriBrowser() {
   const ctx = await chromium.launchPersistentContext(PROFILE, {
     headless: true,
@@ -60,12 +69,14 @@ async function apriBrowser() {
       if (!localStorage.getItem("psassist:win.v1")) localStorage.setItem("psassist:win.v1", JSON.stringify({ x: 0.6, y: 0.01, w: 0.39, h: 0.97 }));
       // (il caricamento da solo dei valori, che apre lo storico in una scheda dietro: già fatto — lo prova ext-referti)
       const lab = JSON.stringify({ ris: [], ref: ["aaaa1111-0000-0000-0000-000000000001", "bbbb2222-0000-0000-0000-000000000002"], rich: [] });
-      localStorage.setItem("psassist:autoCarica.v1", JSON.stringify({ 999001: { ts: Date.now(), lab, parz: Date.now() }, 999002: { ts: Date.now(), lab, parz: Date.now() } }));
+      localStorage.setItem("psassist:autoCarica.v1", JSON.stringify({ 999001: { ts: Date.now(), lab, parz: Date.now() }, 999002: { ts: Date.now(), lab, parz: Date.now() }, 999003: { ts: Date.now(), lab, parz: Date.now() } }));
     } catch { /* niente */ }
   });
   await ctx.route("https://smarthealth.multimedica.it/**", async (r) => {
     const req = r.request();
     const u = req.url();
+    if (visoreMaiuscolo && /Sa4ViewerExtRedirect\.do/.test(u) && /REFERTO_SISTEMA=HL7RIS/.test(u)) return r.fulfill({ status: 200, headers: { "content-type": "text/html" }, body: VISORE }).catch(() => {});
+    if (istantanea && u === istantanea.url) return r.fulfill({ status: 200, headers: { "content-type": "text/html; charset=utf-8" }, body: istantanea.html }).catch(() => {});
     const mock = quale(u);
     let out = mock.handle({ method: req.method(), url: u, bodyBuffer: req.postDataBuffer() });
     let h = 0;
@@ -280,6 +291,72 @@ await ctx.close();
 const vuota = await finche(async () => { const c = await scorre().catch(() => null); return !!c && c.pagine === 0 && c.flusso === 0 && c.pdf.length === 0; }, 15000);
 check(vuota, "riaperto il browser, la tabella degli ultimi minuti è vuota");
 check((await elenco()).length === 2, "gli zip salvati (anonimizzati) restano");
+
+// ===========================================================================
+// La diagnosi VERA (segnaDiagnosi del pannello) di un visualizzatore in maiuscolo che non dà il PDF,
+// e nel Registro righe cliniche in maiuscolo e i nomi: nello zip le parole cliniche e il markup restano
+// come sono, i nomi no — quello del paziente è lo stesso nome finto nella pagina, nella diagnosi e nel
+// Registro, anche quello di un paziente che l'estensione conosce e nessuna pagina mostra; e la pagina
+// del paziente, com'è nello zip, la rilegge il pannello stesso.
+sezione("una diagnosi vera da una pagina in maiuscolo, il Registro con righe cliniche e nomi");
+await sw.evaluate(() => { REG_DOPO = 3000; });
+const pc = await ctx.newPage();
+await suPagina(pc, A.worklistUrl);
+// (un paziente della lista del pannello che nessuna pagina di questi minuti mostra)
+await pc.evaluate(() => {
+  const l = JSON.parse(localStorage.getItem("psassist:patients.v1") || "[]");
+  l.push({ ep: "999009", name: "NERI ADELE", url: "", ts: Date.now(), pk: "" });
+  localStorage.setItem("psassist:patients.v1", JSON.stringify(l));
+});
+visoreMaiuscolo = true;
+await suPagina(pc, C.patientUrl);
+const diagnosi = () => sw.evaluate(() => RegistraDb.tx("scorre", "readonly", (s) => s.getAll()).then((l) => l.flatMap((x) => x.diagnosi || []).map((d) => d.testo)));
+check(await finche(async () => (await diagnosi()).some((t) => /<!DOCTYPE HTML PUBLIC/.test(t)), 90000), "il visualizzatore non dà il PDF: la diagnosi del pannello arriva al registratore");
+visoreMaiuscolo = false;
+const dg = (await diagnosi()).find((t) => /<!DOCTYPE HTML PUBLIC/.test(t)) || "";
+check(/\[CF\]/.test(dg) && /\[data\]/.test(dg) && !/VRDGPP|07\/09/.test(dg), `e la diagnosi parte già senza codice fiscale né data di nascita ([CF], [data]: ${dg.split("\n---\n")[1]?.replace(/\s+/g, " ").slice(150, 260)})`);
+await sw.evaluate(() => regAccoda("registro", { ts: Date.now(), scheda: 0, righe: [
+  '10:00:01  pagina inattesa dopo Crea: "PRONTO SOCCORSO MEDICINA GENERALE Diagnosi: SCOMPENSO CARDIACO"',
+  "10:00:02  «KETOROLAC TROMETAMINA» è entrato come «KETOROLAC TROMETAMINA 30MG/ML 1ML FL» (450120)",
+  "10:00:03  ordine di 2 esami per VERDI GIUSEPPE dato a una scheda di sottofondo",
+  "10:00:04  ── iPhone: «Aggiorna i valori» per Neri Adele ──"] }));
+await pc.waitForTimeout(2500);   // (il Registro del pannello va a mucchi, ogni secondo e mezzo)
+check(await sw.evaluate(() => regIncidente("un documento in maiuscolo")), "un incidente");
+const salvato3 = await finche(async () => (await elenco()).length === 3, 90000);
+const z3 = (await elenco()).find((x) => x.id !== z.id && x.motivo === "auto" && Date.now() - x.ts < 120e3) || {};
+check(salvato3 && z3.id && z3.controllo && z3.punti === 0, `lo zip «auto»: il controllo passa (${z3.nome} · ${z3.controllo ? "superato" : `${z3.punti} punti: ${String(z3.riepilogo || "").split("\n").slice(1, 5).join(" ")}`})`);
+const zf3 = join(OUT, "maiuscolo.zip"), dir3 = join(OUT, "maiuscolo");
+writeFileSync(zf3, Buffer.from(await sw.evaluate(async (id) => b64(await RegistraDb.tx("zipdati", "readonly", (s) => s.get(id))), z3.id), "base64"));
+if (process.env.REG_ZIP) writeFileSync(process.env.REG_ZIP, readFileSync(zf3));   // per guardarci dentro a mano
+mkdirSync(dir3, { recursive: true });
+try { execFileSync("unzip", ["-q", "-o", zf3, "-d", dir3]); } catch (e) { check(false, "lo zip si apre: " + e.message); }
+const leggi3 = (f) => { try { return readFileSync(join(dir3, f), "utf8"); } catch { return ""; } };
+const testi3 = existsSync(join(dir3, "testi")) ? readdirSync(join(dir3, "testi")) : [];
+const dia3 = testi3.filter((f) => /^diagnosi-\d+\.txt$/.test(f)).map((f) => leggi3("testi/" + f)).find((t) => /<!DOCTYPE HTML PUBLIC/.test(t)) || "";
+const reg3 = leggi3("testi/registro.txt");
+const finto3 = (/<TD CLASS="AFCDataTD">([^<]+)<\/TD>/.exec(dia3) || [])[1] || "";
+check(dia3.includes(`<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">\n<HTML><HEAD><META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=windows-###"><TITLE>REFERTO</TITLE></HEAD>`)
+  && dia3.includes('<TD CLASS="AFCFieldCaptionTD">PAZIENTE</TD>') && dia3.includes("EMOCROMO COMPLETO - SCOMPENSO CARDIACO") && dia3.includes('<INPUT TYPE="hidden" NAME="REFERTO" VALUE="…">'),
+  `nella diagnosi il doctype, i tag in maiuscolo e le parole cliniche restano com'erano (${dia3.split("\n---\n")[1]?.replace(/\s+/g, " ").slice(0, 120)})`);
+check(/^[A-Z]+ [A-Z]+$/.test(finto3) && finto3 !== "VERDI GIUSEPPE" && reg3.includes(`ordine di 2 esami per ${finto3} dato`),
+  `il paziente: nella diagnosi e nel Registro lo stesso nome finto (${finto3})`);
+check(reg3.includes('pagina inattesa dopo Crea: "PRONTO SOCCORSO MEDICINA GENERALE Diagnosi: SCOMPENSO CARDIACO"') && reg3.includes("«KETOROLAC TROMETAMINA» è entrato come «KETOROLAC TROMETAMINA 30MG/ML 1ML FL» (450120)")
+  && /TC ENCEFALO[^\n]*referto non letto/.test(reg3),
+  `nel Registro le righe cliniche in maiuscolo restano, anche quella vera del referto non letto (${(/[^\n]*referto non letto[^\n]*/.exec(reg3) || ["—"])[0].slice(0, 100)})`);
+const pagine3 = existsSync(join(dir3, "pagine")) ? readdirSync(join(dir3, "pagine")).map((f) => leggi3("pagine/" + f)) : [];
+const pagC = pagine3.find((p) => p.includes(`<title>${finto3}</title>`) && /MVPG=PsoEpisodioClinicoAmbulatorio/.test(p.split("\n")[0])) || "";
+check(!!pagC, `e nella pagina del paziente il suo nome finto è lo stesso (${pagine3.length} pagine)`);
+const tutto3 = readdirSync(dir3, { recursive: true }).filter((f) => statSync(join(dir3, String(f))).isFile()).map((f) => leggi3(String(f))).join("\n");
+for (const [cosa, v] of [["VERDI GIUSEPPE", /VERDI(?:\s|&nbsp;|\+|%20)+GIUSEPPE/i], ["NERI ADELE (che l'estensione conosce, nel Registro scritto Neri Adele)", /NERI(?:\s|&nbsp;|\+|%20)+ADELE/i],
+  ["il codice fiscale del visualizzatore", /VRDGPP/], ["la data di nascita del visualizzatore", /07\/09\/1951/], ["l'episodio 999003", /999003/]]) check(!v.test(tutto3), `nello zip non c'è ${cosa}`);
+// la pagina del paziente com'è nello zip: il pannello la rilegge (il nome finto, l'episodio finto)
+const epC = (/EPISODIO_ID=(\d+)/.exec(pagC.split("\n")[0]) || [])[1] || "";
+istantanea = { url: `https://smarthealth.multimedica.it/sa4pso/restrict/menuPsoEpisodio.do?MVPG=PsoEpisodioClinicoAmbulatorio&EPISODIO_ID=${epC}&istantanea=1`, html: pagC };
+await suPagina(pc, istantanea.url);
+const riletto = await finche(() => pc.evaluate((ep) => (JSON.parse(localStorage.getItem("psassist:patients.v1") || "[]")).find((p) => p && p.ep === ep)?.name || "", epC).then((n) => n === finto3), 15000);
+check(epC && epC !== "999003" && riletto, `la pagina del paziente, com'è nello zip, la rilegge il pannello: episodio ${epC}, paziente ${finto3}`);
+istantanea = null;
+await pc.close();
 
 await ctx.close();
 rmSync(PROFILE, { recursive: true, force: true });

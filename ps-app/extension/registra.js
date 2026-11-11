@@ -406,6 +406,22 @@ const regNomeZip = (ts, auto) => {
   const d = new Date(ts), p2 = (n) => String(n).padStart(2, "0");
   return `psassist-registrazione-${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}-${p2(d.getHours())}${p2(d.getMinutes())}${auto ? "-auto" : ""}.zip`;
 };
+// I pazienti che l'estensione conosce: la lista del pannello e quelli aperti
+// (lo specchio di «patients.v1» che ogni scheda del gestionale tiene qui per il
+// tabellone, e che il telefono vede) e gli ordini in corso. Solo i nomi: per
+// l'anonimizzazione, che li sostituisce ovunque, anche dove nessuna pagina
+// registrata li mostra (il Registro di un'altra scheda, un ordine dal telefono).
+async function regNomiNoti() {
+  const nomi = new Set();
+  const o = await chrome.storage.local.get("tabellone.specchio").catch(() => ({}));
+  try {
+    const l = JSON.parse(o["tabellone.specchio"]?.kv?.["patients.v1"] || "[]");
+    for (const p of Array.isArray(l) ? l : []) if (p && typeof p.name === "string") nomi.add(p.name);
+  } catch { /* uno specchio guasto: niente nomi da qui */ }
+  const s = await chrome.storage.session.get("ordini").catch(() => ({}));
+  for (const x of Array.isArray(s.ordini) ? s.ordini : []) if (x && typeof x.paziente === "string") nomi.add(x.paziente);
+  return [...nomi].map((n) => n.replace(/\s+/g, " ").trim().slice(0, 60)).filter((n) => n.length >= 4).slice(0, 400);
+}
 async function regSalvaOra({ fonte, st, motivo, errore = "", quando, da = 0 }) {
   // il registro degli errori: dall'ultima registrazione a mano salvata (le voci restano: si sposta solo il segno);
   // in uno zip automatico, quelli dei suoi minuti
@@ -413,7 +429,7 @@ async function regSalvaOra({ fonte, st, motivo, errore = "", quando, da = 0 }) {
   const tutti = (Array.isArray(reg["errori.v1"]) ? reg["errori.v1"] : []).filter(Boolean);
   const errori = fonte === REG_ST ? tutti.filter((x) => x.ts > (reg["errori.esportati"] || 0)) : tutti.filter((x) => x.ts >= da);
   const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-  const r = await regFuori({ t: "regFuoriEsporta", fonte, st, errori, da, opz: REG_PROVA || {},
+  const r = await regFuori({ t: "regFuoriEsporta", fonte, st, errori, da, nomi: await regNomiNoti(), opz: REG_PROVA || {},
     meta: { id, base: regNomeZip(quando || st.inizio, motivo === "auto"), motivo, errore, quando: quando || st.inizio } });
   if (!r || !r.ok) throw new Error((r && r.why) || "lo zip non è stato salvato");
   if (fonte === REG_ST && errori.length) await chrome.storage.local.set({ "errori.esportati": Math.max(...errori.map((x) => x.ts)) });
