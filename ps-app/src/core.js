@@ -17520,7 +17520,7 @@
   // lo dà il service worker: chiesto due volte, l'ordine è uno.
   async function ponteOrdina(p, a) {
     const url = ponteUrlPaziente(p);
-    if (!url) return { ok: false, errore: `Apri una volta ${p.name || "il paziente"} sul PC: per ordinare serve la sua pagina` };
+    if (!url) return { ok: false, errore: senzaPagina(p) };
     const quesito = String(a.quesito || "").replace(/\s+/g, " ").trim();
     if (!quesito) return { ok: false, errore: "Scrivi il quesito diagnostico" };
     const cat = fullCatalog();
@@ -17564,7 +17564,7 @@
   // Registra.
   async function ponteMappaStampe(p) {
     const url = ponteUrlPaziente(p);
-    if (!url) return { errore: `Apri una volta ${p.name || "il paziente"} sul PC: serve la sua pagina` };
+    if (!url) return { errore: senzaPagina(p) };
     try {
       const { doc, url: fin } = await fetchDoc(url, {});
       if (classify(doc) === "login") return { errore: "Gestionale da riaprire: sul PC la sessione è scaduta", sessione: true };
@@ -17652,7 +17652,7 @@
     // per leggere, i preferiti); il resto lo fa la scheda di sottofondo
     if (cmd === "terapie" || cmd === "terapiaCerca" || cmd === "terapiaAggiungi") {
       const url = ponteUrlPaziente(p);
-      if (!url) return { ok: false, errore: `Apri una volta ${p.name || "il paziente"} sul PC: serve la sua pagina` };
+      if (!url) return { ok: false, errore: senzaPagina(p) };
       const pref = cmd === "terapie" ? { pref: terapiaPreferiti().slice(0, 30).map(({ n, ts, ...v }) => v) } : {};
       return fatto({ ok: true, dati: { url, paziente: p.name, ...pref }, ...(cmd === "terapiaAggiungi" ? {} : { registro: `${cmd === "terapie" ? "terapie" : "tendina dei farmaci"} di ${p.name}` }) });
     }
@@ -17661,7 +17661,7 @@
     // lo fa la scheda di sottofondo, col «Conferma» della pagina
     if (cmd === "cartellaSalva") {
       const url = ponteUrlPaziente(p);
-      if (!url) return { ok: false, errore: `Apri una volta ${p.name || "il paziente"} sul PC: serve la sua pagina` };
+      if (!url) return { ok: false, errore: senzaPagina(p) };
       const nomi = (Array.isArray(a.nomi) ? a.nomi : []).map(cartellaNome).join(", ");
       return fatto({ ok: true, dati: { url, paziente: p.name }, registro: `cartella di ${p.name}: salvo ${nomi}` });
     }
@@ -17895,7 +17895,7 @@
     const m = a.memo;
     if (!a.rileggi && m && m.ep === p.ep && Array.isArray(m.campi)) return { ok: true, dati: { ...m, allergie: ponteAllergie(p.ep) }, registro: `cartella di ${p.name}` };
     const url = ponteUrlPaziente(p);
-    if (!url) return { ok: false, errore: `Apri una volta ${p.name || "il paziente"} sul PC: serve la sua pagina` };
+    if (!url) return { ok: false, errore: senzaPagina(p) };
     const { doc, url: fin } = await fetchDoc(url, {});
     if (classify(doc) === "login") return { ok: false, errore: "Gestionale da riaprire: sul PC la sessione è scaduta", sessione: true };
     if (findEpisodeId(doc, fin) !== p.ep) return { ok: false, errore: "La pagina del paziente sul PC è di un altro episodio: non mostro niente" };

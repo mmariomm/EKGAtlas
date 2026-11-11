@@ -928,6 +928,16 @@ const esitiDi = async (ep, re = /./) => {
     `noto solo dalla lista smart: una riga sola, cosa fare — «apri una volta la lista «Bassa» nel gestionale», senza ↻ Rileggi (${v.replace(/\n+/g, " / ").slice(0, 160)})`);
   await tocca(tel, '[data-a="scheda"][data-s="richieste"]');
   check(/Il PC lo conosce solo dalla lista smart: per ordinare, apri una volta la lista «Bassa» nel gestionale\./.test(await testoTel(tel)), "…e per ordinare, la stessa riga");
+  // e il PC, a ogni comando che gli serve la sua pagina, dice la stessa cosa con le stesse parole
+  const parole = await sw.evaluate(async () => {
+    const out = {};
+    for (const [cmd, a] of [["ordina", { quesito: "x", esami: [] }], ["ristampe", {}], ["terapie", {}], ["cartellaSalva", { nomi: [] }], ["cartella", { rileggi: true }]]) {
+      out[cmd] = (await ponteSuScheda(cmd, { ep: "999003", ...a }))?.errore || "";
+    }
+    return out;
+  });
+  check(Object.values(parole).every((t) => t === "Il PC conosce VERDI LUCA solo dalla lista smart: apri una volta la lista «Bassa» nel gestionale"),
+    `noto solo dalla lista smart: ordina, ristampe, terapie, cartella e il suo salvataggio dicono la stessa riga (${JSON.stringify(parole)})`);
   await tocca(tel, '[data-a="scheda"][data-s="esiti"]');
 }
 // BIANCHI, che il PC conosce dalla lista della sua area ma non ha aperto in questo turno: un tocco sul
