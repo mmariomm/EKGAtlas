@@ -15,7 +15,7 @@
  * (ponte-host.js, da ponte/host.txt): nessuna pagina lo cambia.
  *
  * La chiave sta in storage.local finché non la si revoca (Revoca, Nuovo QR, o
- * «Dimentica PC» sul telefono): nessuna scadenza, anche se il browser si chiude
+ * «Scollega» sul telefono): nessuna scadenza, anche se il browser si chiude
  * e si riapre. Il QR si rivede solo nei primi due minuti, il suo link vale per
  * il primo scambio solo pochi minuti, e solo finché nessun telefono è entrato; il primo che entra è
  * quello dell'associazione, e un altro telefono con lo stesso QR non entra.

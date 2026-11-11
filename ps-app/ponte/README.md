@@ -20,8 +20,9 @@ cifrato.
 **Una volta sola.** Sul PC, nel pannello: **⋯ → iPhone → Associa l'iPhone**. Compare un QR,
 con accanto un **codice di sei cifre** («482 913»): lo inquadri dall'app PS Assist (**⋯ → Scansiona il QR**; con la Fotocamera
 solo se l'app non è sulla Home) e
-si apre il pannello, già collegato; lo stesso codice è nel suo menu ⋯. L'associazione
-**non scade**: dura finché non la togli (**Revoca** sul PC, **«Dimentica PC»** sul telefono, o un QR nuovo), e vale per **quel telefono solo**: il
+si apre il pannello, già collegato, e per un momento lo stesso codice («Associato · codice 482 913»: dopo
+non serve, e non si vede più). L'associazione
+**non scade**: dura finché non la togli (**Revoca** sul PC, **«Scollega»** nel ⋯ del telefono, o un QR nuovo), e vale per **quel telefono solo**: il
 primo che entra. Un altro telefono che inquadra lo stesso QR si sente dire «Il PC è associato a un
 altro telefono», con **«Usa questo telefono»**: due tocchi (il primo arma, «Usa questo telefono? Tocca
 di nuovo»; un doppio tocco per sbaglio non vale) e quel telefono diventa l'associato (il primo esce,
@@ -51,7 +52,7 @@ chiave**: una non apre gli altri, e un PC in mano a un altro non espone i tuoi. 
 **una volta sola**: il suo QR **aggiunge** quel PC alla lista (lo stesso PC riscansionato, o un altro
 dello stesso nome, lo sostituisce; il QR del PC completo sostituisce il completo). Da lì si passa
 dall'uno all'altro da un **menu** (⋯ sul telefono: l'attivo in cima, gli altri sotto col loro nome e
-tipo, «attivo adesso» quando la sessione è viva; un tocco cambia, «Dimentica» per riga). Con un PC
+tipo, «attivo adesso» quando la sessione è viva; un tocco cambia, 🗑️ «Scollega» per riga). Con un PC
 solo il menu non c'è: meno è meglio. Su un PC di sola lettura la testata lo dice in una riga quieta
 («Sola lettura · gestionale di …», il collega loggato lì, solo per saperlo) e i controlli di scrittura
 non ci sono: si legge, si ristampa, si stampa un PDF.
@@ -143,19 +144,17 @@ sessione. Vedi:
 - **Scansiona il QR** (⋯) — il QR di una [stazione di stampa](#la-stazione-di-stampa):
   una carta con il suo nome e il codice, **Collega**, «Collegata al PC» (con un PC di sola lettura
   attivo, la carta dice di passare al PC completo: è lui che stampa). Sopra «Conferma e stampa»,
-  poi, «Stampa: PC · Infermeria» (la scelta del PC, cambiabile per un ordine).
+  poi, «Stampa: PC · Infermeria»: parte dalla scelta del PC e **si ricorda**, per ogni PC associato (sul
+  telefono, `psassist.ponte.dove.v1`) — l'ultima toccata vale per ordini, ristampe, «Stampa PDF» e il
+  🖨️ dei referti. Senza stazione la scelta non c'è.
 - **Richieste fatte** (in fondo alle Richieste) — tutte le richieste che la pagina del paziente sa
   stampare, anche quelle non fatte da PS Assist, ognuna con **Ristampa**: etichette e foglio, dove
   dice «Stampa: PC · Infermeria», con le parole di un ordine («Stampato su …», «Infermeria non
   risponde»). Se la richiesta ha etichette **e** foglio, il tocco apre la scelta **🏷️ Etichette ·
   📄 Foglio · Entrambi** (`quali`); con un genere solo stampa subito. Un doppio tocco è una ristampa
   sola. Solo stampa: niente Conferma, niente Registra.
-- **Stampa su** (⋯, con una stazione collegata) — la stampante predefinita **del telefono**,
-  **[💻 PC] [🖨️ Infermeria]**, per ogni PC associato (sul telefono, `psassist.ponte.dove.v1`); non
-  scelta, segue quella del PC. Vale per «Stampa PDF» e per il 🖨️ dei referti; un ordine o una
-  ristampa la prendono come partenza (si cambia per quello). Senza stazione la riga non c'è.
 - **🖨️ su un referto PDF** (Esiti) — stampa quel referto, dalla copia salvata sul PC, dove dice
-  «Stampa su» (comando `stampaReferto`). Una stampa alla volta, nella stessa carta di «Stampa PDF».
+  «Stampa: PC · Infermeria» (comando `stampaReferto`). Una stampa alla volta, nella stessa carta di «Stampa PDF».
 - **Stampa PDF** (⋯) — un PDF del telefono esce dalla stampante A4 del PC, con la stampa
   automatica (mai un dialogo: davanti al PC può non esserci nessuno; senza, «Sul PC la stampa
   automatica non è impostata»). Mentre va, «Invio… 40%»; poi le parole del PC: «Stampato su HP
@@ -172,6 +171,11 @@ sessione. Vedi:
   PC»). **Cancella** chiede «Cancello dal PC? Tocca di nuovo» e la toglie dal PC. Il PC dà e
   cancella solo quelle elencate nella sessione; il registro del ponte annota elenco, scarico e
   cancellazione.
+
+Il **⋯** tiene solo quello che non c'è altrove: i PC (con due o più), **Stampa PDF**, **Scansiona il
+QR**, **Registrazioni** e **Scollega** (la chiave di questo PC via dal telefono: servirà un QR nuovo).
+L'elenco si rilegge da solo a ogni ritorno sull'app, e la sessione finisce da sola: niente «Aggiorna»,
+niente «Chiudi sessione».
 
 Di notte l'app è scura, come il telefono. Ogni bottone è grande almeno 44 punti. Sul telefono c'è
 solo quello che serve: niente etichette di sezione, conteggi o testi di contorno (vedi «L'app del

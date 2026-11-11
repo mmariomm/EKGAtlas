@@ -1339,7 +1339,7 @@ che non può leggere niente: cifrato da un capo all'altro, nessun dato su nessun
 
 - **Una volta**: ⋯ → **iPhone** → **Associa l'iPhone**, e si inquadra il QR con la
   fotocamera (accanto, un codice di sei cifre: lo stesso compare sul telefono). **Non scade**: dura
-  finché non la togli (**Revoca l'iPhone** sul PC, «Dimentica PC» sul telefono); vale per un
+  finché non la togli (**Revoca l'iPhone** sul PC, «Scollega» nel ⋯ del telefono); vale per un
   telefono solo, il primo che entra; il QR si rivede solo nei primi due minuti e il suo link vale
   pochi minuti, una volta sola. Regge il browser chiuso e riaperto, il logout e il rientro; una scheda del gestionale alla pagina d'accesso chiude la sessione, non
   l'associazione. Telefono perso sbloccato: **Revoca l'iPhone** sul PC.
@@ -1370,12 +1370,12 @@ che non può leggere niente: cifrato da un capo all'altro, nessun dato su nessun
   ordine rimandato parte una volta sola), a meno che non lo veda già nato sul PC. Niente ordini su un episodio precedente o per un paziente
   dimesso sul PC. Un ordine finito male si vede da ogni pagina del telefono, finché non lo chiudi.
   Sul PC la striscia dice «dall'iPhone». Con una [stazione di stampa](#stazione-di-stampa-le-stampanti-dellinfermeria)
-  collegata, sopra il bottone «Stampa: PC · Infermeria» (quella del PC, cambiabile per l'ordine); la
-  stazione si collega da qui, **⋯ → Scansiona il QR**, inquadrando il suo QR.
-  **Stampante predefinita del telefono**: **⋯ → «Stampa su» [💻 PC] [🖨️ Infermeria]** (si ricorda sul
-  telefono, per PC; non scelta, segue il PC) per «Stampa PDF» e per il **🖨️ accanto a un referto
-  PDF** negli Esiti (stampa la copia salvata sul PC, una volta sola per tocco; comando
-  `stampaReferto`, solo stampa). Nelle «Richieste fatte», **Ristampa** su una richiesta con etichette
+  collegata, sopra il bottone «Stampa: PC · Infermeria»: parte da quella del PC, e **si ricorda** (sul
+  telefono, per PC) — l'ultima toccata vale anche per le ristampe, «Stampa PDF» e il **🖨️ accanto a un
+  referto PDF** negli Esiti (stampa la copia salvata sul PC, una volta sola per tocco; comando
+  `stampaReferto`, solo stampa); la stazione si collega da qui, **⋯ → Scansiona il QR**, inquadrando il suo QR.
+  Il ⋯ del telefono tiene solo quello che non c'è altrove: i PC (con due o più), Stampa PDF, Scansiona il
+  QR, Registrazioni, **Scollega** (l'elenco si rilegge da solo, la sessione finisce da sola). Nelle «Richieste fatte», **Ristampa** su una richiesta con etichette
   e foglio apre **🏷️ Etichette · 📄 Foglio · Entrambi**.
 - **Cartella dal telefono**: anamnesi, remota, farmaci, allergie ed esame obiettivo, scrivibili dove
   la pagina del paziente li lascia scrivere; «Salva» li scrive col «Conferma» della pagina, in una
@@ -1708,9 +1708,9 @@ telefono), li stampa sulle sue stampanti e dice com'è andata.
   stampa · 2 esami → Infermeria») e la stampantina in intestazione è «→ Infermeria» (rossa quando
   non risponde). Vale per le etichette e i fogli A4 di un ordine (e per la loro **Ristampa**) e per
   l'etichetta anagrafica; il resto (consensi, «Stampa le richieste») resta qui. Un PDF dal telefono e un
-  referto stampato dal telefono vanno dove dice il suo «Stampa su».
+  referto stampato dal telefono vanno dove dice il telefono.
   Sul telefono, sopra «Conferma e stampa», la stessa scelta, **«Stampa: PC · Infermeria»**: parte
-  da quella del PC, e si cambia per quell'ordine.
+  da quella del PC, e il telefono si ricorda l'ultima toccata (per PC).
 - **Com'è andata, per quello che è.** «Stampo le etichette in Infermeria…», poi **«Stampato in
   Infermeria»** solo quando la stazione l'ha detto («Mandato in Infermeria» in ambra, o il suo
   errore). La stazione spenta o che non risponde: **«Infermeria non risponde»**, con **Stampa qui**:

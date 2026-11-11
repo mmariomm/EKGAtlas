@@ -222,6 +222,8 @@ async function aspettaTel(t, re, timeout = 20000) {
   return ok ? testoTel(t) : "";
 }
 const tocca = (t, sel) => t.locator(sel).first().click();
+// tornati sull'app: l'elenco si rilegge da solo (nel ⋯ non c'è più «Aggiorna elenco»)
+const rileggiTel = (t) => t.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
 const qrUrl = () => sw.evaluate(() => ponteQr());
 // la chiave del telefono: ora la lista dei PC (pcs.v1) — l'associazione attiva
 const chiaveTel = (t) => t.evaluate(() => {
@@ -444,6 +446,9 @@ tel.on("pageerror", (e) => console.log("  PAGEERR " + String(e.stack).slice(0, 5
 await tel.goto(url1);
 const lista = await aspettaTel(tel, /ROSSI MARIO/, 20000);
 check(/ROSSI MARIO/.test(lista) && /BIANCHI ANNA/.test(lista), "inquadrato il QR: l'elenco dei pazienti del PC");
+const associato = await aspettaTel(tel, /Associato · codice/, 6000);
+check(new RegExp(`Associato · codice ${codice1}`).test(associato),
+  `appena associato, per un momento lo stesso codice del PC (${codice1}): il momento in cui lo si confronta con quello sotto il QR`);
 check(!(await tel.evaluate(() => location.hash)), "il frammento con la chiave non resta nell'indirizzo");
 const salvato = await tel.evaluate(() => Object.keys(localStorage).map((k) => [k, localStorage.getItem(k)]));
 const sv = salvato.length === 1 ? JSON.parse(salvato[0][1]) : {};
@@ -554,7 +559,11 @@ const nomi = await tel.locator(".paz .nome").evaluateAll((l) => l.map((x) => { c
 check(nomi.length >= 3 && nomi.every((x) => !x.taglia && x.pieno), `i nomi non si troncano mai (il posto e il promemoria vanno a capo) ${JSON.stringify(nomi)}`);
 check(!(await piccoli(tel)).length, `ogni bottone almeno 44 px (${JSON.stringify(await piccoli(tel))})`);
 await tocca(tel, '[data-a="menu"]');
-check(new RegExp(`codice ${codice1}`).test(await testoTel(tel)), "il telefono mostra lo stesso codice del PC (nel menu)");
+const vociMenu = (await tel.locator(".menu button").allInnerTexts()).map((t) => t.replace(/\s+/g, " ").trim());
+check(JSON.stringify(vociMenu) === JSON.stringify(["📄 Stampa PDF", "📷 Scansiona il QR", "● Registrazioni", "🗑️ Scollega il PC"])
+  && !/codice|Aggiorna elenco|Chiudi sessione|Stampa su|Dimentica|Associato/.test(await tel.locator(".menu").innerText()),
+  `il ⋯ del telefono: solo quello che non c'è altrove — niente «Aggiorna elenco», «Chiudi sessione», codice; per finire una parola sola, «Scollega» (${vociMenu.join(" | ")})`);
+await shot(tel, "tel-1-menu");
 await tocca(tel, '[data-a="menu"]');
 const st1 = await statoPonte();
 check(!!st1?.sessione, "sul PC la sessione è aperta");
@@ -1277,8 +1286,7 @@ check(await tel.locator("#ordina").count() === 1, "(5) scelto un esame, la barra
 const alle0 = await tel.locator(".alle").innerText();
 check(/^Allergie: \S/.test(alle0), `(13) sotto il nome le allergie con le parole del PC (${alle0})`);
 await doc.evaluate(() => { const S = JSON.parse(localStorage.getItem("psassist:stato.v1") || "{}"); S["999001"] = { ...(S["999001"] || {}), anag: { allergie: { nega: false, testo: "Penicillina" }, attenzione: [], ts: Date.now() } }; localStorage.setItem("psassist:stato.v1", JSON.stringify(S)); });
-await tocca(tel, '[data-a="indietro"]'); await aspettaTel(tel, /BIANCHI ANNA/);
-await tocca(tel, '[data-a="menu"]'); await tocca(tel, '[data-a="aggiornaLista"]');
+await tocca(tel, '[data-a="indietro"]'); await aspettaTel(tel, /BIANCHI ANNA/);   // (tornati all'elenco: si rilegge)
 await tocca(tel, '.paz[data-ep="999001"]'); await aspettaTel(tel, /Richieste/, 10000);
 check(await finche(async () => (await tel.locator(".alle.ros").count()) === 1, 15000) && await tel.locator(".alle.ros").innerText() === "Allergie: Penicillina",
   "(13) con un testo: «Allergie: Penicillina», in rosso, sotto il nome");
@@ -1609,9 +1617,7 @@ await doc.evaluate(() => {
   S[999003].vit = { p: { fr: 16, spo2: 97, fc: 80, pas: 120, t: 36.6 }, ts: Date.now() - 5 * h };
   localStorage.setItem("psassist:stato.v1", JSON.stringify(S));
 });
-await tocca(tel, '[data-a="indietro"]');
-await tocca(tel, '[data-a="menu"]');
-await tocca(tel, '[data-a="aggiornaLista"]');
+await tocca(tel, '[data-a="indietro"]');   // (tornati all'elenco: si rilegge)
 await aspettaTel(tel, /VERDI LUCA/, 15000);
 await tocca(tel, '.paz[data-ep="999003"]');
 await aspettaTel(tel, /Parametri di 5 ore fa/, 15000);
@@ -1644,8 +1650,7 @@ const omonimo = (si) => doc.evaluate((si) => {
   localStorage.setItem(K, JSON.stringify(l));
 }, si);
 await omonimo(true);
-await tocca(tel, '[data-a="menu"]');
-await tocca(tel, '[data-a="aggiornaLista"]');
+await rileggiTel(tel);
 const due = await aspettaTel(tel, /…9004/, 10000);
 check(/ROSSI MARIO · …9001/.test(due) && /ROSSI MARIO · …9004/.test(due), "(nell'elenco: «⚠ ROSSI MARIO · …9001» e «⚠ ROSSI MARIO · …9004»)");
 await tocca(tel, '.paz[data-ep="999001"]');
@@ -1703,8 +1708,7 @@ sezione("la mappa sul telefono: sola lettura, Lista · Mappa, Alta · Bassa");
     "e nient'altro: nessun nome di paziente nella risposta (il nome il telefono lo ha dalla riga di «pazienti»)");
 
   // il telefono: «Lista · Mappa»
-  await tocca(tel, '[data-a="menu"]');
-  await tocca(tel, '[data-a="aggiornaLista"]');
+  await rileggiTel(tel);
   await aspettaTel(tel, /NERI SARA/, 15000);
   const modoTel = () => tel.evaluate(() => ({ seg: [...document.querySelectorAll("main > .seg:not(.pic) button")].map((b) => b.textContent + (b.classList.contains("on") ? "*" : "")).join("|"),
     pic: [...document.querySelectorAll("main > .seg.pic button")].map((b) => b.textContent + (b.classList.contains("on") ? "*" : "")).join("|"), mappa: !!document.querySelector(".mappa"),
@@ -1818,7 +1822,7 @@ sezione("la mappa sul telefono: sola lettura, Lista · Mappa, Alta · Bassa");
     await doc.evaluate(() => localStorage.setItem("psassist:triage.lista.v1", JSON.stringify({ ts: Date.now(), righe: [
       { nome: "GRIGI TINA", breve: "GRIGI T.", eta: 30, triage: "VERDE", area: "", arrivo: Date.now() - 80 * 60e3 },
       { nome: "DE LUCA ANNA", breve: "DE LUCA A.", eta: 82, triage: "AZZURRO", area: "", arrivo: Date.now() - 30 * 60e3 }] })));
-    await tocca(tel, '[data-a="menu"]'); await tocca(tel, '[data-a="aggiornaLista"]');
+    await rileggiTel(tel);
     await tocca(tel, '[data-a="mappasel"][data-k="ps"]');
     await finche(async () => await tel.locator('.mappa .area .pa[data-a="ospite"]').count() === 1, 15000);
     const attesa = await tel.evaluate(() => [...document.querySelectorAll(".mappa .area")].map((a) => `${a.querySelector("h4").textContent}=${[...a.querySelectorAll(".pa")].map((p) => `${p.dataset.a}:${p.textContent}`).join(",")}`).join(" | "));
@@ -1847,7 +1851,7 @@ sezione("la mappa sul telefono: sola lettura, Lista · Mappa, Alta · Bassa");
       for (const k of Object.keys(p)) if (/^tr/.test(k)) delete p[k];
       localStorage.setItem("psassist:stanza.ps.posti.v1", JSON.stringify(p));
     });
-    await tocca(tel, '[data-a="menu"]'); await tocca(tel, '[data-a="aggiornaLista"]');
+    await rileggiTel(tel);
     await finche(async () => await tel.locator(".mappa").count() === 1 && await tel.locator('[data-a="ospite"]').count() === 0, 15000);
   }
 
@@ -2072,13 +2076,9 @@ await aspettaTel(tel, /ROSSI MARIO/, 15000);
 // ===========================================================================
 sezione("nessun gestionale aperto, sessione del gestionale scaduta");
 await doc.close();
-await tocca(tel, '[data-a="menu"]');
-await tocca(tel, '[data-a="aggiornaLista"]');
+await tocca(tel, '.paz[data-ep="999002"]');
 check(/Apri il gestionale sul PC/.test(await aspettaTel(tel, /Apri il gestionale sul PC/, 15000)), "senza schede del gestionale: «Apri il gestionale sul PC»");
-await tocca(tel, '[data-a="menu"]');
-await tocca(tel, '[data-a="esci"]');
-await aspettaTel(tel, /Sessione chiusa/, 10000);
-await tocca(tel, '[data-a="riapri"]');
+await tel.reload();   // (la sessione di nuovo da capo, senza gestionale)
 check(/Elenco non letto/.test(await aspettaTel(tel, /Elenco non letto/, 15000)) && await tel.locator('[data-a="aggiornaLista"]:has-text("Riprova")').count() === 1,
   "riaperta senza gestionale: «Elenco non letto» e «Riprova», non una rotella per sempre");
 await shot(tel, "tel-8-elenco-non-letto");
