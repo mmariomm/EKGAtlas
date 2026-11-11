@@ -172,8 +172,8 @@ let pSta = await staCtx.newPage();
 await pSta.goto(EXTURL("stazione.html"));
 await pSta.waitForSelector("#qr svg", { timeout: 10000 });
 const testoSta = () => pSta.locator(".box").innerText().catch(() => "");
-check(/PS Assist · Stazione di stampa/.test(await pSta.title()) && /Non collegata/.test(await testoSta()) && /⋯ → Collega stampante/.test(await testoSta()),
-  "«PS Assist · Stazione di stampa»: non collegata, il QR, e come si inquadra (⋯ → Collega stampante)");
+check(/PS Assist · Stazione di stampa/.test(await pSta.title()) && /Non collegata/.test(await testoSta()) && /⋯ → Scansiona il QR/.test(await testoSta()),
+  "«PS Assist · Stazione di stampa»: non collegata, il QR, e come si inquadra (⋯ → Scansiona il QR)");
 const codiceQr = (await pSta.locator("#qrcodice").innerText()).trim();
 check(/^\d{3} \d{3}$/.test(codiceQr), `sotto il QR un codice di sei cifre (got «${codiceQr}»)`);
 const offerta = (await statoSta()).offerta;
