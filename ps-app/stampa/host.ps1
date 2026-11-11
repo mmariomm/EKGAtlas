@@ -12,7 +12,7 @@
 #                                                 `copie` (dalla 4: un intero da 1 a 10, se no 1)
 #                                                 in UN lavoro solo — l'etichetta anagrafica ×N
 #   {t:"chi", avviata?}                         → che versione c'è in %LOCALAPPDATA%\PSAssist\estensione
-#   {t:"aggiorna", zip, versione}               → «Aggiorna app»: lo zip (scaricato da Chrome)
+#   {t:"aggiorna", zip, versione}               → l'aggiornamento: lo zip (scaricato da Chrome)
 #                                                 al posto di quella cartella, la vecchia in
 #                                                 estensione.prima, e i file di questa cartella
 # e per la stampa un esito, detto onestamente — uno per il lavoro, cioè per tutte
@@ -33,7 +33,7 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'   # stdout è di Chrome: niente barre, niente testo
 $INIZIO = Get-Date
 $VERSIONE = '4'          # 4: le copie in un lavoro solo
-$MAX_MESSAGGIO = 40MB    # il PDF (o lo zip di «Aggiorna app») in base64 e poco altro
+$MAX_MESSAGGIO = 40MB    # il PDF (o lo zip dell'aggiornamento) in base64 e poco altro
 $MAX_PDF = 25MB
 $TETTO_S = 35            # tutto il lavoro di una stampa; con l'avvio di PowerShell, sotto i 40
 # dopo SumatraPDF, quanto si guarda la coda di Windows: un'etichettatrice di
@@ -207,7 +207,7 @@ function Stampa($d, [string]$pdf64) {
   [pscustomobject]@{ esito = $esito; stampante = $nome; pagina = (Misura $byte); opzioni = $opzioni; copie = $copie }
 }
 
-# ---- «Aggiorna app» -----------------------------------------------------------
+# ---- l'aggiornamento -----------------------------------------------------------
 # Lo zip l'ha scaricato l'estensione (la rete di Chrome): qui niente rete. Si
 # apre in %TEMP%, si controlla (extension\manifest.json, stessa chiave della
 # cartella installata, la versione detta, più nuova), la cartella installata

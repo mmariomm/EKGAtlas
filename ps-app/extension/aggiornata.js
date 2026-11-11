@@ -1,4 +1,4 @@
-// Dopo «Aggiorna app» (o «Ricarica estensione») il pannello di questa scheda è
+// Dopo un aggiornamento (o «Ricarica estensione») il pannello di questa scheda è
 // quello di prima, e non parla più con l'estensione: questa pillola lo dice, e
 // un tocco riapre la pagina con la versione nuova. Mai da sola: nella pagina
 // può esserci un testo non ancora mandato. La riapre con una GET dello stesso

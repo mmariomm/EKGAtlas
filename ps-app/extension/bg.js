@@ -2433,8 +2433,8 @@ chrome.runtime.onInstalled?.addListener(riallinea);
 try { importScripts("registra.js"); }
 catch (e) { console.error("PS Assist: il registratore non parte", e); }
 
-// «Aggiorna app» (⋯, aggiorna.js): la versione nuova da GitHub, con un tocco,
-// attraverso l'aiutante di Windows. Un errore lì non tocca il resto.
+// L'aggiornamento da solo (aggiorna.js): la versione nuova da GitHub, applicata
+// quando è sicuro, attraverso l'aiutante di Windows. Un errore lì non tocca il resto.
 try { importScripts("aggiorna.js"); }
 catch (e) { console.error("PS Assist: l'aggiornamento non parte", e); }
 

@@ -8,8 +8,8 @@
 # cosa chiedere all'IT. (Un criterio che impone gli script firmati non lascia
 # partire nemmeno questo script: lo guarda prima installa.cmd.)
 # Copia anche l'estensione dello zip in %LOCALAPPDATA%\PSAssist\estensione: caricata
-# da lì (una volta, in chrome://extensions), ⋯ → «Aggiorna app» la aggiorna con un
-# tocco attraverso l'aiutante, che tiene la versione di prima in estensione.prima
+# da lì (una volta, in chrome://extensions), si aggiorna da sola
+# attraverso l'aiutante, che tiene la versione di prima in estensione.prima
 # (con -Ripristina, cioè ripristina.cmd, torna quella).
 param([switch]$Togli, [switch]$Ripristina)
 
@@ -69,7 +69,7 @@ function Versione([string]$v) { $x = $null; if ([version]::TryParse($v, [ref]$x)
 function VersioneIn([string]$dir) { try { [string](Get-Content -LiteralPath (Join-Path $dir 'manifest.json') -Raw -Encoding UTF8 | ConvertFrom-Json).version } catch { '' } }
 
 # ---- ripristinare (ripristina.cmd) -------------------------------------------
-# La versione di prima dell'ultimo «Aggiorna app»: estensione.prima torna
+# La versione di prima dell'ultimo aggiornamento: estensione.prima torna
 # estensione. Quella di prima non si tocca finché non è al suo posto.
 if ($Ripristina) {
   $prima = Join-Path $CASA 'estensione.prima'
@@ -92,7 +92,7 @@ if ($QUI -ne $DOVE) {
 }
 # L'estensione dello zip (la cartella extension accanto a questa), se non è più
 # vecchia di quella già installata; installata.json dice all'estensione che
-# gira da qui, e che «Aggiorna app» può scambiare questa cartella.
+# gira da qui, e che l'aggiornamento può scambiare questa cartella.
 $zipEst = Join-Path (Split-Path $QUI) 'extension'
 $vZip = VersioneIn $zipEst
 if ($vZip -and $QUI -ne $DOVE) {
@@ -195,7 +195,7 @@ if (Giusto $exe $EXE_SHA256) {
 
 if (VersioneIn $EST) {
   Write-Host ''
-  Write-Host "Una volta sola: in chrome://extensions «Carica estensione non pacchettizzata» → $EST (non la cartella dello zip). Da lì ⋯ → «Aggiorna app» la aggiorna con un tocco."
+  Write-Host "Una volta sola: in chrome://extensions «Carica estensione non pacchettizzata» → $EST (non la cartella dello zip). Da lì si aggiorna da sola."
 }
 if ($blocchi.Count) {
   Write-Host ''
