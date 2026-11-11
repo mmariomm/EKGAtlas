@@ -625,6 +625,11 @@ if (await prova("il segno dell'ordine di un altro paziente: ⚠ per un carrello 
     { ...base, id: "pcerr0002", stato: "errore", agg: ora + 1, vista: { tag: "Non partita", testo: "niente inviato: riprova", tono: "err", quesito: "la scheda per l'ordine non si è aperta" } }]);
   const due = await finche(async () => { const t = await segnoPill(); return /\+1/.test(t) ? t : false; }, 8000);
   check(/^✕ ROSSI M\. \+1$/.test(due || ""), `due ordini finiti: il più serio, «✕ ROSSI M. +1» (got «${due || await segnoPill()}»)`);
+  // due richieste dello STESSO tocco su Conferma (POC e RX): un ordine, niente «+1» — i tocchi, come la riga sola (gestoDi)
+  await scrivi([{ ...base, id: "pcgesto0001", gesto: "guno", stato: "avviso", vista: { tag: "Confermata", testo: "Stampato su Zebra ZD421", tono: "ok" } },
+    { ...base, id: "pcgesto0002", gesto: "guno", stato: "errore", agg: ora + 1, vista: { tag: "Non partita", testo: "apri il carrello", tono: "err" } }]);
+  const uno = await finche(async () => { const t = await segnoPill(); return /^✕ ROSSI M\.$/.test(t) ? t : false; }, 8000);
+  check(!!uno, `due richieste dello stesso tocco: un ordine, «✕ ROSSI M.» senza «+1» (got «${uno || await segnoPill()}»)`);
   // un ordine di BIANCHI che gira qui, e il segno di ROSSI accanto: il tocco apre ROSSI, non lo piega
   const wid = await sw.evaluate(() => chrome.tabs.query({}).then((l) => l.find((t) => !/smarthealth/.test(t.url || ""))?.id));
   await scrivi([{ ...base, id: "pcerr0002", stato: "errore", vista: { tag: "Non partita", testo: "niente inviato: riprova", tono: "err", quesito: "la scheda per l'ordine non si è aperta" } },
@@ -639,6 +644,17 @@ if (await prova("il segno dell'ordine di un altro paziente: ⚠ per un carrello 
     return /ROSSI MARIO/.test(t) && /Non partita/.test(t) ? t : false;
   }, null, { timeout: 8000 }).then((h) => h.jsonValue()).catch(() => "");
   check(!!aperta, `un tocco sul segno: la striscia è quella di ROSSI, «Non partita» — non piegata dietro l'ordine che gira (got «${aperta || "niente"}»)`);
+  // un ordine di BIANCHI entrato in coda PRIMA del tocco ma partito DOPO: vince lui (il suo ⏹ a vista), quello toccato si piega accanto
+  const dopoTocco = Date.now() + 1;
+  await scrivi([{ ...base, id: "pcerr0002", stato: "errore", vista: { tag: "Non partita", testo: "niente inviato: riprova", tono: "err", quesito: "la scheda per l'ordine non si è aperta" } },
+    { id: "pcgira0002", ep: "999002", paziente: "BIANCHI ANNA", n: 2, stato: "corre", ts: ora, partito: dopoTocco, agg: dopoTocco, worker: wid, vista: { tag: "", badge: "2 esami", testo: "esame 1 di 2", tono: "run", prog: [1, 2] },
+      resto: { mancano: ["EMOCROMO"], controllare: [], nel: [] } }]);
+  const vince = await doc.waitForFunction(() => {
+    const r = document.getElementById("psassist-host")?.shadowRoot;
+    const t = (r?.querySelector(".pill.run")?.innerText || r?.querySelector(".gchip")?.dataset.riga || "").replace(/\s+/g, " ").trim();
+    return /BIANCHI ANNA/.test(t) && !/Non partita/.test(t) ? t : false;
+  }, null, { timeout: 8000 }).then((h) => h.jsonValue()).catch(() => "");
+  check(!!vince, `in coda prima del tocco, partito dopo: la striscia è sua, quella toccata si piega (got «${vince || "niente"}»)`);
   await sw.evaluate(() => chrome.storage.session.set({ ordini: [] }));
 }
 

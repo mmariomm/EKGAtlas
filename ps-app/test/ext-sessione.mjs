@@ -581,6 +581,8 @@ if (prova("la Conferma che il gestionale ignora: «Non partita» in pochi second
   check(conferme(A).length === 2 && conferme(A).every((q) => q.params.RICHIESTA_ID === rid) && A.state.richieste[rid].confirmed,
     `il tocco: una Conferma in più, sulla stessa richiesta, e il gestionale la prende (got ${conferme(A).length} conferme)`);
   check(rec?.pubblico?.titolo === "Confermata" && et.length === 1, `provata: «Confermata», le etichette pronte una volta (got ${JSON.stringify(rec && [rec.pubblico?.titolo, et.length])})`);
+  const segnata = await doc.evaluate((r) => (JSON.parse(localStorage.getItem("psassist:conferme.v1") || "[]").find((x) => x.rid === r) || {}).stampata > 0, rid);
+  check(segnata, "e le sue etichette risultano prese, per chi la ritrova confermata (conferme.v1)");
   check(inviati(A).length === 1, `nessun esame rimandato (got ${inviati(A).length} invii)`);
   // un secondo tocco (la stessa richiesta): niente
   const r2 = await sw.evaluate((id) => new Promise((res) => {
@@ -637,7 +639,13 @@ if (prova("la Conferma ignorata ma tornata coi suoi tempi: da controllare, anche
   check(conferme(A).length === 1, `una Conferma sola (got ${conferme(A).length})`);
   sess.dopoConferma = null; sess.confermaLenta = 0;
 }
-if (prova("«Conferma di nuovo» su una richiesta confermata intanto a mano: niente premuto, niente ristampato")) {
+// Non più «da confermare», e la pagina del paziente la elenca: niente si
+// preme. Le etichette: se una scheda le ha già prese (conferme.v1, «stampata»),
+// solo la Ristampa; se no — la richiesta tolta da «Ignora», da una pagina che
+// la elencava, e nessuno ha stampato — si stampano adesso, una volta.
+for (const stampata of [true, false]) {
+  if (!prova(stampata ? "«Conferma di nuovo» su una richiesta confermata intanto a mano, etichette già prese: niente premuto, niente ristampato"
+    : "«Conferma di nuovo» su una richiesta confermata intanto ma ignorata, etichette mai prese: niente premuto, le etichette una volta")) continue;
   await daCapo();
   A = createMock({ dopoConferma: 300 });
   Object.assign(sess, { corrente: null, log: [], ora: 0, forzaOra: null, area: null });
@@ -651,17 +659,31 @@ if (prova("«Conferma di nuovo» su una richiesta confermata intanto a mano: nie
   const prima = await striscia(doc, /ROSSI MARIO.*Non partita.*Conferma di nuovo/, 40000).catch(() => "");
   const rid = Object.keys(A.state.richieste)[0];
   check(!!prima && (await sorvegliate(doc)).some((x) => x.rid === rid), `«Non partita · Conferma di nuovo», e la richiesta è fra quelle da confermare (got «${prima}»)`);
-  // il medico la conferma a mano sul carrello: la sua scheda l'ha provata, stampato, e tolta dalle «da confermare»
+  // la richiesta risulta confermata e non è più fra le «da confermare»: la scheda del medico che l'ha
+  // provata ne ha preso le etichette (stampata) — o «Ignora», e nessuno le ha stampate
   A.state.richieste[rid].confirmed = true;
-  await doc.evaluate((r) => localStorage.setItem("psassist:daConfermare.v1", JSON.stringify(JSON.parse(localStorage.getItem("psassist:daConfermare.v1") || "[]").filter((x) => x.rid !== r))), rid);
+  await doc.evaluate(([r, s]) => {
+    localStorage.setItem("psassist:daConfermare.v1", JSON.stringify(JSON.parse(localStorage.getItem("psassist:daConfermare.v1") || "[]").filter((x) => x.rid !== r)));
+    const l = JSON.parse(localStorage.getItem("psassist:conferme.v1") || "[]"), x = l.find((y) => y.rid === r) || { rid: r };
+    if (s) localStorage.setItem("psassist:conferme.v1", JSON.stringify([...l.filter((y) => y !== x), { ...x, stampata: Date.now(), ts: Date.now() }]));
+  }, [rid, stampata]);
   const fogli0 = chiesti(A, /RcsStampaEtichetteLISHMIMU|jasperservlet/);
   await $panel(doc, AZIONE).click();
-  const vista = await striscia(doc, /ROSSI MARIO.*era già confermata/, 40000).catch(() => "");
-  await sospendi(4000);
-  const rec = (await ordini()).find((x) => x.paziente === "ROSSI MARIO" && /c$/.test(x.id));
-  check(/Confermata/.test(vista) && !!rec && !rec.stampa && rec.stato === "avviso", `«Confermata · era già confermata», senza fogli (got «${vista}» · ${JSON.stringify(rec && [rec.stato, !!rec.stampa])})`);
-  check(conferme(A).length === 1 && chiesti(A, /RcsStampaEtichetteLISHMIMU|jasperservlet/) === fogli0 && (await doc.locator("#psassist-print").count()) === 0,
-    `niente premuto e niente ristampato: le etichette le ha già stampate chi l'ha confermata (got ${conferme(A).length} conferme · ${chiesti(A, /RcsStampaEtichetteLISHMIMU|jasperservlet/) - fogli0} fogli)`);
+  if (stampata) {
+    const vista = await striscia(doc, /ROSSI MARIO.*era già confermata/, 40000).catch(() => "");
+    await sospendi(4000);
+    const rec = (await ordini()).find((x) => x.paziente === "ROSSI MARIO" && /c$/.test(x.id));
+    check(/Confermata/.test(vista) && /Ristampa/.test(vista) && !!rec && !rec.stampa && rec.stato === "avviso", `«Confermata · era già confermata: Ristampa…», senza fogli (got «${vista}» · ${JSON.stringify(rec && [rec.stato, !!rec.stampa])})`);
+    check(conferme(A).length === 1 && chiesti(A, /RcsStampaEtichetteLISHMIMU|jasperservlet/) === fogli0 && (await doc.locator("#psassist-print").count()) === 0,
+      `niente premuto e niente ristampato: le etichette le ha già prese chi l'ha confermata (got ${conferme(A).length} conferme · ${chiesti(A, /RcsStampaEtichetteLISHMIMU|jasperservlet/) - fogli0} fogli)`);
+  } else {
+    await finche(async () => (await ordini()).some((x) => x.paziente === "ROSSI MARIO" && /c$/.test(x.id) && x.stampa), 40000);
+    await sospendi(3000);
+    const rec = (await ordini()).find((x) => x.paziente === "ROSSI MARIO" && /c$/.test(x.id));
+    const et = (rec?.stampa?.jobs || []).filter((j) => /RcsStampaEtichetteLISHMIMU\.do\?RICHIESTA_ID=/.test(j.url || "") && param(j.url, "RICHIESTA_ID") === rid);
+    check(rec?.pubblico?.titolo === "Confermata" && et.length === 1, `nessuno le aveva stampate: «Confermata», le sue etichette pronte una volta (got ${JSON.stringify(rec && [rec.stato, rec.pubblico?.titolo, rec.pubblico?.testo, et.length])})`);
+    check(conferme(A).length === 1, `niente premuto: una Conferma sola, quella di prima (got ${conferme(A).length})`);
+  }
   sess.dopoConferma = null;
 }
 if (prova("«Conferma di nuovo» due volte per la stessa richiesta: la seconda non parte (il registro delle rifatte)")) {
@@ -713,6 +735,107 @@ if (prova("«Conferma di nuovo» ma il carrello, al tocco, ha perso un esame: ni
   check(/Non partita/.test(vista) && /apri il carrello/.test(vista), `al tocco il carrello ha perso l'esame: «Non partita · apri il carrello», e il perché (got «${vista}»)`);
   await sospendi(3000);
   check(conferme(A).length === 1 && !A.state.richieste[rid].confirmed, `niente premuto: una Conferma sola, quella di prima (got ${conferme(A).length})`);
+  sess.dopoConferma = null;
+}
+// Una Conferma in volo non la vede nessuno: il gestionale ci mette 3–14 s, e
+// intanto il carrello è ancora una bozza. Ogni Conferma premuta si annota
+// prima del clic (conferme.v1, e al service worker): «Conferma di nuovo» non
+// preme mai sopra quella del medico.
+const tocca = (id) => sw.evaluate((id) => new Promise((res) => {
+  chrome.tabs.query({}).then((ts) => { const t = ts.find((x) => /EPISODIO_ID=999002/.test(x.url || "")); ordMessaggio({ t: "ordineRiconferma", id }, { tab: t, url: t.url }, res); });
+}), id);
+const nonPartitaDaRifare = async () => {
+  await daCapo();
+  A = createMock({ dopoConferma: 300 });
+  Object.assign(sess, { corrente: null, log: [], ora: 0, forzaOra: null, area: null });
+  await suPagina(doc, A.patientUrl);
+  await nienteSmart(doc);
+  ignoraLaPrima();
+  const nasce = nuovaPagina();
+  await ordina(doc, ["TROPONINA"]);
+  await nasce;
+  await suPagina(doc, B.patientUrl);
+  const prima = await striscia(doc, /ROSSI MARIO.*Non partita.*Conferma di nuovo/, 40000).catch(() => "");
+  return { prima, rid: Object.keys(A.state.richieste)[0], rec0: (await ordini()).find((x) => x.paziente === "ROSSI MARIO" && x.vista && x.vista.riconferma) };
+};
+if (prova("«Conferma di nuovo» mentre la Conferma del medico è in volo: niente premuto")) {
+  const { prima, rid, rec0 } = await nonPartitaDaRifare();
+  check(!!prima && !!rec0, `«Non partita · Conferma di nuovo» (got «${prima}»)`);
+  // il medico apre il carrello in un'altra scheda e preme la Conferma del gestionale: 6 s, e il server la registra alla fine
+  const doc2 = await ctx.newPage();
+  await suPagina(doc2, rec0.consegna.url);
+  await sospendi(1500);
+  sess.confermaLenta = 6000;
+  sess.dopoConferma = (mock, p) => {
+    if (mock !== A) return;
+    const r = mock.state.richieste[p.get("RICHIESTA_ID")];
+    r.confirmed = false;
+    setTimeout(() => { r.confirmed = true; }, 5500);
+  };
+  const premuto = await doc2.evaluate(() => { const b = document.querySelector('input[type="submit"][name="Update"], input[type="submit"][name="Update1"]'); if (b) b.click(); return !!b; });
+  await sospendi(500);
+  // …e mentre è in volo tocca «Conferma di nuovo»
+  const r2 = await tocca(rec0.id);
+  await sospendi(20000);
+  const rec = (await ordini()).find((x) => x.id === rec0.id);
+  check(premuto && conferme(A).length === 2 && conferme(A).every((q) => q.params.RICHIESTA_ID === rid),
+    `due Conferme: quella ignorata e quella del medico — «Conferma di nuovo» non preme (got ${conferme(A).length})`);
+  check(!(r2 && r2.ok) && !!rec && rec.vista?.tag === "Da controllare" && !rec.vista?.riconferma && !(await ordini()).some((x) => x.id === rec0.id + "c"),
+    `il tocco non parte, e il bottone se ne va: «Da controllare» (got ${JSON.stringify(r2 && r2.ok)} · ${JSON.stringify(rec && rec.vista)})`);
+  await doc2.close().catch(() => {});
+  sess.dopoConferma = null; sess.confermaLenta = 0;
+}
+if (prova("«Conferma di nuovo» con una Conferma premuta altrove che il service worker non ha saputo: la scheda guarda prima di premere")) {
+  const { prima, rid, rec0 } = await nonPartitaDaRifare();
+  check(!!prima && !!rec0, `«Non partita · Conferma di nuovo» (got «${prima}»)`);
+  // una Conferma premuta adesso in un'altra scheda, annotata in pagina e basta (il messaggio al service worker perso)
+  await doc.evaluate((r) => {
+    const l = JSON.parse(localStorage.getItem("psassist:conferme.v1") || "[]").filter((x) => x.rid !== r);
+    localStorage.setItem("psassist:conferme.v1", JSON.stringify([...l, { rid: r, premuta: Date.now(), ts: Date.now() }]));
+  }, rid);
+  await $panel(doc, AZIONE).click();
+  const vista = await striscia(doc, /ROSSI MARIO.*Da controllare/, 40000).catch(() => "");
+  await sospendi(3000);
+  const rec = (await ordini()).find((x) => x.id === rec0.id + "c");
+  check(!!rec && rec.vista?.tag === "Da controllare" && /niente premuto/.test(rec.vista?.quesito || "") && /guarda le sue richieste/.test(vista),
+    `la scheda della Conferma, prima di premere, la vede: «Da controllare · guarda le sue richieste…», niente premuto (got «${vista}» · ${JSON.stringify(rec && rec.vista)})`);
+  check(conferme(A).length === 1, `nessuna seconda Conferma (got ${conferme(A).length})`);
+  sess.dopoConferma = null;
+}
+if (prova("la Conferma ignorata, e intanto il medico ne preme un'altra: da controllare, mai «Conferma di nuovo»")) {
+  await daCapo();
+  A = createMock({ dopoConferma: 300 });
+  Object.assign(sess, { corrente: null, log: [], ora: 0, forzaOra: null, area: null });
+  await suPagina(doc, A.patientUrl);
+  await nienteSmart(doc);
+  ignoraLaPrima();
+  // il carrello, riletto dopo la Conferma, arriva tardi: intanto il medico preme la sua
+  const tardi = async (r) => {
+    const q = r.request();
+    if (!(q.method() === "GET" && conferme(A).length > 0 && /RcsRichiestaPrestazioniRicercaErogatore/.test(q.url()))) return r.fallback();
+    await sospendi(2500);
+    return r.fallback();
+  };
+  await ctx.route(`${ORIGIN}/**`, tardi);
+  const nasce = nuovaPagina();
+  await ordina(doc, ["TROPONINA"]);
+  await nasce;
+  await suPagina(doc, B.patientUrl);
+  await finche(() => conferme(A).length > 0, 40000);
+  const rid = Object.keys(A.state.richieste)[0];
+  await sospendi(600);
+  await doc.evaluate((r) => {
+    const l = JSON.parse(localStorage.getItem("psassist:conferme.v1") || "[]").filter((x) => x.rid !== r);
+    localStorage.setItem("psassist:conferme.v1", JSON.stringify([...l, { rid: r, premuta: Date.now(), ts: Date.now() }]));
+  }, rid);
+  const ultima = () => ordini().then((l) => l.find((x) => x.paziente === "ROSSI MARIO" && !["coda", "avvio", "corre"].includes(x.stato)));
+  await finche(ultima, 40000);
+  const rec = await ultima();
+  const v = rec?.vista || {};
+  check(v.tag === "Da controllare" && v.tono === "warn" && !v.riconferma && /un'altra Conferma/.test(v.quesito || ""),
+    `il carrello ancora una bozza, ma un'altra Conferma premuta intanto: «Da controllare», mai «Conferma di nuovo» (got ${JSON.stringify(rec && [rec.stato, v.tag, v.testo, v.quesito, !!v.riconferma])})`);
+  check(conferme(A).length === 1, "una Conferma sola");
+  await ctx.unroute(`${ORIGIN}/**`, tardi);
   sess.dopoConferma = null;
 }
 if (prova("la Conferma ignorata ma il carrello senza la sua Conferma: le attese, poi da controllare — mai «Non partita»")) {
@@ -775,6 +898,7 @@ if (prova("prima le etichette: senza la stampa automatica, i PDF del primo ordin
   await nienteSmart(doc);
   await ordina(doc, DUE);
   await finche(() => conferme(A).length === 2, 90000);
+  const subito = await ordini();   // (appena confermata la seconda: tutt'e due ci sono ancora)
   await doc.waitForSelector("#psassist-print", { state: "attached", timeout: 20000 }).catch(() => {});
   const [r1] = Object.keys(A.state.richieste);
   const crea = sess.log.filter((x) => x.cosa === "crea"), pdf1 = sess.log.filter((x) => x.cosa === "pdf" && x.rid === r1);
@@ -782,7 +906,33 @@ if (prova("prima le etichette: senza la stampa automatica, i PDF del primo ordin
   check(crea.length === 2 && pdf1.length >= 2 && pdf1.every((x) => x.t < crea[1].t) && conf1.t < crea[1].t,
     `i PDF del primo ordine (etichette e lista) presi prima che nasca la seconda richiesta (got ${pdf1.map((x) => x.t - conf1.t).join(", ")} ms dalla prima Conferma · Crea ${crea[1] ? crea[1].t - conf1.t : "?"} ms)`);
   check(sess.ora === 0 && conferme(A).length === 2, `e tutt'e due confermate, senza «ORA-» (got ${sess.ora})`);
+  // (`partito`: quando ha lasciato la coda, non quando c'è entrato — la striscia toccata cede solo a uno partito dopo)
+  // (il primo, le sue etichette date a questa scheda, può essersene già andato: il secondo, entrato in coda con lui, c'è)
+  const due = subito.filter((x) => x.paziente === "ROSSI MARIO");
+  check(due.some((x) => x.partito - x.ts > 1000),
+    `il secondo ordine, entrato in coda col primo: «partito» quando la lascia (got ${JSON.stringify(due.map((x) => (x.partito || 0) - x.ts))} ms dopo esserci entrato)`);
   lento = 0;
+}
+
+// ---- 2e. dal telefono, una gamba senza risposta -----------------------------
+// Il laboratorio è partito; la radiologia, dopo, il service worker non la
+// conferma (la risposta persa): anche lei può essere partita — «Da
+// controllare», mai «Non partiti» (che direbbe di rifarla).
+if (prova("dal telefono, la radiologia senza risposta del service worker: da controllare, mai «Non partiti»")) {
+  await daCapo();
+  await suPagina(doc, A.patientUrl);
+  await nienteSmart(doc);
+  await sw.evaluate(() => {
+    chrome.runtime.onMessage.removeListener(ordMessaggio);
+    self.__senzaRx = (m, s, r) => (m && m.t === "ordineNuovo" && /r$/.test((m.job && m.job.id) || "") ? undefined : ordMessaggio(m, s, r));
+    chrome.runtime.onMessage.addListener(self.__senzaRx);
+  });
+  const r = await sw.evaluate((e) => ponteSuScheda("ordina", { ep: "999001", quesito: "dolore toracico", esami: e, id: "telgambe0001" }), [`${RES.POC}:324`, `${RES.RX}:35`]);
+  await sw.evaluate(() => { chrome.runtime.onMessage.removeListener(self.__senzaRx); chrome.runtime.onMessage.addListener(ordMessaggio); });
+  const av = (r && r.dati && r.dati.avviso) || "";
+  check(!!r && r.ok && (r.dati.ordini || []).length === 1 && /^Da controllare: radiologia \(il service worker non risponde/.test(av) && !/Non partiti/.test(av),
+    `il laboratorio partito, la radiologia senza risposta: «Da controllare: radiologia (…)», mai «Non partiti» (got ${JSON.stringify(r && r.ok)} · «${av}»)`);
+  await finche(async () => !(await ordini()).some((x) => ["coda", "avvio", "corre"].includes(x.stato)), 60000);
 }
 
 // ---- 3. mai due motori per un ordine ------------------------------------

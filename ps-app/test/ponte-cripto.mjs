@@ -663,9 +663,14 @@ await blocco(async () => {
   // etichette che nessuno prende: «Confermata» solo per un ordine; una ristampa, un consenso, l'etichetta anagrafica dicono com'è andata
   const ns = (r) => vm.runInContext(`(() => { const r = ${JSON.stringify(r)}; nonStampate(r, "nessuno le ha prese"); return r.vista; })()`, ctx);
   const nsOrd = ns({ id: "pc1", confermata: ora, stato: "stampa", stampa: { tag: "Confermata", jobs: [] } });
-  const nsRis = ns({ id: "rist1", stato: "stampa", stampa: { tag: "Stampa", jobs: [] } });
+  const nsRis = ns({ id: "rist1", stato: "stampa", stampa: { tag: "Stampa", jobs: [{ name: "Etichette provette", printer: "etichettatrice" }] } });
   check(nsOrd.tag === "Confermata" && nsOrd.testo === "Etichette NON stampate" && nsRis.tag === "Etichette NON stampate" && nsRis.testo === "nessuno le ha prese",
     `etichette non prese: «Confermata · Etichette NON stampate» per un ordine, «Etichette NON stampate» e basta per una ristampa (${JSON.stringify([nsOrd, nsRis])})`);
+  // un consenso, un PDF: mai «Etichette» — il nome del foglio
+  const nsCons = ns({ id: "cons1", stato: "stampa", stampa: { tag: "Stampa", jobs: [{ name: "Consenso informato TC", printer: "stampante normale" }] } });
+  const nsDue = ns({ id: "rist2", stato: "stampa", stampa: { tag: "Stampa", jobs: [{ name: "Lista esami", printer: "stampante normale" }, { name: "Richiesta radiologia", printer: "stampante normale" }] } });
+  check(nsCons.tag === "NON stampato: Consenso informato TC" && nsDue.tag === "Fogli NON stampati" && !/Etichette/.test(nsCons.tag + nsDue.tag),
+    `un consenso o dei fogli A4 non presi: col loro nome, mai «Etichette NON stampate» (${JSON.stringify([nsCons.tag, nsDue.tag])})`);
   // la scheda di «Conferma di nuovo» che non parte: la richiesta c'è, coi suoi esami — «apri il carrello e premi Conferma», mai «niente inviato»
   const np = (r) => vm.runInContext(`nonPartito(${JSON.stringify(r)}, "la scheda dell'ordine non ha risposto")`, ctx);
   check(np({ riconfermata: true }).testo === "apri il carrello e premi Conferma" && /niente premuto/.test(np({ riconfermata: true }).quesito) && np({}).testo === "niente inviato: riprova",

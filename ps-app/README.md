@@ -649,9 +649,11 @@ lette stanno in `sessionStorage` (`smart.giro.v1`) e muoiono con lei.
    **Un ordine finito di un altro paziente non prende il posto della tua pill.** Sulla pagina di
    BIANCHI, l'ordine finito di ROSSI resta un **segno piccolo dentro la pill** — «✓ ROSSI M.»
    («Confermata», o una stampa che non è un ordine), «⚠» (da guardare: anche un carrello pronto da
-   confermare), «✕» (non partito) —, con «+1» se gli ordini finiti di altri pazienti sono due;
+   confermare), «✕» (non partito) —, con «+1» se gli ordini finiti di altri pazienti sono due
+   (due tocchi su Conferma: POC e RX dello stesso tocco sono un ordine solo);
    un tocco lo apre come striscia intera, col suo ⏹/✕/«Ristampa», anche con un ordine che girava già (uno
-   che parte dopo il tocco vince lui, col suo ⏹, e quello toccato si piega accanto: un tocco, e torna)
+   che parte dopo il tocco — che lascia la coda dopo, anche se c'era entrato prima — vince lui, col suo ⏹,
+   e quello toccato si piega accanto: un tocco, e torna)
    (resta accanto anche a una striscia di questa scheda che non è di un ordine). Il mouse sulla pill la apre come
    sempre (a finestra aperta il segno è un chip in intestazione). Sulla pagina dello stesso
    paziente, e per un ordine che gira, è in coda o aspetta un tocco per le etichette, la striscia
@@ -770,7 +772,10 @@ lette stanno in `sessionStorage` (`smart.giro.v1`) e muoiono con lei.
    col suo Conferma e con tutti gli esami della ricevuta, se no niente si preme) e preme la
    Conferma vera **una volta**, coi controlli di sempre, poi la stessa prova. Una sola per
    richiesta: se il gestionale non prende nemmeno quella, «Non partita · apri il carrello», e lì
-   decidi tu. Una Conferma tornata **coi suoi tempi** non si giudica dal carrello (com'è il
+   decidi tu. E mai sopra la tua: ogni Conferma premuta — dal pannello, dal motore o a mano sul
+   bottone del gestionale, in qualunque scheda — si annota prima che il clic parta; se dopo quella
+   ignorata ne hai premuta un'altra (sul carrello, mentre il gestionale ci pensa), «Conferma di
+   nuovo» non preme niente e se ne va: «Da controllare». Una Conferma tornata **coi suoi tempi** non si giudica dal carrello (com'è il
    carrello di una richiesta già confermata, le registrazioni non lo mostrano), né un carrello
    che non c'è più o senza la sua Conferma: la pagina del paziente si rilegge dopo 2, 4 e 8
    secondi, e se nemmeno così la richiesta risulta la striscia è **ambra**, «Da controllare ·
@@ -1474,7 +1479,8 @@ che non può leggere niente: cifrato da un capo all'altro, nessun dato su nessun
   in attesa (un doppione si vede prima di sceglierlo); la conferma porta nome intero, età e posto (due righe: «Ordino 2 esami · tocca di nuovo» e, sotto,
   «ROSSI MARIO · 77 anni · OBI 2»; due pazienti con lo stesso nome: «⚠ ROSSI MARIO · …9001 · …», col segno dell'elenco); un doppio tocco non conferma; se la rete perde
   la risposta il telefono dice «Non so se l'ordine è partito» e non lo rifà alla cieca (lo stesso
-  ordine rimandato parte una volta sola), a meno che non lo veda già nato sul PC. Niente ordini su un episodio precedente o per un paziente
+  ordine rimandato parte una volta sola), a meno che non lo veda già nato sul PC; così anche per la
+  radiologia dopo il laboratorio, se il PC non risponde: «Da controllare: radiologia», mai «Non partiti». Niente ordini su un episodio precedente o per un paziente
   dimesso sul PC. Un ordine finito male si vede da ogni pagina del telefono, finché non lo chiudi.
   Sul PC la striscia dice «dall'iPhone». Con una [stazione di stampa](#stazione-di-stampa-le-stampanti-dellinfermeria)
   collegata, sopra il bottone «Stampa: PC · Infermeria»: parte da quella del PC, e **si ricorda** (sul
@@ -1627,7 +1633,7 @@ gestionale resta quello di sempre: un tuo tocco.
 **Prima le etichette.** Senza la stampa automatica le etichette le stampa la tua scheda, col
 dialogo. Il secondo ordine dello stesso tocco (le Urgenze dopo il POC, l'RX) non parte finché la tua
 scheda non ha preso tutti i PDF del primo — li scarica tutti subito, uno dopo l'altro, e lo dice al
-service worker (dopo 18 secondi non ne comincia altri, e la coda aspetta al più 40 secondi — l'ultimo PDF in volo compreso; se nessuna scheda può prenderli adesso, o quella che li ha presi
+service worker (dopo 18 secondi non ne comincia altri, e la coda aspetta al più 40 secondi: a 38 ogni lettura cominciata per quelle etichette — rinvii e corpo del PDF compresi, anche un foglio chiesto dal dialogo — si ferma, e un foglio chiesto dopo passa dal cancello del motore; se nessuna scheda può prenderli adesso, o quella che li ha presi
 si chiude o cambia pagina, la coda non li aspetta).
 Sempre un motore alla volta: le pagine del gestionale sono di una sessione sola, e i PDF del primo
 ordine aspettavano dietro gli esami del secondo (3,5–8,6 secondi di «Aspetto le etichette…»).
@@ -1649,7 +1655,8 @@ il pannello ha mandato esami (o che ha aperto lui), confermate dal pannello o co
 gestionale. Una richiesta fatta tutta a mano nel gestionale, confermata col suo bottone, non
 stampa niente da sola. Dalla pagina paziente puoi **ristampare qualsiasi richiesta**: in fondo alle
 Richieste **Ristampa** rifà l'ultimo ordine — la richiesta più recente e le altre dello stesso tocco
-su Conferma, come le ha annotate la scheda dell'ordine (fino a quattro: POC, laboratorio, RX; mai a
+su Conferma, come le ha annotate chi le ha stampate — la scheda dell'ordine, o la tua: le richieste
+stampate insieme dopo una Conferma (fino a quattro: POC, laboratorio, RX; mai a
 occhio dall'ora — un'aggiunta di tre minuti dopo è un altro ordine —, e senza annotazione la più recente
 sola), etichette prima —, e **Altre…**
 apre la sezione Stampa: ogni richiesta della pagina — **anche quelle non fatte dall'estensione** —
@@ -1731,7 +1738,8 @@ Windows), con **Stampa una pagina di prova** per ciascuna. Da lì:
   motivo sulla striscia; per un ordine dal telefono aspetta un tocco su **Stampa** («Etichette NON
   stampate · la stampante «Zebra ZD421» risulta spenta o offline»). Accanto, il ✕ **«Annulla: non
   stamparle»**: non si stampano, mai un dialogo; il PC non lo ripete, e l'ordine — anche per il
-  telefono — dice «Etichette NON stampate · annullate sul PC» (si stampano dalla sua pagina).
+  telefono — dice «Etichette NON stampate · annullate sul PC» (si stampano dalla sua pagina; una
+  stampa che non è di etichette — un consenso, un PDF — col suo nome: «NON stampato: …»).
   Uscite, la striscia di un ordine dal telefono aggiunge «avvisa chi preleva».
 - **La striscia è una sola**, e dice la cosa più seria, fra due pari la più nuova: un errore, un
   avviso da leggere, le etichette pronte qui, l'ordine che gira, la coda, le etichette di un
@@ -2375,7 +2383,8 @@ nella tendina del gestionale») — poi **Prepara nel gestionale** (o Ctrl+Invio
    legge la pagina del paziente (GET, mai un invio) e, se non la elenca ancora, la si rilegge
    dopo 2, 4 e 8 secondi — il LIS può metterci un po' a registrarla: se la elenca, è
    confermata e i fogli si prendono da lì. Solo sulla **strada veloce** — la Conferma tornata in
-   meno di 1,5 secondi (`CONFERMA_SOSPETTA`), misurata nella scheda di un ordine — e se la prima
+   meno di 1,5 secondi (`CONFERMA_SOSPETTA`), misurata nella scheda di un ordine dall'ora della
+   risposta (`responseStart`: se il browser non la dà, la durata non c'è e la strada è la lenta) — e se la prima
    lettura non la elenca, si legge anche il carrello di quella richiesta (GET dell'elenco,
    `carrelloFermo`): con tutti gli esami della ricevuta e il **suo** bottone Conferma, il
    gestionale non l'ha presa — «Non partita», subito. Altrimenti il carrello non si legge
@@ -2387,13 +2396,21 @@ nella tendina del gestionale») — poi **Prepara nel gestionale** (o Ctrl+Invio
    sola. **«Conferma di nuovo»** (`ordineRiconferma`) c'è solo per «Non partita», parte solo dal
    tocco del medico e **una volta per richiesta** (annotata in `storage.session` prima di partire):
    è un ordine in coda come gli altri, la sua scheda apre quel carrello, rilegge la pagina del
-   paziente (se la elenca, niente si preme: si stampa — ma una richiesta che intanto non è più fra le «da
-   confermare», confermata a mano altrove, non si ripreme né si ristampa: «Confermata · era già
-   confermata», e la Ristampa resta in fondo alle sue Richieste), guarda il carrello **vivo** — la pagina che
+   paziente (se la elenca, niente si preme; le etichette si stampano una volta, se nessuna scheda le ha
+   già prese dopo la Conferma smentita — `conferme.v1`, «stampata», scritto dove `maybeAutoPrint` le
+   prende —; se sì, «Confermata · era già confermata», e la Ristampa resta in fondo alle sue
+   Richieste. Una richiesta che non è più fra le «da confermare» — provata altrove, «Ignora», le 12
+   ore — e che la pagina non elenca: il carrello, niente premuto), guarda il carrello **vivo** — la pagina che
    ha davanti: il suo bottone Conferma, e ogni esame della ricevuta per quell'erogatore ancora lì
    col suo «togli»; se no niente si preme, «Non partita · apri il carrello» — e preme la Conferma
    vera con tutti i controlli di `maybeAutoConfirm`; poi la stessa prova. Non presa di nuovo:
-   «apri il carrello».
+   «apri il carrello». Una Conferma in volo il gestionale non la mostra (3–14 s): ogni Conferma
+   premuta, in qualunque scheda, si annota **prima del clic** (`armPrintOnConfirm`; nella cornice,
+   `maybeAutoConfirm`) in memoria condivisa — `conferme.v1`, solo richiesta e ora — e al service
+   worker (`ordinePremuta`). Se dopo quella smentita dal carrello (`premuta`, nella vista) ne è
+   stata premuta un'altra, «Conferma di nuovo» non c'è o non parte: non la offre la scheda
+   dell'ordine, il service worker la toglie ovunque (e conta come la volta in più) o la rifiuta, e
+   la sua scheda la riguarda subito prima di premere — «Da controllare», niente premuto.
    La lettura del carrello passa dal cancello del motore (regola 19): mentre un altro ordine
    manda esami, aspetta. Prova: `test/ext-sessione.mjs`. La pagina delle etichette LIS che il
    gestionale mostra subito dopo il clic non è una prova: è arrivata identica anche dopo una

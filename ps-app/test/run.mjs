@@ -24,13 +24,18 @@ if (SHOTS) mkdirSync(SHOTS, { recursive: true });
 // Una funzione pura presa dal sorgente com'è (come in valori.mjs): una tabella
 // di casi non ha bisogno del browser.
 const SORGENTE = readFileSync(join(root, "src/core.js"), "utf8");
-function prendi(nome) {
-  const i = SORGENTE.indexOf(`function ${nome}(`);
-  if (i < 0) throw new Error("non trovata: " + nome);
+// (`dove`: quello che la funzione prende dal resto del file, finto)
+function prendi(nome, dove = {}) {
+  const i0 = SORGENTE.indexOf(`function ${nome}(`);
+  if (i0 < 0) throw new Error("non trovata: " + nome);
+  const i = SORGENTE.slice(i0 - 6, i0) === "async " ? i0 - 6 : i0;
+  // (il corpo comincia dopo i parametri, che possono avere graffe loro)
+  let p = SORGENTE.indexOf("(", i0), tonde = 0;
+  for (; p < SORGENTE.length; p++) if (SORGENTE[p] === "(") tonde++; else if (SORGENTE[p] === ")" && !--tonde) break;
   let livello = 0;
-  for (let k = SORGENTE.indexOf("{", i); k < SORGENTE.length; k++) {
+  for (let k = SORGENTE.indexOf("{", p); k < SORGENTE.length; k++) {
     if (SORGENTE[k] === "{") livello++;
-    else if (SORGENTE[k] === "}" && !--livello) return new Function(`${SORGENTE.slice(i, k + 1)}\nreturn ${nome};`)();
+    else if (SORGENTE[k] === "}" && !--livello) return new Function(...Object.keys(dove), `${SORGENTE.slice(i, k + 1)}\nreturn ${nome};`)(...Object.values(dove));
   }
   throw new Error("incompleta: " + nome);
 }
@@ -3227,13 +3232,70 @@ async function scenarioStampaUltima(browser) {
   let h = await giro();
   check(scen, h.length === 2 && /1 di 2 — Etichette/.test(h[0]) && /2 di 2 — Lista esami/.test(h[1]),
     `due richieste a due minuti l'una dall'altra, senza sapere se sono lo stesso tocco: solo l'ultima (got ${h.join(" | ")})`);
-  // la scheda dell'ordine le ha annotate come lo stesso tocco su Conferma: tutt'e due, prima le etichette
-  await page.evaluate(() => localStorage.setItem("psassist:stampeFresche.v1", JSON.stringify({
-    999001: { ts: performance.timeOrigin - 1000, map: {}, gesti: { gprova: ["699999", "699998"] } } })));
-  h = await giro();
-  check(scen, h.length === 3 && /1 di 3 — Etichette/.test(h[0]) && /Lista esami/.test(h[1]) && /3 di 3 — Richiesta radiologia/.test(h[2]),
-    `annotate dalla scheda dell'ordine come lo stesso tocco: tutt'e due, prima le etichette (got ${h.join(" | ")})`);
   await context.close();
+  // Lo stesso tocco su Conferma fatto in QUESTA scheda (laboratorio e RX, la
+  // conferma in cornice, le etichette col dialogo): le richieste stampate
+  // insieme sono annotate come un ordine solo, e «Ristampa» le rifà tutt'e due.
+  const mock2 = createMock({});
+  const b = await newPage(browser, mock2);
+  await b.page.goto(mock2.patientUrl);
+  await richieste(b.page);
+  await $panel(b.page, "#q").fill("dolore toracico");
+  await $panel(b.page, '.opt[title*="TROPONINA"]').click();   // POC
+  await $panel(b.page, '.opt[title*="RX TORACE ("]').first().click(); // RX
+  await $panel(b.page, "#goconfirm").click();
+  await b.page.waitForSelector("#psassist-print", { state: "attached", timeout: 60000 });
+  for (let k = 0; k < 4 && (await b.page.locator("#psassist-print").count()); k++) { await docStampa(b.page); await avanti(b.page); }
+  await b.page.waitForSelector("#psassist-print", { state: "detached", timeout: 8000 }).catch(() => {});
+  const confermate = Object.values(mock2.state.richieste).filter((r) => r.confirmed).length;
+  await b.page.goto(mock2.patientUrl);   // (le richieste nuove, sulla pagina)
+  const giro2 = async () => {
+    await richieste(b.page);
+    await b.page.locator("#psassist-host #stultima").click();
+    await b.page.waitForSelector("#psassist-print", { state: "attached", timeout: 15000 });
+    const heads = [];
+    for (let k = 0; k < 4 && (await b.page.locator("#psassist-print").count()); k++) { heads.push(await docStampa(b.page)); await avanti(b.page); }
+    return heads;
+  };
+  h = await giro2();
+  check(scen, confermate === 2 && h.length === 3 && /1 di 3 — Etichette/.test(h[0]) && h.some((x) => /Lista esami/.test(x)) && h.some((x) => /Richiesta radiologia/.test(x)),
+    `confermate qui insieme, laboratorio e RX: «Ristampa» le rifà tutt'e due, prima le etichette (got ${confermate} confermate · ${h.join(" | ")})`);
+  await b.context.close();
+}
+
+// Quanto ha messo la Conferma decide solo QUANDO guardare il carrello (sotto
+// 1,5 s, subito). Senza l'ora della risposta non si sa: la durata resta vuota,
+// e vuota è la strada lenta — mai «tornata subito» perché manca un numero.
+async function scenarioDurataConferma() {
+  const scen = "durata-conferma";
+  const mem = new Map();
+  const tabStore = { get: (k, d) => (mem.has(k) ? mem.get(k) : d), set: (k, v) => { mem.set(k, v); return true; } };
+  const annota = prendi("annotaDurataConferma", { tabStore });
+  const t0 = performance.timeOrigin;
+  const caso = (nav, ts) => { mem.set("print.v1", { ids: ["1"], ts }); annota(nav); return mem.get("print.v1").durata; };
+  check(scen, caso({ responseStart: 2500 }, t0) === 2500, "con l'ora della risposta: quanto ci ha messo");
+  check(scen, caso({ responseStart: 0 }, t0 - 100) === undefined && caso(null, t0 - 100) === undefined,
+    `senza l'ora della risposta (o senza la voce della navigazione): nessuna durata, la strada lenta — mai «0,1 s» (got ${caso({ responseStart: 0 }, t0 - 100)})`);
+}
+
+// Il corpo di un PDF si ferma quando si ferma chi lo chiede: la scadenza delle
+// etichette di un ordine (il prossimo ordine non parte con una lettura in
+// volo), la scheda di stampa chiusa. Prima, arrivata la risposta, il corpo
+// restava in volo quanto voleva.
+async function scenarioPdfFermato() {
+  const scen = "pdf-fermato";
+  const O = "https://smarthealth.multimedica.it";
+  class StopError extends Error {}
+  // un PDF che comincia ad arrivare e non finisce mai (il corpo si ferma solo col segnale della richiesta)
+  const fetch = (u, init) => Promise.resolve(new Response(new ReadableStream({
+    start(c) { c.enqueue(new TextEncoder().encode("%PDF-1.4\n")); init.signal.addEventListener("abort", () => c.error(init.signal.reason)); } }),
+  { status: 200, headers: { "content-type": "application/pdf" } }));
+  const fetchPdf = prendi("fetchPdf", { location: { href: `${O}/sa4pso/x`, origin: O }, StopError, cancelloMotore: async () => {}, TIMEOUT_MS: 20000, fetch });
+  const ctl = new AbortController();
+  const p = fetchPdf(`${O}/sa4pso/RcsStampaEtichetteLISHMIMU.do?RICHIESTA_ID=1`, { signal: ctl.signal });
+  setTimeout(() => ctl.abort(), 100);
+  const esito = await Promise.race([p.then(() => "arrivato", (e) => e.name), new Promise((r) => setTimeout(() => r("ancora in volo"), 2000))]);
+  check(scen, esito === "AbortError", `fermato a metà corpo: la lettura si ferma subito, niente resta in volo (got ${esito})`);
 }
 
 async function scenarioPrintHardViewer(browser) {
@@ -8131,6 +8193,8 @@ const scenarios = [
   ["manual add on exam page", scenarioExamPageManual],
   ["richiesta tutta a mano: la Conferma del gestionale non stampa", scenarioConfermaTuttaAMano],
   ["stampa l'ultima richiesta", scenarioStampaUltima],
+  ["durata della Conferma: senza l'ora della risposta, la strada lenta", scenarioDurataConferma],
+  ["un PDF fermato a metà corpo: niente resta in volo", scenarioPdfFermato],
   ["wrong resource refused", scenarioWrongResourceRefused],
   ["missing quesito refused", scenarioMissingQuesito],
   ["quesito RX distinto", scenarioQuesitoRx],
