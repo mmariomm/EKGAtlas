@@ -770,7 +770,10 @@ lette stanno in `sessionStorage` (`smart.giro.v1`) e muoiono con lei.
    col suo Conferma e con tutti gli esami della ricevuta, se no niente si preme) e preme la
    Conferma vera **una volta**, coi controlli di sempre, poi la stessa prova. Una sola per
    richiesta: se il gestionale non prende nemmeno quella, «Non partita · apri il carrello», e lì
-   decidi tu. Una Conferma tornata **coi suoi tempi** non si giudica dal carrello (com'è il
+   decidi tu. E mai sopra la tua: ogni Conferma premuta — dal pannello, dal motore o a mano sul
+   bottone del gestionale, in qualunque scheda — si annota prima che il clic parta; se dopo quella
+   ignorata ne hai premuta un'altra (sul carrello, mentre il gestionale ci pensa), «Conferma di
+   nuovo» non preme niente e se ne va: «Da controllare». Una Conferma tornata **coi suoi tempi** non si giudica dal carrello (com'è il
    carrello di una richiesta già confermata, le registrazioni non lo mostrano), né un carrello
    che non c'è più o senza la sua Conferma: la pagina del paziente si rilegge dopo 2, 4 e 8
    secondi, e se nemmeno così la richiesta risulta la striscia è **ambra**, «Da controllare ·
@@ -2385,7 +2388,13 @@ nella tendina del gestionale») — poi **Prepara nel gestionale** (o Ctrl+Invio
    ha davanti: il suo bottone Conferma, e ogni esame della ricevuta per quell'erogatore ancora lì
    col suo «togli»; se no niente si preme, «Non partita · apri il carrello» — e preme la Conferma
    vera con tutti i controlli di `maybeAutoConfirm`; poi la stessa prova. Non presa di nuovo:
-   «apri il carrello».
+   «apri il carrello». Una Conferma in volo il gestionale non la mostra (3–14 s): ogni Conferma
+   premuta, in qualunque scheda, si annota **prima del clic** (`armPrintOnConfirm`; nella cornice,
+   `maybeAutoConfirm`) in memoria condivisa — `conferme.v1`, solo richiesta e ora — e al service
+   worker (`ordinePremuta`). Se dopo quella smentita dal carrello (`premuta`, nella vista) ne è
+   stata premuta un'altra, «Conferma di nuovo» non c'è o non parte: non la offre la scheda
+   dell'ordine, il service worker la toglie ovunque (e conta come la volta in più) o la rifiuta, e
+   la sua scheda la riguarda subito prima di premere — «Da controllare», niente premuto.
    La lettura del carrello passa dal cancello del motore (regola 19): mentre un altro ordine
    manda esami, aspetta. Prova: `test/ext-sessione.mjs`. La pagina delle etichette LIS che il
    gestionale mostra subito dopo il clic non è una prova: è arrivata identica anche dopo una

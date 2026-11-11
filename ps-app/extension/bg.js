@@ -992,6 +992,21 @@ const ORD_PIANO = (id) => "ordine:" + id;
 const ORD_VISTI = "ordiniVisti";   // gli ordini già accettati: uno chiesto due volte parte una volta
 const ORD_FOGLI = "ordiniFogli";   // gli ordini di cui il service worker ha già i fogli: consegnati due volte, si stampano una
 const ORD_RICONF = "ordiniRiconfermate";   // le richieste la cui Conferma è già stata rifatta: una volta sola
+// L'ultima Conferma premuta per ogni richiesta, da qualunque scheda (le schede
+// la annotano prima del clic, conferme.v1 nel content, e la dicono qui:
+// ordinePremuta), [{ rid, t }]: «Conferma di nuovo» non preme mai sopra una
+// Conferma premuta dopo quella che il carrello aveva smentito (vista.premuta).
+const ORD_PREMUTE = "ordiniPremute";
+const premute = async () => (await chrome.storage.session.get(ORD_PREMUTE))[ORD_PREMUTE] || [];
+const premutaDopo = (l, rid, t) => !!rid && l.some((x) => x.rid === String(rid) && x.t > (Number(t) || 0));
+// la richiesta di un ordine: quella del carrello consegnato, o la sua
+const ridDi = (rec) => { try { return new URL(rec.consegna.url).searchParams.get("RICHIESTA_ID") || String(rec.rid || ""); } catch { return String(rec.rid || ""); } };
+// «Conferma di nuovo» che non vale più — un'altra Conferma è partita intanto —: da controllare, e il bottone se ne va
+function premutaAltrove(rec) {
+  delete rec.vista.riconferma;
+  rec.vista = { ...rec.vista, tag: DA_CONTROLLARE, testo: GUARDA, tono: "warn", quesito: "premuta intanto un'altra Conferma, da un'altra scheda" };
+  rec.agg = Date.now();
+}
 const SA4 = "https://smarthealth.multimedica.it";
 const ATTIVI = new Set(["avvio", "corre"]);          // occupano la coda: un motore alla volta
 // (e «stampo»: confermata, il service worker stampa i fogli senza dialogo; la
@@ -1935,8 +1950,9 @@ function ordMessaggio(msg, sender, reply) {
       rec.vista = { tag: corto(v.tag, 60), badge: corto(v.badge, 30), testo: corto(v.testo), tono: corto(v.tono, 6),
         // (`quesito`: la riga sotto — che cosa manca, il perché)
         quesito: corto(v.quesito, 200), ferma: !!v.ferma, sessione: !!v.sessione,
-        // («Non partita»: il gestionale non ha preso la Conferma — si può rifarla, un tocco: ordineRiconferma)
-        ...(v.riconferma ? { riconferma: true } : {}),
+        // («Non partita»: il gestionale non ha preso la Conferma — si può rifarla, un tocco: ordineRiconferma;
+        // `premuta`: quando era partita quella che il carrello ha smentito)
+        ...(v.riconferma ? { riconferma: true, premuta: Number(v.premuta) || 0 } : {}),
         // (quanti esami sono passati, su quanti: la riga «Richiesta · 3/6» sotto la striscia)
         ...(Array.isArray(v.prog) && v.prog.length === 2 ? { prog: v.prog.map((x) => Math.max(0, Math.min(99, Number(x) || 0))) } : {}) };
     }
@@ -1954,11 +1970,31 @@ function ordMessaggio(msg, sender, reply) {
       if (s.length < 60000) rec.consegna = JSON.parse(s);
     }
     registroDi(rec, msg);
+    // (un'altra Conferma per la sua richiesta è già arrivata qui, dopo quella smentita: niente «Conferma di nuovo»)
+    if (rec.vista && rec.vista.riconferma && premutaDopo(await premute(), ridDi(rec), rec.vista.premuta)) premutaAltrove(rec);
     rec.agg = Date.now(); delete rec.muto;
     if (!ATTIVI.has(rec.stato)) await ordSlega(rec);
     await ordScrivi(l);
     reply({ ok: true, ferma: !!rec.ferma && ATTIVI.has(rec.stato) });
     await ordAvanti(l);
+  });
+  // Una Conferma premuta, da qualunque scheda del gestionale (annotata prima
+  // del clic): si tiene l'ora, e un «Conferma di nuovo» della stessa richiesta
+  // che aspettava un tocco non vale più — quella Conferma è la volta in più
+  // (ORD_RICONF): da controllare, e il bottone se ne va, ovunque.
+  if (msg.t === "ordinePremuta") return fai(async () => {
+    const rid = corto(msg.rid, 20), t = Number(msg.ts) || Date.now();
+    if (!rid) return reply({ ok: false });
+    const prima = (await premute()).filter((x) => x.rid !== rid);
+    await chrome.storage.session.set({ [ORD_PREMUTE]: [...prima, { rid, t }].slice(-50) });
+    const l = await ordLeggi();
+    const vecchie = l.filter((x) => x.vista && x.vista.riconferma && ridDi(x) === rid && t > (Number(x.vista.premuta) || 0));
+    if (!vecchie.length) return reply({ ok: true });
+    vecchie.forEach(premutaAltrove);
+    const fatte = (await chrome.storage.session.get(ORD_RICONF))[ORD_RICONF] || [];
+    if (!fatte.includes(rid)) await chrome.storage.session.set({ [ORD_RICONF]: [...fatte, rid].slice(-50) });
+    await ordScrivi(l);
+    reply({ ok: true, ordini: l });
   });
   // «Conferma di nuovo»: la Conferma che il gestionale non ha preso (il suo
   // carrello l'aveva ancora, col suo bottone), rifatta solo al tocco del
@@ -1976,6 +2012,9 @@ function ordMessaggio(msg, sender, reply) {
     const c = rec.consegna || {}, rc = c.receipt || {};
     let rid = "";
     try { rid = new URL(c.url).searchParams.get("RICHIESTA_ID") || ""; } catch { rid = ""; }
+    // (un'altra Conferma per questa richiesta, premuta dopo quella che il carrello ha smentito — forse in volo: niente)
+    const premuta = Number(rec.vista.premuta) || 0;
+    if (premutaDopo(await premute(), rid, premuta)) { premutaAltrove(rec); await ordScrivi(l); return reply({ ok: false, ordini: l }); }
     const ok = !!rid && leggibileOrd(c.url) && String(rc.richiestaId || "") === rid && Array.isArray(rc.items) && rc.items.length > 0
       && rc.items.length <= 60 && !fatte.includes(rid) && (!rec.rid || String(rec.rid) === rid);
     // (già rifatta, o senza il carrello da aprire: niente — e il bottone se ne va)
@@ -1988,7 +2027,7 @@ function ordMessaggio(msg, sender, reply) {
     let paz = "";
     try { paz = new URL(rec.url).searchParams.get("MVPG") === "PsoEpisodioClinicoAmbulatorio" && leggibileOrd(rec.url) ? rec.url : ""; } catch { paz = ""; }
     const piano = { startPage: "riconferma", richiestaId: rid, episodeId: rec.ep, patientName: rec.paziente || "", patientUrl: paz,
-      listUrl: c.url, receipt: rc, items: rc.items, kind: rec.kind || "" };
+      listUrl: c.url, receipt: rc, items: rc.items, kind: rec.kind || "", premuta };
     const nuovo = { id, ep: rec.ep, paziente: rec.paziente, n: rc.items.length, autoConfirm: true, url: c.url, kind: rec.kind || "", rid, riconfermata: true,
       listUrl: c.url, opener: tab.id, worker: null, quesito: rec.quesito || "", stato: "coda", ts: Date.now(), agg: Date.now(), vista: null,
       resto: { mancano: [], controllare: [], nel: nomi(rc.items.map((i) => i.display || i.label)) }, dest: rec.dest || "qui",

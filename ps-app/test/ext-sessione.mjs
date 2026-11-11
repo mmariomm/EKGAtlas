@@ -590,6 +590,107 @@ if (prova("«Conferma di nuovo» ma il carrello, al tocco, ha perso un esame: ni
   check(conferme(A).length === 1 && !A.state.richieste[rid].confirmed, `niente premuto: una Conferma sola, quella di prima (got ${conferme(A).length})`);
   sess.dopoConferma = null;
 }
+// Una Conferma in volo non la vede nessuno: il gestionale ci mette 3–14 s, e
+// intanto il carrello è ancora una bozza. Ogni Conferma premuta si annota
+// prima del clic (conferme.v1, e al service worker): «Conferma di nuovo» non
+// preme mai sopra quella del medico.
+const tocca = (id) => sw.evaluate((id) => new Promise((res) => {
+  chrome.tabs.query({}).then((ts) => { const t = ts.find((x) => /EPISODIO_ID=999002/.test(x.url || "")); ordMessaggio({ t: "ordineRiconferma", id }, { tab: t, url: t.url }, res); });
+}), id);
+const nonPartitaDaRifare = async () => {
+  await daCapo();
+  A = createMock({ dopoConferma: 300 });
+  Object.assign(sess, { corrente: null, log: [], ora: 0, forzaOra: null, area: null });
+  await suPagina(doc, A.patientUrl);
+  await nienteSmart(doc);
+  ignoraLaPrima();
+  const nasce = nuovaPagina();
+  await ordina(doc, ["TROPONINA"]);
+  await nasce;
+  await suPagina(doc, B.patientUrl);
+  const prima = await striscia(doc, /ROSSI MARIO.*Non partita.*Conferma di nuovo/, 40000).catch(() => "");
+  return { prima, rid: Object.keys(A.state.richieste)[0], rec0: (await ordini()).find((x) => x.paziente === "ROSSI MARIO" && x.vista && x.vista.riconferma) };
+};
+if (prova("«Conferma di nuovo» mentre la Conferma del medico è in volo: niente premuto")) {
+  const { prima, rid, rec0 } = await nonPartitaDaRifare();
+  check(!!prima && !!rec0, `«Non partita · Conferma di nuovo» (got «${prima}»)`);
+  // il medico apre il carrello in un'altra scheda e preme la Conferma del gestionale: 6 s, e il server la registra alla fine
+  const doc2 = await ctx.newPage();
+  await suPagina(doc2, rec0.consegna.url);
+  await sospendi(1500);
+  sess.confermaLenta = 6000;
+  sess.dopoConferma = (mock, p) => {
+    if (mock !== A) return;
+    const r = mock.state.richieste[p.get("RICHIESTA_ID")];
+    r.confirmed = false;
+    setTimeout(() => { r.confirmed = true; }, 5500);
+  };
+  const premuto = await doc2.evaluate(() => { const b = document.querySelector('input[type="submit"][name="Update"], input[type="submit"][name="Update1"]'); if (b) b.click(); return !!b; });
+  await sospendi(500);
+  // …e mentre è in volo tocca «Conferma di nuovo»
+  const r2 = await tocca(rec0.id);
+  await sospendi(20000);
+  const rec = (await ordini()).find((x) => x.id === rec0.id);
+  check(premuto && conferme(A).length === 2 && conferme(A).every((q) => q.params.RICHIESTA_ID === rid),
+    `due Conferme: quella ignorata e quella del medico — «Conferma di nuovo» non preme (got ${conferme(A).length})`);
+  check(!(r2 && r2.ok) && !!rec && rec.vista?.tag === "Da controllare" && !rec.vista?.riconferma && !(await ordini()).some((x) => x.id === rec0.id + "c"),
+    `il tocco non parte, e il bottone se ne va: «Da controllare» (got ${JSON.stringify(r2 && r2.ok)} · ${JSON.stringify(rec && rec.vista)})`);
+  await doc2.close().catch(() => {});
+  sess.dopoConferma = null; sess.confermaLenta = 0;
+}
+if (prova("«Conferma di nuovo» con una Conferma premuta altrove che il service worker non ha saputo: la scheda guarda prima di premere")) {
+  const { prima, rid, rec0 } = await nonPartitaDaRifare();
+  check(!!prima && !!rec0, `«Non partita · Conferma di nuovo» (got «${prima}»)`);
+  // una Conferma premuta adesso in un'altra scheda, annotata in pagina e basta (il messaggio al service worker perso)
+  await doc.evaluate((r) => {
+    const l = JSON.parse(localStorage.getItem("psassist:conferme.v1") || "[]").filter((x) => x.rid !== r);
+    localStorage.setItem("psassist:conferme.v1", JSON.stringify([...l, { rid: r, premuta: Date.now(), ts: Date.now() }]));
+  }, rid);
+  await $panel(doc, AZIONE).click();
+  const vista = await striscia(doc, /ROSSI MARIO.*Da controllare/, 40000).catch(() => "");
+  await sospendi(3000);
+  const rec = (await ordini()).find((x) => x.id === rec0.id + "c");
+  check(!!rec && rec.vista?.tag === "Da controllare" && /niente premuto/.test(rec.vista?.quesito || "") && /guarda le sue richieste/.test(vista),
+    `la scheda della Conferma, prima di premere, la vede: «Da controllare · guarda le sue richieste…», niente premuto (got «${vista}» · ${JSON.stringify(rec && rec.vista)})`);
+  check(conferme(A).length === 1, `nessuna seconda Conferma (got ${conferme(A).length})`);
+  sess.dopoConferma = null;
+}
+if (prova("la Conferma ignorata, e intanto il medico ne preme un'altra: da controllare, mai «Conferma di nuovo»")) {
+  await daCapo();
+  A = createMock({ dopoConferma: 300 });
+  Object.assign(sess, { corrente: null, log: [], ora: 0, forzaOra: null, area: null });
+  await suPagina(doc, A.patientUrl);
+  await nienteSmart(doc);
+  ignoraLaPrima();
+  // il carrello, riletto dopo la Conferma, arriva tardi: intanto il medico preme la sua
+  const tardi = async (r) => {
+    const q = r.request();
+    if (!(q.method() === "GET" && conferme(A).length > 0 && /RcsRichiestaPrestazioniRicercaErogatore/.test(q.url()))) return r.fallback();
+    await sospendi(2500);
+    return r.fallback();
+  };
+  await ctx.route(`${ORIGIN}/**`, tardi);
+  const nasce = nuovaPagina();
+  await ordina(doc, ["TROPONINA"]);
+  await nasce;
+  await suPagina(doc, B.patientUrl);
+  await finche(() => conferme(A).length > 0, 40000);
+  const rid = Object.keys(A.state.richieste)[0];
+  await sospendi(600);
+  await doc.evaluate((r) => {
+    const l = JSON.parse(localStorage.getItem("psassist:conferme.v1") || "[]").filter((x) => x.rid !== r);
+    localStorage.setItem("psassist:conferme.v1", JSON.stringify([...l, { rid: r, premuta: Date.now(), ts: Date.now() }]));
+  }, rid);
+  const ultima = () => ordini().then((l) => l.find((x) => x.paziente === "ROSSI MARIO" && !["coda", "avvio", "corre"].includes(x.stato)));
+  await finche(ultima, 40000);
+  const rec = await ultima();
+  const v = rec?.vista || {};
+  check(v.tag === "Da controllare" && v.tono === "warn" && !v.riconferma && /un'altra Conferma/.test(v.quesito || ""),
+    `il carrello ancora una bozza, ma un'altra Conferma premuta intanto: «Da controllare», mai «Conferma di nuovo» (got ${JSON.stringify(rec && [rec.stato, v.tag, v.testo, v.quesito, !!v.riconferma])})`);
+  check(conferme(A).length === 1, "una Conferma sola");
+  await ctx.unroute(`${ORIGIN}/**`, tardi);
+  sess.dopoConferma = null;
+}
 if (prova("la Conferma ignorata ma il carrello senza la sua Conferma: le attese, poi da controllare — mai «Non partita»")) {
   await daCapo();
   A = createMock({ dopoConferma: 300 });

@@ -8743,6 +8743,16 @@
         this.log(`${now()}  il carrello non è più quello della ricevuta (${vivo.confirmButton ? "manca un esame" : "senza la sua Conferma"}): niente premuto`);
         return alCarrello("il carrello non è più quello della ricevuta: niente premuto");
       }
+      // E proprio adesso: nessun'altra Conferma per questa richiesta dopo
+      // quella che il carrello aveva smentito (`premuta`) — il medico sul suo
+      // carrello, in un'altra scheda: forse in volo, e il carrello qui non lo
+      // dice ancora (conferme.v1). Se sì, niente si preme: da controllare.
+      if (confermaDopo(rid, "premuta", p.premuta)) {
+        this.log(`${now()}  intanto è stata premuta un'altra Conferma per questa richiesta: niente premuto`);
+        return this.consegnaLavoro({ tag: "Da controllare", testo: GUARDA, tono: "warn", quesito: "premuta intanto un'altra Conferma, da un'altra scheda: niente premuto da qui" },
+          leggibilePagina(p.listUrl) ? { url: p.listUrl, avviso: { striscia: { paziente: p.patientName || "", tag: "Da controllare", testo: RIFARLA, tono: "warn" }, testo: RIFARLA_PERCHE },
+            receipt: tabStore.get("receipt.v1", null) } : null, "avviso");
+      }
       tabStore.set("confirm.v1", { richiestaId: rid, episodeId: ep, lastCode: last.code, lastLabel: last.label, count: items.length, ts: Date.now() });
       let cliccato = false;
       try { cliccato = maybeAutoConfirm(this); } catch (e) { this.log(`${now()}  conferma interrotta: ${e?.message || e}`); }
@@ -15231,6 +15241,29 @@
     return restano.filter((x) => x.ep === ep).sort((a, b) => a.ts - b.ts);
   }
 
+  // ------------------------------------------------ le Conferme premute
+  // Ogni Conferma premuta su una richiesta — dal motore, dal pannello, dal
+  // medico a mano sul bottone del gestionale, in qualunque scheda — si annota
+  // PRIMA che il clic parta (armPrintOnConfirm; nella cornice,
+  // maybeAutoConfirm): il numero della richiesta e l'ora, nella memoria che
+  // tutte le schede del gestionale leggono subito, e lo si dice al service
+  // worker. Una Conferma in volo (3–14 s sul server) il gestionale non la
+  // mostra ancora; questa memoria sì: «Conferma di nuovo» non preme mai sopra
+  // una Conferma premuta dopo quella che il gestionale non aveva preso
+  // (confermaDopo). E quando una scheda prende le etichette di una richiesta
+  // confermata (maybeAutoPrint), «stampata»: chi la trova confermata altrove
+  // sa se sono già uscite. Solo numeri, per 12 ore.
+  const CONFERME = "conferme.v1", CONFERME_TTL = 12 * 3600e3;
+  const conferme = () => { const l = store.get(CONFERME, []); return (Array.isArray(l) ? l : []).filter((x) => x && x.rid && Date.now() - (x.ts || 0) < CONFERME_TTL); };
+  function segnaConferma(rid, cosa) {
+    if (!rid) return;
+    const t = Date.now(), l = conferme(), x = l.find((y) => y.rid === String(rid)) || { rid: String(rid) };
+    store.set(CONFERME, [...l.filter((y) => y !== x), { ...x, [cosa]: t, ts: t }].slice(-40));
+    if (cosa === "premuta" && hasExt()) ask({ t: "ordinePremuta", rid: String(rid), ts: t });
+  }
+  // una Conferma premuta (o le etichette prese) per questa richiesta dopo `t`; senza `t`, quando che sia
+  const confermaDopo = (rid, cosa, t) => (Number((conferme().find((x) => x.rid === String(rid)) || {})[cosa]) || 0) > (Number(t) || 0);
+
   // La prova che una richiesta è confermata, quando la pagina dopo il clic
   // non l'ha data: la pagina del paziente — quella che elenca le richieste
   // confermate coi loro fogli da stampare. Solo letture, mai un invio, mai un
@@ -15617,6 +15650,7 @@
     // Quando la pagina non è quella davanti agli occhi, la stampa va armata
     // qui: il gancio sul bottone vive solo sulla pagina vera.
     if (doc !== document) {
+      segnaConferma(model.richiestaId, "premuta");   // (e la Conferma premuta: lì non c'è il gancio che la annota)
       segnoStampa(ep || "", model.richiestaId, receipt);
       const q = tabStore.get("queue.v1", null);
       if (q && q.items) {
@@ -16783,6 +16817,8 @@
   function armPrintOnConfirm(model, episodeId) {
     if (!model.form || !model.richiestaId) return;
     const arm = (e) => {
+      // (ogni Conferma su questo carrello, di chiunque: prima che il clic parta — conferme.v1)
+      segnaConferma(model.richiestaId, "premuta");
       // (la Conferma del gestionale premuta da lui: da qui contano i suoi tocchi — quella del motore no)
       if (e && e.isTrusted) tabStore.set(PREMUTO, Date.now());
       if (!richiestaNostra(model.richiestaId)) return;
@@ -16986,9 +17022,18 @@
         // seconda Conferma da sola: «Conferma di nuovo» è un tocco del medico,
         // una volta per richiesta (ordineRiconferma). Già rifatta: il carrello.
         segnaErrore("ordine", { episodio: ep, richiesta: rid, motivo: "Conferma non presa dal gestionale", durata: pr.durata ?? null });
+        // Intanto un'altra Conferma per questa richiesta (il medico sul suo
+        // carrello, in un'altra scheda): forse in volo, il carrello non lo dice
+        // ancora. Non è «non partita»: da controllare, mai «Conferma di nuovo».
+        if (confermaDopo(rid, "premuta", pr.ts)) {
+          panel?.log(`${now()}  intanto è stata premuta un'altra Conferma per questa richiesta: da controllare, niente da rifare da qui`);
+          return fine({ tag: "Da controllare", testo: GUARDA, tono: "warn", quesito: "premuta intanto un'altra Conferma, da un'altra scheda" },
+            { tag: "Da controllare", testo: RIFARLA, tono: "warn" }, RIFARLA_PERCHE);
+        }
         const rifatta = !!(L.piano && L.piano.startPage === "riconferma");
+        // (`premuta`: quale Conferma il carrello ha smentito — «Conferma di nuovo» non parte se ce n'è una dopo)
         return fine({ tag: "Non partita", testo: rifatta ? "apri il carrello" : "Conferma di nuovo", tono: "err",
-          quesito: rifatta ? "il gestionale non ha preso nemmeno la seconda Conferma" : "il gestionale non ha preso la Conferma", ...(rifatta ? {} : { riconferma: true }) },
+          quesito: rifatta ? "il gestionale non ha preso nemmeno la seconda Conferma" : "il gestionale non ha preso la Conferma", ...(rifatta ? {} : { riconferma: true, premuta: pr.ts || 0 }) },
         { tag: "Non partita", testo: "Il gestionale non ha preso la Conferma: premi tu Conferma", tono: "err" },
         "Il gestionale non ha preso la Conferma: il carrello ha ancora i suoi esami e il suo bottone Conferma. Controlla e premi tu Conferma.");
       }
