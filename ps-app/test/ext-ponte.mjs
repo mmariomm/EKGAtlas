@@ -1183,6 +1183,14 @@ sezione("la cartella dal telefono: leggere, scrivere col «Conferma» della pagi
   await $panel(doc, "#ponterica").click();
   check(await ricaricata("CAMPOZETA"), "(«Ricarica»: la pagina col testo del telefono)");
   await doc.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
+  // la pagina aperta con un «#» in fondo (un suo link «href="#"», poi un F5): ricaricarla è ricaricarla, non un salto nella stessa pagina
+  await suPagina(doc, A.worklistUrl);
+  await suPagina(doc, A.patientUrl + "#");
+  const conCancelletto = doc.url();
+  await segnaPagina();
+  check(/#$/.test(conCancelletto) && await salvaAnamnesi("Dolore toracico CANCELLETTOZETA"), `(la pagina di ROSSI col «#» in fondo: ${conCancelletto.slice(-30)}; il telefono salva)`);
+  check(await ricaricata("CANCELLETTOZETA"), `l'indirizzo col «#» in fondo: la pagina si ricarica davvero (${doc.url().slice(-30)})`);
+  await doc.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
   // via la cartella: le sezioni dopo hanno la pagina di sempre
   ctx.off("page", contaSchede);
   CART.on = false;

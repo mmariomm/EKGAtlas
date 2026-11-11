@@ -413,7 +413,8 @@ un invio costruito a mano. Ricaricata, la scheda rilegge e verifica campo per ca
 Poi le schede del medico con la pagina di quel paziente (`ponteCartellaAggiornata`): la pagina è di
 prima, e da subito il suo «Conferma» della cartella è fermo (`confermaFerma`: clic e invio fermati
 prima della pagina); senza niente scritto né un cursore in un campo (della pagina o del pannello: il
-fuoco rimasto su un suo tasto non conta) si ricarica da sola (una GET dell'indirizzo del paziente); se
+fuoco rimasto su un suo tasto non conta) si ricarica da sola (una GET dell'indirizzo del paziente,
+senza «#…»: con quello sarebbe solo un salto nella stessa pagina); se
 no la pill (col cursore in un campo del pannello, appena lo si lascia), e il «Conferma» resta fermo
 finché non la si ricarica.
 Rimandato dopo una risposta persa, lo stesso salvataggio trova `prima` cambiato e non parte due

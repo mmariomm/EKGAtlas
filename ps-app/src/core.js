@@ -2744,7 +2744,7 @@
     const anni = Number.isInteger(eta) && eta >= 0 && eta < 130 ? eta : prima?.eta;
     // riaprire un paziente archiviato lo riporta fra i vivi: se sei sulla sua
     // pagina, è di lui che ti stai occupando
-    list.unshift({ ep, name: ((name || "").trim() || prima?.name || "").slice(0, 60), url: url || "", ts: Date.now(),
+    list.unshift({ ep, name: ((name || "").trim() || prima?.name || "").slice(0, 60), url: (url || "").split("#")[0], ts: Date.now(),
                    pk: prima?.pk || "", ...tr, ...(Number.isInteger(anni) ? { eta: anni } : {}),
                    ...(sesso === "M" || sesso === "F" ? { sesso } : prima?.sesso ? { sesso: prima.sesso } : {}),
                    ...(nato || prima?.nato ? { nato: nato || prima.nato } : {}), ...(prima?.lista ? { lista: prima.lista } : {}),
@@ -17578,10 +17578,13 @@
       { testo: "Ricarica", fai: ponteRicarica }, "Cartella");
   }
   // «Ricarica» sulla pill: la pagina del paziente, con l'indirizzo che il
-  // gestionale ha dato (una GET: mai il modulo inviato di nuovo)
+  // gestionale ha dato (una GET: mai il modulo inviato di nuovo). Senza il
+  // «#…» (i link «href="#"» della pagina lo lasciano): con quello sarebbe solo
+  // un salto nella stessa pagina, e la pagina di prima resterebbe.
   function ponteRicarica() {
-    const u = ponteUrlPaziente(pontePaziente(PONTE_AGG));
-    location.assign(u || location.href);
+    const v = new URL(ponteUrlPaziente(pontePaziente(PONTE_AGG)) || location.href);
+    v.hash = "";
+    location.assign(v.href);
   }
   // La scheda aperta dal ponte per salvare. Prima volta («compila»): ogni
   // campo dev'essere ancora scrivibile e uguale a quello che il telefono ha
