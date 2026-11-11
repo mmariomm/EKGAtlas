@@ -195,7 +195,8 @@ const telApre = () => sw.evaluate(() => ponteSuScheda("triage", { rileggi: true 
 let doc = await ctx.newPage();
 // una prova dopo l'altra: niente ordini aperti, e la scheda del medico nuova
 async function daCapo() {
-  await sw.evaluate(() => Promise.all([chrome.storage.session.set({ ordini: [] }), typeof motoreScrivi === "function" && motoreScrivi(null)]));
+  // (e le Conferme già rifatte: ogni prova ha un simulatore nuovo, con gli stessi numeri di richiesta)
+  await sw.evaluate(() => Promise.all([chrome.storage.session.set({ ordini: [] }), chrome.storage.session.remove("ordiniRiconfermate"), typeof motoreScrivi === "function" && motoreScrivi(null)]));
   for (const p of ctx.pages()) await p.close().catch(() => {});
   doc = await ctx.newPage();
 }
@@ -362,12 +363,11 @@ if (prova("dopo la Conferma il medico cambia area: provata lo stesso; se il gest
       check(rec?.stato === "stampa" && rec.pubblico?.titolo === "Confermata" && et.length === 1,
         `registrata: «Confermata», le etichette di quella richiesta pronte una volta (got ${JSON.stringify(rec && [rec.stato, rec.pubblico?.titolo, rec.pubblico?.testo, (rec.stampa?.jobs || []).length])})`);
     } else {
-      const v = rec?.vista || {}, s = rec?.consegna?.avviso?.striscia || {};
-      check(rec?.stato === "avviso" && v.tag === "Non confermata" && v.tono === "warn" && !rec.stampa,
-        `non registrata: «Non confermata», ambra, niente da stampare (got ${JSON.stringify(rec && [rec.stato, v.tag, v.tono, !!rec.stampa])})`);
-      check(/guarda le sue richieste/.test(v.testo || "") && /Ristampa/.test(v.testo || "") && !/premi tu Conferma/.test(v.testo || "") && /Ristampa/.test(s.testo || "") && /Se no/.test(s.testo || ""),
-        `…e prima di rifarla le sue richieste: se c'è, Ristampa; se no, il carrello (got «${v.testo}» · sul carrello «${s.testo}»)`);
-      check(/RICHIESTA_ID=/.test(rec?.consegna?.url || "") && param(rec.consegna.url, "RICHIESTA_ID") === rid, "con «apri il carrello» della sua richiesta");
+      // (il carrello ha ancora l'esame e la sua Conferma: il gestionale non l'ha presa)
+      const v = rec?.vista || {};
+      check(rec?.stato === "avviso" && v.tag === "Non partita" && v.tono === "err" && v.riconferma && !rec.stampa,
+        `non registrata: «Non partita», rossa, «Conferma di nuovo», niente da stampare (got ${JSON.stringify(rec && [rec.stato, v.tag, v.tono, v.testo, !!rec.stampa])})`);
+      check(/RICHIESTA_ID=/.test(rec?.consegna?.url || "") && param(rec.consegna.url, "RICHIESTA_ID") === rid, "con il carrello della sua richiesta");
       await sospendi(3000);
       check(conferme(A).length === 1 && !A.state.richieste[rid].confirmed && chiesti(A, /RcsStampaEtichetteLISHMIMU|jasperservlet/) === 0,
         `nessuna seconda Conferma, nessun foglio chiesto al gestionale (got ${conferme(A).length} conferme · ${chiesti(A, /RcsStampaEtichetteLISHMIMU|jasperservlet/)} fogli)`);
@@ -376,6 +376,109 @@ if (prova("dopo la Conferma il medico cambia area: provata lo stesso; se il gest
     await w.close().catch(() => {});
     sess.dopoConferma = null;
   }
+}
+
+// ---- 2c. la Conferma che il gestionale ignora ------------------------------
+// (3.85, registrazioni vere: la POST torna in 0,4–0,7 s con la pagina delle
+// etichette LIS — identica a quella buona —, la richiesta non è registrata, e
+// il carrello ha ancora l'esame col suo bottone Conferma.) Lo si dice in pochi
+// secondi, «Non partita»; un tocco su «Conferma di nuovo» la rifà UNA volta,
+// sul carrello, con la stessa prova; senza tocco, mai. E se il carrello non ha
+// più la sua Conferma non è «non partita»: le attese, poi «da controllare».
+const ignoraLaPrima = () => {
+  let n = 0;
+  sess.dopoConferma = (mock, p) => { if (mock === A && n++ === 0) mock.state.richieste[p.get("RICHIESTA_ID")].confirmed = false; };
+};
+if (prova("la Conferma che il gestionale ignora: «Non partita» in pochi secondi; un tocco, una Conferma sola in più, provata")) {
+  await daCapo();
+  A = createMock({ dopoConferma: 300 });
+  Object.assign(sess, { corrente: null, log: [], ora: 0, forzaOra: null, area: null });
+  await suPagina(doc, A.patientUrl);
+  await nienteSmart(doc);
+  ignoraLaPrima();
+  const nasce = nuovaPagina();
+  await ordina(doc, ["TROPONINA"]);
+  await nasce;
+  await suPagina(doc, B.patientUrl);
+  await finche(() => conferme(A).length > 0, 40000);
+  const tC = Date.now();
+  const vista = await striscia(doc, /ROSSI MARIO.*Non partita/, 20000).catch(() => "");
+  const dt = Date.now() - tC;
+  const rid = Object.keys(A.state.richieste)[0];
+  check(/Conferma di nuovo/.test(vista) && dt < 5000, `«Non partita · Conferma di nuovo» in pochi secondi, senza le attese (got «${vista}» dopo ${dt} ms)`);
+  check(!A.state.richieste[rid].confirmed && chiesti(A, /RcsStampaEtichetteLISHMIMU|jasperservlet/) === 0, "niente stampato");
+  // senza il tocco: mai una seconda Conferma
+  await sospendi(6000);
+  check(conferme(A).length === 1, `senza il tocco, nessuna seconda Conferma (got ${conferme(A).length})`);
+  // il tocco
+  await $panel(doc, AZIONE).click();
+  await finche(async () => conferme(A).length > 1 && (await ordini()).some((x) => x.paziente === "ROSSI MARIO" && x.stato === "stampa"), 40000);
+  const l = await ordini();
+  const rec = l.find((x) => x.paziente === "ROSSI MARIO" && x.stato === "stampa");
+  const et = (rec?.stampa?.jobs || []).filter((j) => /RcsStampaEtichetteLISHMIMU\.do\?RICHIESTA_ID=/.test(j.url || "") && param(j.url, "RICHIESTA_ID") === rid);
+  check(conferme(A).length === 2 && conferme(A).every((q) => q.params.RICHIESTA_ID === rid) && A.state.richieste[rid].confirmed,
+    `il tocco: una Conferma in più, sulla stessa richiesta, e il gestionale la prende (got ${conferme(A).length} conferme)`);
+  check(rec?.pubblico?.titolo === "Confermata" && et.length === 1, `provata: «Confermata», le etichette pronte una volta (got ${JSON.stringify(rec && [rec.pubblico?.titolo, et.length])})`);
+  check(inviati(A).length === 1, `nessun esame rimandato (got ${inviati(A).length} invii)`);
+  // un secondo tocco (la stessa richiesta): niente
+  const r2 = await sw.evaluate((id) => new Promise((res) => {
+    chrome.tabs.query({}).then((ts) => { const t = ts.find((x) => /EPISODIO_ID=999002/.test(x.url || "")); ordMessaggio({ t: "ordineRiconferma", id }, { tab: t, url: t.url }, res); });
+  }), rec.id.replace(/c$/, ""));
+  await sospendi(2000);
+  check(!(r2 && r2.ok) && conferme(A).length === 2, `rifatta una volta: un secondo «Conferma di nuovo» non parte (got ${JSON.stringify(r2 && r2.ok)} · ${conferme(A).length})`);
+  sess.dopoConferma = null;
+}
+if (prova("la Conferma rifatta che il gestionale ignora ancora: «Non partita», il carrello — mai una terza")) {
+  await daCapo();
+  A = createMock({ dopoConferma: 300 });
+  Object.assign(sess, { corrente: null, log: [], ora: 0, forzaOra: null, area: null });
+  await suPagina(doc, A.patientUrl);
+  await nienteSmart(doc);
+  sess.dopoConferma = (mock, p) => { if (mock === A) mock.state.richieste[p.get("RICHIESTA_ID")].confirmed = false; };
+  const nasce = nuovaPagina();
+  await ordina(doc, ["TROPONINA"]);
+  await nasce;
+  await suPagina(doc, B.patientUrl);
+  await striscia(doc, /ROSSI MARIO.*Non partita.*Conferma di nuovo/, 40000).catch(() => "");
+  await $panel(doc, AZIONE).click();
+  await finche(() => conferme(A).length > 1, 30000);
+  const vista = await striscia(doc, /ROSSI MARIO.*Non partita/, 20000).catch(() => "");
+  const rec = (await ordini()).find((x) => x.paziente === "ROSSI MARIO" && /c$/.test(x.id));
+  check(/apri il carrello/.test(vista) && !(rec?.vista?.riconferma) && /RICHIESTA_ID=/.test(rec?.consegna?.url || ""),
+    `la seconda non presa: «Non partita · apri il carrello», niente «Conferma di nuovo» (got «${vista}»)`);
+  await sospendi(5000);
+  check(conferme(A).length === 2, `mai una terza Conferma (got ${conferme(A).length})`);
+  sess.dopoConferma = null;
+}
+if (prova("la Conferma ignorata ma il carrello senza la sua Conferma: le attese, poi da controllare — mai «Non partita»")) {
+  await daCapo();
+  A = createMock({ dopoConferma: 300 });
+  Object.assign(sess, { corrente: null, log: [], ora: 0, forzaOra: null, area: null });
+  await suPagina(doc, A.patientUrl);
+  await nienteSmart(doc);
+  ignoraLaPrima();
+  // dopo la Conferma il carrello si mostra senza i suoi bottoni Conferma
+  const senza = (route) => route.request().method() === "GET" && conferme(A).length > 0 && /RcsRichiestaPrestazioniRicercaErogatore/.test(route.request().url());
+  const togliConferma = async (r) => {
+    if (!senza(r)) return r.fallback();
+    const out = A.handle({ method: "GET", url: r.request().url() });
+    const html = Buffer.from(out.body).toString("latin1").replace(/<input type="submit" name="Update1?" value="Conferma">/g, "");
+    return r.fulfill({ status: out.status, headers: out.headers, body: Buffer.from(html, "latin1") }).catch(() => {});
+  };
+  await ctx.route(`${ORIGIN}/**`, togliConferma);
+  const nasce = nuovaPagina();
+  await ordina(doc, ["TROPONINA"]);
+  await nasce;
+  await suPagina(doc, B.patientUrl);
+  const ultima = () => ordini().then((l) => l.find((x) => x.paziente === "ROSSI MARIO" && !["coda", "avvio", "corre"].includes(x.stato)));
+  await finche(ultima, 60000);
+  const rec = await ultima();
+  const v = rec?.vista || {};
+  check(rec?.stato === "avviso" && v.tag !== "Non partita" && !v.riconferma && v.tono === "warn",
+    `carrello senza Conferma: ambra, mai «Non partita» né «Conferma di nuovo» (got ${JSON.stringify(rec && [rec.stato, v.tag, v.testo, v.tono])})`);
+  check(conferme(A).length === 1, "una Conferma sola");
+  await ctx.unroute(`${ORIGIN}/**`, togliConferma);
+  sess.dopoConferma = null;
 }
 
 // ---- 3. mai due motori per un ordine ------------------------------------

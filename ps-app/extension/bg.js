@@ -1017,6 +1017,7 @@ const ORD = "ordini";
 const ORD_PIANO = (id) => "ordine:" + id;
 const ORD_VISTI = "ordiniVisti";   // gli ordini già accettati: uno chiesto due volte parte una volta
 const ORD_FOGLI = "ordiniFogli";   // gli ordini di cui il service worker ha già i fogli: consegnati due volte, si stampano una
+const ORD_RICONF = "ordiniRiconfermate";   // le richieste la cui Conferma è già stata rifatta: una volta sola
 const SA4 = "https://smarthealth.multimedica.it";
 const ATTIVI = new Set(["avvio", "corre"]);          // occupano la coda: un motore alla volta
 // (e «stampo»: confermata, il service worker stampa i fogli senza dialogo; la
@@ -1405,7 +1406,11 @@ function ordPubblico(rec, l = []) {
     }
     case "interrotto": return P("warn", "Interrotto", v.testo || "controlla il carrello", v.quesito || resto);
     default: {
-      if (!f.length) return P(tono(v.tono, "ok"), v.tag || "Fatto", v.testo, v.quesito);
+      if (!f.length) {
+        const p = P(tono(v.tono, "ok"), v.tag || "Fatto", v.testo, v.quesito);
+        // («Conferma di nuovo» è un bottone della striscia del PC)
+        return v.riconferma ? alTel(p, { ...p, testo: "Conferma di nuovo: dal PC" }) : p;
+      }
       // com'è finita la stampa senza dialogo, foglio per foglio
       // (il perché tecnico resta sul PC; il telefono dice che cosa guardare)
       // (un foglio tolto col suo ✕ l'ha voluto il medico: non è «non uscito»)
@@ -1816,6 +1821,8 @@ function ordMessaggio(msg, sender, reply) {
       const v = msg.vista;
       rec.vista = { tag: corto(v.tag, 60), badge: corto(v.badge, 30), testo: corto(v.testo), tono: corto(v.tono, 6),
         quesito: corto(v.quesito, 90), ferma: !!v.ferma, sessione: !!v.sessione,
+        // («Non partita»: il gestionale non ha preso la Conferma — si può rifarla, un tocco: ordineRiconferma)
+        ...(v.riconferma ? { riconferma: true } : {}),
         // (quanti esami sono passati, su quanti: la riga «Richiesta · 3/6» sotto la striscia)
         ...(Array.isArray(v.prog) && v.prog.length === 2 ? { prog: v.prog.map((x) => Math.max(0, Math.min(99, Number(x) || 0))) } : {}) };
     }
@@ -1838,6 +1845,53 @@ function ordMessaggio(msg, sender, reply) {
     await ordScrivi(l);
     reply({ ok: true, ferma: !!rec.ferma && ATTIVI.has(rec.stato) });
     await ordAvanti(l);
+  });
+  // «Conferma di nuovo»: la Conferma che il gestionale non ha preso (il suo
+  // carrello l'aveva ancora, col suo bottone), rifatta solo al tocco del
+  // medico e UNA volta per richiesta — segnata prima di partire, così anche un
+  // service worker che muore qui non la rifà. È un ordine come gli altri, in
+  // coda e un motore alla volta: la sua scheda apre il carrello di quella
+  // richiesta (l'indirizzo che la scheda dell'ordine ha consegnato, da
+  // leggere) e lì preme la Conferma vera coi controlli di sempre
+  // (riconfermaLavoro). Lo stesso tocco due volte: una.
+  if (msg.t === "ordineRiconferma") return fai(async () => {
+    const l = await ordLeggi();
+    const rec = l.find((x) => x.id === msg.id && FINALI.has(x.stato) && x.vista && x.vista.riconferma);
+    if (!rec) return reply({ ok: false, ordini: l });
+    const fatte = (await chrome.storage.session.get(ORD_RICONF))[ORD_RICONF] || [];
+    const c = rec.consegna || {}, rc = c.receipt || {};
+    let rid = "";
+    try { rid = new URL(c.url).searchParams.get("RICHIESTA_ID") || ""; } catch { rid = ""; }
+    const ok = !!rid && leggibileOrd(c.url) && String(rc.richiestaId || "") === rid && Array.isArray(rc.items) && rc.items.length > 0
+      && rc.items.length <= 60 && !fatte.includes(rid) && (!rec.rid || String(rec.rid) === rid);
+    // (già rifatta, o senza il carrello da aprire: niente — e il bottone se ne va)
+    delete rec.vista.riconferma;
+    if (!ok) rec.vista.testo = "apri il carrello";
+    rec.agg = Date.now();
+    if (!ok) { await ordScrivi(l); return reply({ ok: false, ordini: l }); }
+    await chrome.storage.session.set({ [ORD_RICONF]: [...fatte, rid].slice(-50) });
+    const id = corto(rec.id, 36) + "c";
+    let paz = "";
+    try { paz = new URL(rec.url).searchParams.get("MVPG") === "PsoEpisodioClinicoAmbulatorio" && leggibileOrd(rec.url) ? rec.url : ""; } catch { paz = ""; }
+    const piano = { startPage: "riconferma", richiestaId: rid, episodeId: rec.ep, patientName: rec.paziente || "", patientUrl: paz,
+      listUrl: c.url, receipt: rc, items: rc.items, kind: rec.kind || "" };
+    const nuovo = { id, ep: rec.ep, paziente: rec.paziente, n: rc.items.length, autoConfirm: true, url: c.url, kind: rec.kind || "", rid,
+      listUrl: c.url, opener: tab.id, worker: null, quesito: rec.quesito || "", stato: "coda", ts: Date.now(), agg: Date.now(), vista: null,
+      resto: { mancano: [], controllare: [], nel: nomi(rc.items.map((i) => i.display || i.label)) }, dest: rec.dest || "qui",
+      ...(rec.destNome ? { destNome: rec.destNome } : {}), ...(rec.gesto ? { gesto: rec.gesto } : {}) };
+    await chrome.storage.session.set({ [ORD_PIANO(id)]: piano });
+    // l'avviso di prima ha detto la sua: al suo posto, questa
+    await togli(l, rec);
+    l.push(nuovo);
+    if (occupato(l)) { await ordScrivi(l); return reply({ ok: true, id, coda: true, ordini: l }); }
+    try { await ordApri(nuovo, l); }
+    catch {
+      nuovo.stato = "errore"; nuovo.agg = Date.now(); nuovo.worker = null;
+      nuovo.vista = { tag: "Non partita", testo: "apri il carrello", tono: "err", quesito: "la scheda per la Conferma non si è aperta: niente premuto" };
+      nuovo.consegna = c;
+      await ordScrivi(l);
+    }
+    reply({ ok: true, id, ordini: l });
   });
   // I fogli della richiesta confermata (la conferma è provata), solo da un
   // ordine che gira: i link letti dalla pagina, mai costruiti. Con la stampa

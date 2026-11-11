@@ -1528,11 +1528,11 @@ if (prova("la scheda dell'ordine si ricarica mentre conferma — l'ordine finisc
   w = await nasce;
   await suPagina(doc, B.patientUrl);
   await ordina(doc, ["TROPONINA"], { quesito: "dispnea" });   // in coda dietro ROSSI
-  const ok = await finche(async () => conferme(B).length === 1, 70000);
-  const l = await ordini();
+  const ok = await finche(async () => conferme(B).length === 1, 70000);  const l = await ordini();
   const r = l.find((x) => x.paziente === "ROSSI MARIO");
-  check(fatto && !!r && r.stato !== "corre" && /Non confermata/.test(r.vista?.tag || ""),
-    `la Conferma persa con la ricarica: l'ordine di ROSSI finisce, «Non confermata» (got: ${r ? `${r.stato} · ${r.vista?.tag} · ${r.vista?.testo}` : "niente"})`);
+  // (la Conferma non è arrivata: il carrello ha ancora l'esame e il suo bottone — «Non partita», un tocco la rifà)
+  check(fatto && !!r && r.stato !== "corre" && r.vista?.tag === "Non partita" && !!r.vista?.riconferma,
+    `la Conferma persa con la ricarica: l'ordine di ROSSI finisce, «Non partita · Conferma di nuovo» (got: ${r ? `${r.stato} · ${r.vista?.tag} · ${r.vista?.testo}` : "niente"})`);
   check(ok && conferme(A).length === 0, `e la coda va avanti: BIANCHI parte e si conferma (got ${conferme(B).length} conferme di BIANCHI, ${conferme(A).length} di ROSSI · ${(await ordini()).map((x) => `${x.paziente}:${x.stato}:${x.vista?.tag || ""}`).join(", ")})`);
   check(!!r?.consegna && /RICHIESTA_ID=/.test(r.consegna.url || ""), "con «apri il carrello» della sua richiesta");
   {
