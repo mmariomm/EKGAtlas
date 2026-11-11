@@ -3419,21 +3419,29 @@
           ...(r.nato ? { k: chiaveSmart(r.name, improntaNascita(r.nato)) } : {}) })) };   // (l'area solo se si riconosce, col nome corto)
     }
     const prossima = L.schede.find((s) => s.nostra && !giro.letti[s.base]) || (giro.triage ? null : L.schede.find((s) => s.triage));
+    // Prima di ogni salto, i controlli della partenza (il service worker): un ordine partito o in
+    // coda, un carrello aperto a mano intanto — e la smart si ferma qui, con quello che ha letto, mai
+    // «intera»: nessuno dimesso da una lettura a metà. (Nessuna risposta: ci si ferma lo stesso.)
+    let ferma = "";
     if (prossima && giro.salti < 4) {
-      giro.salti++;
-      tabStore.set(SMART_GIRO, giro);
-      location.href = prossima.url;   // il link della scheda, nella pagina
-      return;
+      const r = await ask({ t: "smartAvanti" });
+      if (r.ok) {
+        giro.salti++;
+        tabStore.set(SMART_GIRO, giro);
+        location.href = prossima.url;   // il link della scheda, nella pagina
+        return;
+      }
+      ferma = r.why || "estensione";
     }
     const lette = Object.values(giro.letti);
-    if (!lette.length) return fine("schede");
+    if (!lette.length) return fine(ferma || "schede");
     const t = giro.triage;
     // (una scheda senza il conto «(N)» si prende com'è; col conto, le righe devono tornare)
     if (t && !t.filtrata && (t.n == null || t.n === t.righe.length)) store.set(TRIAGE_LISTA, { ts: Date.now(), righe: t.righe });
     const righe = lette.flatMap((x) => x.righe);
-    const intera = lette.every((x) => !x.filtrata && x.n != null && x.n === x.righe.length);
+    const intera = !ferma && lette.every((x) => !x.filtrata && x.n != null && x.n === x.righe.length);
     const r = applicaSmart(righe, intera);
-    return fine("ok", { n: r.righe, intera, dimessi: r.dimessi.length });
+    return fine(ferma || "ok", { n: r.righe, intera, dimessi: r.dimessi.length });
   }
   // Rileggere la smart adesso (⟳) o perché il medico ha aperto l'app
   // sull'iPhone: lo chiede il service worker, che apre la scheda dietro e ne

@@ -194,6 +194,7 @@ async function contesto(srv, { seed, finto, w = 1280, h = 900, focusFinto = fals
         // (localStorage «__smartNo»: il service worker la rimanda, con quel perché)
         if (m.t === "smartSotto") return localStorage.getItem("__smartNo") ? { ok: false, why: localStorage.getItem("__smartNo") } : { ok: true, tabId: 9 };
         if (m.t === "smartFine") return { ok: true };
+        if (m.t === "smartAvanti") return { ok: !!finto.smartChi };
         if (m.t === "getStorico") return finto.storico ? (m.chiave ? { ok: true, dati: finto.storico.dati } : { ok: true, indice: [finto.storico.indice] }) : { ok: false };
         return { ok: false };
       };

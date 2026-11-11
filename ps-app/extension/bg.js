@@ -366,6 +366,16 @@ const sottoVive = async () => Object.entries(await chrome.storage.session.get(nu
 // su una sua pagina — il carrello, gli inserimenti.
 const carrelloAperto = async () => (await chrome.tabs.query({ url: "https://smarthealth.multimedica.it/sa4pso/*" }).catch(() => []))
   .some((t) => { try { return /^(Rcs|PsoRichiesta)/.test(new URL(t.url || t.pendingUrl || "").searchParams.get("MVPG") || ""); } catch { return false; } });
+// La lista smart che legge dietro, fra una sua scheda e l'altra: un motore che parte la aspetta, al
+// più SMART_ATTESA dalla sua partenza (quanto manca, 0 se non c'è) — partito a metà del suo giro, la
+// pagina dopo della smart cambierebbe la richiesta «corrente» sotto il primo inserimento (regola 19).
+// Lei, prima di ogni salto, chiede «smartAvanti»: con un motore chiesto o in coda si ferma lì.
+const SMART_ATTESA = 20e3;
+let smartCeduta = 0;   // quando un motore ha aspettato la smart l'ultima volta (in memoria: dura secondi)
+const smartVivaFinoA = async () => {
+  const ora = Date.now();
+  return Math.max(0, ...(await sottoVive().catch(() => [])).filter(([, s]) => s.cosa === "smart").map(([, s]) => (s.ts || 0) + SMART_ATTESA - ora));
+};
 // La scheda ha finito di caricare ma è RIMASTA sul gestionale: il link non ha
 // portato al portale (sessione scaduta, pagina d'errore). Inutile aspettare 30
 // secondi. Ma il rinvio al portale passa spesso da una pagina del gestionale
@@ -685,12 +695,28 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
       .catch(() => reply({ ok: false }));
     return true;
   }
+  // Prima di ogni salto da una scheda della smart alla prossima, gli stessi controlli della partenza:
+  // un ordine al lavoro, uno che aspetta solo lei (in coda, o il motore chiesto da una scheda), un
+  // carrello aperto a mano intanto. Se no, si ferma lì con quello che ha letto (mai «intera»).
+  if (msg.t === "smartAvanti") {
+    (async () => {
+      const s = await sottoGet(_sender.tab && _sender.tab.id);
+      if (!inCorso(s) || s.cosa !== "smart") return reply({ ok: false, why: "pagina" });
+      await motorePronto;
+      const l = await ordLeggi();
+      if (motoreAlLavoro(l) || (!occupato(l) && l.some((x) => x.stato === "coda")) || Date.now() - smartCeduta < 5e3) return reply({ ok: false, why: "ordine in corso" });
+      if (await carrelloAperto()) return reply({ ok: false, why: "carrello aperto" });
+      reply({ ok: true });
+    })().catch(() => reply({ ok: false, why: "estensione" }));
+    return true;
+  }
   if (msg.t === "smartFine") {
     const tid = _sender.tab && _sender.tab.id;
     sottoGet(tid).then(async (s) => {
       if (!inCorso(s) || s.cosa !== "smart") return reply({ ok: false });
       await sottoFine(tid, msg.esito === "ok" ? "letto" : "altro");
       reply({ ok: true });
+      ordSpingi();   // (un ordine che la aspettava: adesso)
     }).catch(() => reply({ ok: false }));
     return true;
   }
@@ -1130,11 +1156,19 @@ async function ordApri(rec, l, stato = "avvio") {
 }
 // La prossima in coda, se nessun motore sta girando. Se la sua scheda non si
 // apre, quell'ordine non parte e lo si dice: niente è stato mandato.
+// (e la lista smart ancora al suo giro: si aspetta lei — la sua fine, o il tempo, rimette in moto la coda)
+let smartSpinta = null;
+const ordSpingi = () => inFilaOrd(async () => { await ordAvanti(await ordLeggi()); }).catch(() => {});
+async function ordAspetta(l) {
+  if (occupato(l)) return true;
+  const smart = await smartVivaFinoA();
+  if (smart) { clearTimeout(smartSpinta); smartSpinta = setTimeout(ordSpingi, smart + 250); }
+  return !!smart;
+}
 async function ordAvanti(l) {
   for (;;) {
-    if (occupato(l)) return;
+    if (!l.some((x) => x.stato === "coda") || await ordAspetta(l)) return;
     const next = l.find((x) => x.stato === "coda");
-    if (!next) return;
     try { await ordApri(next, l); return; }
     catch {
       next.stato = "errore"; next.agg = Date.now(); next.worker = null;
@@ -1858,7 +1892,7 @@ function ordMessaggio(msg, sender, reply) {
     l.push(rec);
     // (per la stazione: le si chiede subito se c'è — fuori dalla fila, una domanda in sola lettura)
     if (rec.dest === "stazione") setTimeout(() => { sondaOrdine(id).catch(() => {}); }, 0);
-    if (occupato(l)) {
+    if (await ordAspetta(l)) {
       await ordScrivi(l);
       return reply({ ok: true, id, coda: true, ordini: l });
     }
@@ -1981,7 +2015,7 @@ function ordMessaggio(msg, sender, reply) {
     // l'avviso di prima ha detto la sua: al suo posto, questa
     await togli(l, rec);
     l.push(nuovo);
-    if (occupato(l)) { await ordScrivi(l); return reply({ ok: true, id, coda: true, ordini: l }); }
+    if (await ordAspetta(l)) { await ordScrivi(l); return reply({ ok: true, id, coda: true, ordini: l }); }
     try { await ordApri(nuovo, l); }
     catch {
       nuovo.stato = "errore"; nuovo.agg = Date.now(); nuovo.worker = null;
@@ -2232,6 +2266,8 @@ function ordMessaggio(msg, sender, reply) {
     }
     const l = await ordLeggi();
     if ((m && !mio) || l.some((x) => x.worker !== tab.id && (ATTIVI.has(x.stato) || daPrendere(x)))) return reply({ ok: false, occupato: true, scheda: tab.id });
+    // (chi parte aspetta la lista smart che legge dietro: lei, al prossimo salto, si ferma — smartAvanti)
+    if (!mio && await smartVivaFinoA()) { smartCeduta = Date.now(); return reply({ ok: false, occupato: true, scheda: tab.id }); }
     await motoreScrivi({ tab: tab.id, id, scade: Date.now() + MOTORE_SCADE });
     reply({ ok: true, scheda: tab.id });
   });
