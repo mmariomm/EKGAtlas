@@ -361,6 +361,11 @@ async function corsiaLibera() {
   }
 }
 const sottoVive = async () => Object.entries(await chrome.storage.session.get(null)).filter(([k, s]) => k.startsWith("sotto:") && inCorso(s));
+// Un carrello aperto (per la lista smart, che cambia la richiesta «corrente»
+// della sessione): una scheda del gestionale sulla creazione di una richiesta o
+// su una sua pagina — il carrello, gli inserimenti.
+const carrelloAperto = async () => (await chrome.tabs.query({ url: "https://smarthealth.multimedica.it/sa4pso/*" }).catch(() => []))
+  .some((t) => { try { return /^(Rcs|PsoRichiesta)/.test(new URL(t.url || t.pendingUrl || "").searchParams.get("MVPG") || ""); } catch { return false; } });
 // La scheda ha finito di caricare ma è RIMASTA sul gestionale: il link non ha
 // portato al portale (sessione scaduta, pagina d'errore). Inutile aspettare 30
 // secondi. Ma il rinvio al portale passa spesso da una pagina del gestionale
@@ -657,8 +662,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
           || u.searchParams.get("MVPG") !== "PsoPazientiSmart" || [...u.searchParams.keys()].some((k) => !["MVPG", "PAZIENTI_FILTRO"].includes(k))) {
         return reply({ ok: false, why: "link inatteso" });
       }
-      // (la smart è una pagina della stessa sessione: mai mentre un motore inserisce)
+      // (la smart è una pagina della stessa sessione, e cambia la sua richiesta «corrente»: mai
+      // mentre un motore inserisce, né con un carrello aperto in una scheda — il medico che ordina a mano)
       if (motoreAlLavoro(await ordLeggi())) return reply({ ok: false, why: "ordine in corso" });
+      if (await carrelloAperto()) return reply({ ok: false, why: "carrello aperto" });
       await sottoControlla();
       const vive = Object.entries(await chrome.storage.session.get(null)).filter(([k, s]) => k.startsWith("sotto:") && inCorso(s));
       if (vive.some(([, s]) => s.cosa === "smart")) return reply({ ok: false, why: "già in corso" });

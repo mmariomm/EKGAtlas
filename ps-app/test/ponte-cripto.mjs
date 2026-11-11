@@ -712,10 +712,11 @@ await blocco(async () => {
   check(!rotto, `un errore nel codice del ponte non ferma bg.js (ordini, referti, stampe)${rotto ? ": " + rotto : ""}`);
 });
 await blocco(async () => {
-  // il telefono aspetta «Aggiorna i valori» almeno quanto il PC, al peggio
+  // il telefono aspetta «Aggiorna i valori» almeno quanto il PC, al peggio (anche in fila dietro
+  // una pagina del ⟳ del tabellone: le schede dietro sono una alla volta)
   const n = (re, t) => Number(re.exec(t)[1]);
   const sw = EXT("ponte-sw.js"), app = leggi("../public/ponte/app.js");
-  const pcMax = n(/PONTE_VALORI_MAX = ([\d.e]+);/, sw) + n(/esiti: ([\d.e]+)/, sw) + n(/altro: ([\d.e]+)/, sw);
+  const pcMax = n(/PONTE_VALORI_MAX = ([\d.e]+);/, sw) + n(/esiti: ([\d.e]+)/, sw) + n(/altro: ([\d.e]+)/, sw) + n(/PONTE_TABELLONE_MAX = ([\d.e]+);/, sw);
   const tel = n(/ATTESA_VALORI = ([\d.e]+);/, app);
   check(tel >= pcMax && tel <= pcMax + 30e3, `«Aggiorna i valori»: il telefono aspetta ${tel / 1000} s, il PC al peggio ${pcMax / 1000} s`);
 });
@@ -737,6 +738,9 @@ await blocco(async () => {
   const letto = await t.manda({ id: 2, cmd: "pazienti" });
   check(letto.some((x) => x.re === 2 && x.ok) && pc.comandi.some((m) => m.cmd === "pazienti"), "una lettura (pazienti) passa e arriva alla scheda");
   check((await t.manda({ id: 3, cmd: "ristampe", ep: "1" })).some((x) => x.re === 3 && x.ok), "anche la ristampa (ristampe) passa: legge la pagina e stampa, non scrive");
+  // «visto» (un referto aperto, gli esiti guardati sul telefono) scrive solo la memoria dell'estensione: passa anche qui
+  check((await t.manda({ id: 4, cmd: "visto", ep: "1", ids: ["r1"] })).some((x) => x.re === 4 && x.ok) && pc.comandi.some((m) => m.cmd === "visto" && m.args?.ids?.[0] === "r1"),
+    "anche «visto» passa: i referti visti sul telefono, nella memoria dell'estensione — niente nel gestionale");
   // ogni scrittura del gestionale è rifiutata sul PC, e non raggiunge nessuna scheda
   const scritture = [
     { cmd: "ordina", ep: "1", oid: "abcDEF12_-", esami: ["lab:A1"], quesito: "q" },

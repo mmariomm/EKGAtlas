@@ -187,10 +187,11 @@ async function suPagina(p, url) {
   await p.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
 }
 const SMART = `${ORIGIN}/sa4pso/restrict/menuPsoSmart.do?MVPG=PsoPazientiSmart&PAZIENTI_FILTRO=TRIAGE`;
-// la lista smart conosciuta e da rileggere (10 minuti passati): la rilegge la prima pagina che si apre
+// la lista smart conosciuta, letta 11 minuti fa: da rileggere per l'iPhone (al più ogni 2 minuti); il
+// gestionale che si apre non la rilegge da sé — l'ha già letta
 const smartDaRileggere = (p) => p.evaluate((u) => {
   localStorage.setItem("psassist:smart.url.v1", JSON.stringify({ url: u, ts: Date.now() }));
-  localStorage.setItem("psassist:smart.sync.v1", JSON.stringify({ ts: Date.now() - 11 * 60e3, fine: Date.now() - 11 * 60e3, esito: "ok", n: 0 }));
+  localStorage.setItem("psassist:smart.sync.v1", JSON.stringify({ ts: Date.now() - 11 * 60e3, fine: Date.now() - 11 * 60e3, esito: "ok", n: 0, letta: Date.now() - 11 * 60e3 }));
 }, SMART);
 const nienteSmart = (p) => p.evaluate(() => { localStorage.removeItem("psassist:smart.url.v1"); });
 // l'app aperta sull'iPhone: il PC rilegge la smart (non più a tempo) — il comando come lo manda il ponte
@@ -247,6 +248,33 @@ if (prova("a metà ordine la lista smart aspetta: POC e Urgenze, due ordini, ent
   check(sess.log.some((x) => x.cosa === "smart"), "finito l'ordine, riaprendo l'iPhone la lista smart si rilegge");
   await nienteSmart(doc);
   lento = 0;
+}
+
+// ---- 1b. un carrello aperto in una scheda: la lista smart aspetta -------
+// Il medico ordina a mano (la pagina di creazione di una richiesta, il carrello): la smart, che cambia la
+// richiesta «corrente» della sessione, non si legge — né aprendo l'iPhone né col gestionale appena aperto.
+if (prova("un carrello aperto in una scheda: la lista smart non si legge")) {
+  await daCapo();
+  // (la smart della prova di prima finisce il suo giro di schede, dietro, e nessun ordine lavora più: qui decide il carrello)
+  await finche(async () => !(await sw.evaluate(() => sottoVive().then((l) => l.some(([, s]) => s.cosa === "smart")))), 45000);
+  await finche(() => sw.evaluate(() => ordLeggi().then((l) => !motoreAlLavoro(l))), 45000);
+  await suPagina(doc, A.patientUrl);
+  const crea = await doc.evaluate(() => document.querySelector('a[title="Richieste Laboratorio"]')?.href || "");
+  const carrello = await ctx.newPage();
+  await carrello.goto(crea);
+  await carrello.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 }).catch(() => {});
+  await smartDaRileggere(doc);
+  sess.log.length = 0;
+  const durante = await telApre();
+  await sospendi(1500);
+  const sync = await doc.evaluate(() => JSON.parse(localStorage.getItem("psassist:smart.sync.v1") || "null"));
+  check(/PsoRichiestaCreaRcs/.test(crea) && durante?.ok && durante.dati?.rilegge === false && !sess.log.some((x) => x.cosa === "smart"),
+    `con la creazione di una richiesta aperta in una scheda, aprendo l'iPhone la smart non si legge (got ${JSON.stringify({ rilegge: durante?.dati?.rilegge, esito: sync?.esito, letta: sess.log.filter((x) => x.cosa === "smart").length })})`);
+  await carrello.close();
+  await smartDaRileggere(doc);
+  await telApre();
+  check(await finche(() => sess.log.some((x) => x.cosa === "smart"), 15000), "chiuso il carrello, riaprendo l'iPhone la smart si legge");
+  await nienteSmart(doc);
 }
 
 // ---- 2. ORA- nella risposta: la richiesta si rifà da capo, una volta ------

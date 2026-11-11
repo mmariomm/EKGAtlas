@@ -70,6 +70,7 @@ function server() {
     link: LINK_SMART,
     focus: false,               // le pagine portano refreshOnFocus
     shell: true,                // dopo «Conferma»: 302 → PsoPazienti, che rimanda alla lista
+    rich: {},                   // ep → le richieste della sua pagina: [{ esame, quando, referto }] (le righe RICH del gestionale)
   };
   const linguetta = (p) => `<div class="myLinguetta" style=" border=1; background-color: ORANGE; color: White; "><table cellpadding="3" cellspacing="0" width="100%"><tbody><tr>
       <td nowrap="" width="1%"><img title="${p.triage || "esame"}" src="icona:2.gif" width="18"></td>
@@ -110,7 +111,9 @@ function server() {
     return pagina(p.name, `<form name="AmbulatorioPSO" method="post" action="menuPsoEpisodio.do?ccsForm=AmbulatorioPSO:Edit&amp;MVPG=PsoEpisodioClinicoAmbulatorio&amp;EPISODIO_ID=${ep}"></form>
       <table><tr><td title="${p.triage}"><font style="font-size: 150%">${p.name}</font><br><font style="font-size: 120%">${p.nato} (${p.eta}) M</font></td></tr></table>
       <a href="menuPsoEpisodio.do?MVPG=PsoRichiestaCreaRcs&amp;EPISODIO_ID=${ep}&amp;RISORSA_ID=00660001P&amp;RISORSE=00660001P&amp;toPage=RcsRichiestaPrestazioniRicercaErogatore" title="Richieste Laboratorio">Laboratorio</a>
-      <h1 id="cartella">Cartella ${ep}</h1>`);
+      <h1 id="cartella">Cartella ${ep}</h1>
+      <table>${(s.rich[ep] || []).map((r, i) => `<tr><td class="AFCDataTD" title="${r.esame}">${r.referto ? `<a href="#" title="REFERTO" onclick="javascript:window.open('../../sa4/restrict2/Sa4ViewerExtRedirect.do?ASSISTITO_ID=*T&amp;REFERTO_SISTEMA=HL7RIS&amp;REFERTO_ID=r${ep}${i}','HL7RIS')"><img alt="referto"></a>` : ""}
+        ${r.esame}<input type="hidden" name="TIPO" value="RICH"><input type="hidden" name="DATA_ORD" value="${r.quando}"><input type="hidden" name="DESCRIZIONE_TITLE" value="${r.esame}"></td></tr>`).join("")}</table>`);
   };
   const smartPage = (u) => {
     if (s.smartLogin) return `<html><body><form><input type="text" name="u"><input type="password" name="p"></form></body></html>`;
@@ -144,6 +147,7 @@ function server() {
       return s.shell ? `<html><head><meta http-equiv="refresh" content="0; URL=menuPso.do?MVPG=PsoPazienti"></head><body></body></html>` : listaPage();
     }
     if (mvpg === "PsoPazienti") return shellPage();
+    if (mvpg === "PsoAccesso") return `<html><body><form><input type="text" name="u"><input type="password" name="p"></form></body></html>`;   // (la sessione scaduta)
     if (mvpg === "PsoPazientiAmbulatorio") return listaPage();
     if (mvpg === "PsoPsoImposta") return impostaPage();
     if (mvpg === "PsoPazientiSmart") return smartPage(u);
@@ -187,7 +191,8 @@ async function contesto(srv, { seed, finto, w = 1280, h = 900, focusFinto = fals
       const risposta = (m) => {
         chiesti.push(m);
         if (m.t === "smartChi") return { ok: !!finto.smartChi };
-        if (m.t === "smartSotto") return { ok: true, tabId: 9 };
+        // (localStorage «__smartNo»: il service worker la rimanda, con quel perché)
+        if (m.t === "smartSotto") return localStorage.getItem("__smartNo") ? { ok: false, why: localStorage.getItem("__smartNo") } : { ok: true, tabId: 9 };
         if (m.t === "smartFine") return { ok: true };
         if (m.t === "getStorico") return finto.storico ? (m.chiave ? { ok: true, dati: finto.storico.dati } : { ok: true, indice: [finto.storico.indice] }) : { ok: false };
         return { ok: false };
@@ -669,56 +674,97 @@ await blocco("Il Da fare del tabellone: il generale, e quello dei pazienti col c
   await context.close();
 });
 
-// --------------------------------------------- 4. segue il gestionale: il link, l'iPhone, il ⟳
-await blocco("Segue il gestionale: il link della pagina; si rilegge aprendo l'iPhone (al più ogni 2 minuti) e col ⟳, mai a tempo", async () => {
+// --------------------------------------------- 4. segue il gestionale: il link, l'apertura, l'iPhone, il ⟳
+await blocco("Segue il gestionale: il link della pagina; si legge appena aperto il gestionale, aprendo l'iPhone (al più ogni 2 minuti) e col ⟳, mai a tempo", async () => {
   const srv = server();
-  const { context, page } = await contesto(srv, { seed: semeTabellone(), finto: {} });
+  const { context, page } = await contesto(srv, { seed: { ...semeTabellone(), "segue.v1": false }, finto: {} });
   await page.clock.install();
   const sotto = () => page.evaluate(() => (window.__chiesti || []).filter((m) => m.t === "smartSotto").map((m) => m.url));
+  // (le richieste annotate stanno nella pagina: cambiando pagina si contano da capo)
+  let prima = 0;
+  const conta = async () => prima + (await sotto()).length;
+  const vai = async (url) => { prima += (await sotto().catch(() => [])).length; await page.goto(url); };
   // una lista senza il link: niente da aprire, nemmeno col ⟳
   srv.s.link = "";
-  await page.goto(URL_LISTA);
+  await vai(URL_LISTA);
   await pannello(page);
   await page.clock.runFor(3000);
   await $p(page, "#tbsync").click();
   await page.clock.runFor(500);
-  check((await sotto()).length === 0 && !(await ls(page, "smart.url.v1")), "senza il link della pagina: la smart non si apre, nemmeno col ⟳ (nessun indirizzo inventato)");
-  // la lista dell'area porta l'icona elenco_smart: il SUO indirizzo
+  check(await conta() === 0 && !(await ls(page, "smart.url.v1")), "senza il link della pagina: la smart non si apre, nemmeno col ⟳ (nessun indirizzo inventato)");
+  // «Segue il gestionale» non si spegne più: niente voce nel ⋯, e l'interruttore di prima (spento) se ne va
+  await $p(page, "#menubtn").click();
+  check(!(await $p(page, "#seguesw").count()) && (await ls(page, "segue.v1")) === null, "nel ⋯ non c'è più «Segue il gestionale»; lo «spento» salvato prima se ne va (segue.v1)");
+  await $p(page, "#menubtn").click();
+  // la lista dell'area porta l'icona elenco_smart: il SUO indirizzo, e il gestionale appena aperto (la smart mai letta) la legge subito, dietro
   srv.s.link = LINK_SMART;
-  await page.goto(URL_LISTA);
+  await vai(URL_LISTA);
   await pannello(page);
   await page.clock.runFor(2000);
-  check((await ls(page, "smart.url.v1"))?.url === URL_SMART_LINK && (await sotto()).length === 0, `il link letto dalla pagina; la smart non si apre da sola (got: ${JSON.stringify(await sotto())})`);
+  check((await ls(page, "smart.url.v1"))?.url === URL_SMART_LINK && (await sotto()).join() === URL_SMART_LINK,
+    `il link letto dalla pagina; il gestionale appena aperto: la smart si legge da sola, una volta, col suo link (got: ${JSON.stringify(await sotto())})`);
+  // un'altra pagina: già in lettura, niente di nuovo; e poi niente giri a tempo
+  await vai(URL_LISTA);
+  await pannello(page);
   await page.clock.runFor(25 * 60e3);
-  check((await sotto()).length === 0, "nemmeno dopo 25 minuti: niente giri a tempo");
+  check(await conta() === 1, `un'altra pagina, e 25 minuti: niente di nuovo — niente giri a tempo (got ${await conta()})`);
   // l'app aperta sull'iPhone (il comando «triage» con rileggi): la smart, dietro, col link della pagina; il telefono lo sa
   const iPhone = (rileggi = true) => page.evaluate((rileggi) => window.__alPc({ t: "ponteEsegui", cmd: "triage", args: rileggi ? { rileggi: true } : {} }), rileggi);
   const t1 = await iPhone();
-  check((await sotto()).join() === URL_SMART_LINK && t1?.ok && t1.dati?.rilegge === true, `aprendo l'app sull'iPhone: la smart, col suo link, e il telefono sa che si sta rileggendo (got: ${JSON.stringify(t1)} · ${JSON.stringify(await sotto())})`);
+  check(await conta() === 2 && (await sotto()).join() === URL_SMART_LINK && t1?.ok && t1.dati?.rilegge === true,
+    `aprendo l'app sull'iPhone: la smart, col suo link, e il telefono sa che si sta rileggendo (got: ${JSON.stringify(t1)} · ${JSON.stringify(await sotto())})`);
   await page.clock.runFor(60e3);
   const t2 = await iPhone();
-  check((await sotto()).length === 1 && t2?.dati?.rilegge === false, "riaperta dopo un minuto: niente di nuovo (al più ogni 2 minuti)");
+  check(await conta() === 2 && t2?.dati?.rilegge === false, "riaperta dopo un minuto: niente di nuovo (al più ogni 2 minuti)");
   await iPhone(false);
-  check((await sotto()).length === 1, "una semplice richiesta del telefono (senza «rileggi») non rilegge");
+  check(await conta() === 2, "una semplice richiesta del telefono (senza «rileggi») non rilegge");
   await page.clock.runFor(70e3);
   await iPhone();
-  check((await sotto()).length === 2, "passati i 2 minuti, riaprendo l'app: di nuovo");
-  // spento (⋯ → Segue il gestionale): nemmeno dall'iPhone; il ⟳ sì
-  await $p(page, "#menubtn").click();
-  await $p(page, "#seguesw").click();
-  check((await ls(page, "segue.v1")) === false, "«segue il gestionale» spento (segue.v1)");
-  await page.clock.runFor(25 * 60e3);
-  await iPhone();
-  check((await sotto()).length === 2, "spento: niente, nemmeno aprendo l'iPhone");
+  check(await conta() === 3, "passati i 2 minuti, riaprendo l'app: di nuovo — anche con lo «spento» di prima (non c'è più)");
   // (il ⟳ è l'icona che rilegge, la stessa di tutto il pannello: niente glifo)
   check((await $p(page, "#tbsync svg").count()) === 1 && !(await $p(page, "#tbsync").innerText()).trim(), "il ⟳ è un'icona del pannello, non il glifo");
+  // (la lettura di prima, qui senza fine — il service worker è per finta —, vale «in corso» per 45 secondi)
   await $p(page, "#tbsync").click();
   await page.clock.runFor(500);
-  check((await sotto()).length === 3, "⟳: subito");
+  check(await conta() === 3 && /si sta già rileggendo/.test(await $p(page, ".card").innerText().catch(() => "")), "⟳ mentre una lettura è in corso: niente di nuovo, e lo dice");
+  await page.clock.runFor(45e3);
+  await $p(page, "#tbsync").click();
+  await page.clock.runFor(500);
+  check(await conta() === 4, "⟳: subito");
+  // la sessione scade e si rientra: la prima pagina dopo l'accesso rilegge la smart (l'elenco se n'è andato col login)
+  await vai(`${ORIGIN}${DIR}menuPso.do?MVPG=PsoAccesso`);
+  await page.waitForFunction(() => !localStorage.getItem("psassist:smart.sync.v1"), null, { timeout: 8000 }).catch(() => {});
+  check(!(await ls(page, "smart.sync.v1")), "la pagina d'accesso dimentica l'ultima lettura della smart (smart.sync.v1)");
+  await vai(URL_LISTA);
+  await page.waitForSelector("#psassist-host", { state: "attached" });   // (dopo l'accesso il pannello riparte ridotto)
+  await page.clock.runFor(2000);
+  check(await conta() === 5, `rientrati: la prima pagina rilegge la smart, da sola (got ${await conta()})`);
+  // il service worker l'ha rimandata per un motivo del momento (un carrello aperto): la prima pagina dopo i 2 minuti ci riprova, da sola
+  await page.evaluate(() => { localStorage.removeItem("psassist:smart.sync.v1"); localStorage.setItem("__smartNo", "carrello aperto"); });
+  await vai(URL_LISTA);
+  await page.waitForSelector("#psassist-host", { state: "attached" });   // (dopo l'accesso il pannello riparte ridotto)
+  await page.clock.runFor(2000);
+  check(await conta() === 6 && (await ls(page, "smart.sync.v1"))?.esito === "carrello aperto", `rimandata dal service worker: «carrello aperto» (got ${JSON.stringify(await ls(page, "smart.sync.v1"))})`);
+  await page.evaluate(() => localStorage.removeItem("__smartNo"));
+  await vai(URL_LISTA);
+  await page.waitForSelector("#psassist-host", { state: "attached" });   // (dopo l'accesso il pannello riparte ridotto)
+  await page.clock.runFor(2000);
+  check(await conta() === 6, "una pagina subito dopo: non ancora (al più ogni 2 minuti)");
+  await page.clock.runFor(2 * 60e3);
+  await vai(URL_LISTA);
+  await page.waitForSelector("#psassist-host", { state: "attached" });   // (dopo l'accesso il pannello riparte ridotto)
+  await page.clock.runFor(2000);
+  check(await conta() === 7, `dopo i 2 minuti, la prima pagina ci riprova da sola (got ${await conta()})`);
+  // …mentre una lettura dietro aperta e finita male («pagina») non si riapre da sola: lo fanno il telefono e il ⟳
+  await page.evaluate(() => localStorage.setItem("psassist:smart.sync.v1", JSON.stringify({ ts: Date.now() - 10 * 60e3, fine: Date.now() - 10 * 60e3, esito: "pagina", n: 0 })));
+  await vai(URL_LISTA);
+  await page.waitForSelector("#psassist-host", { state: "attached" });   // (dopo l'accesso il pannello riparte ridotto)
+  await page.clock.runFor(2000);
+  check(await conta() === 7, "una scheda dietro che non ha letto («pagina») non si riapre da sola a ogni pagina");
   // un link che non è quello della smart (un altro parametro): non si prende
   srv.s.link = "menuPsoSmart.do?MVPG=PsoPazientiSmart&PAZIENTI_FILTRO=X&s_ASSISTITO=ROSSI";
   await page.evaluate(() => localStorage.removeItem("psassist:smart.url.v1"));
-  await page.goto(URL_LISTA);
+  await vai(URL_LISTA);
   await page.waitForSelector("#psassist-host", { state: "attached" });
   check(!(await ls(page, "smart.url.v1")), "un link con un filtro dentro non è la lista smart: non si tiene");
   await context.close();
@@ -925,7 +971,7 @@ await blocco("Chi è al Triage: di partenza nella Sala attesa della Bassa, finch
 await browser.close();
 
 // ------------------------------- 8. con l'estensione vera: la scheda dietro
-await blocco("Con l'estensione: la smart si apre in una scheda dietro e si chiude", async () => {
+await blocco("Con l'estensione: la smart si apre in una scheda dietro e si chiude; il ⟳ rilegge dietro chi è stato aperto in questo turno", async () => {
   const EXT = join(root, "extension");
   const PROFILO = join("/tmp", "psa-tabellone-" + process.pid);
   const exe = process.env.CHROMIUM_PATH || ["/opt/pw-browsers/chromium-1243/chrome-linux/chrome", "/opt/pw-browsers/chromium-1194/chrome-linux/chrome", "/opt/pw-browsers/chromium"].find((p) => { try { return readFileSync(p) && true; } catch { return false; } });
@@ -934,51 +980,103 @@ await blocco("Con l'estensione: la smart si apre in una scheda dietro e si chiud
     args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`, ...(process.env.PSA_CHROMIUM_ARGS || "").split(/\s+/).filter(Boolean)],
   });
   ctx.setDefaultTimeout(10000);
+  const finoA2 = async (fn, ms) => { for (const t0 = Date.now(); Date.now() - t0 < ms; await new Promise((r) => setTimeout(r, 300))) if (await fn()) return true; return false; };
   try {
     const srv = server();
     srv.s.pazienti = srv.s.pazienti.filter((p) => p.ep !== "700012");
     srv.s.pazienti.push(P("700061", "MORO DINO", "09/09/1999", 27, "ARANCIONE", "obi", 15));
+    // la pagina di ROSSI (aperto 20 minuti fa) e quella di VERDI (mai aperto): una RX ciascuno, ancora senza referto
+    const dataOrd = (t) => { const d = new Date(t); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:00.0`; };
+    srv.s.rich["700001"] = [{ esame: "69-140 RX ADDOME (A2)", quando: dataOrd(Date.now() - 40 * 60e3), referto: false }];
+    srv.s.rich["700002"] = [{ esame: "69-140 RX TORACE (A1)", quando: dataOrd(Date.now() - 30 * 60e3), referto: false }];
     await ctx.route(`${ORIGIN}/**`, servi(srv));
     const page = ctx.pages()[0] || await ctx.newPage();
-    // (l'elenco di partenza: tutti tranne MORO, già visti — seminato da una pagina fuori dal gestionale)
+    // (l'elenco di partenza: tutti tranne MORO, già visti — seminato da una pagina fuori dal gestionale;
+    // la smart mai letta da quando il gestionale è aperto)
+    const seme = semeTabellone();
+    seme["patients.v1"] = seme["patients.v1"].filter((p) => p.ep !== "700051");   // (SENZA AREA: qui il gestionale non ce l'ha)
+    seme["tabellone.modo.v1"] = "lista";   // (la Lista: una riga per tutti, anche per chi ha un letto)
+    seme["stato.v1"]["700001"].righe = [{ k: "x", rid: "", ts: Date.now() - 40 * 60e3, esami: [["img", "RX ADDOME"]], fatto: "", quando: 0 }];
     await page.goto(`${ORIGIN}/vuota.html`);
     await page.evaluate((seed) => {
       for (const [k, v] of Object.entries(seed)) localStorage.setItem("psassist:" + k, JSON.stringify(v));
       localStorage.setItem("psassist:win.v1", JSON.stringify({ x: 0.02, y: 0.01, w: 0.96, h: 0.97 }));
       sessionStorage.setItem("psassist:navPannello.v1", JSON.stringify(Date.now()));
-    }, semeTabellone());
+    }, seme);
     const schede = [];
     ctx.on("page", (p) => schede.push(p));
     srv.s.log.length = 0;
     await page.goto(URL_LISTA);
     await page.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
-    // (niente giri a tempo: la si rilegge col ⟳, o aprendo l'app sull'iPhone)
-    if (!(await page.locator("#psassist-host .card").count())) await page.locator("#psassist-host #expand").click({ timeout: 10000 }).catch(() => {});
-    await page.waitForSelector("#psassist-host #tbsync", { timeout: 15000 }).catch(async (e) => {
-      console.log("    [⟳]", await page.evaluate(() => document.getElementById("psassist-host")?.shadowRoot.innerHTML.replace(/<svg.*?<\/svg>/gs, "").slice(0, 600)));
-      throw e;
-    });
-    await page.locator("#psassist-host #tbsync").click();
-    await page.waitForFunction(() => { const s = JSON.parse(localStorage.getItem("psassist:smart.sync.v1") || "null"); return s && s.fine && s.esito; }, null, { timeout: 20000 });
+    // il gestionale appena aperto: la smart, da sola, in una scheda dietro (niente giri a tempo: poi col ⟳, o aprendo l'app sull'iPhone)
+    const letta = () => page.waitForFunction(() => { const s = JSON.parse(localStorage.getItem("psassist:smart.sync.v1") || "null"); return s && s.fine && s.esito; }, null, { timeout: 30000 }).then(() => true, () => false);
+    let persa = !(await letta());
+    const daSola = srv.s.log.some((l) => /PAZIENTI_FILTRO=AMB_7/.test(l)), primaScheda = schede.length;
+    if (persa) {
+      // (la navigazione persa sotto Playwright, vedi il ⟳ qui sotto: passati i suoi tempi, il ⟳ la rilegge)
+      console.log("    (la scheda dietro ha perso la sua pagina: ⟳)");
+      await page.waitForTimeout(16000);
+      await page.locator("#psassist-host #expand").click({ timeout: 10000 }).catch(() => {});
+      await page.locator("#psassist-host #tbsync").click().catch(() => {});
+      persa = !(await letta());
+    }
     const sync = await page.evaluate(() => JSON.parse(localStorage.getItem("psassist:smart.sync.v1")));
     await page.waitForTimeout(800);
     const aperte = ctx.pages().filter((p) => !p.isClosed());
-    check(sync.esito === "ok" && schede.length === 1 && aperte.length === 1 && /PsoPazientiAmbulatorio/.test(page.url()),
-      `una scheda dietro, sulla smart; letta, si chiude; il medico resta dov'era (got: ${JSON.stringify(sync)} · schede ${schede.length}, aperte ${aperte.length})`);
+    check(!persa && daSola && sync.esito === "ok" && sync.letta > 0 && primaScheda === 1 && aperte.length === 1 && /PsoPazientiAmbulatorio/.test(page.url()),
+      `appena aperto il gestionale: da sola, una scheda dietro, sulla smart; letta, si chiude; il medico resta dov'era (got: ${JSON.stringify(sync)} · schede ${primaScheda}, aperte ${aperte.length})`);
     const visibile = await page.evaluate(() => document.visibilityState);
     check(visibile === "visible", "la scheda del medico resta davanti");
     const paz = await page.evaluate(() => JSON.parse(localStorage.getItem("psassist:patients.v1")));
     check(paz.some((p) => p.name === "MORO DINO" && /^sm/.test(p.ep)) && paz.find((p) => p.ep === "700012")?.arch === true,
       "MORO entra; NERI PAOLA, uscita, è dimessa");
-    await page.locator("#psassist-host .stsnack").waitFor({ timeout: 5000 }).catch(() => {});
-    const snack = await page.locator("#psassist-host .stsnack").innerText().catch(() => "");
-    check(/NERI P\. dimesso/.test(snack), `e la scheda del medico lo dice, con «Annulla» (got: ${snack.replace(/\s+/g, " ")})`);
-    // ⟳
-    await page.locator("#psassist-host #expand").click().catch(() => {});
+    // (letta mentre la pagina nasce: «… dimesso · Annulla» dura 8 secondi, e il pannello può essere ancora ridotto — c'è l'uscita da annullare)
+    const dim = await page.evaluate(() => JSON.parse(localStorage.getItem("psassist:dimessi.v1") || "null"));
+    check(dim && dim.eps.join() === "700012" && dim.nomi.join() === "NERI P.", `e la sua uscita si può annullare: «NERI P. dimesso · Annulla» (got: ${JSON.stringify(dim)})`);
+    check(!srv.s.log.some((l) => /EPISODIO_ID=/.test(l)), "la smart letta da sola non apre la pagina di nessun paziente");
+    // intanto le due radiografie tornano refertate
+    srv.s.rich["700001"][0].referto = true;
+    srv.s.rich["700002"][0].referto = true;
+    // ⟳: la smart di nuovo, e dietro, uno alla volta, chi è stato aperto in questo turno (ROSSI) — VERDI no
+    if (!(await page.locator("#psassist-host .card").count())) await page.locator("#psassist-host #expand").click({ timeout: 10000 }).catch(() => {});
+    await page.waitForSelector("#psassist-host #tbsync", { timeout: 15000 });
+    const rxRossi = () => page.evaluate(() => (JSON.parse(localStorage.getItem("psassist:stato.v1") || "{}")["700001"]?.righe || []).find((r) => /RX ADDOME/.test(JSON.stringify(r.esami))) || null);
+    check((await rxRossi())?.fatto === "", "prima del ⟳: la RX di ROSSI è in attesa, sul PC");
     srv.s.log.length = 0;
-    await page.locator("#psassist-host #tbsync").click();
-    await page.waitForFunction(() => { const s = JSON.parse(localStorage.getItem("psassist:smart.sync.v1") || "null"); return s && s.fine && Date.now() - s.fine < 5000; }, null, { timeout: 20000 });
-    check(srv.s.log.some((l) => /PAZIENTI_FILTRO=AMB_7/.test(l)), "⟳: di nuovo, dal link della pagina");
+    // (Sotto Playwright una scheda nata vuota e poi mandata sulla sua pagina a volte perde la navigazione —
+    // net::ERR_ABORTED, anche col codice di prima —: la scheda si chiude da sola, e il medico ritocca ⟳.
+    // Qui lo stesso, passati i tempi di quella persa: al più due volte.)
+    const nate = schede.length;
+    const pagine = [];
+    const tocco = async () => {
+      srv.s.log.length = 0;
+      const t0 = await page.evaluate(() => Date.now());
+      await page.locator("#psassist-host #tbsync").click();
+      const smart = await page.waitForFunction((t0) => { const s = JSON.parse(localStorage.getItem("psassist:smart.sync.v1") || "null"); return s && s.fine > t0; }, t0, { timeout: 30000 }).then(() => true, () => false);
+      const fatto = await finoA2(async () => (await rxRossi())?.fatto === "referto", 40000);
+      await page.waitForTimeout(1500);
+      pagine.push(...srv.s.log.filter((l) => /MVPG=PsoEpisodioClinicoAmbulatorio/.test(l)));
+      return smart && fatto && srv.s.log.some((l) => /PAZIENTI_FILTRO=AMB_7/.test(l));
+    };
+    let riuscito = await tocco();
+    for (let n = 0; !riuscito && n < 2; n++) { console.log("    (⟳ di nuovo: una scheda dietro ha perso la sua pagina)"); await page.waitForTimeout(65000); pagine.length = 0; riuscito = await tocco(); }
+    check(riuscito, `⟳: la smart di nuovo, dal link della pagina, e la pagina di ROSSI riletta dietro — la sua RX ora è refertata (got ${JSON.stringify(await rxRossi())})`);
+    check(pagine.length === 1 && pagine.every((l) => /EPISODIO_ID=700001\b/.test(l)),
+      `…la sua pagina una volta, e solo lui: VERDI, mai aperto in questo turno, resta com'è la lista — la sua pagina non si apre (pagine: ${JSON.stringify(pagine)})`);
+    // nella Lista: «RX ✓» e «● nuovo» (nel passaggio del mouse); nella Mappa, sul letto, il pallino blu del nuovo
+    const riga = await page.evaluate(() => { const r = document.getElementById("psassist-host").shadowRoot.querySelector('.pzrow[data-pz="700001"]');
+      return r ? { rx: r.querySelector(".esm.es-img")?.className || "", nuovo: /● nuovo/.test(r.querySelector(".pzapri")?.getAttribute("aria-label") || "") } : null; });
+    check(riga && /\bok\b/.test(riga.rx) && riga.nuovo, `nel tabellone, la riga di ROSSI si rifà da sola: «RX ✓» e «● nuovo» (got ${JSON.stringify(riga)})`);
+    await page.locator('#psassist-host [data-modo="mappa"]').click();
+    const letto = await page.evaluate(() => [...document.getElementById("psassist-host").shadowRoot.querySelectorAll(".stbed.occ")].find((b) => b.querySelector('[data-stp="700001"]'))?.querySelector(".stseg")?.className || "");
+    check(/\bnuovo\b/.test(letto), `…e sulla mappa il suo letto ha il pallino blu del nuovo (got «${letto}»)`);
+    const verdi = await page.evaluate(() => JSON.parse(localStorage.getItem("psassist:stato.v1") || "{}")["700002"]?.righe?.some((r) => r.fatto === "referto") || false);
+    check(!verdi, "e VERDI ha lo stato di prima");
+    await finoA2(async () => ctx.pages().filter((p) => !p.isClosed()).length === 1, 15000);
+    check(ctx.pages().filter((p) => !p.isClosed()).length === 1 && schede.length - nate >= 2 && await page.evaluate(() => document.visibilityState) === "visible",
+      `le schede dietro (la smart, ROSSI) si chiudono; il medico resta davanti (nate ${schede.length - nate})`);
+    const visto = await page.evaluate(() => JSON.parse(localStorage.getItem("psassist:patients.v1")).find((p) => p.ep === "700001")?.ts);
+    check(visto === seme["patients.v1"].find((p) => p.ep === "700001").ts, "rileggere col ⟳ non è «aperto adesso» dal medico");
   } finally {
     await ctx.close();
     rmSync(PROFILO, { recursive: true, force: true });

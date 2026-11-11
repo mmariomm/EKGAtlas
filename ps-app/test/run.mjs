@@ -7471,13 +7471,10 @@ async function scenarioMenuSezioni(browser) {
   await b.page.waitForSelector("#psassist-host .card", { state: "attached" });
   await menu(b.page);
   s = await sezioni(b.page);
-  check(scen, JSON.stringify(s.map((x) => x.t)) === '["Strumenti","Questo PC"]' && di(s, "Strumenti").join() === "tabmenu,pontemenu,consmenu,stmodmenu,seguesw",
-    `con l'estensione, sulla stanza: Modifica la stanza e Segue il gestionale in fondo agli Strumenti (got ${vedi(s)})`);
-  // l'interruttore: una voce da spuntare, lo stato al posto dell'icona (niente «✓ » davanti)
-  const segue = await b.page.evaluate(() => { const x = document.getElementById("psassist-host").shadowRoot.querySelector("#seguesw");
-    return { role: x.getAttribute("role"), on: x.getAttribute("aria-checked"), t: x.textContent.trim(), blu: getComputedStyle(x.querySelector(".mico")).color }; });
-  check(scen, segue.role === "menuitemcheckbox" && segue.on === "true" && segue.t === "Segue il gestionale" && segue.blu === "rgb(11, 92, 173)",
-    `«Segue il gestionale»: da spuntare, acceso = il pallino blu con la spunta, niente «✓ » nel testo (got ${JSON.stringify(segue)})`);
+  // («Segue il gestionale» non c'è più: la smart si legge appena il gestionale è aperto, sempre)
+  check(scen, JSON.stringify(s.map((x) => x.t)) === '["Strumenti","Questo PC"]' && di(s, "Strumenti").join() === "tabmenu,pontemenu,consmenu,stmodmenu"
+    && !(await $panel(b.page, "#seguesw").count()),
+    `con l'estensione, sulla stanza: Modifica la stanza in fondo agli Strumenti, e nessun «Segue il gestionale» (got ${vedi(s)})`);
   await shotSide(b.page, "menu-sezioni-stanza");
   // ⋯ → iPhone senza un'estensione che risponda: la vista lo dice, niente cornice rotta
   await $panel(b.page, "#pontemenu").click();
