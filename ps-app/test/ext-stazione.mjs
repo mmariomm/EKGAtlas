@@ -219,8 +219,9 @@ const IPHONE = {
   viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true, locale: "it-IT",
   userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1",
 };
+// (gli stessi PSA_CHROMIUM_ARGS del PC, come in ext-ponte: senza --disable-dev-shm-usage il telefono si schianta aprendo i PDF)
 const telBrowser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_PATH || chromiumPath(),
-  args: ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream", `--use-file-for-fake-video-capture=${video(offerta.qr, VID)}`] });
+  args: ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream", `--use-file-for-fake-video-capture=${video(offerta.qr, VID)}`, ...(process.env.PSA_CHROMIUM_ARGS || "").split(/\s+/).filter(Boolean)] });
 const telCtx = await telBrowser.newContext({ ...IPHONE, permissions: ["camera"] });
 const tel = await telCtx.newPage();
 const testoTel = (t = tel) => t.locator("#app").innerText().catch(() => "");
@@ -601,6 +602,11 @@ sezione("il puntino sull'icona: solo un guaio (foglio non stampato, aiutante mut
   check(ko.esito === "fallito" && !!(await finche(async () => (await puntino()).t === " ", 8000)), `un foglio non stampato: un puntino (uno spazio), non un numero (got «${(await puntino()).t}»)`);
   const col = (await puntino()).c;
   check(col[0] > 150 && col[1] < 80 && col[2] < 80, `…rosso (got ${JSON.stringify(col)})`);
+  // poi un foglio stampato bene, prima che qualcuno guardi: il foglio non stampato di prima resta da vedere
+  comportati("sta");
+  const dopoKo = await foglioProva("puntino-c-" + Date.now().toString(36));
+  await sospendi(600);
+  check(dopoKo.esito === "stampato" && (await puntino()).t === " ", `un foglio non stampato e poi uno stampato bene, prima di guardare: il puntino resta (got «${(await puntino()).t}»)`);
   await pSta.goto(EXTURL("stazione.html"));
   check(!!(await finche(async () => (await puntino()).t === "", 8000)), "aprire la pagina della stazione lo spegne");
   await pSta.goto("about:blank");
