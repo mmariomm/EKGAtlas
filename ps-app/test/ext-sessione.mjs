@@ -773,6 +773,7 @@ if (prova("prima le etichette: senza la stampa automatica, i PDF del primo ordin
   await nienteSmart(doc);
   await ordina(doc, DUE);
   await finche(() => conferme(A).length === 2, 90000);
+  const subito = await ordini();   // (appena confermata la seconda: tutt'e due ci sono ancora)
   await doc.waitForSelector("#psassist-print", { state: "attached", timeout: 20000 }).catch(() => {});
   const [r1] = Object.keys(A.state.richieste);
   const crea = sess.log.filter((x) => x.cosa === "crea"), pdf1 = sess.log.filter((x) => x.cosa === "pdf" && x.rid === r1);
@@ -781,9 +782,10 @@ if (prova("prima le etichette: senza la stampa automatica, i PDF del primo ordin
     `i PDF del primo ordine (etichette e lista) presi prima che nasca la seconda richiesta (got ${pdf1.map((x) => x.t - conf1.t).join(", ")} ms dalla prima Conferma · Crea ${crea[1] ? crea[1].t - conf1.t : "?"} ms)`);
   check(sess.ora === 0 && conferme(A).length === 2, `e tutt'e due confermate, senza «ORA-» (got ${sess.ora})`);
   // (`partito`: quando ha lasciato la coda, non quando c'è entrato — la striscia toccata cede solo a uno partito dopo)
-  // (il primo, stampato qui, se n'è già andato: resta il secondo, entrato in coda con lui)
-  const o2 = (await ordini()).find((x) => x.paziente === "ROSSI MARIO" && x.stato === "stampa");
-  check(!!o2 && o2.partito - o2.ts > 1000, `il secondo ordine: «partito» quando lascia la coda (got ${o2 ? o2.partito - o2.ts : "?"} ms dopo esserci entrato)`);
+  // (il primo, le sue etichette date a questa scheda, può essersene già andato: il secondo, entrato in coda con lui, c'è)
+  const due = subito.filter((x) => x.paziente === "ROSSI MARIO");
+  check(due.some((x) => x.partito - x.ts > 1000),
+    `il secondo ordine, entrato in coda col primo: «partito» quando la lascia (got ${JSON.stringify(due.map((x) => (x.partito || 0) - x.ts))} ms dopo esserci entrato)`);
   lento = 0;
 }
 
