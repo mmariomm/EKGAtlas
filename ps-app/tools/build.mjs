@@ -124,6 +124,13 @@ writeFileSync(join(root, "extension/ponte-host.js"),
     codici.add(res); tieni(r.label || "");
     for (const [code, label] of Object.entries(r.items || {})) { codici.add(code); tieni(label); tieni(label.replace(/\s*\([^)]*\)\s*$/, "")); }
   }
+  // e i nomi corti degli esami che il pannello mostra (DISPLAY in core.js: «TROPONINA US», «EGA
+  // VENOSA NEW»): stanno nel Registro di ogni zip, in maiuscolo in mezzo a una riga, e non sono persone
+  {
+    const a = core.indexOf("const DISPLAY = {"), b = core.indexOf("\n  };", a);
+    if (a < 0 || b < 0) { console.error("registra-vocabolario: DISPLAY non trovato in core.js"); process.exit(1); }
+    for (const m of core.slice(a, b).matchAll(/\]:\s*"([^"]+)"/g)) tieni(m[1]);
+  }
   const parole = new Set();
   for (const t of testi) for (const w of t.normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase().split(/[^A-Z0-9']+/)) if (w.length >= 2 && !PAROLE_FINTE.has(w)) parole.add(w);
   const icone = Object.keys(JSON.parse(readFileSync(join(dir, "_icone.json"), "utf8")));

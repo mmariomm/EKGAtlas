@@ -42,10 +42,16 @@
   .dove button[aria-pressed="true"] { background: #0B5CAD; color: #fff; font-weight: 700; }
   @media (max-width: 520px) { body { padding: 16px; } .box { padding: 18px 16px 22px; } .riga { grid-template-columns: 1fr; } }
 </style></head><body>
+<div class="box" id="pannello">
+  <h1>Il pannello</h1>
+  <p class="sub">Come si apre sulle pagine del gestionale (lo seguono subito tutte le schede).</p>
+  <div class="dove" role="group" aria-label="Forma del pannello"><span>Forma</span><button data-forma="passaggio">Al passaggio</button><button data-forma="affianca">Affianca</button></div>
+  <p class="hint" id="formadice"></p>
+</div>
 <div class="box" id="stampa">
   <h1>Stampa automatica</h1>
   <p class="sub">Etichette all'etichettatrice, liste esami e moduli all'A4: ogni foglio va da solo alla sua stampante, senza il dialogo di stampa.</p>
-  <label class="interr"><input type="checkbox" id="sauto" disabled><span id="sst" class="stato">Stampa automatica: controllo…</span></label>
+  <p class="interr"><span id="sst" class="stato">Stampa automatica: controllo…</span></p>
   <p id="sperche" class="perche" hidden></p>
   <div class="riga">
     <div><label for="setic">Etichettatrice</label><select id="setic" disabled></select></div>
@@ -56,6 +62,7 @@
       <option value="no">non girarle (Zebra, ZDesigner, TSC, Citizen)</option>
       <option value="auto">girale di 90° (altre etichettatrici)</option></select></div>
   </div>
+  <p class="hint" style="margin-top:6px">Di partenza la sceglie il nome dell'etichettatrice: se la pagina di prova esce girata o tagliata, cambiala qui.</p>
   <div class="riga">
     <div><label for="sa4">A4</label><select id="sa4" disabled></select></div>
     <button class="sec" id="sprovaa4" data-prova="a4" disabled>Prova</button>
@@ -68,7 +75,7 @@
       <li>Estrai lo zip di PS Assist (tasto destro, «Estrai tutto…») e nella cartella <code>stampa</code> fai doppio clic su <code>installa.cmd</code>. Copia l'aiutante e SumatraPDF in <code>%LOCALAPPDATA%\PSAssist\stampa</code> e lo dice a Chrome e a Edge; se qualcosa lo blocca, dice in una riga che cosa chiedere all'IT.</li>
       <li>Torna qui e premi «Ricontrolla»: scegli l'etichettatrice e l'A4, e stampa una pagina di prova. Poi un'etichetta vera, con «Ristampa», e leggi il suo codice a barre col lettore del laboratorio.</li>
     </ol>
-    <p class="hint">In Windows non resta acceso niente: l'aiutante parte solo per il secondo in cui stampa. Per toglierla: l'interruttore qui sopra, o <code>disinstalla.cmd</code>.</p>
+    <p class="hint">In Windows non resta acceso niente: l'aiutante parte solo per il secondo in cui stampa. Per tornare al dialogo di stampa: <code>disinstalla.cmd</code>.</p>
   </details>
   <button class="sec" id="sric">Ricontrolla</button>
 </div>
@@ -78,8 +85,7 @@
   <div id="stasi" hidden>
     <span id="stast" class="stato ok"></span>
     <p id="stariga" class="hint" style="margin-top:8px"></p>
-    <div class="dove" role="group" aria-label="Dove stampano gli ordini"><span>Stampa</span><button data-dove="qui">PC</button><button data-dove="stazione" id="stanome"></button></div>
-    <p class="hint">Vale per i fogli degli ordini (anche dall'iPhone, che può cambiarla per un ordine) e per l'etichetta anagrafica. Se la stazione non risponde, la striscia lo dice, con «Stampa qui».</p>
+    <p class="hint">Dove stampano gli ordini e l'etichetta anagrafica — <b>Stampa su: PC · Infermeria</b> — si sceglie nel menu ⋯ del pannello (e dall'iPhone, per un ordine). Se la stazione non risponde, la striscia lo dice, con «Stampa qui».</p>
     <button class="via" id="stavia" style="margin-left:0">Scollega</button>
   </div>
   <div id="stano">

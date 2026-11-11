@@ -164,7 +164,8 @@ hai spostato o ridimensionato, e **Affianca**, restano come le hai messe. **—*
 resta dove la trascini; il mouse fermo sulla pill (o un tocco) riapre la finestra dove l'avevi lasciata
 (vedi *Forma*). Per usare il gestionale sotto, si riduce alla pill: la finestra lo copre quasi tutto, apposta.
 
-**Forma.** ⋯ → **Forma: Finestra · Al passaggio · Affianca** (si ricorda; il reset la lascia). **Al
+**Forma.** **Impostazioni → Il pannello: Al passaggio · Affianca** (`forma` nella memoria
+dell'estensione: ogni scheda del gestionale la segue subito; il reset la lascia). **Al
 passaggio** è la forma di partenza (l'ha chiesta il medico): il mouse fermo sulla pill per un quarto di
 secondo (chi ci passa sopra e basta non la apre) apre la finestra senza togliere la tastiera al
 gestionale, e mezzo secondo dopo che il mouse è uscito la richiude — non con il cursore o del testo non
@@ -174,10 +175,12 @@ pagina dell'iPhone (⋯ → iPhone: il mouse dentro non si vede, e col QR la man
 Ripassando si riapre **dove eri**: la stessa schermata, scorsa allo stesso punto. Un clic sulla pill (che
 resta, sopra la finestra, e si trascina anche lì; se copre ⋯ e — quelli si fanno in là) la fissa, un
 altro la libera, Esc la chiude; la pill che ricompare sotto il mouse fermo non si riapre da sola; col
-dito un tocco apre e un tocco chiude. **Finestra** è quella di sempre, qui sopra: si apre e si chiude
-con un tocco. In tutt'e due **F2** (non mentre scrivi nel gestionale) la apre **sui Pazienti, col
-filtro pronto** — F2 · lettere · Invio apre un paziente — e la richiude. **Affianca**: la finestra in una colonna a destra (il 36% dello schermo), col gestionale visibile
-a sinistra; si sposta e si ridimensiona come la Finestra. (Chi aveva scelto «Colonna» la ritrova come Affianca.)
+dito un tocco apre e un tocco chiude. Un clic sulla pill ridotta la apre già fissata: è la «Finestra» di
+prima, che non c'è più (chi l'aveva ritrova Al passaggio). **Affianca**: la finestra in una colonna a
+destra (il 36% dello schermo), col gestionale visibile a sinistra; si apre e si chiude con un tocco, si
+sposta e si ridimensiona (chi aveva «Colonna», o la Finestra messa lì, la ritrova). In tutt'e due **F2**
+(non mentre scrivi nel gestionale) la apre **sui Pazienti, col filtro pronto** — F2 · lettere · Invio
+apre un paziente — e la richiude. Col preferito (bookmarklet) Impostazioni non c'è: resta Al passaggio.
 **Tabellone** (⋯, o la sua icona accanto al ⋯ sulla lista) apre la pagina `tabellone.html` dell'estensione: lo stesso
 tabellone a tutta pagina, da fissare o sul secondo schermo. Disegna da uno specchio delle sole
 chiavi del tabellone che le schede del gestionale tengono in `chrome.storage.local` a ogni
@@ -192,32 +195,26 @@ pill: lì stai lavorando tu. La finestra si apre da sola quando la pagina l'ha a
 **giro di esami** no: dalla spedizione alle etichette parla la striscia nell'angolo, e la
 finestra la apri tu con un tocco. **Esc** o un clic fuori la riducono; dopo **Copia** si riduce da sola e la pill dice
 «✓ Copiato · incolla». Il menu **⋯** è a sezioni, ognuna col suo titolo piccolo, le voci corte due
-per riga, ognuna con la sua **icona** (grigia, 16 px) accanto alla parola — salvo iPhone 📱, Impostazioni 🖨️ e Registrazioni 📦, che hanno la stessa emoji del menu del telefono; una sezione che su quella
-pagina non ha voci non c'è. In cima **Forma** (vedi sopra), con **Al centro**. Poi:
-- **Paziente** (sulla sua pagina): **Ricetta SISS** e **Terapia** (solo con l'estensione), **Stampa
-  le richieste**; in Dimissioni anche **Esporta i fogli** (un JSON) e **Importa i fogli…** (sulla
-  lista, dove un paziente non c'è, la sezione si chiama **Dimissioni**);
+per riga, ognuna con la sua **icona** (grigia, 16 px) accanto alla parola — salvo iPhone 📱 e Registrazioni ●, che hanno la stessa emoji del menu del telefono; una sezione che su quella
+pagina non ha voci non c'è. Ci sta solo quello che serve durante il turno:
+- **Paziente** (sulla sua pagina): **Terapia** (solo con l'estensione), **Stampa
+  le richieste**; la **Ricetta SISS** sta solo nelle Dimissioni, dove serve;
 - **Strumenti**, quelli clinici: **Tabellone** e **iPhone** (il Ponte; solo con l'estensione),
-  **Cronometro**, **Riferimenti** (i *can't-miss killers*), **Consegne** (vedi sotto); in fondo, sulla stanza, **Modifica la
+  **Consegne** (vedi sotto); in fondo, sulla stanza, **Modifica la
   stanza** e **Segue il gestionale**;
-- **Impostazioni**: **Impostazioni** (una pagina sola: stampanti, stazione di stampa, indirizzo del
-  portale, iPhone), e — scelte le due stampanti — **Stampa automatica** (vedi
-  «Stampa automatica»), **Registrazioni**, il **Registro** e per ultimo,
-  da solo sulla sua riga e in rosso, **Reset dati pazienti**. Le voci che si accendono e si spengono
-  (Segue il gestionale, Stampa automatica) si spuntano: al posto dell'icona il loro stato (il
-  pallino blu con la spunta, acceso);
+- **Questo PC**: **Impostazioni** (una voce, l'ingranaggio, una pagina sola: la forma del pannello,
+  le stampanti, la stazione di stampa, l'indirizzo del portale, l'iPhone); **Stampa su: PC ·
+  Infermeria**, solo con una stazione di stampa collegata (vedi «Stazione di stampa»);
+  **Registrazioni** (vedi «Registrazioni») e per ultimo, da solo sulla sua riga e in rosso,
+  **Dimentica i dati…** (l'unico comando che cancella: vedi «Chi c'è, e chi è stato dimesso»).
+  La voce che si accende e si spegne (Segue il gestionale) si spunta: al posto dell'icona il suo
+  stato (il pallino blu con la spunta, acceso);
 
 e in fondo la versione (e, solo se la versione nuova da qui non si può applicare, una riga che dice
-come rimediare). Le schermate che si aprono dal ⋯ (Riferimenti, Cronometro, Registrazioni,
-iPhone, Ricetta SISS, Terapia) dicono dove sei: al posto delle schede **«‹ [icona] Nome»**, e ‹ (o
-Esc) torna alla scheda da cui eri venuto. Il cronometro compare in intestazione **solo mentre corre**
-(un tocco sul tempo apre la scheda, ⏹ lo ferma).
-
-**Riferimenti** (menu ⋯) è la tabella del medico, i *can't-miss killers*, nel suo inglese: in cima
-«Don't anchor the DDx…», poi tre tabelle — **per sintomo, cosa escludere per primo**; le
-**etichette benigne che nascondono un killer**; **chi cambia la lista** (gravidanza,
-immunodepresso, anticoagulato, anziano…). Il cursore è già nel filtro: si scrive in inglese o in
-italiano («cefalea», «sincope», «anziano») e restano solo le righe che servono.
+come rimediare). Le schermate che si aprono dal ⋯ (Consegne, Registrazioni, iPhone, Terapia, e la
+Ricetta SISS dalle Dimissioni) dicono dove sei: al posto delle schede **«‹ [icona] Nome»**, e ‹ (o
+Esc) torna alla scheda da cui eri venuto. (Il Cronometro e i Riferimenti non ci sono più: i tempi che
+il cronometro teneva se ne vanno dalla memoria da soli.)
 
 **Consegne** (menu ⋯), per il cambio turno: una riga per paziente, nell'ordine del tabellone —
 `OBI 2 · ROSSI M. 68 · in PS 3h40 · Aperti: Lab 50′, RX 1h40 · Da fare: 13:30 tropo; chiamare la figlia`:
@@ -227,9 +224,9 @@ riga corta del tabellone; «(letto 11:02)» se la lettura è vecchia) e le cose 
 del browser da una cornice invisibile (niente scheda nuova), e solo al tocco: portano dei nomi.
 Usa quello che il tabellone sa già: niente da leggere, niente di salvato.
 
-Il pannello ha cinque schermate, in **una fila di schede** sempre in cima e nell'ordine in cui si
-lavora: **Richieste · Esiti · EO · Consensi · Dimissioni** (sulla lista del pronto soccorso, dove
-non c'è un paziente: **Pazienti · EO · Consensi · Dimissioni**). Il paziente + episodio stanno nell'intestazione (anche da minimizzato). Sulla pagina «Storico dati clinici»
+Il pannello ha quattro schermate, in **una fila di schede** sempre in cima e nell'ordine in cui si
+lavora: **Richieste · Esiti · EO · Dimissioni** (sulla lista del pronto soccorso, dove
+non c'è un paziente: **Pazienti · EO · Dimissioni**); i moduli di consenso stanno nelle Dimissioni. Il paziente + episodio stanno nell'intestazione (anche da minimizzato). Sulla pagina «Storico dati clinici»
 del portale clinico non c'è pannello: solo una striscia che dice cosa ha letto.
 
 **Due identificativi, su ogni scheda.** L'intestazione dice `ROSSI MARIO · 68 M · ep. 700001 · OBI 1`
@@ -258,14 +255,14 @@ sopra quando la finestra è stretta — una **colonna sola**, cinque righe al pi
 mappe non perdono altezza; **Da fare ▾** lo riduce a una barra sottile (e lo ricorda). Una voce, una
 riga: `○ 11:42 tropo… ✕`. In cima il **generale**, di nessun paziente: nel campo «Da fare generale…» si scrive e **Invio** aggiunge
 (`dafare.generale.v1`, in questo browser e nello specchio del tabellone, mai al telefono; non scade,
-una voce spuntata se ne va dopo 5 minuti; il «Reset dati pazienti» lo porta via). Sotto, le cose da
+una voce spuntata se ne va dopo 5 minuti; «Dimentica i dati…» lo porta via). Sotto, le cose da
 fare di **ogni paziente**, nell'ordine del tabellone (l'area, poi l'ordine del gestionale): il
 **COGNOME** in grassetto una volta, a sinistra, sulla prima delle sue voci, e le altre sotto; sono le
 stesse della sua lista. Dappertutto **un tocco sul testo lo modifica** (Invio salva, Esc lascia
 com'era), **✕** (passandoci sopra; al tocco c'è sempre) cancella, la spunta tonda la fa.
 *Lista*: niente mappe, **tutti** quelli della vista, per area (Alta, Bassa, OBI, Codici minori) e nell'ordine della lista del gestionale (l'ultima letta intera), col posto in una pillola dopo il nome. La lista prende
 quello che le serve, al massimo poco meno di metà, poi scorre dentro. In fondo, chiusi, gli
-**Archiviati** e **Svuota l'elenco**.
+**Archiviati**.
 
 **Chi va dove** lo dicono l'area e il triage, sullo stesso elenco (non sono liste diverse):
 **Alta** = l'area Alta + l'OBI **rosso** o **arancione**; **Bassa** = Bassa, Codici minori e l'OBI
@@ -472,7 +469,7 @@ prima voce senza ora, i **promemoria** voci con l'ora (la prima apertura dopo l'
 lì da soli). Si apre **lì dov'è**, senza un'altra scheda, dall'icona **Da fare** dell'intestazione
 (accanto agli identificativi) o della riga, o dal menu di chi sta nella stanza (**Da fare…**). E
 sulla scheda del paziente sono **sempre in vista in cima** — sotto le allergie, sopra le schede, su
-Richieste, Esiti, EO, Consensi e Dimissioni —, come la lista dei Pazienti ma **solo le sue**, con il
+Richieste, Esiti, EO e Dimissioni —, come la lista dei Pazienti ma **solo le sue**, con il
 campo «Aggiungi per ROSSI M…» (Invio aggiunge a lui); **Da fare** lo riduce a una barra (per conto
 suo, `paziente.dafare.v1`); senza voci non c'è, e basta l'icona. In
 fondo alla lista dell'icona, un campo su una riga: si scrive e **Invio** aggiunge, in fondo alla lista. Ogni voce è una
@@ -483,7 +480,7 @@ spunta** e la voce è fatta: barrata, resta al suo posto **5 minuti** (un altro 
 se ne va (o subito, col cestino). L'ordine lo decidi tu: si **trascina** dalla maniglia ⋮⋮ (col mouse o col dito), o da
 tastiera **Alt+↑ / Alt+↓** sulla spunta. La maniglia, **+15′** e ✕ compaiono passandoci sopra (o col
 fuoco; al tocco ci sono sempre). La **prima voce aperta** è il post-it: si legge nelle aree
-della stanza (nella riga del tabellone c'è solo quante sono). L'icona dice **quante** sono aperte (nell'intestazione della finestra, la **prima** e «+N»; ambra o rossa, la voce che scade col tempo che manca, come la pill: «⏰ −6m tropo») e cambia colore quando un promemoria si avvicina:
+della stanza (nella riga del tabellone c'è solo quante sono). L'icona dice **quante** sono aperte (nell'intestazione della finestra, col blocco in cima ridotto, la **prima** e «+N»; ambra o rossa, la voce che scade col tempo che manca, come la pill: «⏰ −6m tropo»; col blocco aperto, solo quante: le voci sono lì sotto) e cambia colore quando un promemoria si avvicina:
 **ambra dai 15 minuti prima**, **rossa quando l'ora è passata** (con un bagliore lento solo nei primi 10 minuti, poi fermo; fermo anche se il
 sistema chiede meno movimento); il passaggio del mouse le dice tutte. **Esc**, o un clic fuori, la
 chiude: non c'è niente da salvare, ogni gesto è già salvato.
@@ -506,7 +503,7 @@ colori si rifanno da soli ogni 30 secondi, sul posto: niente si ridisegna sotto 
 
 Tutto resta **solo in questo browser** (`localStorage`), niente va in rete; lo **stato degli
 esami** (`stato.v1`) è per episodio — ore, nomi di esami, mai il nome del paziente —, scade in 24
-ore, se ne va con 🗑 e «Svuota l'elenco»; le allergie lette lì dentro se ne vanno anche alla pagina
+ore, se ne va con «Dimentica i dati…»; le allergie lette lì dentro se ne vanno anche alla pagina
 di login; un altro PC o un altro
 profilo Chrome ha la sua stanza. La **stanza disegnata**, una per mappa (`stanza.ps.v1`,
 `stanza.alta.v1`: celle intere della griglia, così a ogni misura è la stessa; la sedia è un letto
@@ -519,18 +516,17 @@ dove** (`stanza.ps.posti.v1`, `stanza.alta.posti.v1`) sono solo numeri di episod
 (`aree.opzioni.v1`) sono un'impostazione. Della data di nascita l'elenco tiene solo un'impronta,
 per riconoscere le righe della lista smart. La pagina di
 login **non** li cancella: chi viene riaperto dopo una sessione scaduta ritrova il suo letto (il
-posto aspetta al massimo un giorno). «Svuota l'elenco» toglie anche i posti; eliminare un paziente
-(🗑) toglie anche il suo. **Da fare** (`dafare.v1`) è per episodio: la cosa da fare e l'ora se c'è,
+posto aspetta al massimo un giorno). «Dimentica i dati…» toglie anche i posti. **Da fare** (`dafare.v1`) è per episodio: la cosa da fare e l'ora se c'è,
 mai un nome; al massimo 15 voci aperte a paziente; una voce con l'ora scade 12 ore dopo l'ora
 fissata, una senza 24 ore dopo l'ultima modifica, una spuntata 5 minuti dopo. Nemmeno queste le
 cancella la pagina di login — una sessione scaduta non deve far perdere la troponina delle 11:30 —;
-«Svuota l'elenco» e 🗑 sì. I **parametri vitali** letti (l'ultima riga: ora e valori, mai un nome)
+«Dimentica i dati…» sì. I **parametri vitali** letti (l'ultima riga: ora e valori, mai un nome)
 stanno con lo stato degli esami, in `stato.v1`, e se ne vanno con lui.
 Il **tabellone**: la vista scelta (`tabellone.vista.v1`: `alta`, `bassa`, `entrambe`) e `tabellone.modo.v1` (`mappa`, `lista`; la riga di ognuno nella lista del gestionale è `n` in `aree.v1`), «segue il
 gestionale» (`segue.v1`, `false` se spento) e il link della lista smart (`smart.url.v1`, com'era
 nella pagina) sono impostazioni e restano; l'ultima lettura della smart (`smart.sync.v1`: quando,
 com'è andata, quante righe) e l'ultima uscita da annullare (`dimessi.v1`: episodi, «COGNOME N.» e i
-posti da rimettere) se ne vanno con «Reset dati pazienti». Chi è noto solo dalla smart sta in
+posti da rimettere) se ne vanno con «Dimentica i dati…». Chi è noto solo dalla smart sta in
 `patients.v1` con una chiave fatta dall'impronta (`sm…`), `smart: true`; l'ingresso in PS è
 `arrivo` (un istante, mai una data di nascita). Nella scheda dietro, le schede della smart già
 lette stanno in `sessionStorage` (`smart.giro.v1`) e muoiono con lei.
@@ -910,7 +906,7 @@ riprende da solo appena l'ordine ha finito. Si ferma se lasci il paziente (chi e
 parte). **Quello che da solo non è riuscito** (un referto, i valori) non si ritenta a ogni giro:
 da solo al più **due volte**, dopo 2 e dopo 10 minuti (i valori anche quando la loro firma nella
 pagina cambia); un tocco o un bottone ci provano sempre; un PDF che si è rivelato di un altro
-paziente da solo non si riprende più (↺ fa ripartire i referti da capo). Il laboratorio a metà,
+paziente da solo non si riprende più (un tocco lo riprende). Il laboratorio a metà,
 con la pagina aperta, si ricontrolla ogni 10 minuti **solo mentre la guardi** (tornandoci, se ne
 sono passati 10), e dopo due ricontrolli senza niente di nuovo smette: lo rifà aprire gli Esiti. Mentre lavora, accanto a **↻** c'è un discreto **«↓ 2»** — quanti ne restano —, e se il Lab
 non ha ancora una tabella dice **«Leggo i valori…»**; se non c'è proprio niente da leggere (né
@@ -921,8 +917,10 @@ richiesta da confermare.
   gravi per primi (K, Na, Hb, troponina, lattati, pH…), la troponina con la misura precedente e la
   sua ora — `K 5.9↑ · Hb 9.1↓ · Trop 48↑ (12 alle 11:40) · 3 nuovi` —; oltre i sei, «+N». **«N
   nuovi»** conta i valori cambiati dall'ultima lettura e i referti mai aperti: un tocco li segna
-  visti. A destra **⭳ Salva i referti (N)** (solo con l'estensione) e, mentre salva a mano,
-  «Salvo i referti 2/5…».
+  visti. A destra, da solo, **↻ Rileggi**: i valori, poi i referti non ancora salvati (anche quelli
+  che da soli non sono riusciti); mentre lavora dice a che punto è («↻ 1/2…», «↻ referti 2/5…»).
+  Niente altro: Salva, ↺ e Diagnosi non ci sono più (i referti si salvano da soli, si dimentica
+  con ⋯ → Dimentica i dati…, la diagnosi va nelle Registrazioni).
 - **In attesa**: in ogni sezione, ciò che è stato chiesto e non è ancora refertato — dalle righe
   del diario della pagina senza l'icona del referto — una riga sola ciascuna, con un sottile
   segno ambra a sinistra (niente fascia gialla) e **da quanto** aspetta (`1h20 RX TORACE ·
@@ -996,8 +994,8 @@ range non cambiano; i referti (ECG, Imaging) stanno sotto il Lab.
   non è «il solito» porta un **asterisco o una croce**, spiegati nella legenda sotto la tabella.
 - **⭳ Carica i valori** legge i prelievi non ancora letti: finché non c'è una tabella è **un solo
   bottone grande** al posto della tabella (i dettagli — quanti prelievi, da dove — sono nel passaggio
-  del mouse, non in una riga che ripete le stesse parole); fatta la prima lettura diventa il piccolo
-  **↻ Aggiorna**, che rilegge **tutti** i prelievi ancora aperti, a passo lento e uno alla volta.
+  del mouse, non in una riga che ripete le stesse parole); fatta la prima lettura è il piccolo
+  **↻ Rileggi** in cima, che rilegge **tutti** i prelievi ancora aperti, a passo lento e uno alla volta.
   Con l'estensione il bottone legge **lo storico del portale**, in una scheda di sottofondo che si
   chiude da sola (vedi *Da dove viene la tabella*): lì ci sono **tutti** i valori del laboratorio,
   refertati e no, con una pagina sola. Le finestre Risultati — una richiesta per prelievo — si
@@ -1005,21 +1003,19 @@ range non cambiano; i referti (ECG, Imaging) stanno sotto il Lab.
   risposto: il pannello dice perché). Poi, con l'estensione, salva i **referti** non ancora salvati
   (ECG, immagini, visite: mai il laboratorio — vedi *Salvare i referti*). Con l'estensione lo fa
   già da solo all'apertura del paziente (vedi sopra): il bottone resta per rifarlo subito.
-  **solo alterati** / **tutti** filtra le righe; **⋯ → Dimentica i valori letti** (due tocchi) dimentica i valori letti e la scheda
-  in archivio di questo paziente, e **⭳ Carica i valori** li rilegge da zero (i tuoi segni
-  restano).
+  **solo alterati** / **tutti** filtra le righe.
 - Di un prelievo il gestionale può **non dare data e ora** (né nel campo nascosto della riga, né
   a video). Quei valori **non spariscono**: diventano la colonna **?**, in fondo a destra, con
   «ora ignota» sotto e il motivo nel tooltip. Un piccolo «? 1 senza ora» nella riga del titolo lo dice (il perché è nel passaggio del mouse), e il Registro
   elenca ogni prelievo letto con la colonna in cui è finito.
 - **Un tocco su un valore lo segna**: giallo; un secondo tocco arancio; un terzo lo spegne. I segni
   sono tuoi, restano col paziente (24 ore, come una voce di «Da fare» senza ora) e sopravvivono al cambio di pagina.
-- **Cosa è cambiato dall'ultima volta che hai guardato**: dopo un **↻ Aggiorna**, in quel prelievo
+- **Cosa è cambiato dall'ultima volta che hai guardato**: dopo un **↻ Rileggi**, in quel prelievo
   un valore cambiato ha **sfondo azzurro**, e lo stesso vale per un analita comparso da zero. Lo
   conta **«N nuovi»** nella riga in cima (il passaggio del mouse dice «N valori nuovi dall'ultima
   lettura»): un tocco spegne i marchi. La prima lettura di un prelievo è sempre il riferimento:
   non è mai un muro di marchi.
-- Un avviso dice quali prelievi non si sono lasciati leggere (il **Registro** dice perché; **↻ Aggiorna**
+- Un avviso dice quali prelievi non si sono lasciati leggere (il **Registro** dice perché; **↻ Rileggi**
   riprova). Quanti ne mancano da leggere lo dice il passaggio del mouse su **⭳ Carica i valori**.
 - La tabella mette insieme due cose: i prelievi letti **in questa scheda del browser** — sempre,
   anche col bookmarklet e senza estensione — e, quando è di questo paziente, la **scheda
@@ -1050,13 +1046,13 @@ o una richiesta in attesa.
   ogni tipo, **testo ruotato** come negli ECG in orizzontale). Senza estensione resta il lettore
   interno, più semplice (anche lui legge il testo ruotato). I referti sono **PDF di testo, mai
   immagini**: se il testo non esce è uno sbaglio del lettore, non del referto — il PDF **si tiene**
-  lo stesso e si apre, e **⧉ Diagnosi** (nella riga in cima) dice com'è fatto quel PDF (versione,
-  cifratura, font, filtri: **mai il contenuto**), per correggerlo. Se il pannello non lo legge ci
+  lo stesso e si apre, e la **diagnosi** — com'è fatto quel PDF (versione, cifratura, font, filtri:
+  **mai il contenuto**) — va da sola nelle Registrazioni, per correggerlo. Se il pannello non lo legge ci
   prova il **service worker**; se neanche lui, il pallino è rosso col motivo — e il documento **si
   apre lo stesso, con lo stesso tocco**.
 - **Salvare i referti.** Prima era solo una decisione del medico; ora, **su sua richiesta**, lo fa
   anche l'apertura del paziente (vedi in cima agli Esiti). Lo prende l'apertura, un tocco sul
-  referto (il testo è lì sotto, e la copia resta: pallino verde), **⭳ Salva i referti** o
+  referto (il testo è lì sotto, e la copia resta: pallino verde), **↻ Rileggi** o
   **⭳ Carica i valori** (dopo i valori), che prendono tutti quelli non ancora salvati — ECG,
   immagini, visite e consulenze, **mai il laboratorio** — **due alla volta al massimo**, con una
   breve pausa a caso prima di ognuno, gli altri in fila («in fila» sulla loro riga). Di **ECG e
@@ -1064,7 +1060,7 @@ o una richiesta in attesa.
   (un PDF intestato a un altro paziente non resta) e lo lascia al visore. Quelli già salvati non
   si riscaricano. **Il testo di ECG e radiografie già salvati si legge sempre**, appena apri gli
   Esiti, dalla copia su questo computer: nessuna richiesta.
-  **↺** (accanto a «Salva») dimentica le copie e il loro testo. Un referto che non si lascia
+  Le copie si dimenticano con **⋯ → Dimentica i dati…**, o scadono da sole. Un referto che non si lascia
   salvare (pallino rosso, il motivo al passaggio del mouse e nel Registro) resta apribile con un
   tocco.
 - **ECG e radiologia nel portale**: se il gestionale rimanda il referto al portale clinico, lo
@@ -1087,19 +1083,17 @@ o una richiesta in attesa.
 ### Chi c'è, e chi è stato dimesso
 Nell'elenco **Pazienti** ogni scheda ha **Dimesso ✓**: il paziente esce dall'elenco principale e
 finisce fra gli **Archiviati** (in fondo, con il conteggio). Da lì lo si può **↩ riportare** fra gli
-attivi, oppure **🗑 eliminare** — e eliminare vuol dire *tutto quello che il programma sa di lui*:
-la scheda clinica, i referti tenuti, il testo dei referti letti, «Da fare» e i dati per
-episodio di quella scheda del browser. Chiede conferma una volta e non si torna indietro. L'elenco tiene un
-giorno e centocinquanta pazienti: un turno è di dodici ore.
+attivi. L'elenco tiene un giorno e centocinquanta pazienti: un turno è di dodici ore; i dati dei
+pazienti scadono da soli in 12–24 ore.
 
-**⋯ → Reset dati pazienti** (quando il pannello si incastra): due tocchi («Cancello tutto? Tocca di
-nuovo»), poi «Dati dei pazienti cancellati · **Annulla**» per 8 secondi, come per ogni altra cosa
+**⋯ → Dimentica i dati…** è l'**unico** comando che cancella: due
+tocchi («Dimentico tutto? Tocca di nuovo»), poi «Dati dei pazienti dimenticati · **Annulla**» per 8 secondi, come per ogni altra cosa
 che si può rimpiangere: Annulla rimette tutto com'era (le altre schede e l'estensione si
 puliscono finiti gli 8 secondi, o subito se cambi pagina). Via **tutto** quello che sa dei pazienti e del turno — elenco, aree e posti
 nelle stanze, stato degli esami, «Da fare», note e segni, valori, referti salvati e il loro testo, schede
 cliniche, ordini finiti, richieste da confermare, quesiti, la memoria di ogni scheda aperta, gli
 ordini che ricorda il Ponte, la registrazione non salvata e gli ultimi minuti di quella automatica (gli zip salvati,
-anonimizzati, restano); dei Tempi resta la durata, non il paziente. **Restano**: stampanti e
+anonimizzati, restano). **Restano**: stampanti e
 stampa automatica, indirizzo del portale, associazione con l'iPhone, fogli di dimissione ed EO,
 le stanze, le opzioni delle aree, la finestra. Non c'è mentre questa scheda manda un giro (un
 ordine in coda o delle etichette che aspettano non lo tolgono).
@@ -1119,7 +1113,9 @@ Non c'è più un campo a parte: la nota è la **prima voce di Da fare** (vedi *P
 che si legge sulla riga. Sulla pagina di un paziente le sue cose da fare sono **sempre in vista**,
 senza un tocco, in un posto solo: ridotto il pannello in un foglietto giallo sotto la pill — al più
 tre righe (la prima è la nota), poi «+N»; un tocco apre la lista al suo posto —, aperta la finestra
-nell'icona **Da fare** dell'intestazione, accanto al nome: la prima voce e «+N». Se non ha niente da
+nel blocco **Da fare** in cima alla scheda, e nell'icona dell'intestazione, accanto al nome, solo
+quante sono (una volta sola: la stessa riga non si legge due volte; col blocco ridotto, l'icona dice
+la prima voce e «+N»). Se non ha niente da
 fare, niente. Quelle scritte prima sono diventate voci da sole, sul paziente
 giusto: per codice fiscale, o per nome solo se in elenco non c'è un omonimo — una nota di chi non è
 in elenco aspetta lì finché scade.
@@ -1129,7 +1125,7 @@ Una **pagina sola**, senza server: si apre col doppio clic e dentro ci sono già
 servizio. Clicchi un titolo o un testo e scrivi — nessun tasto «modifica», nessuna schermata.
 **+ Nuovo foglio**, **↑ ↓** per riordinare, **🗑** per buttarne uno (chiede conferma).
 **⬇ Salva** scarica `dimissioni.json` *e* lo copia negli appunti, nella forma esatta che il pannello
-importa con **Importa i fogli…** (menu **⋯**, in Dimissioni): si passa da lì e i fogli nuovi sono in servizio. Il lavoro a metà resta
+importa con **Importa i fogli…** (in fondo ai fogli, in Dimissioni): si passa da lì e i fogli nuovi sono in servizio. Il lavoro a metà resta
 nel browser, quindi chiudere la pagina non costa niente; **↺ Originali** rimette i testi spediti.
 La pagina sta nello zip e si rigenera con `npm run editor`.
 
@@ -1157,13 +1153,14 @@ caso scelto. La tua versione resta su questo computer e si copia al posto dell'o
 **•** accanto al nome (anche nella tendina) dice che è riscritto da te, **⟳** che nel frattempo è
 cambiato l'originale. **↺ Originale** (due tocchi) torna al testo di partenza.
 
-### Consensi
-Sei moduli da firmare, dentro l'estensione: **Emocolture**, **HIV Dipendente**, **Lesioni
+### Moduli di consenso (nelle Dimissioni)
+Nella schermata **Dimissioni**, sotto i fogli (non c'è più una scheda Consensi), sei moduli da
+firmare, dentro l'estensione: **Emocolture**, **HIV Dipendente**, **Lesioni
 Animali**, **Antitetano**, **TAC cmdc**, **Emotrasfusione** (il pacchetto trasfusionale:
 consenso informato, richiesta emocomponenti, dichiarazione del medico in urgenza).
 Le **deleghe per il ritiro** — **Ritiro esami**, **Ritiro referto RX**, **Ritiro cartella e CD**
-— non sono consensi: si danno a chi va a casa, e stanno in fondo alla schermata **Dimissioni**, in una
-riga quieta («Moduli per il ritiro ▸») sotto i fogli.
+— non sono consensi: si danno a chi va a casa, e stanno in fondo, in una
+riga quieta («Moduli per il ritiro ▸») sotto i consensi.
 Un tocco apre direttamente il dialogo di stampa, come per la lista esami (con la stampa
 automatica va dritto all'A4, senza dialogo); un modulo di più pagine
 dice **quanta carta esce** prima che tu prema Stampa. (Che i moduli stanno dentro l'estensione e che non
@@ -1334,7 +1331,7 @@ foglio i motivi per **tornare in Pronto Soccorso**.
   I **fogli tuoi** stanno in cima, col segno *tuo*; si copiano come gli altri, ✎ li riscrive o li
   rinomina, ✕ Elimina li toglie (chiede conferma). Due fogli con lo stesso nome non si possono
   avere: nell'elenco non si distinguerebbero. Come tutti i fogli sono **modelli**, senza dati del
-  paziente, e restano su questo computer (**Esporta i fogli**, nel menu **⋯**, per portarli su un altro).
+  paziente, e restano su questo computer (**Esporta i fogli**, in fondo ai fogli, per portarli su un altro).
 - **✎** apre il testo in grande e lo riscrive **per le volte successive**: le modifiche restano su
   quel computer (`localStorage`) — **sopravvivono al logout, alla chiusura del browser e agli
   aggiornamenti del programma**, perché sono tue e non dati di un paziente. Non finiscono nel
@@ -1350,7 +1347,7 @@ foglio i motivi per **tornare in Pronto Soccorso**.
 - **↺ Originale** chiede conferma prima di buttare il tuo testo. Se una nuova versione del
   programma corregge un foglio che tu avevi modificato, quel foglio si marca **⟳** e l'editor te lo
   dice: una correzione di dosaggio non può restare invisibile a chi ha personalizzato il testo.
-- **Esporta i fogli** — nel menu **⋯**, solo in Dimissioni — salva i tuoi testi in un file JSON (e negli appunti);
+- **Esporta i fogli** — piccolo, in fondo ai fogli — salva i tuoi testi in un file JSON (e negli appunti);
   **Importa i fogli…** li rimette da una
   schermata dove incolli il JSON — entrano **solo i testi diversi dagli originali**, così un
   ripristino non congela per sempre gli altri sette.
@@ -1526,7 +1523,7 @@ tranquillo che rifà etichette e lista.
 
 **I comandi sono quelli di sempre**, nella scheda: 🖨 Stampa · → Avanti · ↗ Scheda · ✕ Chiudi.
 Un documento che non si lascia catturare (un visualizzatore) ha al loro posto un grande
-**↗ Apri e stampa** (poi Ctrl+P), con ⧉ Diagnosi; un PDF che non arriva lo dice in rosso. Un
+**↗ Apri e stampa** (poi Ctrl+P), con ⧉ Diagnosi (e la diagnosi va anche nelle Registrazioni); un PDF che non arriva lo dice in rosso. Un
 tocco sulla striscia mostra la scheda anche mentre il PDF arriva; **✕** — o **Esc**, a scheda
 aperta — annulla la stampa e ferma davvero la ricerca del PDF (mentre il PDF arriva un Esc è del
 gestionale: una tendina, un campo). Niente velo sulla pagina: il dialogo di stampa del browser è
@@ -1610,7 +1607,7 @@ quale stampante è l'**Etichettatrice** e quale l'**A4** (di partenza, la predef
 Windows), con **Stampa una pagina di prova** per ciascuna. Da lì:
 
 - **le etichette vanno all'etichettatrice, tutto il resto all'A4** — liste esami, prenotazioni
-  RX, i moduli dei Consensi —, da soli, **senza dialogo e senza niente davanti**: né la scheda
+  RX, i moduli di consenso —, da soli, **senza dialogo e senza niente davanti**: né la scheda
   della stampa né l'anteprima. Dopo una conferma, con «Ristampa» (sulla striscia o in fondo alle Richieste) o
   un consenso, la striscia dice «Stampo le etichette su Zebra ZD421… · foglio 1 di 2», poi
   com'è andata, con **Ristampa** accanto (un'etichetta inceppata si vede solo davanti alla
@@ -1711,20 +1708,23 @@ Windows), con **Stampa una pagina di prova** per ciascuna. Da lì:
   più l'etichetta anagrafica con tante copie quanti i clic (fino a 10): mentre clicchi, accanto all'icona,
   «×2», «×3»… (un segno dell'estensione sopra la pagina, che non la tocca); partita la stampa, una sola, la
   riga sotto la pill «×N». Lo stesso conto del braccialetto nel pannello. Solo i link della pagina, così come sono (stessa origine, il
-  servlet giusto, l'etichetta anagrafica di questo episodio); spenta la stampa automatica, o un link che non
+  servlet giusto, l'etichetta anagrafica di questo episodio); senza la stampa automatica, o un link che non
   è uno di questi, il clic passa subito, com'è.
 - **Le etichette dritte**: SumatraPDF gira di 90° le pagine più larghe che alte, e coi driver
   Zebra, ZDesigner, TSC e Citizen l'etichetta uscirebbe di traverso. Nelle Stampanti,
   «Etichette più larghe che alte: non girarle / girale di 90°» (di partenza «non girarle» per
-  quei nomi). La pagina di prova delle etichette ha la misura di un'etichetta. **Prima di usarla
+  quei nomi: dal nome non si può sapere di più, e lo dice la riga sotto la scelta — se la pagina di
+  prova esce girata o tagliata, si cambia lì). La pagina di prova delle etichette ha la misura di un'etichetta. **Prima di usarla
   sui pazienti**, ristampa un'etichetta vera e leggi il suo codice a barre col lettore del
   laboratorio.
-- **Si spegne con un tocco**: menu **⋯ → Stampa automatica** (spuntata: accesa; un tocco la
-  spegne, un altro la riaccende), o l'interruttore nella pagina Stampanti. Spenta, tutto torna esattamente com'era:
-  il dialogo, «Stampa finita». Senza aiutante, o col preferito (bookmarklet), lo stesso.
+- **Niente interruttore**: scelte le due stampanti, con l'aiutante, la stampa è automatica. Il
+  dialogo del browser è il ripiego: senza aiutante, senza una delle due stampanti, o col preferito
+  (bookmarklet), tutto è esattamente com'era — il dialogo, «Stampa finita». (Chi l'aveva spenta
+  dal ⋯ di prima la ritrova automatica: la scelta vecchia se ne va dalla memoria.) Le stampanti si
+  scelgono solo in **Impostazioni**; dove stampano gli ordini, **Stampa su**, solo nel ⋯.
 - **In Windows non resta acceso niente.** Nessun programma che gira, nessuna icona: Chrome avvia
   l'aiutante solo per il secondo in cui stampa un foglio, e l'aiutante esce appena ha risposto.
-  Non c'è niente da chiudere; per spegnere la stampa automatica c'è l'interruttore.
+  Non c'è niente da chiudere; per tornare al dialogo di stampa, `disinstalla.cmd`.
 
 ### Si può scegliere la stampante senza l'aiutante?
 
@@ -1766,7 +1766,7 @@ telefono), li stampa sulle sue stampanti e dice com'è andata.
   scaduto, o di una stazione che non risponde, lo dice e non collega niente; un telefono non
   associato: «Prima associa l'iPhone al PC». Resta collegata finché uno dei due non **scollega** (due
   tocchi, sul PC o sulla stazione): l'altro lo sa subito, o appena si riaccende.
-- **Scegliere: «Stampa: PC · Infermeria»**, nel menu ⋯ del pannello e nelle Impostazioni, con
+- **Scegliere: «Stampa su: PC · Infermeria»**, nel menu ⋯ del pannello (solo lì), con
   una stazione collegata; si ricorda. Su Infermeria il bottone dell'ordine lo dice («Conferma e
   stampa · 2 esami → Infermeria») e la stampantina in intestazione è «→ Infermeria» (rossa quando
   non risponde). Vale per le etichette e i fogli A4 di un ordine (e per la loro **Ristampa**) e per
@@ -1842,7 +1842,7 @@ mai attaccati a un referto (niente li collega). Il referto in PDF resta lì acca
 
 - **Valori** (i prelievi in tabella): letti da `RcsAccessiRisultatiElenco.do`, HTML sullo stesso
   server. Restano in memoria **per la scheda e per quell'episodio**, così la tabella si
-  ricostruisce all'istante; **↻ Aggiorna** li rilegge tutti, uno alla volta, man mano che il
+  ricostruisce all'istante; **↻ Rileggi** li rilegge tutti, uno alla volta, man mano che il
   laboratorio completa. Chiusa la scheda, spariscono.
 - **Referti** (righe LIS/RIS/AMB): il visualizzatore **non è su SA4PSO** — gira su un altro host
   interno e mostra il PDF come `blob:` di quell'origine, quindi una pagina di SA4PSO non può
@@ -1850,19 +1850,25 @@ mai attaccati a un referto (niente li collega). Il referto in PDF resta lì acca
   → suo endpoint PDF) e a salvare i byte nella memoria dell'estensione, su questa macchina.
   Solo con l'**estensione**: il bookmarklet non può farlo. Se un referto non è
   salvabile resta senza pallino e il **motivo** compare passandoci sopra col mouse (e nel Registro).
-  Scadono in **8 ore**, massimo 25, e si azzerano alla chiusura del browser; **↺** negli Esiti, o
-  **⋯ → Reset dati pazienti**, subito.
+  Scadono in **8 ore**, massimo 25, e si azzerano alla chiusura del browser; **⋯ → Dimentica i
+  dati…**, subito.
 
 > **Da configurare una volta**: l'host del visualizzatore è dichiarato in
 > `extension/manifest.json` → `host_permissions` (oggi `http://10.11.0.151:9080/*`). Se nella tua
 > sede è un altro indirizzo, cambialo lì e ricarica l'estensione.
 
-## Registra (una sessione vera, anonimizzata)
+## Registrazioni (una sessione vera, anonimizzata)
 
-Per ricostruire le pagine di esempio, imparare il flusso e i tempi veri e costruire una
-«palestra» che si comporti come il gestionale. Solo con l'**estensione**.
+Per mandare un problema a chi fa il pannello, ricostruire le pagine di esempio, imparare il flusso
+e i tempi veri e costruire una «palestra» che si comporti come il gestionale. Una voce sola nel
+menu, **⋯ → Registrazioni**: in cima **● Registra / Ferma e salva**, poi le registrazioni salvate
+(**Scarica** c'è sempre, anche con «restano N dati da controllare»), e in fondo, chiuso, il
+**Registro** delle operazioni con **⧉ Copia**. Ogni zip porta da sé il Registro dei pannelli di quei
+minuti (`testi/registro.txt`, senza il quesito) e la **diagnosi** di ogni documento che non si è
+lasciato leggere (`testi/diagnosi-N.txt`: la struttura, senza numeri né valori), anonimizzati come
+le pagine e ricontrollati dal cancello. Col preferito (bookmarklet) la voce mostra solo il Registro.
 
-- **⋯ → Registrazioni** apre la vista del registratore: **● Registra** fa partire; la pill e
+- **● Registra** (solo con l'**estensione**) fa partire; la pill e
   l'intestazione mostrano **● REC** (un tocco sul ● REC riapre la vista). Lavori come sempre.
   **Ferma e salva** ferma, anonimizza, controlla e **salva lo zip qui, nella memoria
   dell'estensione** (`psassist-registrazione-AAAAMMGG-HHMM.zip`): nessuna scheda, nessuna finestra,
@@ -1915,7 +1921,7 @@ Per ricostruire le pagine di esempio, imparare il flusso e i tempi veri e costru
   **mai nomi, codici fiscali, date di nascita, testo libero**; nello zip passa dall'anonimizzazione
   e dal controllo come il resto. Nello zip a mano vanno quelle dall'ultima registrazione a mano
   salvata (restano sul PC: si sposta solo il segno); in quello automatico, quelle dei suoi minuti.
-  «Reset dati pazienti» non lo cancella. Sugli errori d'ordine
+  «Dimentica i dati…» non lo cancella. Sugli errori d'ordine
   più difficili («… non risulta nel carrello», «Conferma non verificata», e il «Riprova i mancanti»
   con com'è finito) la voce porta la **traccia** del giro, quella che il motore ha già sotto gli
   occhi (nessuna richiesta in più): l'ordine, ogni esame col suo codice e la sua risorsa, ogni
@@ -2005,7 +2011,7 @@ Salva / Registra, e il PDF di **Stampa RE**.
 
 ### Ricetta SISS (fino all'Anteprima, mai oltre)
 
-**⋯ → Ricetta SISS**, sulla pagina del paziente, solo con l'estensione. Scegli i farmaci — i
+**Dimissioni → Prepara la ricetta nel SISS** (solo lì: non più anche nel ⋯), sulla pagina del paziente, solo con l'estensione. Scegli i farmaci — i
 **preferiti** (gli ultimi visti davvero in un'Anteprima del SISS: codice, descrizione, quantità,
 in `storage.local`; niente del paziente) o **Cerca nel SISS**, che scrive nella casella «Ricerca
 specialistica/farmaco» del Prescrittivo e ti mostra le voci della sua tendina — poi quantità,
@@ -2407,14 +2413,14 @@ nella tendina del gestionale») — poi **Prepara nel gestionale** (o Ctrl+Invio
     episodio semplicemente non esiste.
 14. **Dove finisce il contenuto clinico, detto con precisione.** Dei pazienti *conosciuti*
     restano solo nome, episodio, indirizzo della pagina e colore del triage, al massimo 60 e per 24 ore, con
-    **svuota** a mano e **🗑** per cancellare tutto di uno. I fogli che la scheda di un ordine ha letto
+    **⋯ → Dimentica i dati…** per cancellare tutto. I fogli che la scheda di un ordine ha letto
     sulla pagina del paziente (`stampeFresche.v1`: numeri, indirizzi della pagina, nomi di esami, per
-    episodio — perché «Ristampa» veda la richiesta nuova senza ricaricare) se ne vanno col login e col
-    reset. **Da fare** sta nel `localStorage`
+    episodio — perché «Ristampa» veda la richiesta nuova senza ricaricare) se ne vanno col login, con
+    «Dimentica i dati…» e dopo 12 ore. **Da fare** sta nel `localStorage`
     (`dafare.v1`) per episodio: la cosa da fare («tropo») e l'ora se c'è, mai un nome; al massimo 15
     voci aperte a paziente, scadono 12 ore dopo l'ora fissata (24 dall'ultima modifica senza ora, 5
     minuti dopo la spunta), la pagina di login non le tocca (sopravvivono a una
-    sessione scaduta, come il posto nella stanza), **svuota** e **🗑** le tolgono, e non vanno da
+    sessione scaduta, come il posto nella stanza), **Dimentica i dati…** le toglie, e non vanno da
     nessuna parte: non c'è una richiesta, né una notifica fuori dal pannello. Ma valori e testi dei referti letti in un turno stanno nel
     `sessionStorage` della scheda: **Chrome lo tiene anche su disco**, nel profilo, per poter
     ripristinare le schede — muore chiudendo la scheda, non prima. I PDF salvati stanno nella
@@ -2422,19 +2428,18 @@ nella tendina del gestionale») — poi **Prepara nel gestionale** (o Ctrl+Invio
     chiusura del browser. Le **schede cliniche** (tabella multi-prelievo, testi dei referti letti)
     stanno nella memoria dell'estensione, quindi **su disco**: un turno dura dodici ore e non si
     può perdere tutto chiudendo il browser. Scadono da sole **24 ore** dopo l'ultima lettura, al
-    massimo 200 pazienti, e **🗑** su un paziente archiviato le cancella subito — schede, referti
-    tenuti, «Da fare». La pagina di login cancella il resto — ma il `sessionStorage` è
+    massimo 200 pazienti. La pagina di login cancella il resto — ma il `sessionStorage` è
     **per scheda**: pulisce la scheda in cui è comparso il login, non le altre schede aperte.
-    **⋯ → Reset dati pazienti** toglie tutto questo in una volta, in tutte le schede aperte.
+    **⋯ → Dimentica i dati…** toglie tutto questo in una volta, in tutte le schede aperte.
     Su un PC condiviso: usa un profilo Chrome tuo e chiudi il browser a fine turno.
 15. **Niente parte da solo, e niente si inventa.** Aprire la pagina di un paziente non legge
     **nessun** valore: cliccare un paziente non è chiedere il laboratorio. I valori si leggono
     quando li chiedi — aprendo un prelievo, o con **⭳ Carica i valori** che li prende tutti, uno
     alla volta, insieme allo storico del portale aperto in sottofondo dal link della pagina —
     e un prelievo che ha già fallito non si ritenta da solo. **Un PDF non si salva mai da
-    solo**: lo prende un tocco sul referto, **⭳ Salva i referti** o **⭳ Carica i valori** negli
+    solo**: lo prende un tocco sul referto, **↻ Rileggi** o **⭳ Carica i valori** negli
     Esiti (mai il laboratorio), due alla volta al massimo con una pausa a caso prima di ognuno (gli
-    altri in fila, e la riga in cima dice a che punto è), dal link del gestionale o dal portale
+    altri in fila, e ↻ dice a che punto è), dal link del gestionale o dal portale
     come sempre, col controllo d'identità della regola 18; il testo dei PDF già
     salvati si legge invece sempre, dalla copia su questo computer, senza chiedere niente. E la tabella
     multi-prelievo viene **letta dalla pagina che hai davanti**, non chiesta all'API che la
@@ -2449,7 +2454,7 @@ nella tendina del gestionale») — poi **Prepara nel gestionale** (o Ctrl+Invio
     `nativeMessaging`: parlare con **un** programma di questo PC, `it.psassist.stampa`, che
     l'utente ha installato lui (una chiave in HKCU, niente amministratore) e che accetta solo
     questa estensione. A lui va **solo** il PDF che una scheda del gestionale ha preso coi
-    controlli di sempre (o un modulo dei Consensi, dall'estensione), e il nome della stampante
+    controlli di sempre (o un modulo di consenso, dall'estensione), e il nome della stampante
     scelta per quel tipo di foglio; lo porta il service worker, mai la pagina. L'aiutante
     ripete i controlli (è un PDF? non è enorme? quella stampante esiste, ed è accesa?), stampa con
     SumatraPDF, guarda la coda di Windows, cancella il file temporaneo e risponde: non usa la
@@ -2479,8 +2484,8 @@ nella tendina del gestionale») — poi **Prepara nel gestionale** (o Ctrl+Invio
     sempre, col motivo scritto; e mai da solo per un ordine dal telefono, che aspetta un tocco al
     PC. Le parole le scrive una funzione sola nel service worker (`ordPubblico`, a ogni
     scrittura dell'ordine): la striscia del PC e il telefono dicono le stesse, salvo dove il
-    telefono ha la sua (`tel`: «Confermata · etichette al PC», non «Etichette NON stampate · tocca Stampa»). Spenta
-    (l'interruttore), non configurata, o col preferito, il percorso è quello di prima, identico.
+    telefono ha la sua (`tel`: «Confermata · etichette al PC», non «Etichette NON stampate · tocca Stampa»). Non
+    configurata (senza aiutante o senza le due stampanti), o col preferito, il percorso è quello di prima, identico.
 18. **Il testo di un referto si mostra solo se è di questo paziente.** Ogni testo letto da un PDF
     passa da `identitaReferto`: il codice fiscale scritto nel PDF contro quello del paziente (il
     riquadro della scheda, o l'impronta di quello dei prelievi), o — senza codice — nome **e**
@@ -2584,7 +2589,7 @@ nella tendina del gestionale») — poi **Prepara nel gestionale** (o Ctrl+Invio
 
 > **Postazione condivisa**: `localStorage` e la memoria dell'estensione sono legati al **profilo
 > Chrome**, non al login dell'ospedale. Usa l'estensione in un profilo tuo. Se il profilo è
-> davvero condiviso, non usare **⭳ Salva i referti** né **⭳ Carica i valori**, né aprire i referti (i PDF resterebbero su disco fino a 8 ore), e a fine turno **⋯ → Reset dati pazienti**.
+> davvero condiviso, non usare **↻ Rileggi** né **⭳ Carica i valori**, né aprire i referti (i PDF resterebbero su disco fino a 8 ore), e a fine turno **⋯ → Dimentica i dati…**.
 
 ---
 
@@ -2634,7 +2639,7 @@ prima fase usa **solo** "Crea richiesta e aggiungi" — mai il bottone con confe
 11. **Regime.** Una scheda per paziente; mai avviare un run e allontanarsi; nella prima settimana,
     a fine turno, scorri le richieste create cercando doppioni o bozze non confermate.
 
-Se un passaggio non torna: il **Registro** (in fondo al pannello) elenca ogni azione con l'orario,
+Se un passaggio non torna: il **Registro** (⋯ → Registrazioni, in fondo) elenca ogni azione con l'orario,
 inclusi i primi 160 caratteri di qualsiasi pagina inattesa del server e **da quale strada è stato
 ottenuto ogni PDF**. Resta scritto anche cambiando pagina (per scheda e per episodio, 2 ore) e il bottone
 **⧉ Copia** lo mette negli appunti pronto da incollare — **il quesito diagnostico viene omesso**,
@@ -2670,7 +2675,7 @@ ps-app/
 ├── tools/icons.mjs      ← genera le icone PNG (niente binari a mano)
 ├── bookmarklet/         ← piano B per PC bloccati: un preferito, zero installazione (generato)
 ├── stampa/              ← la stampa automatica per Windows: installa.cmd, l'aiutante host.ps1 e SumatraPDF.exe (ufficiale 3.6.1, GPLv3, nello zip: installa.cmd non scarica più niente); ripristina.cmd
-├── extension/ricetta-*  ← ⋯ → Ricetta SISS: ricetta-sw.js (service worker: la ricetta, la scheda, i preferiti),
+├── extension/ricetta-*  ← Dimissioni → Ricetta SISS: ricetta-sw.js (service worker: la ricetta, la scheda, i preferiti),
 │                          ricetta-siss.js (nella scheda del Prescrittivo: compila e si ferma sull'Anteprima)
 ├── extension/aggiorna*  ← l'aggiornamento da sé: aggiorna.js (service worker: VERSION.txt, lo zip, l'aiutante, la ricarica),
 │                          aggiornata.js (la pillola «Ricarica la pagina» nelle schede rimaste col pannello vecchio)
@@ -2746,7 +2751,7 @@ prova nella misura dell'etichetta, la rotazione, e l'ID fisso; etichette → eti
 → A4 senza dialogo né anteprima (le stampa il service worker, coi PDF da una scheda aperta
 dietro), una volta sola anche chiesta due volte, e i consensi all'A4; una conferma nella scheda del
 medico che va subito su un altro paziente; una richiesta fatta a mano, che non stampa; un foglio che non esce → il dialogo col
-motivo, lui solo; l'aiutante sparito, che non parte o vietato per quell'ID; l'interruttore e la
+motivo, lui solo; l'aiutante sparito, che non parte o vietato per quell'ID; niente interruttore (la «spenta» di prima migrata) e la
 stampantina rossa; l'ordine in sottofondo stampato dal service worker senza più nessuna scheda
 del gestionale aperta, «Stampato su … alle HH:MM · 2 esami confermati» e «Ristampa»; il foglio dell'ordine che non esce, che arriva al medico col motivo, e
 lui solo; l'aiutante che non risponde in tempo → «esito sconosciuto», mai il dialogo; la scheda

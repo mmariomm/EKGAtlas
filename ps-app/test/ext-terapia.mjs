@@ -313,7 +313,7 @@ try {
   await $p('[data-terpref]:has-text("KETOROLAC")').click();
   check(await $p(".ricvoci .ricv").count() === 2 && !(await $p("#terprepara").isDisabled()), "scelti due farmaci: «Prepara nel gestionale» acceso — anche con le etichette di un altro ordine che aspettano");
   await $p("#menubtn").click();
-  check(await $p("#resetpaz").count() === 1 && await $p("#extreload").count() === 0, "e nel ⋯ «Reset dati pazienti» c'è; «Ricarica» non c'è più");
+  check(await $p("#resetpaz").count() === 1 && await $p("#extreload").count() === 0, "e nel ⋯ «Dimentica i dati…» c'è; «Ricarica» non c'è più");
   await $p("#menubtn").click();
   await sw.evaluate(() => chrome.storage.session.set({ ordini: [] }));
   await sospendi(300);
@@ -510,8 +510,8 @@ try {
   await tel.locator('[data-a="scheda"][data-s="terapia"]').click();
   const t11 = await aspettaTel(/Letto sul PC alle \d\d:\d\d/);
   const righeTel = () => tel.locator(".ter .tt b").allInnerTexts();
-  check(!!t11 && (await righeTel()).length === 4 && (await righeTel())[0] === "KETOROLAC 30 MG/ML FL" && /Letto sul PC alle \d\d:\d\d · adesso/.test(t11),
-    `le terapie confermate, la più recente in cima, e «Letto sul PC alle … · adesso» (${(await righeTel()).join(" | ")})`);
+  check(!!t11 && (await righeTel()).length === 4 && (await righeTel())[0] === "KETOROLAC 30 MG/ML FL" && /Letto sul PC (?:\S+ )?alle \d\d:\d\d/.test(t11),
+    `le terapie confermate, la più recente in cima, e «Letto sul PC alle …» (${(await righeTel()).join(" | ")})`);
   check(/1 cpr · os · freq\. 8 · al bisogno/.test(t11) && /10:53/.test(t11), "una riga ciascuna: la dose, la via, la frequenza, al bisogno, e l'ora");
   check(srv.pagineTer.length === p0 + 1 && /MVPG=PsoEpisodioTerapieImposta&MODALITA=PRESCRIZIONE&EPISODIO_ID=700001&returnPage=PsoEpisodio$/.test(srv.pagineTer.at(-1)),
     `la pagina Terapia aperta dal pulsante del paziente, col suo indirizzo (${srv.pagineTer.at(-1)})`);

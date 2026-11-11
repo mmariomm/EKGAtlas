@@ -16,13 +16,27 @@
   // Il grezzo di una fonte («grezzi»: la registrazione a mano; «scorre»: gli
   // ultimi 10 minuti), da `da` in poi, già anonimizzato e chiuso in uno zip.
   async function esporta({ fonte = "grezzi", st, errori = [], da = 0, opz = {} }) {
-    const pagine = [], flusso = [], note = [], schede = [], clic = [], grezzi = [];
+    const pagine = [], flusso = [], note = [], schede = [], clic = [], grezzi = [], registro = [], diagnosi = [];
     for (const v of await RegistraDb.tx(fonte, "readonly", (s) => s.getAll())) {
       if (da && !((v.ts || 0) >= da)) continue;
       if (v.tipo === "pagina") pagine.push(v);
-      else if (v.tipo === "flusso") { flusso.push(...(v.flusso || [])); note.push(...(v.note || [])); schede.push(...(v.schede || [])); clic.push(...(v.clic || [])); }
-      else if (v.tipo === "pdf") grezzi.push(v);
+      else if (v.tipo === "flusso") {
+        flusso.push(...(v.flusso || [])); note.push(...(v.note || [])); schede.push(...(v.schede || [])); clic.push(...(v.clic || []));
+        registro.push(...(v.registro || [])); diagnosi.push(...(v.diagnosi || []));
+      } else if (v.tipo === "pdf") grezzi.push(v);
     }
+    // Il Registro dei pannelli di quei minuti (le righe di ogni scheda, in
+    // ordine) e le diagnosi dei documenti che non si sono lasciati leggere:
+    // testi liberi, che l'anonimizzazione tratta come il resto (raccolta.testi:
+    // testi/registro.txt, testi/diagnosi-N.txt) e il cancello ricontrolla.
+    const perScheda = new Map();
+    for (const b of registro.sort((a, b) => a.ts - b.ts)) {
+      if (!perScheda.has(b.scheda)) perScheda.set(b.scheda, []);
+      perScheda.get(b.scheda).push(...(b.righe || []).map(String));
+    }
+    const testi = [];
+    if (perScheda.size) testi.push({ nome: "registro.txt", testo: [...perScheda.values()].map((l, i) => `── scheda ${i + 1} ──\n${l.join("\n")}`).join("\n\n") });
+    diagnosi.sort((a, b) => a.ts - b.ts).forEach((d, i) => testi.push({ nome: `diagnosi-${i + 1}.txt`, testo: String(d.testo || "") }));
     // le richieste del pannello (content.js): stesso indirizzo e metodo, un
     // attimo dopo che il pannello l'ha chiesta
     note.sort((a, b) => a.ts - b.ts);
@@ -49,7 +63,7 @@
       pdf.push(o);
     }
     const vocabolario = await (await fetch(chrome.runtime.getURL("registra-vocabolario.json"))).json();
-    const raccolta = { versione: st.versione, inizio: st.inizio, fine: st.fine, comeFinita: st.comeFinita, origini: st.origini, pagine, flusso, pdf, schede, clic, errori };
+    const raccolta = { versione: st.versione, inizio: st.inizio, fine: st.fine, comeFinita: st.comeFinita, origini: st.origini, pagine, flusso, pdf, schede, clic, errori, testi };
     const r = RegistraAnonimo.anonimizza(raccolta, { vocabolario, ...opz });
     const zip = RegistraAnonimo.creaZip(r.files, new Date(st.inizio));
     return { zip, r };
