@@ -1543,6 +1543,11 @@
     // Non un decimale, una misura in byte, un codice d'errore («ORA-20965»), un numero del vocabolario
     // (i codici negli esami del catalogo).
     const ID_TESTO_RE = /(?<![\dA-Za-z]|\d[.,]|[A-Za-z]-)\d{5,}(?![\dA-Za-z]|[.,]\d|\s?(?:B|byte|bytes|KB|kB|MB)\b)/g;
+    // …né un valore di laboratorio: sulla riga «valori:» del Registro quello che segue un «=» («righe non
+    // lette: NT-proBNP = 12500 · …», core.js), e ovunque un numero dopo il nome di un analita e « = »
+    // («CK-MB = 23456»). Se no ogni 12500 di ogni file diventerebbe un numero finto, intervalli compresi.
+    // («EPISODIO_ID=150101», senza spazi, resta un identificativo.)
+    const VALORI_RE = /\s=\s*[^·—]*/g, VALORE_RE = /(?<=\S)\s+=\s*[<>≤≥]?\s*\d[\d.,]*/g;
     const numeriVoc = new Set();
     if (testiLiberi.length) {
       for (const s of STATICO) for (const m of s.matchAll(/\d{5,}/g)) numeriVoc.add(m[0]);
@@ -1553,7 +1558,8 @@
         const r = pulisci(decodifica(riga));
         scopriValori(r); scopriValori(pulisci(decURI(r)));
         for (const u of r.match(URL_IN_TESTO) || []) idDaUrl(u);
-        for (const m of r.replace(URL_IN_TESTO, " ").matchAll(ID_TESTO_RE)) if (!numeriVoc.has(m[0])) registraId(m[0]);
+        const libera = r.replace(URL_IN_TESTO, " ");
+        for (const m of libera.replace(/\bvalori: /.test(libera) ? VALORI_RE : VALORE_RE, " ").matchAll(ID_TESTO_RE)) if (!numeriVoc.has(m[0])) registraId(m[0]);
       }
       nomiLocali = nomiTesti;
       try {
