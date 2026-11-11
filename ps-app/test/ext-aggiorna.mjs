@@ -348,8 +348,27 @@ console.log("\naggiorna: lo zip deve essere quello giusto");
   check(!lavori().some((x) => x.aggiorna), "all'aiutante non è arrivato niente");
   gh.zip = zipDi(NUOVA);
   comportati({ aggiornaNo: "la cartella è in uso" });
+  // all'avvio del browser lo scambio parte anche con le schede (ripristinate) aperte — ma solo con lo zip
+  // già scaricato, e solo entro un minuto dalla partenza del service worker (dopo, il medico lavora)
+  const z0 = zipScaricati();
+  await sw.evaluate(() => { aggNato = Date.now(); });
   r = await sw.evaluate(() => aggiorna({ avvio: true }));
-  check(!r.ok && /Aggiornamento non riuscito: la cartella è in uso/.test(r.why) && !r.ricarica, `l'aiutante dice di no: lo si dice, niente ricarica (got ${r.why})`);
+  check(!r.ok && r.why === "Dopo la chiusura del gestionale" && zipScaricati() === z0 + 1 && !lavori().some((x) => x.aggiorna),
+    `all'avvio, ma lo zip non c'era ancora: si scarica, e lo scambio aspetta la chiusura del gestionale (got ${r.why}, zip ${zipScaricati() - z0})`);
+  await sw.evaluate(() => { aggNato = Date.now() - 61e3; });
+  r = await sw.evaluate(() => aggiorna({ avvio: true }));
+  check(!r.ok && r.why === "Dopo la chiusura del gestionale" && !lavori().some((x) => x.aggiorna),
+    `all'avvio, con lo zip pronto, ma più di un minuto dopo la partenza: lo scambio aspetta (got ${r.why})`);
+  // (il minuto che passa mentre si chiede all'aiutante che cosa c'è nella cartella: lo vede il controllo nella fila degli ordini)
+  await sw.evaluate(() => { aggNato = Date.now(); self.__inst = aggInstallata; aggInstallata = async (...a) => { const i = await self.__inst(...a); aggNato = Date.now() - 61e3; return i; }; });
+  r = await sw.evaluate(() => aggiorna({ avvio: true }));
+  await sw.evaluate(() => { aggInstallata = self.__inst; });
+  check(!r.ok && r.why === "Dopo la chiusura del gestionale" && !lavori().some((x) => x.aggiorna),
+    `…e se il minuto passa intanto, l'ultimo controllo prima dello scambio aspetta lo stesso (got ${r.why})`);
+  await sw.evaluate(() => { aggNato = Date.now(); });
+  r = await sw.evaluate(() => aggiorna({ avvio: true }));
+  check(!r.ok && /Aggiornamento non riuscito: la cartella è in uso/.test(r.why) && !r.ricarica && zipScaricati() === z0 + 1,
+    `all'avvio, con lo zip pronto, entro il minuto: lo scambio parte con la scheda aperta; l'aiutante dice di no: lo si dice, niente ricarica (got ${r.why})`);
   check(JSON.parse(readFileSync(join(EST, "manifest.json"), "utf8")).version === MIA && temporanei().length === 0, "la cartella è quella di prima, e niente di temporaneo resta");
   comportati();
 }

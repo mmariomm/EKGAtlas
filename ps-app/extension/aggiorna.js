@@ -32,6 +32,8 @@ const AGG_CACHE = "psassist-aggiorna";   // Cache Storage: lo zip scaricato e co
 const AGG_PAUSA = "aggiornaPausa";       // storage.local: { v, ts, why } — com'è andata male, e quando
 const AGG_ZIP_MAX = 28 * 1024 * 1024;   // in base64 resta sotto i 40 MB che l'aiutante accetta
 const AGG_ATTESA = 180e3;                // l'aiutante apre lo zip e scambia la cartella
+const AGG_AVVIO = 60e3;                  // all'avvio del browser, lo scambio con le schede aperte: solo nel primo minuto
+let aggNato = Date.now();                // quando è partito questo service worker (i test lo spostano)
 const AGG_APERTO = new Set(["coda", "avvio", "corre", "stampo", "stampa"]);   // come ORDINE_APERTO nel pannello
 const AGG_CARTELLA = "%LOCALAPPDATA%\\PSAssist\\estensione";
 const AGG_OCCUPATO = "Dopo l'ordine in corso";
@@ -138,7 +140,8 @@ async function aggOccupato() {
 // «Ricarica la pagina» a metà turno: la build completa aspetta che non ce ne
 // siano (le schede non si ricaricano mai da sole: una pagina di risposta di un
 // POST rimanderebbe il modulo). All'avvio del browser, invece, si applica
-// subito: le schede ripristinate al massimo mostrano la pillola.
+// subito, con lo zip già pronto e solo nel primo minuto (le schede
+// ripristinate al massimo mostrano la pillola; dopo, il medico sta lavorando).
 async function aggSchede() {
   const cs = chrome.runtime.getManifest().content_scripts?.[0] || {};
   const schede = await chrome.tabs.query({ url: cs.matches || [SA4 + "/sa4pso/*"] });
@@ -225,8 +228,10 @@ async function aggiorna({ avvio = false } = {}) {
   if (!rec.puo) return { ok: false, why: rec.come || "Non si aggiorna da qui." };
   const z = await aggZip(v);
   if (z.why) return aggNo(v, z.why);
-  // Scaricato e controllato, in silenzio. Lo scambio, sulla build completa, solo senza schede del gestionale aperte.
-  if (!aggSolaLettura() && !avvio && await aggSchede()) return { ok: false, why: AGG_SCHEDE };
+  // Scaricato e controllato, in silenzio. Lo scambio, sulla build completa, solo senza schede del gestionale
+  // aperte — o all'avvio del browser, con lo zip già pronto e nel primo minuto (anche nella fila, qui sotto).
+  const aspetta = async () => !aggSolaLettura() && !(avvio && z.pronto && Date.now() - aggNato < AGG_AVVIO) && !!(await aggSchede());
+  if (await aspetta()) return { ok: false, why: AGG_SCHEDE };
   // l'aiutante, solo adesso che si scambia: che cosa c'è nella cartella
   const i = await aggInstallata();
   if (!i.puo) return aggNo(v, `Non si aggiorna da qui: ${i.come}.`);
@@ -236,7 +241,7 @@ async function aggiorna({ avvio = false } = {}) {
   // parte in mezzo, e la ricarica arriva subito dopo lo scambio.
   return inFilaOrd(async () => {
     if (await aggOccupato()) return { ok: false, why: AGG_OCCUPATO };
-    if (!aggSolaLettura() && !avvio && await aggSchede()) return { ok: false, why: AGG_SCHEDE };   // (una scheda aperta intanto)
+    if (await aspetta()) return { ok: false, why: AGG_SCHEDE };   // (una scheda aperta intanto, o il minuto passato)
     const h = await ospite({ t: "aggiorna", versione: v, zip: b64(t.buf) }, AGG_ATTESA);
     if (!h.ok && !h.ignoto) return aggNo(v, `Aggiornamento non riuscito: ${corto(h.why || "l'aiutante ha detto di no", 160)}`);
     await caches.delete(AGG_CACHE).catch(() => {});
