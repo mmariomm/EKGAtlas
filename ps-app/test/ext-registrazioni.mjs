@@ -326,6 +326,8 @@ await pc.evaluate(() => {
   const l = JSON.parse(localStorage.getItem("psassist:patients.v1") || "[]");
   l.push({ ep: "999009", name: "NERI ADELE", url: "", ts: Date.now(), pk: "" });
   localStorage.setItem("psassist:patients.v1", JSON.stringify(l));
+  // (e una che aspetta al Triage: la conosce solo la lista smart, non è fra i pazienti)
+  localStorage.setItem("psassist:triage.lista.v1", JSON.stringify({ ts: Date.now(), righe: [{ nome: "PALUMBO LINA", breve: "PALUMBO L.", eta: 40, triage: "VERDE", area: "", arrivo: Date.now() - 600e3 }] }));
 });
 visoreMaiuscolo = true;
 await suPagina(pc, C.patientUrl);
@@ -338,7 +340,8 @@ await sw.evaluate(() => regAccoda("registro", { ts: Date.now(), scheda: 0, righe
   '10:00:01  pagina inattesa dopo Crea: "PRONTO SOCCORSO MEDICINA GENERALE Diagnosi: SCOMPENSO CARDIACO"',
   "10:00:02  «KETOROLAC TROMETAMINA» è entrato come «KETOROLAC TROMETAMINA 30MG/ML 1ML FL» (450120)",
   "10:00:03  ordine di 2 esami per VERDI GIUSEPPE dato a una scheda di sottofondo",
-  "10:00:04  ── iPhone: «Aggiorna i valori» per Neri Adele ──"] }));
+  "10:00:04  ── iPhone: «Aggiorna i valori» per Neri Adele ──",
+  "10:00:05  ── iPhone: «Accetta in ambulatorio» per Palumbo Lina ──"] }));
 await pc.waitForTimeout(2500);   // (il Registro del pannello va a mucchi, ogni secondo e mezzo)
 check(await sw.evaluate(() => regIncidente("un documento in maiuscolo")), "un incidente");
 const salvato3 = await finche(async () => (await elenco()).length === 3, 90000);
@@ -367,6 +370,7 @@ const pagC = pagine3.find((p) => p.includes(`<title>${finto3}</title>`) && /MVPG
 check(!!pagC, `e nella pagina del paziente il suo nome finto è lo stesso (${pagine3.length} pagine)`);
 const tutto3 = readdirSync(dir3, { recursive: true }).filter((f) => statSync(join(dir3, String(f))).isFile()).map((f) => leggi3(String(f))).join("\n");
 for (const [cosa, v] of [["VERDI GIUSEPPE", /VERDI(?:\s|&nbsp;|\+|%20)+GIUSEPPE/i], ["NERI ADELE (che l'estensione conosce, nel Registro scritto Neri Adele)", /NERI(?:\s|&nbsp;|\+|%20)+ADELE/i],
+  ["PALUMBO LINA (al Triage: la conosce solo la lista smart, nel Registro scritto Palumbo Lina)", /PALUMBO(?:\s|&nbsp;|\+|%20)+LINA/i],
   ["il codice fiscale del visualizzatore", /VRDGPP/], ["la data di nascita del visualizzatore", /07\/09\/1951/], ["l'episodio 999003", /999003/]]) check(!v.test(tutto3), `nello zip non c'è ${cosa}`);
 // la pagina del paziente com'è nello zip: il pannello la rilegge (il nome finto, l'episodio finto)
 const epC = (/EPISODIO_ID=(\d+)/.exec(pagC.split("\n")[0]) || [])[1] || "";

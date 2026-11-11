@@ -540,10 +540,12 @@ async function ponteRisposta(s, d) {
 // solo quelli offerti in questa sessione.
 const PONTE_PDF_MAX = 15e6;                  // oltre, «aprilo sul PC»
 const PONTE_PDF_PEZZO = 4 * 130000;          // caratteri base64 per risposta (≈ 390 KB): multiplo di 4
+// (solo una copia di cui si è guardato di chi è, e non è di un altro paziente: `chi`, bg.js chiRef)
 async function ponteCopia(ep, id) {
   if (!ep || typeof id !== "string") return null;
   const hit = (await chrome.storage.local.get(KEY(id)))[KEY(id)];
   if (!hit || typeof hit.data !== "string" || !/^JVBERi/.test(hit.data) || String(hit.ep || "") !== String(ep)) return null;
+  if (hit.chi !== "ok" && hit.chi !== "nv") return null;
   if (Date.now() - (hit.ts || 0) > REF_TTL) return null;
   return hit.data;
 }
@@ -894,8 +896,10 @@ async function ponteSchedaNata(id, viva = () => true, max = 2000) {
   }
 }
 async function ponteValoriApri(u, ep, modo) {
-  // (mai una pagina del gestionale mentre un motore inserisce esami: bg.js)
+  // (mai una pagina del gestionale mentre un motore inserisce esami: bg.js — né con un carrello aperto
+  // in una scheda, dove il medico ordina a mano: la pagina cambierebbe la sua richiesta «corrente», regola 19)
   if (typeof dopoIlMotore === "function") await dopoIlMotore();
+  if (typeof carrelloAperto === "function" && await carrelloAperto()) return { ok: false, testo: "c'è un carrello aperto sul PC: riprova quando hai finito di ordinare" };
   const davanti = (await ponteSchede())[0];
   const vuota = { url: "about:blank", active: false };
   const t = await chrome.tabs.create(davanti ? { ...vuota, windowId: davanti.windowId, index: davanti.index + 1 } : vuota)
@@ -922,11 +926,12 @@ async function ponteValoriApri(u, ep, modo) {
   // La navigazione persa per strada: dopo qualche secondo la scheda è ancora vuota — né arrivata né in
   // arrivo sul gestionale (come la scheda vuota di un ordine, in bg.js), e nessuna pagina ha chiesto
   // «chi sono?». Si rifà una volta (lo stesso gesto: la pagina non è mai arrivata), poi si aspetta come
-  // prima. Una pagina lenta è già in arrivo sul gestionale: quella si aspetta.
+  // prima. Una pagina lenta è già in arrivo sul gestionale: quella si aspetta — anche quando il browser,
+  // con la risposta trattenuta, non dice dove va (né url né pendingUrl) ma la scheda sta caricando.
   const w = pt.valori.get(t.id);
   if (w) w.persa = setTimeout(async () => {
     const x = await chrome.tabs.get(t.id).catch(() => null);
-    if (pt.valori.get(t.id) !== w || w.chiesto || !x || sulGestionale(x.url) || sulGestionale(x.pendingUrl)) return;
+    if (pt.valori.get(t.id) !== w || w.chiesto || !x || x.status === "loading" || sulGestionale(x.url) || sulGestionale(x.pendingUrl)) return;
     chrome.tabs.update(t.id, { url: u.href }).catch(() => {});
   }, PONTE_PERSA_MS);
   const esito = await promessa;
@@ -949,7 +954,8 @@ async function ponteValoriFine(id, esito) {
 // Il giro del ⟳ del tabellone: un paziente alla volta, come aprendolo (la scheda
 // dietro, modo «tabellone»). Prima di ognuno si aspetta il motore, e la lista
 // smart che lo stesso ⟳ sta leggendo (una scheda dietro alla volta); se un ordine
-// è ancora al lavoro dopo l'attesa, il giro si ferma lì — un altro ⟳ lo rifà.
+// è ancora al lavoro dopo l'attesa, o c'è un carrello aperto in una scheda, il
+// giro si ferma lì — un altro ⟳ lo rifà.
 let ponteGiroTabellone = null;
 const PONTE_SMART_ATTESA = 45e3;
 async function ponteTabelloneGiro(l) {
@@ -958,6 +964,7 @@ async function ponteTabelloneGiro(l) {
       && (await sottoVive().catch(() => [])).some(([, s]) => s.cosa === "smart");) await attendi(500);
     if (typeof dopoIlMotore === "function") await dopoIlMotore();
     if (typeof motoreAlLavoro === "function" && motoreAlLavoro(await ordLeggi().catch(() => []))) return;
+    if (typeof carrelloAperto === "function" && await carrelloAperto()) return;
     await ponteValoriSotto(x.url, x.ep, "tabellone");
   }
 }

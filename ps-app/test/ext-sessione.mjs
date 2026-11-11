@@ -67,7 +67,25 @@ const quale = (url) => {
 // Ogni pagina del modulo richieste con un RICHIESTA_ID la fa sua; la lista
 // smart la perde; le etichette di una richiesta la spostano su quella. Un
 // inserimento su una richiesta che non è la corrente: ORA-20965.
-const sess = { corrente: null, log: [], ora: 0, forzaOra: null, area: null, dopoConferma: null };
+const sess = { corrente: null, log: [], ora: 0, forzaOra: null, area: null, dopoConferma: null, smartVera: false, smartLenta: 0 };
+// La lista smart vera (sess.smartVera): due schede, Ambulatorio (quella del link) e Triage, ognuna
+// lenta smartLenta ms. Nomi e date inventati.
+const impronta = (d) => { let h = 0x811c9dc5; for (const c of d) h = Math.imul(h ^ c.charCodeAt(0), 0x01000193) >>> 0; return h.toString(36); };
+const SMART_AMB = [["VERDI ANNA", "12/03/1960", 66], ["NERI LUIGI", "07/07/1957", 69], ["GIALLI SARA", "03/03/2000", 26]];
+function smartPagina(u) {
+  const sel = new URL(u).searchParams.get("PAZIENTI_FILTRO") === "TRI" ? "TRI" : "AMB";
+  const righe = sel === "TRI" ? [["MARINI ADA", "08/08/1988", 38]] : SMART_AMB;
+  const scheda = (k, nome, n) => `<a class="${k === sel ? "shiny-button-selected" : "shiny-button"}" href="?MVPG=PsoPazientiSmart&amp;PAZIENTI_FILTRO=${k}">${nome} (${n})</a>`;
+  const d = new Date(Date.now() - 30 * 60e3), p2 = (n) => String(n).padStart(2, "0");
+  const arrivo = `${p2(d.getDate())}/${p2(d.getMonth() + 1)}/${d.getFullYear()} ${p2(d.getHours())}:${p2(d.getMinutes())}`;
+  return `<html><head><title>Pronto Soccorso</title></head><body><table class="AFCHeaderTable"><tr><td>OSPEDALE ESEMPIO</td></tr></table>
+    ${scheda("TRI", "Triage", 1)}&nbsp;${scheda("AMB", "Ambulatorio", SMART_AMB.length)}
+    <table><form method="post" name="PazientiFiltro" action="menuPsoSmart.do?ccsForm=PazientiFiltro:Edit&amp;MVPG=PsoPazientiSmart&amp;PAZIENTI_FILTRO=${sel}"></form>
+      <tr><td><select class="AFCSelect" name="s_PERCORSO"><option selected value="">tutti</option><option value="1">AREA ALTA INTENSITA'</option></select></td></tr></table>
+    <table class="AFCFormTABLE">${righe.map(([nome, nato, eta]) => `<tr><td class="AFCDataTD"></td><td class="AFCDataTD">2026/0001</td>
+      <td class="AFCDataTD"><div class="myLinguetta"><table><tr><td title="VERDE"><strong>${nome}</strong><br>${nato}(${eta})</td></tr></table></div></td>
+      <td class="AFCDataTD">${arrivo}</td><td class="AFCDataTD">MEDICO ESEMPIO</td><td class="AFCDataTD">AREA ALTA INTENSITA' </td></tr>`).join("")}</table></body></html>`;
+}
 // L'area della sessione: null, quella dei pazienti; un'altra (RISORSA_ID di
 // Imposta), e la pagina di ROSSI arriva come sull'area sbagliata.
 const imposta = (id) => { sess.area = id || null; sess.log.push({ t: Date.now(), cosa: "area", area: sess.area }); };
@@ -108,6 +126,10 @@ await ctx.route(`${ORIGIN}/**`, async (r) => {
   // la lista smart: una pagina qualunque della stessa sessione
   if (/menuPsoSmart\.do/.test(u)) {
     sessioneVede(u);
+    if (sess.smartVera) {
+      if (sess.smartLenta) await sospendi(sess.smartLenta);
+      return r.fulfill({ status: 200, headers: { "content-type": "text/html; charset=windows-1252" }, body: Buffer.from(smartPagina(u), "latin1") }).catch(() => {});
+    }
     return r.fulfill({ status: 200, headers: { "content-type": "text/html" }, body: "<html><body><p>Lista smart</p></body></html>" }).catch(() => {});
   }
   // una scheda che si blocca appena nata (il suo content script non risponde più)
@@ -211,7 +233,7 @@ const SOLO = (process.argv[2] || "").toLowerCase();
 const prova = (t) => {
   if (SOLO && !t.toLowerCase().includes(SOLO)) return false;
   console.log("\nsessione: " + t); nuovi();
-  Object.assign(sess, { corrente: null, log: [], ora: 0, forzaOra: null, area: null, dopoConferma: null, confermaLenta: 0 });
+  Object.assign(sess, { corrente: null, log: [], ora: 0, forzaOra: null, area: null, dopoConferma: null, confermaLenta: 0, smartVera: false, smartLenta: 0 });
   return true;
 };
 const ESAMI = ["CREATININEMIA", "EMOCROMOCITOMETRICO", "TROPONINA"];   // tre esami POC: un erogatore, una richiesta
@@ -272,11 +294,114 @@ if (prova("un carrello aperto in una scheda: la lista smart non si legge")) {
   const sync = await doc.evaluate(() => JSON.parse(localStorage.getItem("psassist:smart.sync.v1") || "null"));
   check(/PsoRichiestaCreaRcs/.test(crea) && durante?.ok && durante.dati?.rilegge === false && !sess.log.some((x) => x.cosa === "smart"),
     `con la creazione di una richiesta aperta in una scheda, aprendo l'iPhone la smart non si legge (got ${JSON.stringify({ rilegge: durante?.dati?.rilegge, esito: sync?.esito, letta: sess.log.filter((x) => x.cosa === "smart").length })})`);
+  // …e nemmeno le pagine dei pazienti che il ponte apre dietro (il telefono, il ⟳ del tabellone): ferme, col perché
+  const dietro = await sw.evaluate(async (u) => {
+    let nate = 0;
+    const conta = () => { nate++; };
+    chrome.tabs.onCreated.addListener(conta);
+    const v = await Promise.race([ponteValoriSotto(u, "999001", "auto"), new Promise((ok) => setTimeout(() => ok({ ok: "tempo" }), 20000))]);
+    await Promise.race([ponteTabelloneGiro([{ ep: "999001", url: u }]), new Promise((ok) => setTimeout(ok, 20000))]);
+    chrome.tabs.onCreated.removeListener(conta);
+    return { v, nate };
+  }, A.patientUrl);
+  check(dietro.v?.ok === false && /carrello aperto/.test(dietro.v.testo || "") && dietro.nate === 0,
+    `con un carrello aperto, il telefono e il ⟳ del tabellone non aprono la pagina di un paziente dietro, e lo dicono (got ${JSON.stringify(dietro)})`);
   await carrello.close();
   await smartDaRileggere(doc);
   await telApre();
   check(await finche(() => sess.log.some((x) => x.cosa === "smart"), 15000), "chiuso il carrello, riaprendo l'iPhone la smart si legge");
   await nienteSmart(doc);
+}
+
+// ---- 1c. la smart a metà del suo giro -------------------------------------
+// I controlli della partenza valgono prima di OGNI salto da una scheda della smart all'altra: un
+// carrello aperto a mano fra l'Ambulatorio e il Triage la ferma lì (con quello che ha letto, mai
+// «intera»: nessuno dimesso); un ordine partito mentre lei legge la aspetta. E il motore di una
+// scheda che parte aspetta anche lui.
+const smartViva = () => sw.evaluate(() => sottoVive().then((l) => l.some(([, s]) => s.cosa === "smart")));
+const seminaNoti = (p) => p.evaluate(({ noti }) => {
+  const l = JSON.parse(localStorage.getItem("psassist:patients.v1") || "[]").filter((x) => !String(x.ep).startsWith("s"));
+  for (const [i, [name, nato]] of noti.entries()) l.push({ ep: "s" + i, name, url: "", ts: Date.now() - 60e3, pk: "", nato });
+  localStorage.setItem("psassist:patients.v1", JSON.stringify(l));
+}, { noti: [...SMART_AMB, ["BIANCO PIO", "01/01/1950"]].map(([n, d]) => [n, impronta(d)]) });
+const archiviati = (p) => p.evaluate(() => JSON.parse(localStorage.getItem("psassist:patients.v1") || "[]").filter((x) => x.arch).map((x) => x.name));
+if (prova("la smart a metà giro: un carrello aperto fra due schede la ferma, nessuno dimesso")) {
+  await daCapo();
+  await finche(async () => !(await smartViva()), 45000);
+  await suPagina(doc, A.patientUrl);
+  const crea = await doc.evaluate(() => document.querySelector('a[title="Richieste Laboratorio"]')?.href || "");
+  await seminaNoti(doc);
+  Object.assign(sess, { smartVera: true, smartLenta: 2500 });
+  await smartDaRileggere(doc);
+  sess.log.length = 0;
+  await telApre();
+  // la prima scheda della smart (Ambulatorio) arriva lenta: intanto il medico apre a mano «Richieste Laboratorio»
+  await finche(() => sess.log.some((x) => x.cosa === "smart"), 15000);
+  const carrello = await ctx.newPage();
+  await carrello.goto(crea);
+  await finche(async () => !(await smartViva()), 20000);
+  const sync = await doc.evaluate(() => JSON.parse(localStorage.getItem("psassist:smart.sync.v1") || "null"));
+  const lette = sess.log.filter((x) => x.cosa === "smart").length, arch = await archiviati(doc);
+  check(lette === 1 && sync?.esito === "carrello aperto" && sync.intera === false,
+    `col carrello aperto dopo la prima scheda, la smart non salta al Triage e si ferma lì (got ${JSON.stringify({ schede: lette, esito: sync?.esito, intera: sync?.intera })})`);
+  check(!arch.length, `e nessuno è dimesso da quella lettura a metà (got ${arch.join(", ") || "nessuno"})`);
+  await carrello.close();
+  Object.assign(sess, { smartVera: false, smartLenta: 0 });
+  await nienteSmart(doc);
+}
+if (prova("la smart a metà giro: un ordine partito mentre legge la aspetta")) {
+  await daCapo();
+  await finche(async () => !(await smartViva()), 45000);
+  await suPagina(doc, A.patientUrl);
+  await seminaNoti(doc);
+  Object.assign(sess, { smartVera: true, smartLenta: 2500 });
+  await smartDaRileggere(doc);
+  sess.log.length = 0;
+  await telApre();
+  await finche(() => sess.log.some((x) => x.cosa === "smart"), 15000);
+  await ordina(doc, ESAMI);
+  // finché la smart legge, l'ordine resta in coda: nessuna sua scheda, nessuna pagina
+  // (smart e ordini letti insieme, dalla stessa fotografia della memoria)
+  const foto = () => sw.evaluate(() => chrome.storage.session.get(null).then((o) => ({
+    viva: Object.entries(o).some(([k, s]) => k.startsWith("sotto:") && inCorso(s) && s.cosa === "smart"), ordini: o.ordini || [] })));
+  let presto = null;
+  for (const t0 = Date.now(); Date.now() - t0 < 20000;) {
+    const { viva, ordini: l } = await foto();
+    if (!viva) break;
+    const x = l.find((y) => y.stato !== "coda");
+    if (x) { presto = x.stato; break; }
+    await sospendi(100);
+  }
+  const fineSmart = Date.now();
+  check(presto === null, `l'ordine non parte mentre la smart legge (got ${presto || "in coda"})`);
+  await finche(async () => conferme(A).length > 0 || (await ordini()).some((x) => x.stato === "errore"), 60000);
+  const sync = await doc.evaluate(() => JSON.parse(localStorage.getItem("psassist:smart.sync.v1") || "null"));
+  const lette = sess.log.filter((x) => x.cosa === "smart"), ins = sess.log.filter((x) => x.cosa === "insert");
+  check(lette.length === 1 && sync?.esito === "ordine in corso" && sync.intera === false && !(await archiviati(doc)).length,
+    `la smart, con l'ordine che la aspetta, non salta al Triage: si ferma, nessuno dimesso (got ${JSON.stringify({ schede: lette.length, esito: sync?.esito, intera: sync?.intera })})`);
+  check(sess.ora === 0 && ins.length === 3 && conferme(A).length === 1 && ins.every((x) => x.t >= fineSmart - 200),
+    `poi l'ordine parte: tre esami, una Conferma, nessun «ORA-» (got ${ins.length} inserimenti · ${conferme(A).length} conferme · ${sess.ora} ORA)`);
+  Object.assign(sess, { smartVera: false, smartLenta: 0 });
+  await nienteSmart(doc);
+}
+if (prova("la smart a metà giro: il motore di una scheda la aspetta")) {
+  await daCapo();
+  // il motore di una scheda (un giro della scheda del medico) che parte mentre la smart legge: aspetta;
+  // quello che lo tiene già (il suo rinnovo) no
+  const m = await sw.evaluate(async () => {
+    const chiedi = (tab, id) => new Promise((ok) => ordMessaggio({ t: "ordineMotore", id }, { tab: { id: tab }, url: "https://smarthealth.multimedica.it/sa4pso/restrict/menuPso.do" }, ok));
+    await chrome.storage.session.set({ "sotto:987654": { opener: 1, cosa: "smart", ts: Date.now(), esito: "attesa" } });
+    const nuovo = await chiedi(4242, "prova-smart");
+    await motoreScrivi({ tab: 4343, id: "prova-tiene", scade: Date.now() + 15e3 });
+    const rinnovo = await chiedi(4343, "prova-tiene");
+    await motoreScrivi(null);
+    await chrome.storage.session.remove("sotto:987654");
+    const dopo = await chiedi(4242, "prova-smart");
+    await motoreScrivi(null);
+    return { nuovo, rinnovo, dopo };
+  });
+  check(m.nuovo?.occupato === true && m.rinnovo?.ok === true && m.dopo?.ok === true,
+    `il motore di una scheda aspetta la smart che legge; chi lo tiene lo rinnova; finita la smart, parte (got ${JSON.stringify(m)})`);
 }
 
 // ---- 2. ORA- nella risposta: la richiesta si rifà da capo, una volta ------

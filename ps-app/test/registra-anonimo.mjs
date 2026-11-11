@@ -613,6 +613,26 @@ const riga = (inizio) => { const i = core.indexOf(inizio); return core.slice(i, 
     `l'errore grave dice «date di nascita diverse», senza l'impronta della data (che si rovescia: ${impronte.join(", ")}) — ${righe[0] && righe[0].slice(-90)}`);
 }
 
+// ------------- gli analiti che il pannello conosce (SIGLE, SEZIONI in core.js), in maiuscolo in una pagina dei risultati
+// Il vocabolario ne prende le parole dalle regole del pannello (tools/build.mjs): nella pagina non sono
+// persone (nessun nome finto al loro posto), e la riga del Registro che li elenca «non in elenco» resta
+// parola per parola — non riscritta coi nomi finti presi dalla pagina. Il paziente no.
+{
+  const T6 = Date.UTC(2026, 9, 29, 9, 0, 0);
+  const analiti = ["CORPI CHETONICI", "ANION GAP", "PESO SPECIFICO"];
+  const html = `<html><head><title>Risultati</title></head><body><table border="0"><tr><td class="AFCColumnTD">Assistito</td><td>VERDONE CARLO</td></tr></table>
+<table class="AFCFormTABLE">${analiti.map((a, i) => `<tr><td class="AFCDataTD">${a}</td><td class="AFCDataTD">${10 + i}</td></tr>`).join("")}</table></body></html>`;
+  const riga = `09:00  valori: non in elenco (scritti per esteso): ${analiti.join(", ")}`;
+  const r = anonimizza({ versione: "9.9.9", inizio: T6, fine: T6 + 60e3, origini: { gestionale: G }, flusso: [], pdf: [], schede: [], clic: [], errori: [],
+    pagine: [{ url: `${G}/sa4rcs/restrict/RcsAccessiRisultatiElenco.do?RCS_ACCESSO_ID=1`, ts: T6 + 1000, scheda: 1, alto: true, html }],
+    testi: [{ nome: "registro.txt", testo: ["── scheda 1 ──", riga].join("\n") }] }, { vocabolario, sfasamento: 30 });
+  const p = Object.entries(r.files).find(([k]) => k.startsWith("pagine/"))?.[1] || "", reg = r.files["testi/registro.txt"] || "";
+  const celle = [...p.matchAll(/<td class="AFCDataTD">([^<]*)<\/td><td class="AFCDataTD">\d+<\/td>/g)].map((m) => m[1]);
+  const finti = celle.filter((c) => /^[A-Z]+ [A-Z]+$/.test(c) && !analiti.includes(c));
+  check(celle.length === 3 && !finti.length && !/VERDONE/.test(p) && reg.includes(riga),
+    `gli analiti che il pannello conosce non diventano nomi finti nella pagina, e la riga del Registro resta com'era; il paziente no (celle: ${celle.join(" | ")} · Registro: ${(reg.split("\n")[1] || "").slice(0, 90)})`);
+}
+
 // --------------------------------------------------------------- lo zip
 const zip = creaZip({ "a.txt": "ciao", "pagine/001-x.html": "<p>è</p>" });
 const dir = mkdtempSync(join(tmpdir(), "psa-zip-"));

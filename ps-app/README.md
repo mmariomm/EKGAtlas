@@ -930,7 +930,9 @@ paziente da solo non si riprende più (un tocco, in quella scheda, ne ridice l'e
 con la pagina aperta, si ricontrolla ogni 10 minuti **solo mentre la guardi** (tornandoci, se ne
 sono passati 10), e dopo due ricontrolli senza niente di nuovo smette: lo rifà aprire gli Esiti. Mentre lavora, accanto a **↻** c'è un discreto **«↓ 2»** — quanti ne restano —, e se il Lab
 non ha ancora una tabella dice **«Leggo i valori…»**; se non c'è proprio niente da leggere (né
-prelievi né referti di laboratorio), **«Nessun esame di laboratorio»**. Non parte mai nella scheda di un ordine, del Ponte, di un giro ripreso o con una
+prelievi né referti di laboratorio), **«Nessun esame di laboratorio»** — anche col portale: lo storico resta un
+tocco nel ↻ in cima (non il bottone grande), e dopo una lettura che non ha trovato niente dice quando («· letto
+14:32»). Non parte mai nella scheda di un ordine, del Ponte, di un giro ripreso o con una
 richiesta da confermare.
 
 - **In cima, una riga**: i valori **fuori range** dell'ultimo prelievo di ciascun esame, i più
@@ -938,7 +940,7 @@ richiesta da confermare.
   sua ora — `K 5.9↑ · Hb 9.1↓ · Trop 48↑ (12 alle 11:40) · 3 nuovi` —; oltre i sei, «+N». **«N
   nuovi»** conta i valori cambiati dall'ultima lettura e i referti mai aperti: un tocco li segna
   visti. A destra, da solo, **↻ Rileggi**: i valori, poi i referti non ancora salvati (anche quelli
-  che da soli non sono riusciti); mentre lavora dice a che punto è («↻ 1/2…», «↻ referti 2/5…»).
+  che da soli non sono riusciti, e quelli di un altro paziente: ripresi, si riguarda di chi sono); mentre lavora dice a che punto è («↻ 1/2…», «↻ referti 2/5…»).
   Niente altro: Salva, ↺ e Diagnosi non ci sono più (i referti si salvano da soli, si dimentica
   con ⋯ → Dimentica i dati…, la diagnosi va nelle Registrazioni).
 - **In attesa**: in ogni sezione, ciò che è stato chiesto e non è ancora refertato — dalle righe
@@ -1079,7 +1081,9 @@ o una richiesta in attesa.
   immagini, visite e consulenze, **mai il laboratorio** — **due alla volta al massimo**, con una
   breve pausa a caso prima di ognuno, gli altri in fila («in fila» sulla loro riga). Di **ECG e
   radiografie** legge subito il testo; di **TC, ecografie, RM, visite** guarda solo **di chi è**
-  (un PDF intestato a un altro paziente non resta) e lo lascia al visore. Quelli già salvati non
+  (un PDF intestato a un altro paziente non resta, e resta segnato per tutte le schede finché una copia
+  ripresa non si rivela sua) e lo lascia al visore. Al telefono va solo una copia di cui si è guardato
+  di chi è (`chiRef`: lo sa la copia stessa; una ripresa nasce senza). Quelli già salvati non
   si riscaricano. **Il testo di ECG e radiografie già salvati si legge sempre**, appena apri gli
   Esiti, dalla copia su questo computer: nessuna richiesta.
   Le copie si dimenticano con **⋯ → Dimentica i dati…**, o scadono da sole. Un referto che non si lascia
@@ -1416,7 +1420,8 @@ ecografie e visite c'è il PDF, non il testo, e il telefono lo dice.
 numeri: non è più «nuovo», né qui né nel pannello); gli Esiti con qualcosa di nuovo davanti per 3
 secondi (i valori «● N nuovi», o il pallino del tabellone) valgono come la finestra del PC aperta
 sugli Esiti: il pallino si spegne, «N nuovi» anche — i valori che il PC aveva già letto quando è
-stata scritta la tabella mostrata (`fino`); uno letto dopo resta nuovo. Solo la memoria
+stata scritta la tabella mostrata (`fino`); uno letto dopo resta nuovo, e «N nuovi» con lui. Le
+altre schede del gestionale se ne accorgono dalla memoria, anche con la pill ridotta. Solo la memoria
 dell'estensione, niente nel gestionale: si può anche dal PC di sola lettura.
 
 Lontano dal PC per qualche minuto, dal telefono: **i pazienti**, **gli esiti** di uno (con
@@ -1995,7 +2000,8 @@ le pagine e ricontrollati dal cancello. Col preferito (bookmarklet) la voce most
   testo diventa inventato a meno che sia vocabolario del programma (compare per almeno **due
   pazienti diversi**, o nelle pagine di esempio, o nel catalogo); nomi → nomi finti sempre uguali
   per la stessa persona — anche i pazienti che l'estensione conosce (la lista del pannello, quelli
-  aperti, gli ordini) dove nessuna pagina li mostra, come il Registro di un'altra scheda; nel
+  aperti, chi aspetta al Triage, gli ordini) dove nessuna pagina li mostra, come il Registro di un'altra
+  scheda; i nomi degli analiti che il pannello conosce (le sue sigle) non sono persone; nel
   Registro un COGNOME NOME in maiuscolo senza parole del programma o cliniche diventa un nome finto
   solo lì (mai nelle pagine, né dentro il markup della diagnosi); personale e utenti → `OPERATORE n` / `UTENTEn`; codici fiscali, date di
   nascita, tessere, telefoni, indirizzi, email tolti; anamnesi, esame obiettivo, diario, note,
@@ -2592,7 +2598,12 @@ nella tendina del gestionale») — poi **Prepara nel gestionale** (o Ctrl+Invio
     in coda. (Col bookmarklet, senza service worker, lo dice il battito `motore.v1` in
     localStorage.) Un ordine «muto» — «Ordine fermo · ⏹ la chiude» — tiene la coda ma non le
     letture. La lista smart non si rilegge (riprova al giro dopo) — e nemmeno con un carrello aperto in
-    una scheda, dove il medico ordina a mano —; le schede
+    una scheda, dove il medico ordina a mano —, e lo stesso vale **prima di ogni salto** fra le sue
+    schede (`smartAvanti`): un ordine partito o in coda, un motore chiesto, un carrello aperto
+    intanto, e si ferma lì con quello che ha letto — mai «intera», nessuno dimesso da una lettura a
+    metà. Un motore che parte mentre lei legge la aspetta, al più 20 secondi dalla sua partenza. Con un
+    carrello aperto non si apre nemmeno la pagina di un paziente da leggere dietro (il telefono, il ⟳ del
+    tabellone, prima di ognuno): il telefono dice «c'è un carrello aperto sul PC», il ⟳ si ferma lì; le schede
     di sottofondo (referto, storico, telefono) si aprono dopo, e così la scheda che dà i PDF di
     una stampa chiesta dalla scheda del medico; i PDF di una stampa aspettano la fine del motore
     (al più 4 minuti), e il motore dopo aspetta che quei PDF siano presi. Le etichette non vanno a

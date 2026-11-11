@@ -153,6 +153,14 @@ writeFileSync(join(root, "extension/ponte-host.js"),
       + "ORTOPEDIA NEUROLOGIA PEDIATRIA GINECOLOGIA OSTETRICIA UROLOGIA GASTROENTEROLOGIA PNEUMOLOGIA NEFROLOGIA RIANIMAZIONE OCULISTICA "
       + "OTORINOLARINGOIATRIA PSICHIATRIA DERMATOLOGIA ONCOLOGIA EMATOLOGIA GERIATRIA NEUROCHIRURGIA CARDIOCHIRURGIA VASCOLARE INTENSIVA CORONARICA";
     for (const t of [...stringhe(dimissioni), ...stringhe(eo), ...daCore, REPARTI_E_CLINICA]) metti(t);
+    // e i nomi degli analiti che il pannello conosce (SIGLE: «corpi chetonici», «anion gap», «peso
+    // specifico»…, presi dalle sue regole così come sono) e le sezioni della tabella dei valori (SEZIONI):
+    // nelle pagine dei risultati stanno in maiuscolo, e non sono persone
+    const regole = blocco("const SIGLE = [", "\n  ];");
+    for (const m of regole.matchAll(/\[\/((?:\\.|[^/\\\n])+)\/[a-z]*,\s*"/g)) {
+      metti(m[1].replace(/\\[a-z]|\[[^\]]*\]|\(\?[!=<:]+/gi, " ").split(/[^A-Za-zÀ-ÿ0-9]+/).filter((w) => w.length >= 3).join(" "));   // (le sigle di due lettere no)
+    }
+    for (const m of blocco("const SEZIONI = [", "\n  ];").matchAll(/\["([^"]+)",/g)) metti(m[1]);
   }
   const icone = Object.keys(JSON.parse(readFileSync(join(dir, "_icone.json"), "utf8")));
   writeFileSync(join(root, "extension/registra-vocabolario.json"), JSON.stringify({

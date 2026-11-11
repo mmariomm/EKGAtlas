@@ -913,15 +913,18 @@ const esitiDi = async (ep, re = /./) => {
   check(!sotto.length, `un titolo lungo va a capo, mai sotto «nuovo» (${JSON.stringify(sotto)})`);
   await shot(tel, "esiti-laboratorio");
   await finche(() => TRATTENUTE.length > 0, 30000);   // (la scheda dietro nasce quando tocca a lei: una alla volta, dopo quello che il PC sta già facendo)
+  const trattenuta = Date.now();
   // (la scheda la si cerca per un poco: la richiesta trattenuta può arrivare prima che il browser segni dove va la scheda)
   let dietroR = 0;
   await finche(async () => (dietroR = await dietroSu("999001")) === 1, 5000);
+  // (una pagina lenta: trattenuta 8 secondi, oltre il controllo della navigazione persa — non si richiede)
+  await sospendi(Math.max(0, 8000 - (Date.now() - trattenuta)));
   const chieste = TRATTENUTE.slice(), pagR = new Set(chieste.map((x) => x.pg).filter(Boolean));
   const schedeR = dietroR === 1 ? "" : JSON.stringify(await sw.evaluate(async () => ({
     schede: (await chrome.tabs.query({})).map((t) => [t.id, t.active, (t.pendingUrl || "").slice(-40), (t.url || "").slice(-40)]),
     letture: [...ponteValoriLetture].map(([ep, j]) => [ep, j.modo, j.partita]), valori: [...pt.valori].map(([id, w]) => [id, w.ep, !!w.chiesto]) })));
   lasciaRossi();
-  check(chieste.length >= 1 && dietroR === 1 && !pagR.has(doc) && pagR.size <= 1 && chieste.every((x) => /EPISODIO_ID=999001/.test(x.url)),
+  check(chieste.length === 1 && dietroR === 1 && !pagR.has(doc) && pagR.size <= 1 && chieste.every((x) => /EPISODIO_ID=999001/.test(x.url)),
     `…in una scheda dietro, sul PC (non quella del medico): la sua pagina (${chieste.length} richieste, ${dietroR} schede dietro${schedeR && " — " + schedeR})`);
   const pronta = await aspettaTel(tel, /Letti sul PC alle \d\d:\d\d/, 150000);
   check(/Hb/.test(pronta) && !/Leggo i valori nuovi/.test(pronta) && await finche(async () => await dietroSu("999001") === 0, 20000),
@@ -933,6 +936,16 @@ const esitiDi = async (ep, re = /./) => {
     `noto solo dalla lista smart: una riga sola, cosa fare — «apri una volta la lista «Bassa» nel gestionale», senza ↻ Rileggi (${v.replace(/\n+/g, " / ").slice(0, 160)})`);
   await tocca(tel, '[data-a="scheda"][data-s="richieste"]');
   check(/Il PC lo conosce solo dalla lista smart: per ordinare, apri una volta la lista «Bassa» nel gestionale\./.test(await testoTel(tel)), "…e per ordinare, la stessa riga");
+  // e il PC, a ogni comando che gli serve la sua pagina, dice la stessa cosa con le stesse parole
+  const parole = await sw.evaluate(async () => {
+    const out = {};
+    for (const [cmd, a] of [["ordina", { quesito: "x", esami: [] }], ["ristampe", {}], ["terapie", {}], ["cartellaSalva", { nomi: [] }], ["cartella", { rileggi: true }]]) {
+      out[cmd] = (await ponteSuScheda(cmd, { ep: "999003", ...a }))?.errore || "";
+    }
+    return out;
+  });
+  check(Object.values(parole).every((t) => t === "Il PC conosce VERDI LUCA solo dalla lista smart: apri una volta la lista «Bassa» nel gestionale"),
+    `noto solo dalla lista smart: ordina, ristampe, terapie, cartella e il suo salvataggio dicono la stessa riga (${JSON.stringify(parole)})`);
   await tocca(tel, '[data-a="scheda"][data-s="esiti"]');
 }
 // BIANCHI, che il PC conosce dalla lista della sua area ma non ha aperto in questo turno: un tocco sul
@@ -953,7 +966,7 @@ const esitiDi = async (ep, re = /./) => {
   check(!!fatto && b.p.ts > 0 && b.s.anag?.allergie?.testo === "PENICILLINA" && b.s.letto > 0,
     `…il PC apre la sua pagina dietro come un clic: ora è «aperto» (alle ${b.p.ts ? new Date(b.p.ts).toTimeString().slice(0, 5) : "—"}), le sue allergie e lo stato letti — e il telefono le mostra (${JSON.stringify(b.s.anag || null)})`);
   const pagB = new Set(pagineB().map((x) => x.pg).filter(Boolean));
-  check(pagineB().length >= 1 && !pagB.has(doc) && pagB.size <= 1 && await finche(async () => await dietroSu("999002") === 0, 20000),
+  check(pagineB().length === 1 && !pagB.has(doc) && pagB.size <= 1 && await finche(async () => await dietroSu("999002") === 0, 20000),
     `…in una scheda dietro sola, che si chiude (${pagineB().length} richieste, ${pagB.size} schede)`);
   // di nuovo: è aperto in questo turno, niente scheda nuova
   const prima = pagineB().length;
@@ -1041,6 +1054,15 @@ check(rxNuovoPrima && await finche(visteRx, 8000) && !(await nuovoRx()),
   const visti = await finche(async () => { const s = await statoR(); return s.valori?.nuovi === 0 && s.valori?.fuori === 0 && s.esitiVisto >= t0 && s.valoriVisti > 0; }, 15000);
   check(/● 2 nuovi/.test(es) && visti && await finche(async () => !/● 2 nuovi/.test(await testoTel(tel)), 5000) && /visti sul telefono: gli esiti di ROSSI MARIO/.test(await registroPonte()),
     `«● 2 nuovi» guardati sul telefono: visti anche sul PC — il pallino e «N nuovi» si spengono, qui e là; nel Registro (${JSON.stringify((await statoR()).valori)})`);
+  // …ma una tabella letta sul PC dopo quella che il telefono ha mostrato (`fino`): quei valori nuovi non li ha visti nessuno
+  await doc.evaluate(() => { const K = "psassist:stato.v1", S = JSON.parse(localStorage.getItem(K) || "{}"); S["999001"] = { ...(S["999001"] || {}), valori: { nuovi: 2, fuori: 1, fuoriTot: 1 } }; localStorage.setItem(K, JSON.stringify(S)); });
+  const reg0 = ((await registroPonte()).match(/visti sul telefono: gli esiti di ROSSI MARIO/g) || []).length;
+  const es2 = await esitiDi("999001", /● 2 nuovi/);
+  await sw.evaluate(() => chrome.storage.local.get("storicoArch").then((o) => { for (const r of Object.values(o.storicoArch || {})) if (r.ep === "999001" || /ROSSI/.test(JSON.stringify(r.paziente || {}))) r.letto = Date.now(); return chrome.storage.local.set(o); }));
+  const detto = await finche(async () => ((await registroPonte()).match(/visti sul telefono: gli esiti di ROSSI MARIO/g) || []).length > reg0, 15000);
+  await sospendi(500);
+  check(/● 2 nuovi/.test(es2) && detto && (await statoR()).valori?.nuovi === 2,
+    `guardati sul telefono, ma il PC ha letto valori più nuovi intanto: «N nuovi» resta sul PC (${JSON.stringify((await statoR()).valori)})`);
 }
 
 // ===========================================================================
@@ -1117,6 +1139,28 @@ check(await tel.locator(".val thead th:has(small.parz)").count() >= 1 && /parzia
 lentoRef = 0;
 const vistoDopo = await doc.evaluate(() => (JSON.parse(localStorage.getItem("psassist:patients.v1") || "[]").find((p) => p.ep === "999001") || {}).ts);
 check(vistoDopo === vistoPrima, "la scheda dei valori non conta come «visto adesso» dal medico");
+{
+  // Visto sul telefono, la pill ridotta di un'altra scheda del gestionale sullo stesso paziente si spegne anche lei
+  // (la scheda che ha eseguito il comando è un'altra: lo sa dalla memoria, refVisti.v1)
+  // (la pagina aperta qui è «aperta adesso»: dopo, l'ora di prima, come se non ci fosse stata)
+  const tsR = await doc.evaluate(() => (JSON.parse(localStorage.getItem("psassist:patients.v1") || "[]").find((p) => p.ep === "999001") || {}).ts);
+  const pill = await ctx.newPage();
+  await pill.goto(A.patientUrl);
+  await pill.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
+  await pill.evaluate(() => { const K = "psassist:refVisti.v1", v = JSON.parse(localStorage.getItem(K) || "{}"); delete v["999001"]; localStorage.setItem(K, JSON.stringify(v)); });
+  await pill.reload();
+  await pill.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
+  const pnov = () => pill.evaluate(() => document.getElementById("psassist-host")?.shadowRoot?.querySelector("#expand .pnov")?.textContent || "");
+  await finche(async () => /nuov/.test(await pnov()), 15000);
+  const prima = await pnov(), n = (t) => Number((/(\d+) nuovi/.exec(t) || [])[1] || (/nuovo/.test(t) ? 1 : 0));
+  const ids = await pill.evaluate(() => [...document.querySelectorAll('a[onclick*="REFERTO_ID="]')].map((a) => (/REFERTO_ID=([\w-]+)/.exec(a.getAttribute("onclick")) || [])[1]).filter(Boolean));
+  const altra = await sw.evaluate((u) => chrome.tabs.query({}).then((l) => (l.find((t) => t.url === u) || {}).id), A.worklistUrl);
+  const r = await sw.evaluate(([id, ids]) => chrome.tabs.sendMessage(id, { t: "ponteEsegui", cmd: "visto", args: { ep: "999001", ids } }), [altra, ids]);
+  const spenta = await finche(async () => n(await pnov()) < n(prima), 8000);
+  check(n(prima) > 0 && r?.ok && spenta, `aperti sul telefono, nella pill ridotta dell'altra scheda i referti non sono più «nuovi» (prima «${prima}», dopo «${await pnov()}»)`);
+  await pill.close();
+  await doc.evaluate((ts) => { const K = "psassist:patients.v1", l = JSON.parse(localStorage.getItem(K) || "[]"), p = l.find((x) => x.ep === "999001"); if (p && ts) p.ts = ts; localStorage.setItem(K, JSON.stringify(l)); }, tsR);
+}
 await tel.waitForSelector(".avviso", { state: "detached", timeout: 8000 }).catch(() => {});
 await shot(tel, "tel-2-esiti");
 await tel.emulateMedia({ colorScheme: "dark" }); await shot(tel, "tel-2-esiti-buio"); await tel.emulateMedia({ colorScheme: "light" });
@@ -2397,6 +2441,10 @@ await guardaChiusa();
 check(!ctx.pages().some((p) => p.frames().some((f) => f.url().includes("/ponte.html"))), "(nessuna pagina del ponte aperta, né scheda né cornice)");
 await sw.evaluate(() => { self.__vecchio = true; });
 const dalPc0 = rete.dalPc.length;
+// (BIANCHI come chi la lista dell'area ha portato e nessuno ha aperto in questo turno: un tocco sul
+// telefono aprirebbe la sua pagina sul PC — riaprirlo da sé, ricollegandosi, no)
+const bianchiTs = await doc2.evaluate(() => { const K = "psassist:patients.v1", l = JSON.parse(localStorage.getItem(K) || "[]"), p = l.find((x) => x.ep === "999002"); const ts = p && p.ts; if (p) Object.assign(p, { ts: 0, lista: Date.now() }); localStorage.setItem(K, JSON.stringify(l)); return ts; });
+const aperteRiavvio = APERTE.length;
 // Chrome lo ferma (qui lo si ferma dal protocollo di debug, come farebbe Chrome)
 // (da una pagina dell'estensione che non gli parla: quella del portale)
 const pag = await ctx.newPage();
@@ -2421,6 +2469,12 @@ check(await finche(async () => !!(await statoPonte())?.sessione && await tel.loc
   && !(await tel.evaluate(() => window.__chiusa)) && await sw.evaluate(() => !self.__vecchio),
   "l'estensione sul PC riavviata: il telefono si ricollega da solo, sullo stesso paziente e sulla stessa scheda, senza «Sessione chiusa»");
 await shot(tel, "tel-7-riavvio-ricollegato");
+{
+  await sospendi(4000);
+  const dopo = APERTE.slice(aperteRiavvio).filter((x) => /EPISODIO_ID=999002/.test(x.url));
+  check(!dopo.length && !/Apro sul PC/.test(await testoTel(tel)), `…e riaprire BIANCHI da sé non apre la sua pagina sul PC: nessun tocco (${dopo.length} pagine aperte)`);
+  await doc2.evaluate((ts) => { const K = "psassist:patients.v1", l = JSON.parse(localStorage.getItem(K) || "[]"), p = l.find((x) => x.ep === "999002"); if (p) p.ts = ts || Date.now(); localStorage.setItem(K, JSON.stringify(l)); }, bianchiTs);
+}
 // il «riparti» che l'ha chiusa, catturato per strada
 let riparti = null;
 for (const f of rete.dalPc.slice(dalPc0)) {
@@ -2848,7 +2902,12 @@ sezione("la rete del telefono: ascensore, 5G, presa tagliata, rete lenta");
   const pdf = Buffer.concat([refertoRxPdf(["RADIOLOGIA - ripresa"]), Buffer.alloc(1200000, 0x43)]);
   await sw.evaluate(([k, data]) => chrome.storage.local.set({ [k]: { ep: "999001", data, ts: Date.now() } }), ["ref:" + idRef, pdf.toString("base64")]);
   await tocca(v, '[data-a="indietro"]'); await aspettaTel(v, /BIANCHI ANNA/);
+  const nV = inoltrati.length;
   await tocca(v, '.paz[data-ep="999001"]');
+  // (la risposta nuova, non quella di prima ancora sullo schermo: la copia appena messa il PC l'ha guardata — `chi` —
+  // e solo allora la offre; un «PDF» di prima, toccato adesso, risponderebbe che quella copia non c'è più)
+  await finche(() => sw.evaluate((k) => chrome.storage.local.get(k).then((o) => !!(o[k] && o[k].chi)), "ref:" + idRef), 20000);
+  await finche(() => inoltrati.length >= nV + 2, 15000); await sospendi(800);
   await finche(async () => (await v.locator('.refw:has-text("TC ENCEFALO") .pdf').count()) === 1, 20000);
   // (il PC tarda col secondo pezzo: intanto la rete se ne va, e la sua risposta si perde)
   const e1 = relay.entrate().tel;

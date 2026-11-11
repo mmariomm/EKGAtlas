@@ -116,7 +116,7 @@
   try { const m = localStorage.getItem(MODO); if (m === "mappa" || m === "dafare") S.modo = m; } catch { /* solo in memoria */ }
   function svuota() {
     S.pazienti = null; S.triage = null; S.mappa = null; S.mappaSel = ""; S.zoom = 1; S.eo = null; S.eoVecchio = false; S.eoSheet = false; S.eoQ = ""; if (S.eoAnnulla) clearTimeout(S.eoAnnulla.t); S.eoAnnulla = null; S.aggiornato = 0; S.erroreLista = ""; S.catalogo = null; S.esiti.clear(); S.ristampe.clear(); S.ordini.clear(); S.nascosti.clear();
-    S.legge.clear(); S.nonLetti.clear(); S.daSolo.clear();
+    S.legge.clear(); S.nonLetti.clear();   // (S.daSolo resta: i 10 minuti valgono anche dopo una sessione ricollegata)
     S.sel.clear(); S.bloccati.clear(); S.aperti.clear(); S.occupato.clear(); S.inviati.clear(); S.promTesto = ""; S.arma = null;
     S.dfFoglio = false; S.precAperti = false; S.riprendi = null;
     S.stampa = null; S.cartelle.clear(); S.cbozze.clear(); S.cstato.clear(); S.coda.clear();
@@ -233,7 +233,7 @@
     S.pcs = []; S.attivo = "";
     try { localStorage.removeItem(PCS); localStorage.removeItem(CHIAVE); } catch { /* niente */ }
     S.coppia = null; S.chiavi = null; S.canale = null; S.saluto = null; S.nSessione = "";
-    svuota();
+    svuota(); S.daSolo.clear();
     zitto();
     const ws = S.ws; S.ws = null;
     if (ws) try { ws.close(); } catch { /* già chiusa */ }
@@ -580,7 +580,8 @@
     // (chiusa per i 3 minuti: il PC ha risposto — se il paziente c'è ancora e non si è già andati altrove, ci si riapre)
     if (S.riprendi && S.pazienti) {
       const r = S.riprendi; S.riprendi = null;
-      if (S.vista.nome === "lista" && paziente(r.ep)) { S.scheda = r.scheda; apriPaziente(r.ep); }
+      // (senza il tocco del medico: gli esiti chiesti da sé — la sua pagina sul PC non si apre per questo)
+      if (S.vista.nome === "lista" && paziente(r.ep)) { S.scheda = r.scheda; apriPaziente(r.ep, true); }
     }
   }
   async function aggiornaLista(auto = false, rileggi = false) {
@@ -621,12 +622,13 @@
     const i = S.pazienti.findIndex((p) => p.ep === riga.ep);
     if (i >= 0) S.pazienti[i] = riga;
   }
-  function apriPaziente(ep) {
+  // (`auto`: riaperto da sé, dopo una sessione ricollegata — non un tocco: niente «apri» sul PC)
+  function apriPaziente(ep, auto = false) {
     S.vista = { nome: "paziente", ep };
     S.menu = false; S.arma = null; S.promTesto = ""; S.vitAperti = ""; S.dfFoglio = false;
     window.scrollTo(0, 0);
     render();
-    caricaEsiti(ep);
+    caricaEsiti(ep, auto);
     if (S.scheda === "terapia" && !S.terapiaSi) S.scheda = "esiti";
     if (S.scheda === "cartella") caricaCartella(ep);
     if (S.scheda === "terapia") caricaTerapie(ep);

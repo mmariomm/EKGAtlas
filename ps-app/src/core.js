@@ -2448,7 +2448,8 @@
   // scrive come sempre: la verità resta nella memoria del gestionale.
   const TABELLONE = (() => { try { return location.protocol === "chrome-extension:" && /\/tabellone\.html$/.test(location.pathname); } catch { return false; } })();
   const SPECCHIO = "tabellone.specchio";   // in chrome.storage.local: { kv: { chiave: valore come in localStorage } }
-  const SPECCHIATE = new Set(["patients.v1", "aree.v1", "area.corrente.v1", "smart.sync.v1", "dimessi.v1", "stato.v1", "note.v1", "segni.v1", "dafare.v1", "dafare.generale.v1"]);
+  const SPECCHIATE = new Set(["patients.v1", "aree.v1", "area.corrente.v1", "smart.sync.v1", "dimessi.v1", "stato.v1", "note.v1", "segni.v1", "dafare.v1", "dafare.generale.v1",
+    "triage.lista.v1"]);   // (chi aspetta al Triage: la mappa del tabellone, e i nomi che il registratore sostituisce)
   const specchiata = (k) => SPECCHIATE.has(k) || /^(stanza|tabellone)\./.test(k);
   const conEstensione = () => { try { return typeof chrome !== "undefined" && !!chrome.runtime?.id && !!chrome.storage?.local; } catch { return false; } };
   let specchioAtteso = false;
@@ -3201,7 +3202,8 @@
   // (nessuna lettura riuscita), o il service worker l'ha rimandata per un motivo
   // del momento (un ordine, un carrello aperto). Una scheda dietro che si è
   // aperta e non ha letto non si riapre da sola: il telefono e il ⟳ ci riprovano.
-  const SMART_PIU_TARDI = new Set(["ordine in corso", "carrello aperto", "già in corso", "troppe letture in corso"]);
+  // («estensione»: il service worker che dormiva non ha risposto alla scheda appena aperta)
+  const SMART_PIU_TARDI = new Set(["ordine in corso", "carrello aperto", "già in corso", "troppe letture in corso", "estensione"]);
   const smartDaLeggere = (s = store.get(SMART_SYNC, null)) => !s || (!s.letta && SMART_PIU_TARDI.has(s.esito));
   const SMART_APERTO_MS = 1500;
   const SMART_GIRO = "smart.giro.v1";          // (nella scheda dietro) le schede della smart già lette
@@ -3422,21 +3424,29 @@
           ...(r.nato ? { k: chiaveSmart(r.name, improntaNascita(r.nato)) } : {}) })) };   // (l'area solo se si riconosce, col nome corto)
     }
     const prossima = L.schede.find((s) => s.nostra && !giro.letti[s.base]) || (giro.triage ? null : L.schede.find((s) => s.triage));
+    // Prima di ogni salto, i controlli della partenza (il service worker): un ordine partito o in
+    // coda, un carrello aperto a mano intanto — e la smart si ferma qui, con quello che ha letto, mai
+    // «intera»: nessuno dimesso da una lettura a metà. (Nessuna risposta: ci si ferma lo stesso.)
+    let ferma = "";
     if (prossima && giro.salti < 4) {
-      giro.salti++;
-      tabStore.set(SMART_GIRO, giro);
-      location.href = prossima.url;   // il link della scheda, nella pagina
-      return;
+      const r = await ask({ t: "smartAvanti" });
+      if (r.ok) {
+        giro.salti++;
+        tabStore.set(SMART_GIRO, giro);
+        location.href = prossima.url;   // il link della scheda, nella pagina
+        return;
+      }
+      ferma = r.why || "estensione";
     }
     const lette = Object.values(giro.letti);
-    if (!lette.length) return fine("schede");
+    if (!lette.length) return fine(ferma || "schede");
     const t = giro.triage;
     // (una scheda senza il conto «(N)» si prende com'è; col conto, le righe devono tornare)
     if (t && !t.filtrata && (t.n == null || t.n === t.righe.length)) store.set(TRIAGE_LISTA, { ts: Date.now(), righe: t.righe });
     const righe = lette.flatMap((x) => x.righe);
-    const intera = lette.every((x) => !x.filtrata && x.n != null && x.n === x.righe.length);
+    const intera = !ferma && lette.every((x) => !x.filtrata && x.n != null && x.n === x.righe.length);
     const r = applicaSmart(righe, intera);
-    return fine("ok", { n: r.righe, intera, dimessi: r.dimessi.length });
+    return fine(ferma || "ok", { n: r.righe, intera, dimessi: r.dimessi.length });
   }
   // Rileggere la smart adesso (⟳) o perché il medico ha aperto l'app
   // sull'iPhone: lo chiede il service worker, che apre la scheda dietro e ne
@@ -10121,7 +10131,14 @@
     // si ridisegna — ma non sotto un gesto in corso; ci si riprova fra poco.
     aggiornaDaFuori() {
       clearTimeout(this._fuoriT);
-      if (this.collapsed || !this.inPazienti()) return;
+      // (ridotto: solo la scritta delle novità sulla pill — visti altrove, sul telefono o in un'altra
+      // scheda, si spengono anche qui; il resto del pannello non si ridisegna)
+      if (this.collapsed) {
+        const v = this.root.querySelector("#expand .pnov");
+        if (v) { const t = this.pillNovita(); if (t) v.outerHTML = t; else v.remove(); }
+        return;
+      }
+      if (!this.inPazienti()) return;
       const occupato = this._stanzaPresa || this._stanzaMenu?.menu?.isConnected || this._df?.pop?.isConnected || this.stanzaEdit || this.menuAperto || this._carta
         || this.root.activeElement?.id === "pzcerca" || !!this.root.querySelector(".dfmod");   // (il campo del Da fare generale sopravvive al ridisegno: non ferma niente)
       if (occupato) { this._fuoriT = setTimeout(() => this.aggiornaDaFuori(), 3000); return; }
@@ -11784,15 +11801,18 @@
         : primaLettura ? `Legge i valori${conPortale ? ": lo storico del portale — tutti i prelievi, refertati e no — in una scheda di sottofondo, e le finestre Risultati del gestionale se serve" : " dal gestionale, un prelievo alla volta"}${
           daLeggere && !conPortale ? ` (${daLeggere} ${daLeggere === 1 ? "prelievo ancora da leggere" : "prelievi ancora da leggere"})` : ""}`
         : "Rilegge i prelievi ancora aperti, uno alla volta, poi riprende i referti non ancora salvati";
-      const grande = puoiLeggere && !t && !au;
+      // in attesa, dal diario della pagina: ciò che è stato chiesto e non è ancora refertato
+      const attese = richiesteInAttesa(document);
+      const attesaLab = attese.filter((x) => x.tipo === "lab");
+      // nessun prelievo, nessun referto di laboratorio, niente in attesa: col portale lo si dice (e
+      // quando lo si è letto), e lo storico resta a un tocco nel ↻ in cima — non il bottone grande
+      const vuotoLab = !t && !attesaLab.length && !prelievi.length && !lab.length;
+      const grande = puoiLeggere && !t && !au && !(conPortale && vuotoLab);
       // letti ma senza data e ora: il perché sta nel passaggio del mouse, non in due righe
       const infoSenzaData = senzaData.length ? `<span class="infochip" tabindex="0" title="${esc(
         `Di ${senzaData.length === 1 ? "un prelievo" : `${senzaData.length} prelievi`} la pagina non dà data e ora, né nel campo nascosto né nella riga: ${
           senzaData.length === 1 ? "è la colonna" : "sono le colonne"} ?, in fondo a destra (${senzaData.map((e) => shortLabel(e.label)).join(", ")}). I valori ci sono tutti; il Registro dice cosa c'era scritto al posto dell'ora.`)}">? ${
         senzaData.length === 1 ? "1 senza ora" : `${senzaData.length} senza ora`}</span>` : "";
-      // in attesa, dal diario della pagina: ciò che è stato chiesto e non è ancora refertato
-      const attese = richiesteInAttesa(document);
-      const attesaLab = attese.filter((x) => x.tipo === "lab");
       // Un esame di laboratorio i cui valori hanno cominciato ad arrivare non
       // aspetta più: «parziale 15:11», senza orologio che corre (i valori sono
       // già in tabella). L'orologio resta a ciò che non ha ancora niente.
@@ -11808,7 +11828,10 @@
           </div>`;
       };
       // niente valori, solo referti di laboratorio: la loro lista sta nella scheda Lab, non in fondo
-      const soloReferti = !t && !grande && !attesaLab.length && !prelievi.length && !conPortale;
+      // (col portale: solo senza niente di laboratorio, e non mentre lo si legge)
+      const legge = !!(ra || sotto || (au && !au.labFatto));
+      const soloReferti = !t && !grande && !attesaLab.length && !prelievi.length && (!conPortale || (vuotoLab && !legge));
+      const lettoLab = conPortale && soloReferti ? this.storico?.letto || this._labLetto || 0 : 0;
       const valori = `
         <section class="sec wusec wulab" aria-label="Laboratorio">
           <div class="lbl wuh"><span class="wut"${t ? ` title="Tocca un valore per segnarlo: giallo, poi arancio, poi via"` : ""}>Lab</span>${t ? `<span class="wucnt"> (${righeTabella(st.righe).length} esami · ${t.nCol} prelievi)</span>` : ""}
@@ -11827,7 +11850,7 @@
           ${this.storico && (this.storico.periodo || this.storico.paziente?.idMPI) ? `<div class="hint">Storico del portale di <b>${esc(chi || "—")}</b> · identità confermata <b>${esc(this.storicoVia || "dal nome")}</b>.</div>`
             : this.storicoAltri ? `<div class="hint">Storico del portale di <b>${esc(this.storicoAltri)}</b>, non di questo paziente: non mostrato.</div>`
             : this.storicoDaConfermare ? `<div class="hint" title="Il codice fiscale sta nella finestra Risultati">Storico del portale con questo nome: serve il codice fiscale, <b>⭳ Carica i valori</b>.</div>` : ""}
-          ${soloReferti ? (lab.length ? "@@LAB@@" : `<div class="wuvuoto">Nessun esame di laboratorio</div>`) : ""}
+          ${soloReferti ? (lab.length ? "@@LAB@@" : `<div class="wuvuoto">Nessun esame di laboratorio${lettoLab ? ` · letto ${hhmm(lettoLab)}` : ""}</div>`) : ""}
         </section>`;
 
       // ---- ECG e Imaging: i referti, uno per riga; il testo si apre lì sotto
@@ -12769,6 +12792,7 @@
         if (s && s.esito === "letto") {
           this.log(`${now()}  storico del portale letto in sottofondo: ${s.esami} esami · ${s.prelievi} prelievi`);
           this.notaPortale = "";
+          this._labLetto = Date.now();   // (letto, anche senza niente: il Lab vuoto dice quando)
           await this.caricaStorico();
         } else {
           const perche = {
@@ -12878,10 +12902,17 @@
       this.segnala({ tag: "Errore grave", testo: GRAVE_ALTRO, tono: "err", paziente: this.nomePaziente() || "", ...this.avvisoVisto() });
     }
     async leggiTesto(e, buf, { soloIdentita = false } = {}) {
+      const size = buf?.byteLength || 0;   // (prima del lettore: la copia letta, per chiRef)
       const letto = await testoPdf(buf);
       const righe = letto.righe;
       if (!righe.length) return { vuoto: true, letto };
       const id = identitaReferto(righe, this.identitaPaz());
+      // Guardato di chi è, e non è di un altro: lo sa la copia salvata (chiRef: senza, al telefono non
+      // va), e un «di un altro paziente» di prima — una copia vecchia — non vale più per questa.
+      if (id.esito !== "altro") {
+        if (fallito(this.episodeId, e.id)?.altro) togliFallito(this.episodeId, e.id);
+        if (hasExt() && size) ask({ t: "chiRef", id: e.id, ep: this.episodeId, chi: id.esito === "ok" ? "ok" : "nv", size }).catch(() => {});
+      }
       if (id.esito === "altro") {
         tabStore.set(this.txtKey(e.id), { ts: Date.now(), altro: true });
         segnaFallito(this.episodeId, e.id, { altro: true });   // (da solo non si riprende più)
@@ -12895,7 +12926,8 @@
         return { altro: true, letto };
       }
       if (soloIdentita) {
-        if (!tabStore.get(this.txtKey(e.id), null)) tabStore.set(this.txtKey(e.id), { ts: Date.now(), soloId: true });
+        const t0 = tabStore.get(this.txtKey(e.id), null);
+        if (!t0 || t0.altro) tabStore.set(this.txtKey(e.id), { ts: Date.now(), soloId: true });
         this.log(`${now()}  ${shortLabel(e.label)}: salvato, si apre nel visore (${id.esito === "ok" ? `intestazione verificata: ${id.via}` : "intestazione non verificata"})`);
         return { soloId: true, letto };
       }
@@ -12935,7 +12967,9 @@
         this.refBusy = { ...(this.refBusy || {}), [e.id]: true };
         this.render();
         const r = await fn();
-        if (r && r.salvato) togliFallito(this.episodeId, e.id);   // preso: niente più da riprovare
+        // preso: niente più da riprovare — tranne «di un altro paziente», che lo toglie solo la
+        // lettura di questa copia (leggiTesto), mai il fatto di averla presa
+        if (r && r.salvato && !fallito(this.episodeId, e.id)?.altro) togliFallito(this.episodeId, e.id);
         return r;
       }).finally(() => this.refCoda.delete(e.id));
     }
@@ -13022,8 +13056,10 @@
             return;
           }
           this.refBusy[e.id] = false;
-          // di chi è, sempre; il testo solo di ECG e radiografie
-          if (!tabStore.get(this.txtKey(e.id), null)) await this.leggiTesto(e, r.buf, { soloIdentita: !testoAuto(e) }).catch(() => null);
+          // di chi è, sempre; il testo solo di ECG e radiografie (segnato di un altro paziente: questa
+          // copia è nuova, si riguarda — il segno resta finché una lettura non dice altro)
+          const t = tabStore.get(this.txtKey(e.id), null);
+          if (!t || t.altro) await this.leggiTesto(e, r.buf, { soloIdentita: !testoAuto(e) }).catch(() => null);
         }, (err) => { if (err === LASCIATO) this.refBusy[e.id] = false; else this.refertoRotto(e, err); }).finally(() => {
           if (this._salva) this._salva.fatti++;
           this.render();
@@ -13188,7 +13224,7 @@
         const r = await this.inFila(e, () => this.scaricaReferto(e));
         this.refBusy[e.id] = false;
         this.render();
-        if (!(await this.vediReferto(e, r.buf))) return this.openReferto(e.id);
+        if (!(await this.vediReferto(e, r.buf, true))) return this.openReferto(e.id);
       } catch (err) {
         this.refertoRotto(e, err);
         this.render();
@@ -14027,9 +14063,11 @@
 
     // Un referto salvato si apre nel visore dell'estensione, dalla copia su
     // questo computer: anche senza testo, mai di un altro paziente.
-    async vediReferto(e, buf) {
+    // (`nuova`: una copia appena presa — segnata di un altro paziente, si riguarda di chi è: il segno
+    // resta finché una lettura non dice altro; una copia di prima segnata così non si apre)
+    async vediReferto(e, buf, nuova = false) {
       let t = this.testoDi(e);
-      if (!t) {
+      if (!t || (nuova && t.stato === "altro")) {
         const l = await this.leggiTesto(e, buf, { soloIdentita: !testoAuto(e) }).catch(() => null);
         t = l && l.altro ? { stato: "altro" } : this.testoDi(e);
       }
@@ -17465,28 +17503,47 @@
     const dati = st && st.righe && st.righe.length ? normalizzaStorico(st) : null;
     const tabella = dati && dati.righe.length ? ponteTabella(dati) : null;
     let resta = 400000;   // il telefono riceve un messaggio solo, mai oltre 1 MB
-    // Il PDF si offre al telefono se c'è la copia salvata per questo episodio
-    // e non è segnata come di un altro paziente (anche senza testo: TC, visite)
-    const salvati = hasExt() && referti.length ? ((await ask({ t: "listRef", ep: p.ep, ids: referti.map((e) => e.id) }).catch(() => null)) || {}).cached || {} : {};
+    // Il PDF si offre al telefono solo se c'è la copia salvata per questo
+    // episodio e si è guardato di chi è (`chi`, con la copia: vale da ogni
+    // scheda) senza trovarla di un altro paziente — anche senza testo: TC,
+    // visite. Mai guardata, o di un altro: niente PDF (e ponteCopia, nel
+    // service worker, lo rifiuta lo stesso).
+    const lr = hasExt() && referti.length ? (await ask({ t: "listRef", ep: p.ep, ids: referti.map((e) => e.id) }).catch(() => null)) || {} : {};
+    const salvati = lr.cached || {}, guardati = { ...(lr.chi || {}) };
     const cfImp = String(p.pk || "").startsWith("cf:") ? p.pk.slice(3) : "";
     const altri = new Set();
+    // («di un altro paziente»: in questa scheda, o in autoFalliti.v1 — lo stesso per tutte le schede)
     const diAltro = (e) => {
       const t = tabStore.get(`reftxt.${p.ep}.${e.id}`, null);
-      return altri.has(e.id) || (!!t && (!!t.altro || (Array.isArray(t.righe) && identitaReferto(t.righe, { cf: "", cfImp, nome: p.name || "", nascita: "" }).esito === "altro")));
+      return altri.has(e.id) || !!fallito(p.ep, e.id)?.altro
+        || (!!t && (!!t.altro || (Array.isArray(t.righe) && identitaReferto(t.righe, { cf: "", cfImp, nome: p.name || "", nascita: "" }).esito === "altro")));
     };
-    // Un ECG o una radiografia salvati su questo PC ma col testo mai letto: il
-    // PDF lo salva la scheda del portale (il service worker), il testo lo legge
-    // la pagina che l'ha chiesto — e se il medico è già passato a un'altra
-    // pagina, non lo legge nessuno. Lo si legge qui, dalla copia (nessuna
-    // richiesta), con lo stesso controllo di chi è del pannello, e va nella
-    // scheda del paziente: la prossima volta è già lì.
+    // Un PDF salvato su questo PC ma mai guardato: il PDF lo salva la scheda
+    // del portale (il service worker), lo guarda la pagina che l'ha chiesto —
+    // e se il medico è già passato a un'altra pagina, non lo guarda nessuno.
+    // Lo si guarda qui, dalla copia (nessuna richiesta), con lo stesso
+    // controllo di chi è del pannello; di un ECG o di una radiografia il testo
+    // va nella scheda del paziente: la prossima volta è già lì.
     const chiave = p.pk || (normNome(p.name) ? "nome:" + normNome(p.name) : "");
     for (const e of referti) {
-      if (testi.has(e.id) || !testoAuto(e) || !salvati[e.id] || diAltro(e)) continue;
+      const leggi = testoAuto(e) && !testi.has(e.id);
+      if (!salvati[e.id] || diAltro(e) || (!leggi && guardati[e.id])) continue;
       const g = await ask({ t: "getRef", id: e.id, ep: p.ep }).catch(() => null);
-      const righe = g && g.ok && g.data ? ((await testoPdf(bufDaB64(g.data)).catch(() => null)) || {}).righe || [] : [];
+      const buf = g && g.ok && g.data ? bufDaB64(g.data) : null, size = buf ? buf.byteLength : 0;
+      const righe = buf ? ((await testoPdf(buf).catch(() => null)) || {}).righe || [] : [];
       if (!righe.length) continue;
-      if (identitaReferto(righe, { cf: chi.cf, cfImp, nome: p.name || "", nascita: chi.nascita }).esito === "altro") { altri.add(e.id); continue; }
+      const esito = identitaReferto(righe, { cf: chi.cf, cfImp, nome: p.name || "", nascita: chi.nascita }).esito;
+      if (esito === "altro") {
+        altri.add(e.id);
+        segnaFallito(p.ep, e.id, { altro: true });
+        await ask({ t: "delRef", id: e.id, ep: p.ep }).catch(() => {});
+        continue;
+      }
+      if (!guardati[e.id]) {
+        const v = esito === "ok" ? "ok" : "nv";
+        if ((await ask({ t: "chiRef", id: e.id, ep: p.ep, chi: v, size }).catch(() => null))?.ok) guardati[e.id] = v;
+      }
+      if (!leggi) continue;
       const mostra = refertoMostrato(e, righe, { nome: p.name || "" });
       if (!mostra.length) continue;
       const testo = mostra.slice(0, 200).join("\n").slice(0, 20000);
@@ -17505,7 +17562,7 @@
       const sta = !!t && t.length <= resta;
       if (sta) resta -= t.length;
       return { id: e.id, quando: e.when, sistema: e.sistema, titolo: shortLabel(e.label), tipo: refertoTipo(e), testo: sta ? t : "", lungo: !!t && !sta,
-        ...(visti.has(e.id) ? {} : { nuovo: true }), ...(salvati[e.id] && !diAltro(e) ? { pdf: true } : {}),
+        ...(visti.has(e.id) ? {} : { nuovo: true }), ...(salvati[e.id] && guardati[e.id] && !diAltro(e) ? { pdf: true } : {}),
         ...(refertoTipo(e) !== "lab" && !testoAuto(e) ? { soloPdf: true } : {}) };   // (TC, ecografie, visite: il testo non si legge, c'è il PDF)
     });
     // Che cosa il PC legge da sé, adesso che il medico l'ha aperto sul telefono (il suo tocco è il gesto):
@@ -17539,7 +17596,7 @@
   // lo dà il service worker: chiesto due volte, l'ordine è uno.
   async function ponteOrdina(p, a) {
     const url = ponteUrlPaziente(p);
-    if (!url) return { ok: false, errore: `Apri una volta ${p.name || "il paziente"} sul PC: per ordinare serve la sua pagina` };
+    if (!url) return { ok: false, errore: senzaPagina(p) };
     const quesito = String(a.quesito || "").replace(/\s+/g, " ").trim();
     if (!quesito) return { ok: false, errore: "Scrivi il quesito diagnostico" };
     const cat = fullCatalog();
@@ -17584,7 +17641,7 @@
   // Registra.
   async function ponteMappaStampe(p) {
     const url = ponteUrlPaziente(p);
-    if (!url) return { errore: `Apri una volta ${p.name || "il paziente"} sul PC: serve la sua pagina` };
+    if (!url) return { errore: senzaPagina(p) };
     try {
       const { doc, url: fin } = await fetchDoc(url, {});
       if (classify(doc) === "login") return { errore: "Gestionale da riaprire: sul PC la sessione è scaduta", sessione: true };
@@ -17672,7 +17729,7 @@
     // per leggere, i preferiti); il resto lo fa la scheda di sottofondo
     if (cmd === "terapie" || cmd === "terapiaCerca" || cmd === "terapiaAggiungi") {
       const url = ponteUrlPaziente(p);
-      if (!url) return { ok: false, errore: `Apri una volta ${p.name || "il paziente"} sul PC: serve la sua pagina` };
+      if (!url) return { ok: false, errore: senzaPagina(p) };
       const pref = cmd === "terapie" ? { pref: terapiaPreferiti().slice(0, 30).map(({ n, ts, ...v }) => v) } : {};
       return fatto({ ok: true, dati: { url, paziente: p.name, ...pref }, ...(cmd === "terapiaAggiungi" ? {} : { registro: `${cmd === "terapie" ? "terapie" : "tendina dei farmaci"} di ${p.name}` }) });
     }
@@ -17681,7 +17738,7 @@
     // lo fa la scheda di sottofondo, col «Conferma» della pagina
     if (cmd === "cartellaSalva") {
       const url = ponteUrlPaziente(p);
-      if (!url) return { ok: false, errore: `Apri una volta ${p.name || "il paziente"} sul PC: serve la sua pagina` };
+      if (!url) return { ok: false, errore: senzaPagina(p) };
       const nomi = (Array.isArray(a.nomi) ? a.nomi : []).map(cartellaNome).join(", ");
       return fatto({ ok: true, dati: { url, paziente: p.name }, registro: `cartella di ${p.name}: salvo ${nomi}` });
     }
@@ -17697,7 +17754,14 @@
       if (ids.length) segnaVisti(p.ep, ids);
       if (a.valori) {
         const ora = Date.now(), fino = Math.min(ora, Number(a.fino) || 0);
-        scriviStato(p.ep, (s) => ({ ...s, valori: { nuovi: 0, fuori: 0, fuoriTot: 0 }, esitiVisto: ora, ...(fino > (s.valoriVisti || 0) ? { valoriVisti: fino } : {}) }));
+        // (una tabella letta sul PC dopo quella che il telefono ha mostrato: i suoi valori nuovi non li ha visti nessuno)
+        let dopo = false;
+        if (fino && hasExt()) {
+          const r = await ask({ t: "getStorico" });
+          const sc = scegliScheda((r && r.ok && r.indice) || [], String(p.pk || "").startsWith("cf:") ? p.pk.slice(3) : "", p.name, p.ep);
+          dopo = !!sc && (Number(sc.letto) || 0) > fino;
+        }
+        scriviStato(p.ep, (s) => ({ ...s, ...(dopo ? {} : { valori: { nuovi: 0, fuori: 0, fuoriTot: 0 } }), esitiVisto: ora, ...(fino > (s.valoriVisti || 0) ? { valoriVisti: fino } : {}) }));
       }
       if (!PANNELLO.root.activeElement) PANNELLO.render();
       return fatto({ ok: true, registro: `visti sul telefono: ${[ids.length ? (ids.length === 1 ? "un referto" : `${ids.length} referti`) : "", a.valori ? "gli esiti" : ""].filter(Boolean).join(" e ") || "niente"} di ${p.name}` });
@@ -17925,7 +17989,7 @@
     const m = a.memo;
     if (!a.rileggi && m && m.ep === p.ep && Array.isArray(m.campi)) return { ok: true, dati: { ...m, allergie: ponteAllergie(p.ep) }, registro: `cartella di ${p.name}` };
     const url = ponteUrlPaziente(p);
-    if (!url) return { ok: false, errore: `Apri una volta ${p.name || "il paziente"} sul PC: serve la sua pagina` };
+    if (!url) return { ok: false, errore: senzaPagina(p) };
     const { doc, url: fin } = await fetchDoc(url, {});
     if (classify(doc) === "login") return { ok: false, errore: "Gestionale da riaprire: sul PC la sessione è scaduta", sessione: true };
     if (findEpisodeId(doc, fin) !== p.ep) return { ok: false, errore: "La pagina del paziente sul PC è di un altro episodio: non mostro niente" };
@@ -18706,7 +18770,7 @@
         if (!panel.collapsed && ["richieste", "stampa"].includes(panel.view) && !(a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName))) panel.render();
         return;
       }
-      if (![NS + "patients.v1", NS + AREE, NS + SMART_SYNC, NS + DIMESSI, NS + STATO].includes(ev.key)) return;   // (STATO: una scheda dietro ha riletto un paziente)
+      if (![NS + "patients.v1", NS + AREE, NS + SMART_SYNC, NS + DIMESSI, NS + STATO, NS + "refVisti.v1"].includes(ev.key)) return;   // (STATO: una scheda dietro ha riletto un paziente; refVisti: visti sul telefono)
       if (ev.key === NS + DIMESSI) panel.mostraDimessi();
       panel.aggiornaDaFuori();
     });
@@ -18937,7 +19001,7 @@
     });
     window.addEventListener("storage", (ev) => {
       if (ev.key === NS + PROM || ev.key === NS + DF_GEN) return panel.promTick();   // un «Da fare» scritto in un'altra scheda: rifatto sul posto
-      if (![NS + "patients.v1", NS + AREE, NS + SMART_SYNC, NS + DIMESSI, NS + STATO].includes(ev.key)) return;   // (STATO: una scheda dietro ha riletto un paziente)
+      if (![NS + "patients.v1", NS + AREE, NS + SMART_SYNC, NS + DIMESSI, NS + STATO, NS + "refVisti.v1"].includes(ev.key)) return;   // (STATO: una scheda dietro ha riletto un paziente; refVisti: visti sul telefono)
       if (ev.key === NS + DIMESSI) panel.mostraDimessi();
       panel.aggiornaDaFuori();
     });
