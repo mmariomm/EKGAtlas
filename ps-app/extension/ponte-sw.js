@@ -1448,7 +1448,7 @@ function ponteDaPagina(msg, sender, reply) {
   // rientrati nel gestionale, il telefono riapre con un tocco, senza QR.
   if (msg.t === "ponteLogin" && gestionale) return fai(async () => { await ponteFine("login"); return { ok: true }; });
   // Chi è loggato nel gestionale su questo PC, letto dalla pagina dal content
-  // script: solo il nome, per la testata «Sola lettura · gestionale di …» del
+  // script: solo il nome, per il «Sola lettura · gestionale di …» (il 👁️ e il ⋯) del
   // telefono. Informazione, mai un blocco: non lega niente e non apre sessioni.
   if (msg.t === "ponteOperatore" && gestionale) {
     return fai(async () => {

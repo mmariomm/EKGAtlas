@@ -2126,6 +2126,7 @@ check(!(await sw.evaluate(() => self.__vecchio).catch(() => true)) && !((await s
 check(await finche(async () => !!(await statoPonte())?.sessione && await tel.locator('.seg [data-s="cartella"].on').count() === 1 && /BIANCHI ANNA/.test(await tel.locator(".top").innerText().catch(() => "")), 20000)
   && !(await tel.evaluate(() => window.__chiusa)) && await sw.evaluate(() => !self.__vecchio),
   "l'estensione sul PC riavviata: il telefono si ricollega da solo, sullo stesso paziente e sulla stessa scheda, senza «Sessione chiusa»");
+await shot(tel, "tel-7-riavvio-ricollegato");
 // il «riparti» che l'ha chiusa, catturato per strada
 let riparti = null;
 for (const f of rete.dalPc.slice(dalPc0)) {

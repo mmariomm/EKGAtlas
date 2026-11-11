@@ -53,8 +53,9 @@ chiave**: una non apre gli altri, e un PC in mano a un altro non espone i tuoi. 
 dello stesso nome, lo sostituisce; il QR del PC completo sostituisce il completo). Da lì si passa
 dall'uno all'altro da un **menu** (⋯ sul telefono: l'attivo in cima, gli altri sotto col loro nome e
 tipo, «attivo adesso» quando la sessione è viva; un tocco cambia, 🗑️ «Scollega» per riga). Con un PC
-solo il menu non c'è: meno è meglio. Su un PC di sola lettura la testata lo dice in una riga quieta
-(«Sola lettura · gestionale di …», il collega loggato lì, solo per saperlo) e i controlli di scrittura
+solo il menu non c'è: meno è meglio. Su un PC di sola lettura la testata ha un 👁️ piccolo e quieto, accanto
+a ⋯ — niente che distragga —; la scritta («Sola lettura · gestionale di …», il collega loggato lì, solo per
+saperlo) sta nel suo nome e in fondo al ⋯, e i controlli di scrittura
 non ci sono: si legge, si ristampa, si stampa un PDF.
 
 **Poi.** Apri il pannello dall'iPhone: si collega da solo, niente QR. L'elenco si rilegge

@@ -145,9 +145,13 @@ check(/ROSSI MARIO/.test(await aspettaTel(/ROSSI MARIO/, 20000)), "inquadrato il
 // il tipo del PC è «sola lettura» (dal saluto), salvato nella lista
 const kindTel = await tel.evaluate(() => { const o = JSON.parse(localStorage.getItem("psassist.ponte.pcs.v1") || "null"); const a = o && o.v.find((p) => p.id === o.attivo); return a ? a.kind : ""; });
 check(kindTel === "lettura", `il telefono sa che il PC è di sola lettura (kind: ${kindTel})`);
-// la testata quieta «Sola lettura · gestionale di …»
-check(await finche(async () => /Sola lettura/i.test(await tel.locator(".solabar").innerText().catch(() => "")), 8000), "la testata del telefono dice «Sola lettura»");
-check(/UTENTE1/.test(await tel.locator(".solabar").innerText().catch(() => "")), "…con l'operatore loggato nel gestionale (informativo), letto dalla pagina");
+// sola lettura: un segno piccolo nella testata (👁️, la scritta nel suo nome), nessuna barra larga quanto lo schermo
+check(await finche(async () => /^Sola lettura · gestionale di UTENTE1/.test(await tel.locator(".top .sola").getAttribute("aria-label").catch(() => "") || ""), 8000)
+  && await tel.locator(".top .sola").innerText() === "👁️" && await tel.locator(".solabar").count() === 0,
+  "sola lettura: nella testata un 👁️ piccolo, la scritta «Sola lettura · gestionale di UTENTE1» solo nel suo nome (l'operatore loggato, letto dalla pagina)");
+const segno = await tel.locator(".top .sola").evaluate((e) => { const r = e.getBoundingClientRect(), s = getComputedStyle(e); return { w: r.width, h: r.height, f: parseFloat(s.fontSize), o: Number(s.opacity) }; });
+check(segno.w <= 20 && segno.h <= 20 && segno.f <= 13 && segno.o < 1, `…quasi invisibile: piccolo (${Math.round(segno.w)}×${Math.round(segno.h)} px, ${segno.f} px) e quieto (opacità ${segno.o})`);
+if (process.env.TEST_SHOTS_DIR) await tel.screenshot({ path: join(process.env.TEST_SHOTS_DIR, "tel-mini-sola-lettura.png") }).catch(() => {});
 
 // si apre il paziente: le viste ci sono, ma i controlli di scrittura no
 await tel.locator('[data-a="paz"]').first().click().catch(() => {});
@@ -168,7 +172,7 @@ check(scrivibili === 0, "…e i campi della cartella sono di sola lettura");
 await tel.locator('[data-a="menu"]').click().catch(() => {});
 await sospendi(300);
 const menu = await tel.locator(".menu").innerText().catch(() => "");
-check(!/Registrazioni/.test(menu) && /Stampa PDF/.test(menu) && await tel.locator('.menu [data-a="scansiona"]').innerText().catch(() => "") === "📷 Scansiona il QR",
+check(!/Registrazioni/.test(menu) && /Stampa PDF/.test(menu) && /Sola lettura · gestionale di UTENTE1/.test(menu) && await tel.locator('.menu [data-a="scansiona"]').innerText().catch(() => "") === "📷 Scansiona il QR",
   `nel menu niente «Registrazioni»; «Stampa PDF» resta, e «📷 Scansiona il QR» c'è anche su un PC di sola lettura (${menu.replace(/\n+/g, " · ")})`);
 await tel.locator('[data-a="menu"]').click().catch(() => {});
 // il QR di una stazione di stampa, inquadrato con il PC di sola lettura attivo: la carta dice di passare al PC completo, niente «Collega»

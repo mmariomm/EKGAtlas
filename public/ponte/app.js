@@ -1429,21 +1429,21 @@
     }).join("")}<div class="sep"></div>` : "";
     // (l'elenco si rilegge da solo a ogni ritorno; la sessione finisce da sola; la stampante è quella toccata
     // l'ultima volta in «Stampa: PC · Infermeria»: nel ⋯ resta quello che non c'è altrove)
-    return `<header class="top">${sx}${nome}${statoPc()}<button class="ico" data-a="menu" aria-label="Altro" aria-expanded="${S.menu}">${ICO.altro}</button>
+    return `<header class="top">${sx}${nome}${statoPc()}${solaLettura() ? segnoSola() : ""}<button class="ico" data-a="menu" aria-label="Altro" aria-expanded="${S.menu}">${ICO.altro}</button>
       ${S.menu ? `<div class="menu" role="menu">
         ${listaPc}
         <button data-a="stampaPdf">${em("📄")}Stampa PDF${staDi() ? ` · ${esc(doveTel() === "stazione" ? staDi() : "PC")}` : ""}</button>
         <button data-a="scansiona">${em("📷")}Scansiona il QR</button>
         ${solaLettura() ? "" : `<button data-a="registrazioni"><span class="em rec" aria-hidden="true">●</span> Registrazioni</button>`}
         <button class="via" data-a="dimentica">${em("🗑️")}Scollega ${S.pcs.length >= 2 ? "questo PC" : "il PC"}</button>
-      </div>` : ""}</header>${solaLettura() ? solaBar() : ""}`;
+        ${solaLettura() ? `<div class="info">${esc(testoSola())}</div>` : ""}
+      </div>` : ""}</header>`;
   }
-  // La testata quieta di un PC di sola lettura: informazione, mai un blocco. Se
-  // il gestionale mostra chi è loggato, lo dice; se no, solo «Sola lettura».
-  function solaBar() {
-    const op = S.pcOperatore ? ` · gestionale di <b>${esc(S.pcOperatore)}</b>` : "";
-    return `<div class="solabar" role="status">👁️ <span>Sola lettura${op}</span></div>`;
-  }
+  // Un PC di sola lettura: un 👁️ piccolo e quieto nella testata, accanto a ⋯ — informazione, mai un blocco,
+  // e niente che distragga. La scritta («Sola lettura · gestionale di …», chi è loggato lì, se il gestionale
+  // lo mostra) sta nel suo nome e in fondo al ⋯.
+  const testoSola = () => `Sola lettura${S.pcOperatore ? ` · gestionale di ${S.pcOperatore}` : ""}`;
+  const segnoSola = () => `<span class="sola" role="img" title="${esc(testoSola())}" aria-label="${esc(testoSola())}">👁️</span>`;
   function piena(icona, titolo, testo, extra = "", amb = false) {
     return `<main><div class="piena"><div class="tondo${amb ? " amb" : ""}">${icona}</div><h1>${esc(titolo)}</h1>${testo}${extra}</div></main>`;
   }
