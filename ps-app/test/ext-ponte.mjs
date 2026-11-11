@@ -2796,7 +2796,12 @@ sezione("la rete del telefono: ascensore, 5G, presa tagliata, rete lenta");
   const pdf = Buffer.concat([refertoRxPdf(["RADIOLOGIA - ripresa"]), Buffer.alloc(1200000, 0x43)]);
   await sw.evaluate(([k, data]) => chrome.storage.local.set({ [k]: { ep: "999001", data, ts: Date.now() } }), ["ref:" + idRef, pdf.toString("base64")]);
   await tocca(v, '[data-a="indietro"]'); await aspettaTel(v, /BIANCHI ANNA/);
+  const nV = inoltrati.length;
   await tocca(v, '.paz[data-ep="999001"]');
+  // (la risposta nuova, non quella di prima ancora sullo schermo: la copia appena messa il PC l'ha guardata — `chi` —
+  // e solo allora la offre; un «PDF» di prima, toccato adesso, risponderebbe che quella copia non c'è più)
+  await finche(() => sw.evaluate((k) => chrome.storage.local.get(k).then((o) => !!(o[k] && o[k].chi)), "ref:" + idRef), 20000);
+  await finche(() => inoltrati.length >= nV + 2, 15000); await sospendi(800);
   await finche(async () => (await v.locator('.refw:has-text("TC ENCEFALO") .pdf').count()) === 1, 20000);
   // (il PC tarda col secondo pezzo: intanto la rete se ne va, e la sua risposta si perde)
   const e1 = relay.entrate().tel;
