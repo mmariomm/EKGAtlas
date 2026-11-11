@@ -621,10 +621,14 @@ if (prova("«Conferma di nuovo» dietro la lista smart: tenuta per tutta la sua 
   check(await smartViva() && conferme(A).length === 1, `col tocco, la smart ancora al lavoro: la Conferma di nuovo aspetta, niente premuto (${conferme(A).length} conferme)`);
   // la scheda della smart si chiude (il medico, o Chrome): l'ordine parte subito, non al timer
   const tC = Date.now();
-  for (const pg of ctx.pages()) if (/menuPsoSmart|PsoPazientiSmart/.test(pg.url())) await pg.close().catch(() => {});
-  const partita = await finche(() => conferme(A).length > 1, 8000);
-  check(partita && conferme(A).length === 2 && conferme(A).every((q) => q.params.RICHIESTA_ID === Object.keys(A.state.richieste)[0]),
-    `chiusa la scheda smart, la Conferma di nuovo parte subito (${Date.now() - tC} ms), una Conferma in più sulla stessa richiesta`);
+  // (la scheda ancora in caricamento, lenta: non ha ancora il suo indirizzo per Playwright — la si chiude dal suo numero)
+  await sw.evaluate(async () => { for (const [k, x] of await sottoVive()) if (x.cosa === "smart") await chrome.tabs.remove(Number(k.slice(6))).catch(() => {}); });
+  // (l'ordine in attesa lascia la coda subito (entro 2,5 s), non al timer, poi il motore lavora per i suoi tempi)
+  const ripartito = await finche(() => sw.evaluate(() => ordLeggi().then((l) => l.some((o) => /c$/.test(o.id) && o.stato !== "coda"))), 2500);
+  const dopoMs = Date.now() - tC;
+  await finche(() => conferme(A).length > 1, 40000);
+  check(ripartito && conferme(A).length === 2 && conferme(A).every((q) => q.params.RICHIESTA_ID === Object.keys(A.state.richieste)[0]),
+    `chiusa la scheda smart, la Conferma di nuovo lascia la coda subito (${dopoMs} ms), e fa una Conferma in più sulla stessa richiesta`);
   await sospendi(4000);
   check(conferme(A).length === 2, `…e una sola, per un tocco (${conferme(A).length} conferme)`);
   sess.dopoConferma = null; sess.smartVera = false;
