@@ -9482,7 +9482,6 @@
                   <button class="iconbtn${this.aggNuova() ? " agg" : ""}" id="menubtn" title="${this.aggNuova() ? `Altro · c'è la versione ${esc(this.agg.nuova)}` : "Altro"}" aria-label="Altro" aria-haspopup="true" aria-expanded="${this.menuAperto ? "true" : "false"}">${ICO.altro}</button>
                   ${this.menuAperto ? `<div class="menu" role="menu">
                     ${this.menuSez("Paziente", [
-                      this.ricettaPossibile() ? `<button role="menuitem" id="ricmenu" title="Farmaci e quesito preparati nel Prescrittivo del SISS, fino all'Anteprima: Registra lo premi tu">${mico("ricetta")}Ricetta SISS</button>` : "",
                       this.terapiaPossibile() ? `<button role="menuitem" id="termenu" title="I farmaci nella pagina Terapia del gestionale, una riga per volta: Conferma la premi tu">${mico("terapia")}Terapia</button>` : "",
                       this.pageType === "patient" && this.epDiQuesta() && richiesteStampabili(printModel(document, location.href)).length
                         ? `<button role="menuitem" id="stampamenu" title="Etichette e lista esami delle richieste già confermate">${mico("etichetta")}Stampa le richieste</button>` : ""])}
@@ -14641,8 +14640,7 @@
           : "Esportazione non riuscita.";
         this.render();
       });
-      $("#ricmenu")?.addEventListener("click", () => { this.menuAperto = false; this.setView("ricetta"); });
-      $("#dimricetta")?.addEventListener("click", () => this.setView("ricetta"));   // (anche dalle Dimissioni)
+      $("#dimricetta")?.addEventListener("click", () => this.setView("ricetta"));   // (solo dalle Dimissioni: chi va a casa porta la ricetta)
       if (this.view === "ricetta") this.legaRicetta($);
       $("#termenu")?.addEventListener("click", () => { this.menuAperto = false; this.setView("terapia"); });
       if (this.view === "terapia") this.legaTerapia($);

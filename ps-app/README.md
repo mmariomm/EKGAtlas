@@ -191,8 +191,8 @@ finestra la apri tu con un tocco. **Esc** o un clic fuori la riducono; dopo **Co
 «✓ Copiato · incolla». Il menu **⋯** è a sezioni, ognuna col suo titolo piccolo, le voci corte due
 per riga, ognuna con la sua **icona** (grigia, 16 px) accanto alla parola — salvo iPhone 📱 e Registrazioni ●, che hanno la stessa emoji del menu del telefono; una sezione che su quella
 pagina non ha voci non c'è. Ci sta solo quello che serve durante il turno:
-- **Paziente** (sulla sua pagina): **Ricetta SISS** e **Terapia** (solo con l'estensione), **Stampa
-  le richieste**;
+- **Paziente** (sulla sua pagina): **Terapia** (solo con l'estensione), **Stampa
+  le richieste**; la **Ricetta SISS** sta solo nelle Dimissioni, dove serve;
 - **Strumenti**, quelli clinici: **Tabellone** e **iPhone** (il Ponte; solo con l'estensione),
   **Consegne** (vedi sotto); in fondo, sulla stanza, **Modifica la
   stanza** e **Segue il gestionale**;
@@ -1929,7 +1929,7 @@ Salva / Registra, e il PDF di **Stampa RE**.
 
 ### Ricetta SISS (fino all'Anteprima, mai oltre)
 
-**⋯ → Ricetta SISS**, sulla pagina del paziente, solo con l'estensione. Scegli i farmaci — i
+**Dimissioni → Prepara la ricetta nel SISS** (solo lì: non più anche nel ⋯), sulla pagina del paziente, solo con l'estensione. Scegli i farmaci — i
 **preferiti** (gli ultimi visti davvero in un'Anteprima del SISS: codice, descrizione, quantità,
 in `storage.local`; niente del paziente) o **Cerca nel SISS**, che scrive nella casella «Ricerca
 specialistica/farmaco» del Prescrittivo e ti mostra le voci della sua tendina — poi quantità,
@@ -2575,7 +2575,7 @@ ps-app/
 ├── tools/icons.mjs      ← genera le icone PNG (niente binari a mano)
 ├── bookmarklet/         ← piano B per PC bloccati: un preferito, zero installazione (generato)
 ├── stampa/              ← la stampa automatica per Windows: installa.cmd, l'aiutante host.ps1 e SumatraPDF.exe (ufficiale 3.6.1, GPLv3, nello zip: installa.cmd non scarica più niente); ripristina.cmd
-├── extension/ricetta-*  ← ⋯ → Ricetta SISS: ricetta-sw.js (service worker: la ricetta, la scheda, i preferiti),
+├── extension/ricetta-*  ← Dimissioni → Ricetta SISS: ricetta-sw.js (service worker: la ricetta, la scheda, i preferiti),
 │                          ricetta-siss.js (nella scheda del Prescrittivo: compila e si ferma sull'Anteprima)
 ├── extension/aggiorna*  ← ⋯ → «Aggiorna app»: aggiorna.js (service worker: VERSION.txt, lo zip, l'aiutante, la ricarica),
 │                          aggiornata.js (la pillola «Ricarica la pagina» nelle schede rimaste col pannello vecchio)

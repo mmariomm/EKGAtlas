@@ -289,9 +289,9 @@ await doc.goto(A.patientUrl);
 await doc.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
 if (!(await $p(".card").count())) { await $p("#expand").click(); await doc.waitForSelector("#psassist-host .card", { timeout: 8000 }); }
 await $p("#menubtn").click();
-check(await $p("#ricmenu").count() === 1, "sulla pagina del paziente il menu ⋯ ha «Ricetta SISS»");
+check(await $p("#ricmenu").count() === 0 && !/Ricetta SISS/.test(await $p(".menu").innerText()), "nel menu ⋯ la «Ricetta SISS» non c'è più: sta solo nelle Dimissioni");
 await $p("#menubtn").click();
-// …e la sezione Dimissioni la offre per prima: chi va a casa porta la ricetta
+// la sezione Dimissioni la offre per prima, ed è l'unico posto: chi va a casa porta la ricetta
 await $p('[data-seg="dimissioni"]').click();
 check(await $p("#dimricetta").count() === 1, "nelle Dimissioni c'è «Prepara la ricetta nel SISS»");
 await $p("#dimricetta").click();

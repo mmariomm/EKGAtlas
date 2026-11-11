@@ -7369,7 +7369,7 @@ async function scenarioMenuSezioni(browser) {
   const chiudi = async (page) => { if (await $panel(page, ".menu").count()) await $panel(page, "#menubtn").click(); };
   const vedi = (s) => s.map((x) => `${x.t || "·"}: ${x.ids.join(" ")}`).join(" | ");
   const di = (s, t) => (s.find((x) => x.t === t) || { ids: [] }).ids;
-  const EXT = ["tabmenu", "pontemenu", "stampanti", "ricmenu", "termenu"];
+  const EXT = ["tabmenu", "pontemenu", "stampanti", "termenu"];
 
   // ---- senza estensione (bookmarklet), sulla pagina di un paziente con richieste confermate
   const mock = createMock({ seedConfirmed: true, withResults: true });
@@ -7422,9 +7422,9 @@ async function scenarioMenuSezioni(browser) {
   await b.page.waitForSelector("#psassist-host .card", { state: "attached" });
   await menu(b.page);
   s = await sezioni(b.page);
-  check(scen, di(s, "Paziente").join() === "ricmenu,termenu,stampamenu" && di(s, "Strumenti").join() === "tabmenu,pontemenu,consmenu"
+  check(scen, di(s, "Paziente").join() === "termenu,stampamenu" && !(await $panel(b.page, "#ricmenu").count()) && di(s, "Strumenti").join() === "tabmenu,pontemenu,consmenu"
     && di(s, "Questo PC").join() === "stampanti,regmenu,resetpaz" && !(await sparse(b.page)),
-    `con l'estensione, sul paziente: Ricetta SISS, Terapia, Stampa · Tabellone, iPhone, Consegne · Impostazioni, Registrazioni, Reset (got ${vedi(s)})`);
+    `con l'estensione, sul paziente: Terapia, Stampa (la Ricetta SISS no: sta solo nelle Dimissioni) · Tabellone, iPhone, Consegne · Impostazioni, Registrazioni, Dimentica i dati… (got ${vedi(s)})`);
   check(scen, await riga(b.page, "tabmenu", "pontemenu"), "le voci corte, due per riga, alte almeno 32 px (Tabellone · iPhone)");
   check(scen, !(await senzaIcona(b.page)).length, `con l'estensione anche: un'icona per voce (senza: ${(await senzaIcona(b.page)).join(", ")})`);
   // «Impostazioni» è una cosa sola, con la sua icona: la voce (l'ingranaggio, non la stampante), non anche il titolo di una sezione
