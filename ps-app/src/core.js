@@ -2445,7 +2445,8 @@
   // scrive come sempre: la verità resta nella memoria del gestionale.
   const TABELLONE = (() => { try { return location.protocol === "chrome-extension:" && /\/tabellone\.html$/.test(location.pathname); } catch { return false; } })();
   const SPECCHIO = "tabellone.specchio";   // in chrome.storage.local: { kv: { chiave: valore come in localStorage } }
-  const SPECCHIATE = new Set(["patients.v1", "aree.v1", "area.corrente.v1", "smart.sync.v1", "dimessi.v1", "stato.v1", "note.v1", "segni.v1", "dafare.v1", "dafare.generale.v1"]);
+  const SPECCHIATE = new Set(["patients.v1", "aree.v1", "area.corrente.v1", "smart.sync.v1", "dimessi.v1", "stato.v1", "note.v1", "segni.v1", "dafare.v1", "dafare.generale.v1",
+    "triage.lista.v1"]);   // (chi aspetta al Triage: la mappa del tabellone, e i nomi che il registratore sostituisce)
   const specchiata = (k) => SPECCHIATE.has(k) || /^(stanza|tabellone)\./.test(k);
   const conEstensione = () => { try { return typeof chrome !== "undefined" && !!chrome.runtime?.id && !!chrome.storage?.local; } catch { return false; } };
   let specchioAtteso = false;

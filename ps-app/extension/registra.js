@@ -418,6 +418,11 @@ async function regNomiNoti() {
     const l = JSON.parse(o["tabellone.specchio"]?.kv?.["patients.v1"] || "[]");
     for (const p of Array.isArray(l) ? l : []) if (p && typeof p.name === "string") nomi.add(p.name);
   } catch { /* uno specchio guasto: niente nomi da qui */ }
+  // …e chi aspetta al Triage (la lista smart: non è ancora fra i pazienti)
+  try {
+    const t = JSON.parse(o["tabellone.specchio"]?.kv?.["triage.lista.v1"] || "null");
+    for (const r of Array.isArray(t?.righe) ? t.righe : []) if (r && typeof r.nome === "string") nomi.add(r.nome);
+  } catch { /* niente nomi da qui */ }
   const s = await chrome.storage.session.get("ordini").catch(() => ({}));
   for (const x of Array.isArray(s.ordini) ? s.ordini : []) if (x && typeof x.paziente === "string") nomi.add(x.paziente);
   return [...nomi].map((n) => n.replace(/\s+/g, " ").trim().slice(0, 60)).filter((n) => n.length >= 4).slice(0, 400);

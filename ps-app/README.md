@@ -1989,7 +1989,8 @@ le pagine e ricontrollati dal cancello. Col preferito (bookmarklet) la voce most
   testo diventa inventato a meno che sia vocabolario del programma (compare per almeno **due
   pazienti diversi**, o nelle pagine di esempio, o nel catalogo); nomi → nomi finti sempre uguali
   per la stessa persona — anche i pazienti che l'estensione conosce (la lista del pannello, quelli
-  aperti, gli ordini) dove nessuna pagina li mostra, come il Registro di un'altra scheda; nel
+  aperti, chi aspetta al Triage, gli ordini) dove nessuna pagina li mostra, come il Registro di un'altra
+  scheda; i nomi degli analiti che il pannello conosce (le sue sigle) non sono persone; nel
   Registro un COGNOME NOME in maiuscolo senza parole del programma o cliniche diventa un nome finto
   solo lì (mai nelle pagine, né dentro il markup della diagnosi); personale e utenti → `OPERATORE n` / `UTENTEn`; codici fiscali, date di
   nascita, tessere, telefoni, indirizzi, email tolti; anamnesi, esame obiettivo, diario, note,
