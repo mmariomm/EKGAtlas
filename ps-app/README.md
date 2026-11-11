@@ -206,7 +206,7 @@ pagina non ha voci non c'è. Ci sta solo quello che serve durante il turno:
 
 e in fondo la versione, con accanto **Ricarica** (l'estensione) e sopra, quando c'è una versione
 nuova, **Aggiorna app**. Le schermate che si aprono dal ⋯ (Consegne, Registrazioni, iPhone,
-Ricetta SISS, Terapia) dicono dove sei: al posto delle schede **«‹ [icona] Nome»**, e ‹ (o
+Terapia, e la Ricetta SISS dalle Dimissioni) dicono dove sei: al posto delle schede **«‹ [icona] Nome»**, e ‹ (o
 Esc) torna alla scheda da cui eri venuto. (Il Cronometro e i Riferimenti non ci sono più: i tempi che
 il cronometro teneva se ne vanno dalla memoria da soli.)
 
