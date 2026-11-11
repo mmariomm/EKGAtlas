@@ -1015,6 +1015,25 @@ if (prova("«Conferma per …» e «Conferma e stampa» con un'altra Conferma pa
     `«Conferma e stampa»: niente letto né premuto, la riga lo dice (got ${conferme(A).length} conferme · ${JSON.stringify(b2)})`);
 }
 
+// Il gancio sul bottone Conferma (armPrintOnConfirm) arriva quando il service
+// worker ha detto chi è la scheda (fino a 3 s): una Conferma premuta a mano
+// prima si annota lo stesso (conferme.v1), prima che il clic parta.
+if (prova("la Conferma premuta a mano prima che la pagina sia pronta: annotata lo stesso")) {
+  const { rid, url } = await soloCarrello();
+  // il service worker occupato: la scheda aspetta la sua risposta per partire
+  const occupato = sw.evaluate(() => { const t = Date.now(); while (Date.now() - t < 6000); }).catch(() => {});
+  await doc.goto(url);
+  await sospendi(800);
+  const prima = await doc.evaluate(() => !document.getElementById("psassist-host"));
+  const t0 = Date.now();
+  await doc.click('input[type="submit"][name="Update"], input[type="submit"][name="Update1"]', { noWaitAfter: true });
+  await occupato;
+  await sospendi(2000);
+  const cf = JSON.parse((await doc.evaluate(() => localStorage.getItem("psassist:conferme.v1")).catch(() => null)) || "[]").find((x) => x.rid === rid);
+  check(prima && conferme(A).length === 1, `premuta a mano a pagina non ancora pronta (nessun pannello): una Conferma (got ${prima} · ${conferme(A).length})`);
+  check(!!cf && cf.premuta >= t0 - 50, `annotata prima che il clic parta (got ${JSON.stringify(cf)})`);
+}
+
 if (prova("i fogli letti dopo un ordine scadono: all'avvio di una pagina se ne vanno, anche se nessuno scrive più")) {
   await daCapo();
   await suPagina(doc, A.patientUrl);

@@ -16913,6 +16913,15 @@
     }
     tabStore.set("print.v1", { ids: [...new Set([...(p.ids || []), rid])], episodeId: episodeId || "", ts: Date.now(), n, q, attesi, ...(prima ? { prima } : {}) });
   }
+  // Prima del gancio (bootGestionale, dopo la risposta del service worker:
+  // fino a 3 s) la Conferma del gestionale premuta a mano si annota lo stesso,
+  // prima che il clic parta: dall'avvio, un ascolto su tutto il documento.
+  function confermaPresto(e) {
+    const b = e.isTrusted && e.target && e.target.closest ? e.target.closest('input[type="submit"]') : null;
+    if (!b || (b.name !== "Update" && b.name !== "Update1")) return;
+    const m = examModel(document, location.href);
+    if (m.form && m.richiestaId && b.form === m.form) segnaConferma(m.richiestaId, "premuta");
+  }
   function armPrintOnConfirm(model, episodeId) {
     if (!model.form || !model.richiestaId) return;
     const arm = (e) => {
@@ -18660,6 +18669,7 @@
       if (!SOLA_LETTURA && classify(document) !== "login" && !/login/i.test(location.pathname)) vistaQui();
       return;
     }
+    document.addEventListener("click", confermaPresto, true);   // (fino a bootGestionale)
     // Con l'estensione, per prima cosa: questa scheda è quella di un ordine
     // in sottofondo? Lo sa il service worker, dal numero della scheda. (Una
     // risposta che non arriva vale «no»: la scheda parte come sempre.)
@@ -18758,6 +18768,7 @@
   }
 
   function bootGestionale(chi) {
+    document.removeEventListener("click", confermaPresto, true);   // (da qui il gancio sul bottone: armPrintOnConfirm)
     if (document.getElementById("psassist-host")) return;
     // la scheda aperta dal service worker solo per dare i PDF di una stampa: niente pannello
     if (chi && chi.fogli) return;
