@@ -772,8 +772,10 @@ await blocco(async () => {
 // un referto offerto al telefono in questa sessione (la stessa lista di quando lo apre), e una stampa per numero
 await blocco(async () => {
   const pdf64 = Buffer.from("%PDF-1.4\n1 0 obj << /Type /Catalog >> endobj\n%%EOF\n").toString("base64");
-  const pc = await pcFinto({ solaLettura: true, locale: { "ref:r1": { ep: "1", data: pdf64, ts: Date.now() }, "ref:altro": { ep: "1", data: pdf64, ts: Date.now() } },
-    scheda: (m) => (m.cmd === "esiti" ? { ok: true, dati: { referti: [{ id: "r1", pdf: true }] } } : { ok: true, dati: [] }) });
+  // (`chi`: la copia di cui il PC ha guardato di chi è; «mai» no — salvata e mai guardata: non si offre, anche se la pagina dice pdf)
+  const pc = await pcFinto({ solaLettura: true, locale: { "ref:r1": { ep: "1", data: pdf64, ts: Date.now(), chi: "ok" }, "ref:altro": { ep: "1", data: pdf64, ts: Date.now(), chi: "ok" },
+    "ref:mai": { ep: "1", data: pdf64, ts: Date.now() } },
+    scheda: (m) => (m.cmd === "esiti" ? { ok: true, dati: { referti: [{ id: "r1", pdf: true }, { id: "mai", pdf: true }] } } : { ok: true, dati: [] }) });
   const r1 = await pc.pagina({ t: "ponteAssocia" });
   await sospendi(30);
   const t = await telFinto(pc, kDalQr(r1.qr), DEV);
@@ -784,6 +786,7 @@ await blocco(async () => {
   check(prima && prima.ok === false && !prima.solaLettura && !pc.stampate.size, `un referto non ancora offerto al telefono: rifiutato, niente stampato (${prima && prima.errore})`);
   const esiti = await t.manda({ id: 3, cmd: "esiti", ep: "1" });
   check(esiti.some((x) => x.re === 3 && x.ok && x.dati.referti[0].pdf > 0), "gli esiti offrono il referto r1");
+  check(esiti.some((x) => x.re === 3 && x.ok && x.dati.referti[1] && !x.dati.referti[1].pdf), "…e non quello mai guardato (di chi è non lo sa nessuno): niente «PDF»");
   // uno non elencato (c'è la copia sul PC, ma non è fra quelli offerti): no
   const fuori = await rispo(4, { ep: "1", ref: "altro", rid: "ridRef0002", dest: "qui" });
   check(fuori && fuori.ok === false && !fuori.solaLettura && !pc.stampate.size, `un referto non elencato in questa sessione: rifiutato (${fuori && fuori.errore})`);
@@ -802,6 +805,9 @@ await blocco(async () => {
   const storto = await rispo(8, { ep: "1", ref: "r1", rid: "x", dest: "qui" });
   const senzaSta = await rispo(9, { ep: "1", ref: "r1", rid: "ridRef0005", dest: "stazione" });
   check(storto && storto.ok === false && senzaSta && senzaSta.ok === false && /stazione/i.test(senzaSta.errore) && pc.stampate.size === 1, "un numero storto, o la stazione che non è collegata: rifiutato, niente stampato");
+  // quello mai guardato: niente stampa nemmeno chiedendola
+  const mai = await rispo(10, { ep: "1", ref: "mai", rid: "ridRef0009", dest: "qui" });
+  check(mai && mai.ok === false && pc.stampate.size === 1, `una copia di cui non si è guardato di chi è: niente stampa (${mai && mai.errore})`);
   const reg = pc.pt().registro.map((x) => x.testo).join(" | ");
   check(/iPhone · un referto stampato su HP A4/.test(reg) && !/ROSSI|ENCEFALO|r1|altro/.test(reg), `il registro dice «un referto stampato», senza testo del paziente (${reg})`);
 });
