@@ -158,7 +158,10 @@ const conferme = (m) => m.state.requests.filter((q) => q.method === "POST" && (q
 const inviati = (m) => m.state.requests.filter((q) => q.params.Insert === "Inserisci");
 const striscia = async (page, re, timeout = 30000) => {
   const h = await page.waitForFunction((src) => {
-    const t = (document.getElementById("psassist-host")?.shadowRoot?.querySelector(".pill.run")?.innerText || document.getElementById("psassist-host")?.shadowRoot?.querySelector(".gchip")?.dataset.riga || "").replace(/\s+/g, " ").trim();
+    const r = document.getElementById("psassist-host")?.shadowRoot;
+    const t = (r?.querySelector(".pill.run")?.innerText || r?.querySelector(".gchip[data-riga]")?.dataset.riga || "").replace(/\s+/g, " ").trim();
+    // un ordine finito di un altro paziente è un segno nella pill: un tocco lo apre (lo farebbe il medico)
+    if (!t) { r?.querySelector("#expand .segno")?.click(); r?.querySelector("#gchipsegno")?.click(); }
     return new RegExp(src).test(t) ? t : false;
   }, re.source, { timeout });
   return h.jsonValue();

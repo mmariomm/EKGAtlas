@@ -388,7 +388,6 @@ chrome.tabs.onRemoved.addListener((id) => {
 });
 
 chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
-  if (msg === "psassist-reload") { chrome.runtime.reload(); return; }
   if (!msg || typeof msg !== "object") return;
   // un errore dal pannello: nel registro degli errori
   if (msg.t === "errore") { segnaErrore(msg.tipo, msg.dati, msg.pagina).then(() => reply({ ok: true })); return true; }

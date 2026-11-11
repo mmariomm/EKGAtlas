@@ -66,6 +66,7 @@ async function aggiorna() {
   }
   mostra();
   if (r && r.ok) mostraLavori(r.lavori);
+  if (!document.hidden) chiedi({ t: "stazioneVisto" });   // guardata: il puntino sull'icona si spegne
 }
 // il conto alla rovescia del QR, e un QR nuovo quando serve
 clearInterval(tQr);
@@ -128,5 +129,6 @@ for (const b of document.querySelectorAll("[data-prova]")) {
   });
 }
 
+document.addEventListener("visibilitychange", () => { if (!document.hidden) chiedi({ t: "stazioneVisto" }); });
 aggiorna();
 stampanti();

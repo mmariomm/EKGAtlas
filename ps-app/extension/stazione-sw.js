@@ -33,7 +33,7 @@
  * stampato» se è arrivato e la risposta no. Mai stampato altrove da solo, mai
  * due volte.
  */
-/* global PonteCripto, ponteIndirizzo, corto, stampaPdf, ruotaDi, STAMPA_PDF_MAX */
+/* global PonteCripto, ponteIndirizzo, corto, stampaPdf, ruotaDi, STAMPA_PDF_MAX, ospite */
 
 const STA = {
   // sul PC del medico
@@ -46,6 +46,8 @@ const STA = {
   stato: "stazione.stato",       // storage.session: quello che la pagina della stazione mostra
   lavori: "stazione.lavori",     // storage.local: gli ultimi fogli: ora, tipo, pagine, copie, esito — niente pazienti
   rq: "stazione.rq",             // storage.local: i fogli già ricevuti, per numero (stampati una volta sola)
+  visto: "stazione.visto",       // storage.local: quando si è aperta l'ultima volta la pagina (o il popup): il puntino si spegne
+  aiutante: "stazione.aiutante", // storage.session: l'ultima prova dell'aiutante di stampa: { ko, ts }
 };
 const STA_NOME = "Infermeria";
 const STA_OFFERTA_MAX = 5 * 60e3;            // il QR vale cinque minuti, per un PC solo
@@ -670,6 +672,45 @@ async function stzScollega() {
   await stzAvvia();
 }
 
+// ============================================================= il puntino
+// Sull'icona nella barra, un puntino rosso (il badge più piccolo che Chrome
+// disegna: un solo spazio) — e solo quando serve: l'ultimo foglio non è
+// stampato (fallito, o esito sconosciuto), o l'aiutante di stampa non risponde.
+// I fogli arrivati e stampati bene non dicono niente: la carta si vede. Si
+// spegne quando si apre la pagina della stazione o il popup (`visto`); un
+// problema nuovo lo riaccende. Solo su una stazione collegata. Niente
+// notifiche di Windows, nessun permesso in più.
+const STA_AIUTANTE_OGNI = 30 * 60e3;
+async function stzPuntino() {
+  if (!chrome.action || !chrome.action.setBadgeText) return;
+  const o = await chrome.storage.local.get([STA.qui, STA.lavori, STA.visto]);
+  const a = (await chrome.storage.session.get(STA.aiutante))[STA.aiutante];
+  const q = o[STA.qui];
+  let ko = 0;
+  if (q && q.conferma && !q.revoca) {
+    const l = o[STA.lavori] || [], u = l[l.length - 1];
+    if (u && (u.esito === "fallito" || u.esito === "sconosciuto")) ko = u.ts || 0;
+    if (a && a.ko) ko = Math.max(ko, a.ts || 0);
+  }
+  const rosso = ko > (o[STA.visto] || 0);
+  await chrome.action.setBadgeBackgroundColor({ color: "#B3261E" });
+  await chrome.action.setBadgeText({ text: rosso ? " " : "" });
+}
+let stzPuntinoFila = Promise.resolve();
+const stzPuntinoOra = () => (stzPuntinoFila = stzPuntinoFila.then(stzPuntino, stzPuntino).catch(() => {}));
+// L'aiutante di stampa c'è? Una prova ogni mezz'ora, solo su una stazione collegata e mai a un foglio in mezzo.
+async function stzAiutante(forza) {
+  if (!stzAttiva() || !stz.qui.conferma || stz.stampa.size || stz.inCorso.size) return;
+  const a = (await chrome.storage.session.get(STA.aiutante))[STA.aiutante];
+  if (!forza && a && staOra() - (a.ts || 0) < STA_AIUTANTE_OGNI) return;
+  const p = await ospite({ t: "ping" }, 20e3);
+  await chrome.storage.session.set({ [STA.aiutante]: { ko: !p.ok, ts: staOra() } });
+}
+chrome.storage.onChanged.addListener((ch, area) => {
+  if ((area === "local" && (ch[STA.qui] || ch[STA.lavori] || ch[STA.visto])) || (area === "session" && ch[STA.aiutante])) stzPuntinoOra();
+});
+chrome.action?.onClicked?.addListener(() => { chrome.tabs.create({ url: chrome.runtime.getURL("stazione.html") }).catch(() => {}); });   // (senza popup: la build intera)
+
 // ============================================================= in comune
 // Svegli: il battito delle prese, le scadenze; e una sveglia di Chrome ogni
 // minuto finché c'è qualcosa da tenere aperto (la stazione non ha schede del
@@ -680,7 +721,7 @@ function staSveglia() {
   if (serve) chrome.alarms.get("stazione").then((a) => a || chrome.alarms.create("stazione", { periodInMinutes: 1 })).catch(() => {});
   else chrome.alarms.clear("stazione").catch(() => {});
 }
-chrome.alarms?.onAlarm.addListener((a) => { if (a && a.name === "stazione") { stmAvvia().catch(() => {}); stzAvvia().catch(() => {}); } });
+chrome.alarms?.onAlarm.addListener((a) => { if (a && a.name === "stazione") { stmAvvia().catch(() => {}); stzAvvia().catch(() => {}); stzAiutante().catch(() => {}); } });
 setInterval(() => {
   stm.presa.battito(); stz.presa.battito(); stz.abbina.battito();
   if (stz.offerta && stz.offerta.scade <= staOra()) stzAvvia().catch(() => {});
@@ -695,6 +736,7 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   if (!String(sender && sender.url || "").startsWith(chrome.runtime.getURL(""))) return reply({ ok: false, why: "non da qui" }), true;
   const fai = (fn) => { staCaricato.then(fn).then(reply, (e) => reply({ ok: false, why: corto(e && e.message || e, 80) })); return true; };
   if (msg.t === "stazioneStato") return fai(async () => ({ ok: true, stazione: await stzScriviStato(), lavori: (await chrome.storage.local.get(STA.lavori))[STA.lavori] || [] }));
+  if (msg.t === "stazioneVisto") return fai(async () => { await chrome.storage.local.set({ [STA.visto]: staOra() }); await stzPuntinoOra(); return { ok: true }; });
   if (msg.t === "stazioneOfferta") return fai(async () => ({ ok: true, stazione: await stzOfferta() }));
   if (msg.t === "stazioneNome") {
     return fai(async () => {
@@ -711,4 +753,6 @@ const staCaricato = (async () => {
   await stzRiprendiOfferta();
   await stmAvvia();
   await stzAvvia();
+  stzPuntinoOra();
+  stzAiutante().catch(() => {});
 })().catch(() => {});
