@@ -383,6 +383,17 @@ console.log("\naggiorna: lo zip deve essere quello giusto");
   r = await sw.evaluate(() => aggiorna({ avvio: true }));
   check(!r.ok && /Aggiornamento non riuscito: la cartella è in uso/.test(r.why) && !r.ricarica && zipScaricati() === z0 + 1,
     `all'avvio, con lo zip pronto, entro il minuto: lo scambio parte con la scheda aperta; l'aiutante dice di no: lo si dice, niente ricarica (got ${r.why})`);
+  // all'avvio le schede ripristinate stanno ancora caricando (qui: una che per qualche secondo non risponde):
+  // nel dubbio è occupato, e si riprova finché dura il minuto
+  azzeraLavori();
+  await sw.evaluate(() => chrome.storage.local.remove("aggiornaPausa"));
+  await sw.evaluate(() => { aggNato = Date.now(); });
+  const carica = doc.evaluate(() => { const t0 = Date.now(); while (Date.now() - t0 < 4000); }).catch(() => {});
+  await sospendi(200);
+  await sw.evaluate(() => aggAuto(true));
+  await carica;
+  const allAvvio = lavori().filter((x) => x.aggiorna);
+  check(allAvvio.length === 1 && !allAvvio[0].ok, `all'avvio, una scheda che non risponde ancora: si riprova nel minuto, e lo scambio parte (all'aiutante ${allAvvio.length})`);
   check(JSON.parse(readFileSync(join(EST, "manifest.json"), "utf8")).version === MIA && temporanei().length === 0, "la cartella è quella di prima, e niente di temporaneo resta");
   comportati();
 }

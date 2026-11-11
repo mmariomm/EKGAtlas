@@ -257,6 +257,7 @@ async function aggiorna({ avvio = false } = {}) {
       if (!h.ok) return aggNo(v, `Aggiornamento non riuscito: ${corto(h.why || "l'aiutante ha detto di no", 160)}`);
     }
     await caches.delete(AGG_CACHE).catch(() => {});
+    await chrome.storage.local.remove(AGG_PAUSA).catch(() => {});
     await chrome.storage.local.set({ aggiorna: { ts: 0, nuova: "", puo: false, come: "", fatto: v, quando: Date.now() } });
     return { ok: true, versione: v, ricarica: true };
   });
@@ -315,7 +316,13 @@ async function aggAuto(avvio = false) {
     if (!rec.puo) return;   // non si aggiorna da qui (il ⋯ lo dice)
     const p = (await chrome.storage.local.get(AGG_PAUSA))[AGG_PAUSA];
     if (p && p.v === rec.nuova && aggDaPoco(p.ts)) return;   // andata male da poco: sei ore
-    const r = await aggiorna({ avvio }).catch(() => null);
+    let r = await aggiorna({ avvio }).catch(() => null);
+    // all'avvio le schede ripristinate stanno ancora caricando e non rispondono (nel dubbio è
+    // occupato): si riprova finché dura il primo minuto
+    while (avvio && r && r.why === AGG_OCCUPATO && Date.now() - aggNato < AGG_AVVIO - 10e3) {
+      await new Promise((res) => setTimeout(res, 10e3));
+      r = await aggiorna({ avvio }).catch(() => null);
+    }
     if (r && r.ricarica) setTimeout(() => chrome.runtime.reload(), 400);
   } finally {
     aggAutoInCorso = false;
