@@ -120,7 +120,7 @@ const b64 = (buf) => {
 // dati}: pagina è solo l'MVPG; dati solo numeri, codici, impronte, messaggi
 // del nostro codice — mai nomi, codici fiscali, date di nascita, testo libero
 // (chi chiama passa solo quelli, e qui si ripulisce lo stesso). «Registra» lo
-// mette nello zip (errori.json); «Reset dati pazienti» non lo tocca.
+// mette nello zip (errori.json); «Dimentica i dati…» non lo tocca.
 const ERRORI = "errori.v1", ERRORI_MAX = 500;
 let codaErrori = Promise.resolve();
 const pulito = (v, d = 0) => {
@@ -877,40 +877,6 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
       .catch(() => reply({ ok: false }));
     return true;
   }
-  // Eliminare un paziente: la sua scheda clinica e i referti tenuti per lui.
-  if (msg.t === "delStorico") {
-    inFila(async () => {
-      // Si cancella per IDENTITÀ, non per la chiave che ci ricordavamo: una
-      // scheda arrivata dal portale o da un referto può non aver mai lasciato
-      // una chiave nell'elenco, e «eliminato tutto» deve essere vero.
-      // Le parole ORDINATE facevano combaciare persone diverse: «DE ROSSI
-      // MARIA» e «DE MARIA ROSSI» diventavano la stessa stringa, e cancellare
-      // l'una cancellava la scheda dell'altra. Si accettano solo i due ordini
-      // veri, come combaciaNome nel pannello.
-      const norm = (t) => String(t || "").toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-        .replace(/[^A-Z0-9 ]+/g, " ").trim().replace(/\s+/g, " ");
-      const o = await chrome.storage.local.get(ARCH);
-      const a = o[ARCH] || {};
-      const suo = norm(msg.nome || "");
-      // e il nome si guarda SOLO se la chiave non ha già trovato la scheda:
-      // «elimina questo paziente» non deve mai toccarne un altro
-      const perChiave = Object.keys(a).filter((k) => k === msg.chiave);
-      const stessoNome = (cognome, nome) => {
-        const c = norm(cognome), n = norm(nome);
-        if (!suo || (!c && !n)) return false;
-        return suo === norm(c + " " + n) || suo === norm(n + " " + c);
-      };
-      const via = perChiave.length ? perChiave
-        : Object.keys(a).filter((k) => stessoNome(a[k]?.paziente?.cognome, a[k]?.paziente?.nome));
-      if (via.length) { for (const k of via) delete a[k]; await chrome.storage.local.set({ [ARCH]: a }); }
-      const all = await chrome.storage.local.get(null);
-      const suoi = Object.keys(all).filter((k) => k.startsWith("ref:")
-        && ((msg.chiave && all[k]?.pk === msg.chiave) || (msg.ep && String(all[k]?.ep || "") === String(msg.ep))));
-      if (suoi.length) await chrome.storage.local.remove(suoi);
-      reply({ ok: true, schede: via.length, referti: suoi.length });
-    }).catch(() => reply({ ok: false }));
-    return true;
-  }
 
   // ---- l'indirizzo del portale clinico, deciso dal medico ----------------
   // L'indirizzo stava scritto dentro il manifest: un numero IP e una porta. Se
@@ -966,7 +932,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
     return true;
   }
 
-  // «Reset dati pazienti» (⋯): schede cliniche, referti salvati, schede dietro
+  // «Dimentica i dati…» (⋯): schede cliniche, referti salvati, schede dietro
   // finite, chi aprì lo storico, ordini finiti e quello che il ponte ne
   // ricorda. Restano stampanti, portale, associazione col telefono, e un
   // ordine che non ha finito.

@@ -202,6 +202,20 @@ const salvati = (p, n) => p.waitForFunction((k) => document.getElementById("psas
   extra = [];
 }
 
+// Le copie dei referti via, com'erano col «↺» degli Esiti (che non c'è più: per il medico dimentica solo
+// ⋯ → «Dimentica i dati…»): quelle nell'estensione, e in questa scheda il loro testo, gli aperti e i non riusciti.
+async function senzaCopie(p) {
+  const [s] = ctx.serviceWorkers();
+  await s.evaluate(() => chrome.storage.local.get(null).then((all) => chrome.storage.local.remove([...Object.keys(all).filter((k) => k.startsWith("ref:")), REF_INDICE])));
+  await p.evaluate(() => {
+    for (const k of Object.keys(sessionStorage)) if (/^psassist:(reftxt|refopen)\./.test(k)) sessionStorage.removeItem(k);
+    // (i non riusciti dei referti, non quello del laboratorio: come faceva ↺)
+    const t = JSON.parse(localStorage.getItem("psassist:autoFalliti.v1") || "{}") || {};
+    for (const ep of Object.keys(t)) { for (const id of Object.keys(t[ep] || {})) if (id !== "lab") delete t[ep][id]; if (!Object.keys(t[ep] || {}).length) delete t[ep]; }
+    localStorage.setItem("psassist:autoFalliti.v1", JSON.stringify(t));
+  }).catch(() => {});
+  await p.waitForTimeout(300);
+}
 // Niente a orario, solo quello che è nuovo. Le letture del laboratorio si
 // contano dalle aperture dello storico del portale (il «Carica i valori» di qui).
 const storici = () => mock.state.requests.filter((q) => /MODALITA=CLINICA/.test(q.url)).length;
@@ -209,8 +223,7 @@ const finito = (p) => p.waitForFunction(() => { const r = document.getElementByI
 {
   // senza le copie (↺) i referti non sono salvati: riaperto, si riprendono; il
   // laboratorio, la cui riga non è cambiata, no
-  await page.locator("#psassist-host #refreset").click();
-  await page.waitForTimeout(1200);
+  await senzaCopie(page);
   voli = []; maxInVolo = 0;
   const s0 = storici();
   const pW = await ctx.newPage();
@@ -246,8 +259,7 @@ const finito = (p) => p.waitForFunction(() => { const r = document.getElementByI
   await pW.waitForTimeout(1500);
   check(storici() === s1 + 1, `passati 10 minuti, gli Esiti aperti ricontrollano il laboratorio a metà (storici ${storici() - s1})`);
   extraLab = []; extraRis = [];
-  await pW.locator("#psassist-host #refreset").click();   // qui sotto si riparte senza copie
-  await pW.waitForTimeout(1200);
+  await senzaCopie(pW);   // qui sotto si riparte senza copie
   await pW.close();
 }
 
@@ -271,8 +283,7 @@ const finito = (p) => p.waitForFunction(() => { const r = document.getElementByI
   await sw.evaluate(() => chrome.storage.session.set({ ordini: [] }));
   await salvati(pO, 4);
   check(voli.length === 4, `finito l'ordine, riprende da sé (scaricati ${voli.length})`);
-  await pO.locator("#psassist-host #refreset").click();   // il «Salva» a mano, qui sotto, parte senza copie
-  await pO.waitForTimeout(1200);
+  await senzaCopie(pO);   // il «Salva» a mano, qui sotto, parte senza copie
   await pO.close(); await pX.close();
 }
 
@@ -295,8 +306,7 @@ const errori = async () => { const [s] = ctx.serviceWorkers(); return (await s.e
     `e nel registro degli errori: episodio, referto, perché — niente nomi né date (got: ${testo.slice(0, 200)})`);
   extra = [];
   await finito(pI);
-  await pI.locator("#psassist-host #refreset").click();   // il «Salva» a mano, qui sotto, parte senza copie
-  await pI.waitForTimeout(1200);
+  await senzaCopie(pI);   // il «Salva» a mano, qui sotto, parte senza copie
   await pI.close();
 }
 
@@ -398,9 +408,8 @@ check(await visore.count() === 0 && await page.locator('#psassist-host [data-esi
   await pM.close();
 }
 
-await page.locator("#psassist-host #refreset").click();
-await page.waitForTimeout(1200);
-check(await page.locator("#psassist-host .rdot.saved").count() === 0, "Resetta svuota i salvataggi");
+check(await page.locator("#psassist-host #refreset").count() === 0, "nella riga in cima degli Esiti niente «↺»: le copie si dimenticano con ⋯ → «Dimentica i dati…»");
+await senzaCopie(page);
 
 // «⭳ Carica i valori» prende anche i referti: solo quelli che non sono di
 // laboratorio, uno alla volta, con una pausa prima di ognuno, e
@@ -432,8 +441,7 @@ check(await page.locator("#psassist-host .rdot.saved").count() === 0, "Resetta s
   await pC.waitForTimeout(5000);
   check(voli.length === dopo, `già salvati: non si riscaricano, qui né in un'altra scheda (got ${voli.length - dopo} in più)`);
   await pC.close();
-  await page.locator("#psassist-host #refreset").click({ timeout: 3000 }).catch(() => {});   // il portale, qui sotto, parte senza copie
-  await page.waitForTimeout(1200);
+  await senzaCopie(page);   // il portale, qui sotto, parte senza copie
 }
 
 // ---- un referto (RIS/ECG) che il gestionale manda al portale -----------------
@@ -544,7 +552,7 @@ for (const modo of ["prima", "solo"]) {
   await pA.goto(mock.patientUrl);
   await pA.waitForSelector("#psassist-host .wu", { state: "attached", timeout: 15000 });
   await finito(pA);
-  if (await pA.locator("#psassist-host #refreset").count()) { await pA.locator("#psassist-host #refreset").click(); await pA.waitForTimeout(600); }
+  await senzaCopie(pA);
   await pA.reload();   // senza le copie: si riprendono da sole, dal portale
   await pA.waitForSelector("#psassist-host .wu", { state: "attached", timeout: 15000 });
   await rxPronta(pA);
@@ -572,7 +580,7 @@ for (const modo of ["open", "link", "blob"]) {
   await pF.goto(mock.patientUrl);
   await pF.waitForSelector("#psassist-host .wu", { state: "attached", timeout: 15000 });
   await finito(pF);
-  if (await pF.locator("#psassist-host #refreset").count()) { await pF.locator("#psassist-host #refreset").click(); await pF.waitForTimeout(600); }
+  await senzaCopie(pF);
   await pF.bringToFront();
   const [swF] = ctx.serviceWorkers();
   const davanti = () => swF.evaluate(() => chrome.tabs.query({ active: true }).then((l) => l.map((t) => t.url || t.pendingUrl || "")));
@@ -603,7 +611,7 @@ for (const modo of ["open", "link", "blob"]) {
   const pM = await ctx.newPage();
   await pM.goto(mock.patientUrl);
   await pM.waitForSelector("#psassist-host .wu", { state: "attached", timeout: 15000 });
-  if (await pM.locator("#psassist-host #refreset").count()) { await pM.locator("#psassist-host #refreset").click(); await pM.waitForTimeout(600); }
+  await senzaCopie(pM);
   await pM.reload();
   await pM.waitForSelector("#psassist-host .wu", { state: "attached", timeout: 15000 });
   await rxPronta(pM);
@@ -644,7 +652,7 @@ for (const modo of ["open", "link", "blob"]) {
   await pA.goto(mock.patientUrl);
   await pA.waitForSelector("#psassist-host .wu", { state: "attached", timeout: 15000 });
   await finito(pA);
-  if (await pA.locator("#psassist-host #refreset").count()) { await pA.locator("#psassist-host #refreset").click(); await pA.waitForTimeout(600); }
+  await senzaCopie(pA);
   await pA.evaluate(() => { localStorage.removeItem("psassist:autoFalliti.v1"); localStorage.removeItem("psassist:autoCarica.v1"); });   // tutto da leggere
   const t0 = Date.now();
   let max = 0, fermo = false;
@@ -682,7 +690,7 @@ for (const modo of ["open", "link", "blob"]) {
   await pT.goto(mock.patientUrl);
   await pT.waitForSelector("#psassist-host .wu", { state: "attached", timeout: 15000 });
   await finito(pT);
-  if (await pT.locator("#psassist-host #refreset").count()) { await pT.locator("#psassist-host #refreset").click(); await pT.waitForTimeout(600); }
+  await senzaCopie(pT);
   ritardo = 6000;
   await sw.evaluate(() => { SOTTO_MAX = 4000; });
   await pT.reload();
@@ -703,7 +711,7 @@ const p3 = await ctx.newPage();
 await p3.goto(mock.patientUrl);
 await p3.waitForSelector("#psassist-host .wu", { state: "attached", timeout: 15000 });
 await finito(p3);
-if (await p3.locator("#psassist-host #refreset").count()) { await p3.locator("#psassist-host #refreset").click(); await p3.waitForTimeout(800); }   // via le copie: si riapre il portale
+await senzaCopie(p3);   // via le copie: si riapre il portale
 await p3.reload();
 await p3.waitForSelector("#psassist-host .wu", { state: "attached", timeout: 15000 });
 const rosso = await p3.waitForSelector('#psassist-host .wuitem:has-text("TC ENCEFALO") .rrow.err', { state: "attached", timeout: 120000 }).then((el) => el.getAttribute("title")).catch(() => "");
@@ -803,7 +811,7 @@ check(/non si vede da qui/.test(rosso) && /portale \/clin-port\/loginPC\.jsp/.te
   await pp.close();
 }
 
-// ---- ⋯ → «Reset dati pazienti» ----------------------------------------------
+// ---- ⋯ → «Dimentica i dati…» --------------------------------------------------
 // Ogni chiave per nome: quelle dei pazienti e del turno se ne vanno, le
 // impostazioni e i modelli del medico restano.
 {
@@ -856,11 +864,11 @@ check(/non si vede da qui/.test(rosso) && /portale \/clin-port\/loginPC\.jsp/.te
   await pR.locator("#psassist-host #resetpaz").click({ timeout: 3000 }).catch(() => {});
   const chiede = await pR.locator("#psassist-host #resetpaz").innerText().catch(() => "");
   const ancora = await pR.evaluate((k) => localStorage.getItem(k), NS + "patients.v1");
-  check(/Cancello tutto\? Tocca di nuovo/.test(chiede) && ancora !== null, `un tocco chiede soltanto (got: ${chiede})`);
+  check(/Dimentico tutto\? Tocca di nuovo/.test(chiede) && ancora !== null, `un tocco chiede soltanto (got: ${chiede})`);
   await pR.locator("#psassist-host #resetpaz").click({ timeout: 3000 }).catch(() => {});
   await pR.waitForSelector("#psassist-host .stsnack", { timeout: 5000 }).catch(() => {});
-  check(/Dati dei pazienti cancellati/.test(await pR.locator("#psassist-host .stsnack").innerText().catch(() => "")) && (await pR.locator("#psassist-host .stannulla").count()) === 1,
-    "il secondo tocco cancella, e dice «Dati dei pazienti cancellati · Annulla»");
+  check(/Dati dei pazienti dimenticati/.test(await pR.locator("#psassist-host .stsnack").innerText().catch(() => "")) && (await pR.locator("#psassist-host .stannulla").count()) === 1,
+    "il secondo tocco cancella, e dice «Dati dei pazienti dimenticati · Annulla»");
   // le altre schede e l'estensione si puliscono finiti gli 8 secondi dell'«Annulla»
   await pR.waitForTimeout(800);
   check(await pAltra.evaluate((k) => sessionStorage.getItem(k), `${NS}reftxt.${ep}.zz`) !== null, "(negli 8 secondi dell'«Annulla» le altre schede non si toccano ancora)");

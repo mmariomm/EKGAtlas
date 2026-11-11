@@ -3438,46 +3438,6 @@
     p.archTs = si ? Date.now() : 0;
     return store.set("patients.v1", list);
   }
-  // Eliminare un paziente vuol dire eliminare TUTTO quello che il programma
-  // sa di lui: la riga nell'elenco, la sua scheda clinica, i referti tenuti,
-  // la nota, e i dati per episodio in questa scheda del browser.
-  function eliminaPaziente(ep, pk, nome) {
-    const list = tuttiPazienti().filter((x) => x.ep !== ep);
-    store.set("patients.v1", list);
-    // la nota può stare sotto la chiave del codice fiscale O sotto il nome,
-    // a seconda di quando è stata scritta: si tolgono tutt'e due
-    const n = store.get(noteKey, {});
-    const perNome = nome ? "nome:" + normNome(nome) : "";
-    let tolte = 0;
-    for (const k of [pk, perNome].filter(Boolean)) if (n[k]) { delete n[k]; tolte++; }
-    if (tolte) store.set(noteKey, n);
-    const s = store.get(segniKey, {});   // e i segni sui valori, stesse chiavi
-    let toltiSegni = 0;
-    for (const k of [pk, perNome].filter(Boolean)) if (s[k]) { delete s[k]; toltiSegni++; }
-    if (toltiSegni) store.set(segniKey, s);
-    try {
-      for (const k of Object.keys(sessionStorage)) {
-        const kk = k.startsWith(NS) ? k.slice(NS.length) : "";
-        if (kk && new RegExp(`(^|\\.)(ris|visto|reftxt|log|refopen|ui)\\.${ep}\\b`).test(kk)) sessionStorage.removeItem(k);
-      }
-    } catch { /* memoria bloccata: niente da togliere */ }
-    const corsa = tabStore.get(CORSA, null);
-    if (corsa && corsa.ep === ep) tabStore.set(CORSA, null);
-    const aperta = store.get(APERTA, null);
-    if (aperta && aperta.ep === ep) store.set(APERTA, null);
-    for (const k of TUTTI_I_POSTI()) {   // e il suo posto, in ogni stanza
-      const posti = store.get(k, null);
-      if (posti && posti[ep]) { delete posti[ep]; store.set(k, posti); }
-    }
-    const aree = areeLeggi();   // e la sua area
-    if (aree.membri[ep]) { delete aree.membri[ep]; store.set(AREE, aree); }
-    const prom = store.get(PROM, null);   // e i suoi promemoria
-    if (prom && prom[ep]) { delete prom[ep]; store.set(PROM, prom); }
-    const stato = store.get(STATO, null);   // e lo stato dei suoi esami
-    if (stato && stato[ep]) { delete stato[ep]; store.set(STATO, stato); }
-    if (hasExt()) ask({ t: "delStorico", chiave: pk, ep, nome: nome || "" }).catch(() => {});
-    return true;
-  }
   function forgetPatients() { store.set("patients.v1", []); }
   // end of shift / another user: drop names and every per-episode leftover
   function forgetAll() {
@@ -3495,10 +3455,12 @@
     // riaperto dopo una sessione scaduta deve ritrovare il suo letto.
     try { if (typeof chrome !== "undefined" && chrome.runtime?.id) chrome.runtime.sendMessage({ t: "clearRef" }, () => void chrome.runtime.lastError); } catch { /* not the extension build */ }
   }
-  // «Reset dati pazienti» (⋯): via tutto quello che si sa dei pazienti e del
+  // «Dimentica i dati…» (⋯, l'unico comando che cancella; due tocchi, Annulla
+  // per 8 secondi): via tutto quello che si sa dei pazienti e del
   // turno, qui e nella memoria di questa scheda. Restano le impostazioni
   // (finestra, stanze, le opzioni delle aree, catalogo, stampe già fatte) e i
   // modelli del medico; chi sta in quale area se ne va.
+  const DIMENTICA_TITOLO = "Dimentica quello che il pannello tiene dei pazienti — elenco, posti, valori, referti salvati, Da fare, note — in questo browser e nell'estensione. Restano le impostazioni e i tuoi fogli. Due tocchi; per 8 secondi si annulla. (Da soli i dati scadono comunque in 12–24 ore.)";
   const RESET_VIA = () => ["patients.v1", ...TUTTI_I_POSTI(), "stanza.posti.v1", AREE, AREA_VAI, SMART_SYNC, DIMESSI, STATO, PROM, PROM_VECCHI, DF_GEN, noteKey, segniKey, "refVisti.v1",
     "refPortale", DA_CONFERMARE, "quesiti", "quesiti.ts", "lastQ", APERTA, PRESIDIO, AUTO_CARICA, FALLITI, TRIAGE_LISTA];
   function azzeraScheda() {
@@ -4265,7 +4227,7 @@
   // Il «Da fare» GENERALE, sul tabellone: una lista sola, di nessun paziente,
   // con le stesse spunte. Non scade; una voce spuntata resta 5 minuti, poi se
   // ne va, come quelle dei pazienti. In questo browser (e nello specchio del
-  // tabellone), mai al telefono; il «Reset dati pazienti» la porta via.
+  // tabellone), mai al telefono; «Dimentica i dati…» la porta via.
   const DF_GEN = "dafare.generale.v1";        // [{ id, testo, fatto|null, ts }]
   const DF_GEN_MAX = 40;                      // voci aperte
   function genTutte(ora = Date.now()) {
@@ -6645,7 +6607,7 @@
     .stbtn.pri:hover, .stazioni .stbtn.pri:hover { background: #094a8c; border-color: #094a8c; color: #fff; }
     .stazioni button:focus-visible, .stbtn:focus-visible, .stctl:focus-visible, .stp:focus-visible, .stname:focus-visible,
     .pzrow:has(.pzapri:focus-visible), .pzmetti:focus-visible, .pzx:focus-visible, .pzarchhd:focus-visible,
-    .pzsvuota:focus-visible, .pzabtn:focus-visible, .pzfx:focus-visible, .stannulla:focus-visible { outline: 2px solid var(--azione); outline-offset: 1px; }
+    .pzabtn:focus-visible, .pzfx:focus-visible, .stannulla:focus-visible { outline: 2px solid var(--azione); outline-offset: 1px; }
     /* quello che dicono tutti e due: da quanto non lo apri, «questa pagina», i segni */
     .stvisto { flex: none; font-size: 12px; color: var(--neutro); white-space: nowrap; font-variant-numeric: tabular-nums; }
     .stvisto.amb { padding: 0 7px; border-radius: 999px; background: var(--att-f); color: var(--att); }
@@ -6844,11 +6806,7 @@
     .pzabtn { position: relative; flex: none; min-height: 28px; border: 1px solid #D9E2EC; border-radius: 6px; background: #fff; padding: 2px 8px;
               cursor: pointer; font-size: 12px; color: var(--testo); }
     .pzabtn:hover { border-color: #9DBFDE; }
-    .pzabtn.del:hover { border-color: #E9BAB6; background: var(--err-f); color: var(--err); }
-    .pzabtn.del:not([data-sicuro="1"]) { display: inline-grid; place-items: center; }
     .pzhint { padding: 8px 10px 0; font-size: 12px; color: var(--neutro); }
-    .pzsvuota { margin: 8px 0 0 6px; padding: 6px 4px; border: 0; background: none; cursor: pointer; font-size: 13px; color: var(--neutro); text-decoration: underline; }
-    .pzsvuota:hover { color: var(--testo); }
 
     /* STANZA: tutto lo spazio che la lista lascia */
     /* TABELLONE: Alta | Bassa | Entrambe, e ⟳ */
@@ -9523,9 +9481,6 @@
                   <button class="iconbtn${this.aggNuova() ? " agg" : ""}" id="menubtn" title="${this.aggNuova() ? `Altro · c'è la versione ${esc(this.agg.nuova)}` : "Altro"}" aria-label="Altro" aria-haspopup="true" aria-expanded="${this.menuAperto ? "true" : "false"}">${ICO.altro}</button>
                   ${this.menuAperto ? `<div class="menu" role="menu">
                     ${this.menuSez("Paziente", [
-                      // (rara e distruttiva: non nella testata degli Esiti, accanto ad «Aggiorna»; due tocchi)
-                      this.valoriDimenticabili() ? (this.valArmato() ? `<button role="menuitem" id="valreset" class="mreset mrischio" title="Dimentica i valori letti e la scheda in archivio di questo paziente">${mico("cestino")}Dimentico? Tocca di nuovo</button>`
-                        : `<button role="menuitem" id="valreset" class="mreset" title="Dimentica i valori letti e la scheda in archivio di questo paziente: ⭳ Carica i valori li rilegge da zero">${mico("cestino")}Dimentica i valori letti</button>`) : "",
                       this.ricettaPossibile() ? `<button role="menuitem" id="ricmenu" title="Farmaci e quesito preparati nel Prescrittivo del SISS, fino all'Anteprima: Registra lo premi tu">${mico("ricetta")}Ricetta SISS</button>` : "",
                       this.terapiaPossibile() ? `<button role="menuitem" id="termenu" title="I farmaci nella pagina Terapia del gestionale, una riga per volta: Conferma la premi tu">${mico("terapia")}Terapia</button>` : "",
                       this.pageType === "patient" && this.epDiQuesta() && richiesteStampabili(printModel(document, location.href)).length
@@ -9546,8 +9501,8 @@
                         : `<button role="menuitemcheckbox" id="stautosw" aria-checked="true" title="Attiva: ogni foglio va da solo alla sua stampante. Tocca per spegnerla: i fogli tornano a passare dal dialogo di stampa">${mico("acceso")}Stampa automatica</button>`,
                       `<button role="menuitem" id="regmenu" title="${hasExt() ? "Registra una sessione, gli zip salvati su questo PC (anche dall'iPhone), e in fondo il Registro delle operazioni" : "Il Registro delle operazioni di questa scheda"}">${memo("●")}Registrazioni</button>`,
                       // l'ultima, da sola sulla sua riga, in rosso: non sta accanto a niente di innocuo
-                      this.giroQui() ? "" : this.resetArmato() ? `<button role="menuitem" id="resetpaz" class="mreset mrischio">${mico("cestino")}Cancello tutto? Tocca di nuovo</button>`
-                        : `<button role="menuitem" id="resetpaz" class="mreset">${mico("cestino")}Reset dati pazienti</button>`])}
+                      this.giroQui() ? "" : this.resetArmato() ? `<button role="menuitem" id="resetpaz" class="mreset mrischio" title="${esc(DIMENTICA_TITOLO)}">${mico("cestino")}Dimentico tutto? Tocca di nuovo</button>`
+                        : `<button role="menuitem" id="resetpaz" class="mreset" title="${esc(DIMENTICA_TITOLO)}">${mico("cestino")}Dimentica i dati…</button>`])}
                     <div class="mpiede">
                       ${!this.aggNuova() ? "" : this.agg.puo ? `<button role="menuitem" id="aggapp" class="magg" title="Aggiorna a ${esc(this.agg.nuova)}: la scarica, la installa e la ricarica">${mico("aggiornaApp")}Aggiorna app</button>`
                         : `<div class="mver">${esc(this.agg.come)}</div>`}
@@ -10363,22 +10318,20 @@
         .map((c) => (c ? `<div class="pzsez"><button type="button" class="pzsezt" data-sez="${esc(c)}" title="Apri la lista dell'area nel gestionale">${
           esc(titoloArea(c, a.viste[c]?.label))}</button></div>` : "") + gruppi.get(c).map(riga).join("")).join("");
     }
-    // in fondo, chiusi: gli archiviati e «Svuota l'elenco» (che si annulla)
+    // in fondo, chiusi: gli archiviati
     pazArchivio(m) {
       const rigaArch = (p) => `
         <div class="pzarow">
           <span class="pzanm" title="${esc(p.name || "")}">${esc(p.name || "paziente")}</span>
           <span class="pzameta">archiviato ${esc(agoLabel(p.archTs || p.ts))}</span>
           <button type="button" class="pzabtn" data-unarch="${esc(p.ep)}" title="Riportalo fra i pazienti attivi">↩ riporta</button>
-          <button type="button" class="pzabtn del" data-del="${esc(p.ep)}" title="Elimina tutto quello che il programma sa di lui" aria-label="Elimina">${ICO.cestino}</button>
         </div>`;
       const archiviati = pazientiArchiviati();
       if (!m.pazienti.length && !archiviati.length) return "";
       return `<div class="pzpiede">
         <button type="button" class="pzarchhd" id="archtog" aria-expanded="${this.mostraArch ? "true" : "false"}">Archiviati${archiviati.length ? ` <span class="stn">${archiviati.length}</span>` : ""}<span aria-hidden="true">${this.mostraArch ? "▾" : "▸"}</span></button>
         ${this.mostraArch ? `<div class="pzarch">${archiviati.map(rigaArch).join("")}
-          <div class="pzhint">${archiviati.length ? `${icoIn("cestino", 13)}cancella tutto di quel paziente: scheda clinica, referti tenuti, «Da fare». Non si torna indietro.` : "Nessun paziente archiviato."}</div>
-          <button type="button" class="pzsvuota" id="stsvuota" title="Toglie tutti i pazienti dall'elenco e dalla stanza. Per 8 secondi si può annullare.">Svuota l'elenco</button>
+          ${archiviati.length ? "" : `<div class="pzhint">Nessun paziente archiviato.</div>`}
         </div>` : ""}</div>`;
     }
     // Il paziente nella Stanza: striscia del triage, nome (⚠ se un altro ha
@@ -10541,7 +10494,6 @@
       // la lista: ▾ apre «Sposta in…»; la ✕ archivia (e si annulla)
       this.root.querySelectorAll("[data-posto]").forEach((b) => b.addEventListener("click", (e) => { e.stopPropagation(); this.stanzaMenu(b.getAttribute("data-posto"), b); }));
       this.root.querySelectorAll("[data-parch]").forEach((b) => b.addEventListener("click", (e) => { e.stopPropagation(); this.stanzaArchivia(b.getAttribute("data-parch")); }));
-      $("#stsvuota")?.addEventListener("click", () => this.stanzaSvuota());
       // il titolo di un'area: la sua lista, nel gestionale
       this.root.querySelectorAll("[data-sez]").forEach((b) => b.addEventListener("click", (e) => { e.stopPropagation(); apriArea(b.getAttribute("data-sez")); }));
       // il filtro: si scrive, la lista si stringe e la stanza spegne gli altri,
@@ -10998,17 +10950,6 @@
       const p = knownPatients().find((x) => x.ep === ep), foto = this.stanzaFoto(true);
       if (!archiviaPaziente(ep, true)) return;
       this.stanzaAnnullabile(`${p?.name || "Paziente"}: tolto dall'elenco`, foto);
-      this.render();
-    }
-    stanzaSvuota() {
-      const foto = this.stanzaFoto(true);
-      forgetPatients();
-      for (const k of TUTTI_I_POSTI()) store.set(k, {});   // anche i posti e i promemoria: l'elenco riparte da zero
-      store.set(PROM, {});
-      store.set(STATO, {});
-      this.dfChiudi();
-      this.mostraArch = false;
-      this.stanzaAnnullabile("Elenco svuotato", foto);
       this.render();
     }
     // In Modifica: si spostano letti, sedie e aree (o si allarga un'area dall'angolo)
@@ -11471,22 +11412,6 @@
       return dati && dati.righe && dati.righe.length ? dati : null;
     }
 
-    // «↺ Reset»: si dimentica tutto quello che si era letto di questo
-    // paziente — i prelievi in questa scheda del browser e la scheda clinica
-    // in archivio — e si ricomincia da «⭳ Carica i valori». I segni del
-    // medico restano: sono suoi, e ritrovano le stesse celle.
-    resetValori() {
-      const ep = this.episodeId || "x";
-      for (const k of [...tabStore.keys(`ris.${ep}.`), ...tabStore.keys(`visto.${ep}.`)]) tabStore.del(k);
-      this.rottiTab.clear();
-      if (hasExt()) ask({ t: "delStorico", chiave: this.chiavePaz(), ep: this.episodeId, nome: this.nomePaziente() || "" }).catch(() => {});
-      this.storico = null; this.storicoAltri = ""; this.storicoDaConfermare = false;
-      this.esiti = esitiModel(document, location.href);   // le righe «già letti» se ne vanno coi loro valori
-      this.log(`${now()}  valori azzerati: si rileggono da zero`);
-      this.message = { ok: "Valori dimenticati." };
-      this.render();
-    }
-
     // Gli Esiti sotto gli occhi del medico (la finestra aperta): da qui in poi
     // niente è più «nuovo» nella riga dei Pazienti. I valori nuovi non ancora
     // segnati «Letto» restano, e dicono quanti sono fuori range (il pallino rosso).
@@ -11705,7 +11630,6 @@
       const strumenti = [
         au ? "" : salva ? `<span class="wuprog" role="status">Salvo i referti ${salva.fatti}/${salva.totale}…</span>`
           : daSalvare.length ? `<button type="button" class="mini" id="refsave" title="Tiene una copia di ${daSalvare.length === 1 ? "questo referto" : `questi ${daSalvare.length} referti`} su questo computer (due alla volta) e ne legge il testo">⭳ Salva i referti (${daSalvare.length})</button>` : "",
-        (nSaved || referti.some((e) => open.has(e.id))) && !salva ? `<button type="button" class="mini" id="refreset" title="Dimentica i referti salvati e il loro testo">↺</button>` : "",
       ].filter(Boolean).join("");
       const sep = `<span class="wusep" aria-hidden="true">·</span>`;
       const sommario = `<div class="wusum">
@@ -13869,11 +13793,6 @@
     }
 
     resetArmato() { return Date.now() - (this._resetArmato || 0) < 6000; }
-    valArmato() { return Date.now() - (this._valArmato || 0) < 6000; }
-    // «Dimentica i valori letti» (⋯, negli Esiti): solo se c'è qualcosa da dimenticare
-    valoriDimenticabili() {
-      return this.view === "esiti" && this.pageType !== "vista" && !!(this.storico || tabStore.keys(`ris.${this.episodeId || "x"}.`).length);
-    }
     // Cancella subito qui (la memoria del browser e di questa scheda), con
     // «Annulla» per 8 secondi come ogni altra cosa che si può rimpiangere: la
     // fotografia di prima torna com'era. Le altre schede e l'estensione
@@ -13900,14 +13819,14 @@
       window.addEventListener("pagehide", fuori);
       this._resetFuori = fuori;
       this.message = null;
-      this.stanzaAnnullabile("Dati dei pazienti cancellati", () => {
+      this.stanzaAnnullabile("Dati dei pazienti dimenticati", () => {
         if (fatto) return;
         chiudi();
         rimettiReset(foto);
         const { rotti, ...resto } = mem;
         Object.assign(this, resto);
         for (const x of rotti) this.rottiTab.add(x);
-        this.log(`${now()}  «Reset dati pazienti» annullato: tutto com'era`);
+        this.log(`${now()}  «Dimentica i dati» annullato: tutto com'era`);
       });
       this.render();
     }
@@ -13917,18 +13836,6 @@
       this.refCache = {}; this.refBusy = {}; this.espanso = null;
       this.rottiTab.clear(); this.logLines = [];
       this.esiti = esitiModel(document, location.href);
-    }
-
-    async resetReferti() {
-      for (const id of tabStore.get(this.refKey(), [])) {
-        try { openTab("", "psaRef_" + String(id).replace(/\W/g, ""))?.close(); } catch { /* ignore */ }
-      }
-      tabStore.set(this.refKey(), []);
-      if (hasExt()) await ask({ t: "clearRef" });
-      for (const k of tabStore.keys(`reftxt.${this.episodeId || "x"}.`)) tabStore.del(k);   // il testo veniva da quelle copie
-      for (const e of this.refertiMostrati()) togliFallito(this.episodeId, e.id);   // e si riprende tutto, anche quello non riuscito
-      this.refCache = {}; this.refBusy = {}; this.espanso = null;
-      this.render();
     }
 
     // Copy the log for reporting. The quesito is the only clinical text that
@@ -14257,7 +14164,7 @@
       // la pagina dell'iPhone: il mouse dentro la cornice non si vede da qui, e
       // col QR davanti la mano va al telefono — si chiude con un clic fuori, — o Esc
       if (this.view === "iphone") return true;
-      if (this.resetArmato() || this.valArmato() || this._svuota || (this.runState && this.runState !== "done") || this.pending?.next) return true;
+      if (this.resetArmato() || this._svuota || (this.runState && this.runState !== "done") || this.pending?.next) return true;
       if (String(this._tdTesto || "").trim() || String(this._filtro || "").trim()) return true;   // il Da fare del tabellone, il filtro a metà
       if (document.getElementById("psassist-confirm") || document.getElementById("psassist-print") || document.getElementById("psassist-visore")) return true;
       if ((this.quesitoMio && String(this._q || "").trim()) || String(this.acq || "").trim()) return true;   // un quesito scritto, una ricerca a metà
@@ -14434,7 +14341,7 @@
       $("#straggiorna")?.addEventListener("click", (e) => { e.currentTarget.blur(); this.aggiornaOfferta()?.fn(); });
       $("#collapse")?.addEventListener("click", () => this.riduci());
       $("#menubtn")?.addEventListener("click", (e) => {
-        e.stopPropagation(); this.menuAperto = !this.menuAperto; this._resetArmato = 0; this._valArmato = 0; this.render();
+        e.stopPropagation(); this.menuAperto = !this.menuAperto; this._resetArmato = 0; this.render();
         if (this.menuAperto && hasExt()) ask({ t: "aggiornaControlla", ora: true });   // c'è una versione nuova?
       });
       // due tocchi: il primo chiede, il secondo (entro pochi secondi) cancella
@@ -14525,19 +14432,6 @@
         archiviaPaziente(b.getAttribute("data-unarch"), false);
         this.render();
       }));
-      this.root.querySelectorAll("[data-del]").forEach((b) => b.addEventListener("click", () => {
-        // un tasto che cancella davvero chiede una volta, e non di nascosto
-        if (b.dataset.sicuro !== "1") {
-          b.dataset.sicuro = "1"; b.textContent = "cancello?";
-          setTimeout(() => { if (b.isConnected && b.dataset.sicuro === "1") { b.dataset.sicuro = ""; b.innerHTML = ICO.cestino; } }, 4000);
-          return;
-        }
-        const ep = b.getAttribute("data-del");
-        const p = pazientiArchiviati().find((x) => x.ep === ep);
-        eliminaPaziente(ep, p?.pk || "", p?.name || "");
-        this.message = { ok: `Eliminato tutto di ${p?.name || "quel paziente"}.` };
-        this.render();
-      }));
       // il ponte: la pagina dell'iPhone (nel pannello, o in una scheda se lì non si apre), e «Scollega» dall'intestazione
       $("#pontemenu")?.addEventListener("click", () => { this.menuAperto = false; this._ponteNo = ""; this.setView("iphone"); });
       $("#ponteapri")?.addEventListener("click", () => this.ponteInScheda());
@@ -14572,12 +14466,6 @@
       const filtra = () => { this.soloAlterati = !this.soloAlterati; this.render(); };
       $("#storfiltro")?.addEventListener("click", filtra);
       $("#avvnomi")?.addEventListener("click", () => { this.mostraNomi = !this.mostraNomi; this.render(); });
-      $("#valreset")?.addEventListener("click", (e) => {
-        e.stopPropagation();
-        if (!this.valArmato()) { this._valArmato = Date.now(); this.render(); return; }
-        this._valArmato = 0; this.menuAperto = false;
-        this.resetValori();
-      });
       this.root.querySelectorAll("[data-dcopy]").forEach((b) => b.addEventListener("click", async () => {
         const d = dimissioni()[b.getAttribute("data-dcopy")];
         if (!d) return;
@@ -14980,7 +14868,6 @@
       });
       this.root.querySelectorAll("[data-esito]").forEach((b) => b.addEventListener("click", () =>
         this.openEsito(b.getAttribute("data-esito"))));
-      $("#refreset")?.addEventListener("click", () => this.resetReferti());
       $("#reflab")?.addEventListener("toggle", (e) => { this.labAperto = e.target.open; });
       $("#ritiro")?.addEventListener("toggle", (e) => { this.ritiroAperto = e.target.open; });
       $("#refsave")?.addEventListener("click", () => this.saveAllReferti());
@@ -18159,7 +18046,7 @@
     window.addEventListener("unhandledrejection", (ev) => eccezione(ev.reason?.message || ev.reason, ev.reason?.stack));
     const panel = new Panel(pageType);
     PANNELLO = panel;
-    // «Reset dati pazienti» da un'altra scheda: anche questa dimentica (non a metà di un giro)
+    // «Dimentica i dati…» da un'altra scheda: anche questa dimentica (non a metà di un giro)
     window.addEventListener("storage", (ev) => {
       if (ev.key !== NS + "reset.v1" || !ev.newValue || panel.giroQui()) return;
       azzeraScheda();

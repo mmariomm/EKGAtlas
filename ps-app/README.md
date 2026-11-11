@@ -199,7 +199,8 @@ pagina non ha voci non c'è. Ci sta solo quello che serve durante il turno:
 - **Impostazioni**: **Impostazioni** (una pagina sola: stampanti, stazione di stampa, indirizzo del
   portale, iPhone), e — scelte le due stampanti — **Stampa automatica** (vedi
   «Stampa automatica»), **Registrazioni** (vedi «Registrazioni») e per ultimo,
-  da solo sulla sua riga e in rosso, **Reset dati pazienti**. Le voci che si accendono e si spengono
+  da solo sulla sua riga e in rosso, **Dimentica i dati…** (l'unico comando che cancella: vedi «Chi
+  c'è, e chi è stato dimesso»). Le voci che si accendono e si spengono
   (Segue il gestionale, Stampa automatica) si spuntano: al posto dell'icona il loro stato (il
   pallino blu con la spunta, acceso);
 
@@ -248,14 +249,14 @@ sopra quando la finestra è stretta — una **colonna sola**, cinque righe al pi
 mappe non perdono altezza; **Da fare ▾** lo riduce a una barra sottile (e lo ricorda). Una voce, una
 riga: `○ 11:42 tropo… ✕`. In cima il **generale**, di nessun paziente: nel campo «Da fare generale…» si scrive e **Invio** aggiunge
 (`dafare.generale.v1`, in questo browser e nello specchio del tabellone, mai al telefono; non scade,
-una voce spuntata se ne va dopo 5 minuti; il «Reset dati pazienti» lo porta via). Sotto, le cose da
+una voce spuntata se ne va dopo 5 minuti; «Dimentica i dati…» lo porta via). Sotto, le cose da
 fare di **ogni paziente**, nell'ordine del tabellone (l'area, poi l'ordine del gestionale): il
 **COGNOME** in grassetto una volta, a sinistra, sulla prima delle sue voci, e le altre sotto; sono le
 stesse della sua lista. Dappertutto **un tocco sul testo lo modifica** (Invio salva, Esc lascia
 com'era), **✕** (passandoci sopra; al tocco c'è sempre) cancella, la spunta tonda la fa.
 *Lista*: niente mappe, **tutti** quelli della vista, per area (Alta, Bassa, OBI, Codici minori) e nell'ordine della lista del gestionale (l'ultima letta intera), col posto in una pillola dopo il nome. La lista prende
 quello che le serve, al massimo poco meno di metà, poi scorre dentro. In fondo, chiusi, gli
-**Archiviati** e **Svuota l'elenco**.
+**Archiviati**.
 
 **Chi va dove** lo dicono l'area e il triage, sullo stesso elenco (non sono liste diverse):
 **Alta** = l'area Alta + l'OBI **rosso** o **arancione**; **Bassa** = Bassa, Codici minori e l'OBI
@@ -496,7 +497,7 @@ colori si rifanno da soli ogni 30 secondi, sul posto: niente si ridisegna sotto 
 
 Tutto resta **solo in questo browser** (`localStorage`), niente va in rete; lo **stato degli
 esami** (`stato.v1`) è per episodio — ore, nomi di esami, mai il nome del paziente —, scade in 24
-ore, se ne va con 🗑 e «Svuota l'elenco»; le allergie lette lì dentro se ne vanno anche alla pagina
+ore, se ne va con «Dimentica i dati…»; le allergie lette lì dentro se ne vanno anche alla pagina
 di login; un altro PC o un altro
 profilo Chrome ha la sua stanza. La **stanza disegnata**, una per mappa (`stanza.ps.v1`,
 `stanza.alta.v1`: celle intere della griglia, così a ogni misura è la stessa; la sedia è un letto
@@ -509,18 +510,17 @@ dove** (`stanza.ps.posti.v1`, `stanza.alta.posti.v1`) sono solo numeri di episod
 (`aree.opzioni.v1`) sono un'impostazione. Della data di nascita l'elenco tiene solo un'impronta,
 per riconoscere le righe della lista smart. La pagina di
 login **non** li cancella: chi viene riaperto dopo una sessione scaduta ritrova il suo letto (il
-posto aspetta al massimo un giorno). «Svuota l'elenco» toglie anche i posti; eliminare un paziente
-(🗑) toglie anche il suo. **Da fare** (`dafare.v1`) è per episodio: la cosa da fare e l'ora se c'è,
+posto aspetta al massimo un giorno). «Dimentica i dati…» toglie anche i posti. **Da fare** (`dafare.v1`) è per episodio: la cosa da fare e l'ora se c'è,
 mai un nome; al massimo 15 voci aperte a paziente; una voce con l'ora scade 12 ore dopo l'ora
 fissata, una senza 24 ore dopo l'ultima modifica, una spuntata 5 minuti dopo. Nemmeno queste le
 cancella la pagina di login — una sessione scaduta non deve far perdere la troponina delle 11:30 —;
-«Svuota l'elenco» e 🗑 sì. I **parametri vitali** letti (l'ultima riga: ora e valori, mai un nome)
+«Dimentica i dati…» sì. I **parametri vitali** letti (l'ultima riga: ora e valori, mai un nome)
 stanno con lo stato degli esami, in `stato.v1`, e se ne vanno con lui.
 Il **tabellone**: la vista scelta (`tabellone.vista.v1`: `alta`, `bassa`, `entrambe`) e `tabellone.modo.v1` (`mappa`, `lista`; la riga di ognuno nella lista del gestionale è `n` in `aree.v1`), «segue il
 gestionale» (`segue.v1`, `false` se spento) e il link della lista smart (`smart.url.v1`, com'era
 nella pagina) sono impostazioni e restano; l'ultima lettura della smart (`smart.sync.v1`: quando,
 com'è andata, quante righe) e l'ultima uscita da annullare (`dimessi.v1`: episodi, «COGNOME N.» e i
-posti da rimettere) se ne vanno con «Reset dati pazienti». Chi è noto solo dalla smart sta in
+posti da rimettere) se ne vanno con «Dimentica i dati…». Chi è noto solo dalla smart sta in
 `patients.v1` con una chiave fatta dall'impronta (`sm…`), `smart: true`; l'ingresso in PS è
 `arrivo` (un istante, mai una data di nascita). Nella scheda dietro, le schede della smart già
 lette stanno in `sessionStorage` (`smart.giro.v1`) e muoiono con lei.
@@ -863,7 +863,7 @@ riprende da solo appena l'ordine ha finito. Si ferma se lasci il paziente (chi e
 parte). **Quello che da solo non è riuscito** (un referto, i valori) non si ritenta a ogni giro:
 da solo al più **due volte**, dopo 2 e dopo 10 minuti (i valori anche quando la loro firma nella
 pagina cambia); un tocco o un bottone ci provano sempre; un PDF che si è rivelato di un altro
-paziente da solo non si riprende più (↺ fa ripartire i referti da capo). Il laboratorio a metà,
+paziente da solo non si riprende più (un tocco lo riprende). Il laboratorio a metà,
 con la pagina aperta, si ricontrolla ogni 10 minuti **solo mentre la guardi** (tornandoci, se ne
 sono passati 10), e dopo due ricontrolli senza niente di nuovo smette: lo rifà aprire gli Esiti. Mentre lavora, accanto a **↻** c'è solo un discreto **«↓ 2»** — quanti ne restano —
 e nient'altro. Non parte mai nella scheda di un ordine, del Ponte, di un giro ripreso o con una
@@ -953,9 +953,7 @@ range non cambiano; i referti (ECG, Imaging) stanno sotto il Lab.
   risposto: il pannello dice perché). Poi, con l'estensione, salva i **referti** non ancora salvati
   (ECG, immagini, visite: mai il laboratorio — vedi *Salvare i referti*). Con l'estensione lo fa
   già da solo all'apertura del paziente (vedi sopra): il bottone resta per rifarlo subito.
-  **solo alterati** / **tutti** filtra le righe; **⋯ → Dimentica i valori letti** (due tocchi) dimentica i valori letti e la scheda
-  in archivio di questo paziente, e **⭳ Carica i valori** li rilegge da zero (i tuoi segni
-  restano).
+  **solo alterati** / **tutti** filtra le righe.
 - Di un prelievo il gestionale può **non dare data e ora** (né nel campo nascosto della riga, né
   a video). Quei valori **non spariscono**: diventano la colonna **?**, in fondo a destra, con
   «ora ignota» sotto e il motivo nel tooltip. Un piccolo «? 1 senza ora» nella riga del titolo lo dice (il perché è nel passaggio del mouse), e il Registro
@@ -1012,7 +1010,7 @@ o una richiesta in attesa.
   (un PDF intestato a un altro paziente non resta) e lo lascia al visore. Quelli già salvati non
   si riscaricano. **Il testo di ECG e radiografie già salvati si legge sempre**, appena apri gli
   Esiti, dalla copia su questo computer: nessuna richiesta.
-  **↺** (accanto a «Salva») dimentica le copie e il loro testo. Un referto che non si lascia
+  Le copie si dimenticano con **⋯ → Dimentica i dati…**, o scadono da sole. Un referto che non si lascia
   salvare (pallino rosso, il motivo al passaggio del mouse e nel Registro) resta apribile con un
   tocco.
 - **ECG e radiologia nel portale**: se il gestionale rimanda il referto al portale clinico, lo
@@ -1035,19 +1033,17 @@ o una richiesta in attesa.
 ### Chi c'è, e chi è stato dimesso
 Nell'elenco **Pazienti** ogni scheda ha **Dimesso ✓**: il paziente esce dall'elenco principale e
 finisce fra gli **Archiviati** (in fondo, con il conteggio). Da lì lo si può **↩ riportare** fra gli
-attivi, oppure **🗑 eliminare** — e eliminare vuol dire *tutto quello che il programma sa di lui*:
-la scheda clinica, i referti tenuti, il testo dei referti letti, «Da fare» e i dati per
-episodio di quella scheda del browser. Chiede conferma una volta e non si torna indietro. L'elenco tiene un
-giorno e centocinquanta pazienti: un turno è di dodici ore.
+attivi. L'elenco tiene un giorno e centocinquanta pazienti: un turno è di dodici ore; i dati dei
+pazienti scadono da soli in 12–24 ore.
 
-**⋯ → Reset dati pazienti** (quando il pannello si incastra): due tocchi («Cancello tutto? Tocca di
-nuovo»), poi «Dati dei pazienti cancellati · **Annulla**» per 8 secondi, come per ogni altra cosa
+**⋯ → Dimentica i dati…** è l'**unico** comando che cancella: due
+tocchi («Dimentico tutto? Tocca di nuovo»), poi «Dati dei pazienti dimenticati · **Annulla**» per 8 secondi, come per ogni altra cosa
 che si può rimpiangere: Annulla rimette tutto com'era (le altre schede e l'estensione si
 puliscono finiti gli 8 secondi, o subito se cambi pagina). Via **tutto** quello che sa dei pazienti e del turno — elenco, aree e posti
 nelle stanze, stato degli esami, «Da fare», note e segni, valori, referti salvati e il loro testo, schede
 cliniche, ordini finiti, richieste da confermare, quesiti, la memoria di ogni scheda aperta, gli
 ordini che ricorda il Ponte, la registrazione non salvata e gli ultimi minuti di quella automatica (gli zip salvati,
-anonimizzati, restano); dei Tempi resta la durata, non il paziente. **Restano**: stampanti e
+anonimizzati, restano). **Restano**: stampanti e
 stampa automatica, indirizzo del portale, associazione con l'iPhone, fogli di dimissione ed EO,
 le stanze, le opzioni delle aree, la finestra. Non c'è mentre questa scheda manda un giro (un
 ordine in coda o delle etichette che aspettano non lo tolgono).
@@ -1767,8 +1763,8 @@ mai attaccati a un referto (niente li collega). Il referto in PDF resta lì acca
   → suo endpoint PDF) e a salvare i byte nella memoria dell'estensione, su questa macchina.
   Solo con l'**estensione**: il bookmarklet non può farlo. Se un referto non è
   salvabile resta senza pallino e il **motivo** compare passandoci sopra col mouse (e nel Registro).
-  Scadono in **8 ore**, massimo 25, e si azzerano alla chiusura del browser; **↺** negli Esiti, o
-  **⋯ → Reset dati pazienti**, subito.
+  Scadono in **8 ore**, massimo 25, e si azzerano alla chiusura del browser; **⋯ → Dimentica i
+  dati…**, subito.
 
 > **Da configurare una volta**: l'host del visualizzatore è dichiarato in
 > `extension/manifest.json` → `host_permissions` (oggi `http://10.11.0.151:9080/*`). Se nella tua
@@ -1838,7 +1834,7 @@ le pagine e ricontrollati dal cancello. Col preferito (bookmarklet) la voce most
   **mai nomi, codici fiscali, date di nascita, testo libero**; nello zip passa dall'anonimizzazione
   e dal controllo come il resto. Nello zip a mano vanno quelle dall'ultima registrazione a mano
   salvata (restano sul PC: si sposta solo il segno); in quello automatico, quelle dei suoi minuti.
-  «Reset dati pazienti» non lo cancella. Sugli errori d'ordine
+  «Dimentica i dati…» non lo cancella. Sugli errori d'ordine
   più difficili («… non risulta nel carrello», «Conferma non verificata», e il «Riprova i mancanti»
   con com'è finito) la voce porta la **traccia** del giro, quella che il motore ha già sotto gli
   occhi (nessuna richiesta in più): l'ordine, ogni esame col suo codice e la sua risorsa, ogni
@@ -2316,11 +2312,11 @@ nella tendina del gestionale») — poi **Prepara nel gestionale** (o Ctrl+Invio
     episodio semplicemente non esiste.
 14. **Dove finisce il contenuto clinico, detto con precisione.** Dei pazienti *conosciuti*
     restano solo nome, episodio, indirizzo della pagina e colore del triage, al massimo 60 e per 24 ore, con
-    **svuota** a mano e **🗑** per cancellare tutto di uno. **Da fare** sta nel `localStorage`
+    **⋯ → Dimentica i dati…** per cancellare tutto. **Da fare** sta nel `localStorage`
     (`dafare.v1`) per episodio: la cosa da fare («tropo») e l'ora se c'è, mai un nome; al massimo 15
     voci aperte a paziente, scadono 12 ore dopo l'ora fissata (24 dall'ultima modifica senza ora, 5
     minuti dopo la spunta), la pagina di login non le tocca (sopravvivono a una
-    sessione scaduta, come il posto nella stanza), **svuota** e **🗑** le tolgono, e non vanno da
+    sessione scaduta, come il posto nella stanza), **Dimentica i dati…** le toglie, e non vanno da
     nessuna parte: non c'è una richiesta, né una notifica fuori dal pannello. Ma valori e testi dei referti letti in un turno stanno nel
     `sessionStorage` della scheda: **Chrome lo tiene anche su disco**, nel profilo, per poter
     ripristinare le schede — muore chiudendo la scheda, non prima. I PDF salvati stanno nella
@@ -2328,10 +2324,9 @@ nella tendina del gestionale») — poi **Prepara nel gestionale** (o Ctrl+Invio
     chiusura del browser. Le **schede cliniche** (tabella multi-prelievo, testi dei referti letti)
     stanno nella memoria dell'estensione, quindi **su disco**: un turno dura dodici ore e non si
     può perdere tutto chiudendo il browser. Scadono da sole **24 ore** dopo l'ultima lettura, al
-    massimo 200 pazienti, e **🗑** su un paziente archiviato le cancella subito — schede, referti
-    tenuti, «Da fare». La pagina di login cancella il resto — ma il `sessionStorage` è
+    massimo 200 pazienti. La pagina di login cancella il resto — ma il `sessionStorage` è
     **per scheda**: pulisce la scheda in cui è comparso il login, non le altre schede aperte.
-    **⋯ → Reset dati pazienti** toglie tutto questo in una volta, in tutte le schede aperte.
+    **⋯ → Dimentica i dati…** toglie tutto questo in una volta, in tutte le schede aperte.
     Su un PC condiviso: usa un profilo Chrome tuo e chiudi il browser a fine turno.
 15. **Niente parte da solo, e niente si inventa.** Aprire la pagina di un paziente non legge
     **nessun** valore: cliccare un paziente non è chiedere il laboratorio. I valori si leggono
@@ -2489,7 +2484,7 @@ nella tendina del gestionale») — poi **Prepara nel gestionale** (o Ctrl+Invio
 
 > **Postazione condivisa**: `localStorage` e la memoria dell'estensione sono legati al **profilo
 > Chrome**, non al login dell'ospedale. Usa l'estensione in un profilo tuo. Se il profilo è
-> davvero condiviso, non usare **⭳ Salva i referti** né **⭳ Carica i valori**, né aprire i referti (i PDF resterebbero su disco fino a 8 ore), e a fine turno **⋯ → Reset dati pazienti**.
+> davvero condiviso, non usare **⭳ Salva i referti** né **⭳ Carica i valori**, né aprire i referti (i PDF resterebbero su disco fino a 8 ore), e a fine turno **⋯ → Dimentica i dati…**.
 
 ---
 

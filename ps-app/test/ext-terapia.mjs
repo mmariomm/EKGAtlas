@@ -313,7 +313,7 @@ try {
   await $p('[data-terpref]:has-text("KETOROLAC")').click();
   check(await $p(".ricvoci .ricv").count() === 2 && !(await $p("#terprepara").isDisabled()), "scelti due farmaci: «Prepara nel gestionale» acceso — anche con le etichette di un altro ordine che aspettano");
   await $p("#menubtn").click();
-  check(await $p("#resetpaz").count() === 1 && await $p("#extreload").count() === 0, "e nel ⋯ «Reset dati pazienti» c'è; «Ricarica estensione» no, finché quelle etichette aspettano");
+  check(await $p("#resetpaz").count() === 1 && await $p("#extreload").count() === 0, "e nel ⋯ «Dimentica i dati…» c'è; «Ricarica estensione» no, finché quelle etichette aspettano");
   await $p("#menubtn").click();
   await sw.evaluate(() => chrome.storage.session.set({ ordini: [] }));
   await sospendi(300);

@@ -323,7 +323,7 @@ await blocco(async () => {
   await page.waitForTimeout(500);
   const dopo = await leggiTutto();
   check(!dopo["aree.v1"] && !dopo["stanza.alta.posti.v1"] && !dopo["stanza.ps.posti.v1"] && !dopo["patients.v1"],
-    `«Reset dati pazienti»: via chi sta in quale area e i posti (got: ${JSON.stringify(Object.keys(dopo).filter((k) => dopo[k]))})`);
+    `«Dimentica i dati…»: via chi sta in quale area e i posti (got: ${JSON.stringify(Object.keys(dopo).filter((k) => dopo[k]))})`);
   check(!!dopo["stanza.alta.v1"] && !!dopo["stanza.ps.v1"] && !!dopo["aree.opzioni.v1"], "restano le stanze e le opzioni delle aree");
   // «Annulla», 8 secondi, come per ogni altra cosa che si può rimpiangere: tutto com'era
   check(/Dati dei pazienti cancellati/.test(await $p(page, ".stsnack").innerText().catch(() => "")), "dopo il reset: «Dati dei pazienti cancellati · Annulla»");

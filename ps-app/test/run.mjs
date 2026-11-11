@@ -3513,9 +3513,13 @@ async function scenarioReferti(browser) {
   check(scen, context.pages().length === before && hits(mock, "bbbb2222") === reqBefore,
     "riclick torna alla scheda già aperta, senza ricaricare");
 
-  await $panel(page, "#refreset").click();
+  // il «↺» degli Esiti non c'è più: un solo comando dimentica, ⋯ → «Dimentica i dati…» (due tocchi)
+  check(scen, (await $panel(page, "#refreset").count()) === 0, "nella riga in cima degli Esiti niente «↺», che sembrava un «rileggi»");
+  await $panel(page, "#menubtn").click();
+  await $panel(page, "#resetpaz").click();
+  await $panel(page, "#resetpaz").click();
   await page.waitForTimeout(400);
-  check(scen, (await page.locator("#psassist-host .rdot.open").count()) === 0, "Resetta azzera lo stato");
+  check(scen, (await page.locator("#psassist-host .rdot.open").count()) === 0, "«Dimentica i dati…» azzera anche lo stato dei referti aperti");
   await context.close();
 }
 
@@ -3851,7 +3855,7 @@ async function scenarioPacchettiImparati(browser) {
   await page.waitForTimeout(300);
   mem = await memoria();
   check(scen, uguali(Object.keys(mem), ["febbre"]),
-    `«Reset dati pazienti»: via il pacchetto di un quesito scritto a mano, resta quello di Febbre (got ${Object.keys(mem).join(", ")})`);
+    `«Dimentica i dati…»: via il pacchetto di un quesito scritto a mano, resta quello di Febbre (got ${Object.keys(mem).join(", ")})`);
   await context.close();
 }
 
@@ -4248,16 +4252,18 @@ async function scenarioRisultati(browser) {
     `e la schermata lo dice, in piccolo: «${ignota.chip}», col perché nel passaggio del mouse (got ${ignota.avviso.slice(0, 90)})`);
   await b4.context.close();
 
-  // «Dimentica i valori letti» (⋯, a due tocchi; non nella testata degli Esiti): la tabella sparisce,
-  // il bottone torna a «⭳ Carica i valori», e una nuova lettura la ricostruisce da zero
-  check(scen, (await $panel(page, ".wuh #valreset").count()) === 0, "«Reset» non sta più nella testata degli Esiti, accanto ad «Aggiorna»");
+  // un comando solo per dimenticare, ⋯ → «Dimentica i dati…», a due tocchi (niente più «Dimentica i
+  // valori letti»): la tabella sparisce, si ricomincia da «⭳ Carica i valori», e una lettura la ricostruisce
   await $panel(page, "#menubtn").click();
-  await $panel(page, "#valreset").click();
-  check(scen, /Tocca di nuovo/.test(await $panel(page, "#valreset").innerText()) && (await page.locator("#psassist-host .sttab").count()) > 0, "il primo tocco chiede soltanto (la tabella resta)");
-  await $panel(page, "#valreset").click();
+  check(scen, (await $panel(page, "#valreset").count()) === 0 && (await $panel(page, ".menu .mreset").count()) === 1 && (await $panel(page, "#resetpaz").innerText()).trim() === "Dimentica i dati…",
+    `nel menu ⋯ un comando solo che cancella: «Dimentica i dati…» (got ${(await $panel(page, ".menu .mreset").allInnerTexts()).join(" | ")})`);
+  await $panel(page, "#resetpaz").click();
+  check(scen, /^Dimentico tutto\? Tocca di nuovo$/.test((await $panel(page, "#resetpaz").innerText()).trim()) && (await page.locator("#psassist-host .sttab").count()) > 0, "il primo tocco chiede soltanto (la tabella resta)");
+  await $panel(page, "#resetpaz").click();
   await page.waitForTimeout(300);
-  check(scen, (await page.locator("#psassist-host .sttab").count()) === 0 && /Carica i valori/.test(await $panel(page, "#risall").innerText()),
-    "il secondo dimentica i valori letti: niente tabella, si ricomincia da «Carica i valori»");
+  check(scen, (await page.locator("#psassist-host .sttab").count()) === 0 && /Carica i valori/.test(await $panel(page, "#risall").innerText())
+    && /Dati dei pazienti dimenticati/.test(await $panel(page, ".stsnack").innerText().catch(() => "")),
+    "il secondo dimentica: niente tabella, si ricomincia da «Carica i valori», e «Dati dei pazienti dimenticati · Annulla»");
   await $panel(page, "#risall").click();
   await attendiTabella(page, 2);
   check(scen, (await page.locator("#psassist-host .sttab thead th").count()) === 3, "e una nuova lettura ricostruisce le due colonne");
@@ -4452,7 +4458,7 @@ async function scenarioForma(browser) {
   await $panel(page, "#menubtn").click();
   await $panel(page, "#resetpaz").click();
   await $panel(page, "#resetpaz").click();
-  check(scen, (await ls("forma.v1")) === "affianca", "e «Reset dati pazienti» la lascia");
+  check(scen, (await ls("forma.v1")) === "affianca", "e «Dimentica i dati…» la lascia");
 
   // --- Al passaggio: si apre col mouse fermo sulla pill, si richiude uscendo
   await metti({ "forma.v1": "passaggio", "win.v1": null });
@@ -5973,20 +5979,20 @@ async function scenarioPromemoria(browser) {
   const r2 = { n: await testoIcona('.pzrow:has([data-ep="999002"])') };
   check(scen, r2.n === "3", `e la nota è una voce: la riga ne conta 3 (got: ${JSON.stringify(r2)})`);
 
-  // restano dopo un ricarico; 🗑 le cancella con il paziente; «Svuota l'elenco» anche, e si annulla
+  // restano dopo un ricarico; fra gli archiviati niente 🗑 né «Svuota l'elenco»: dimenticare è ⋯ →
+  // «Dimentica i dati…» (che porta via anche «Da fare»), e si annulla
   await riga("999002").hover();
   await riga("999002").locator(".pzx").click();
   if (!(await $panel(page, ".pzarch").count())) await $panel(page, "#archtog").click();
-  // (il cestino è un'icona del pannello, non l'emoji 🗑 che cambia faccia da un computer all'altro)
-  check(scen, (await $panel(page, '[data-del="999002"] svg').count()) === 1 && !/🗑/.test(await $panel(page, ".pzhint").innerText().catch(() => "")),
-    "il cestino degli archiviati: l'icona del pannello, niente emoji");
-  await $panel(page, '[data-del="999002"]').click();
-  await $panel(page, '[data-del="999002"]').click();
-  check(scen, !(await archivio())["999002"] && ((await archivio())["999001"] || []).length === 2, "🗑 cancella anche il suo «Da fare» (gli altri restano)");
-  await $panel(page, "#stsvuota").click();
-  check(scen, !Object.keys(await archivio()).length, "«Svuota l'elenco» toglie anche «Da fare»");
+  check(scen, (await $panel(page, '.pzarch [data-unarch="999002"]').count()) === 1 && (await $panel(page, "[data-del], #stsvuota").count()) === 0,
+    "fra gli archiviati solo «↩ riporta»: niente cestino, niente «Svuota l'elenco»");
+  const daFarePrima = await archivio();
+  await $panel(page, "#menubtn").click();
+  await $panel(page, "#resetpaz").click();
+  await $panel(page, "#resetpaz").click();
+  check(scen, !Object.keys(await archivio()).length, "«Dimentica i dati…» toglie anche «Da fare»");
   await $panel(page, ".stannulla").click();
-  check(scen, ((await archivio())["999001"] || []).length === 2, "e Annulla lo rimette");
+  check(scen, JSON.stringify(await archivio()) === JSON.stringify(daFarePrima) && ((await archivio())["999001"] || []).length === 2, "e Annulla lo rimette com'era");
   await context.close();
 }
 
@@ -7387,7 +7393,7 @@ async function scenarioMenuSezioni(browser) {
     return { ultima: sez.lastElementChild === b && !sez.nextElementSibling?.classList.contains("msez"), largo: bb.width >= sb.width - 2, sotto: bb.top >= v.getBoundingClientRect().bottom - 1, colore: getComputedStyle(b).color };
   });
   check(scen, reset.ultima && reset.largo && reset.sotto && reset.colore === "rgb(179, 38, 30)",
-    `«Reset dati pazienti»: l'ultima voce, da sola sulla sua riga, rossa anche a riposo (got ${JSON.stringify(reset)})`);
+    `«Dimentica i dati…»: l'ultima voce, da sola sulla sua riga, rossa anche a riposo (got ${JSON.stringify(reset)})`);
   check(scen, /^PS Assist \S+$/.test((await $panel(a.page, ".menu .mpiede .mver").innerText()).trim()) && !(await $panel(a.page, "#extreload").count()),
     `in fondo la versione; senza estensione niente «Ricarica» (got ${await $panel(a.page, ".menu .mpiede").innerText()})`);
   await shotSide(a.page, "menu-sezioni-bookmarklet");
@@ -7415,7 +7421,7 @@ async function scenarioMenuSezioni(browser) {
   await b.page.waitForSelector("#psassist-host .card", { state: "attached" });
   await menu(b.page);
   s = await sezioni(b.page);
-  check(scen, di(s, "Paziente").filter((x) => x !== "valreset").join() === "ricmenu,termenu,stampamenu" && di(s, "Strumenti").join() === "tabmenu,pontemenu,consmenu"
+  check(scen, di(s, "Paziente").join() === "ricmenu,termenu,stampamenu" && di(s, "Strumenti").join() === "tabmenu,pontemenu,consmenu"
     && di(s, "Impostazioni").join() === "stampanti,regmenu,resetpaz" && !(await sparse(b.page)),
     `con l'estensione, sul paziente: Ricetta SISS, Terapia, Stampa · Tabellone, iPhone, Consegne · Impostazioni, Registrazioni, Reset (got ${vedi(s)})`);
   check(scen, await riga(b.page, "tabmenu", "pontemenu"), "le voci corte, due per riga, alte almeno 32 px (Tabellone · iPhone)");
