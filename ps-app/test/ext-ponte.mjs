@@ -869,6 +869,9 @@ const esitiDi = async (ep, re = /./) => {
 // nuovi sul PC… · 14:32», poi la tabella. Finché la tabella non c'è, i referti del laboratorio (emogas,
 // emocromo) non stanno fra la radiografia e la TC, ma a parte, in fondo
 {
+  // (la lettura partita da sé nella sezione delle note finisce prima: una lettura chiesta mentre va si unisce
+  // a lei — lo stesso paziente è una lettura sola — e la sua scheda non sarebbe quella che si guarda qui)
+  await finche(() => sw.evaluate(() => ponteValoriLetture.size === 0 && pt.valori.size === 0), 150000);
   // (aperto prima, nella sezione delle note, il PC l'ha già letto da solo: si torna a com'era — i valori
   // via dalla sua scheda, nessuna firma del laboratorio letta, e il telefono appena aperto)
   await sw.evaluate(() => chrome.storage.local.get("storicoArch").then((o) => {
@@ -906,7 +909,9 @@ const esitiDi = async (ep, re = /./) => {
   let dietroR = 0;
   await finche(async () => (dietroR = await dietroSu("999001")) === 1, 5000);
   const chieste = TRATTENUTE.slice(), pagR = new Set(chieste.map((x) => x.pg).filter(Boolean));
-  const schedeR = dietroR === 1 ? "" : JSON.stringify(await sw.evaluate(() => chrome.tabs.query({}).then((l) => l.map((t) => [t.id, t.active, (t.pendingUrl || "").slice(-40), (t.url || "").slice(-40)]))));
+  const schedeR = dietroR === 1 ? "" : JSON.stringify(await sw.evaluate(async () => ({
+    schede: (await chrome.tabs.query({})).map((t) => [t.id, t.active, (t.pendingUrl || "").slice(-40), (t.url || "").slice(-40)]),
+    letture: [...ponteValoriLetture].map(([ep, j]) => [ep, j.modo, j.partita]), valori: [...pt.valori].map(([id, w]) => [id, w.ep, !!w.chiesto]) })));
   lasciaRossi();
   check(chieste.length >= 1 && dietroR === 1 && !pagR.has(doc) && pagR.size <= 1 && chieste.every((x) => /EPISODIO_ID=999001/.test(x.url)),
     `…in una scheda dietro, sul PC (non quella del medico): la sua pagina (${chieste.length} richieste, ${dietroR} schede dietro${schedeR && " — " + schedeR})`);
@@ -1444,7 +1449,9 @@ check(await tel.locator(".alle.ros").count() === 1, "…e resta su ogni scheda (
 await tocca(tel, '[data-a="scheda"][data-s="richieste"]');
 await doc.evaluate(() => { const S = JSON.parse(localStorage.getItem("psassist:stato.v1") || "{}"); delete S["999001"].anag; localStorage.setItem("psassist:stato.v1", JSON.stringify(S)); });
 check(await tel.locator("#ordina").isDisabled(), "senza quesito il bottone non parte");
-await tel.locator("#ordina").click({ force: true });
+// (una risposta del PC che arriva adesso — gli esiti appena guardati, «visto» — ridisegna la scheda: il bottone
+// di prima non c'è più, e il tocco si rifà su quello nuovo)
+for (let k = 0; k < 3 && !(await tel.locator("#ordina").click({ force: true, timeout: 5000 }).then(() => true, () => false)); k++) await tel.waitForTimeout(300);
 check(await tel.evaluate(() => document.activeElement && document.activeElement.id) === "quesito", "e toccarlo porta il cursore sul quesito");
 await tel.locator("#quesito").fill("dolore toracico atipico");
 await tel.locator("#quesito").press("Enter");
