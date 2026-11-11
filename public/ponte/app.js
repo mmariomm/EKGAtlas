@@ -599,6 +599,7 @@
     for (const [ep, oid] of S.inviati) if (nato(o, oid)) S.inviati.delete(ep);
     // un ordine appena finito: la sua richiesta è nuova, fra le «Richieste fatte»
     if (o.fine && !(prima && prima.fine) && o.id.startsWith("tel") && S.vista.nome === "paziente" && S.vista.ep === o.ep && S.scheda === "richieste") caricaRistampe(o.ep);
+    if (o.fine && !(prima && prima.fine) && o.id.startsWith("tel") && S.vista.nome === "paziente" && S.vista.ep === o.ep && S.scheda === "richieste") caricaCatalogo();
   }
   const paziente = (ep) => (S.pazienti || []).find((p) => p.ep === ep) || null;
   function aggiornaRiga(riga) {
@@ -616,6 +617,15 @@
     if (S.scheda === "cartella") caricaCartella(ep);
     if (S.scheda === "terapia") caricaTerapie(ep);
     if (S.scheda === "richieste") caricaRistampe(ep);
+    if (S.scheda === "richieste") caricaCatalogo();
+  }
+  // Il catalogo, con quello che il PC sa già chiesto per ogni paziente (`ultimi`: «✓ 11:40», «40′» accanto agli
+  // esami, come sul PC): riletto aprendo le Richieste, e quando un ordine del telefono finisce. Lo chiede l'app da sé.
+  async function caricaCatalogo() {
+    if (S.occupato.has("catalogo")) return;
+    S.occupato.add("catalogo");
+    try { const c = await chiedi("richieste", {}, TEMPO, true); if (c && Array.isArray(c.gruppi)) { S.catalogo = c; render(); } } catch { /* resta quello di prima */ }
+    S.occupato.delete("catalogo");
   }
   // La cartella: l'ultima lettura del PC (o, con «↻ Rileggi», la pagina riletta)
   async function caricaCartella(ep, auto = false, rileggi = false) {
@@ -1794,6 +1804,26 @@
     }).join("")}</div>` : "");
     return `${valori}${carta(altri)}${lab.length ? `<div class="lbl">Laboratorio</div>${carta(lab)}` : ""}${e.nota ? `<p class="piede">${esc(e.nota)}</p>` : ""}`;
   }
+  // Accanto al nome di un esame, come nelle Richieste del PC (le stesse parole): «✓ 11:40» le richieste già tornate,
+  // in verde; «40′» quella in attesa, in ambra (rosso oltre la seconda soglia del suo tipo), «in attesa» senza l'ora;
+  // letto da più di mezz'ora, tutto in grigio e «letto 11:02». Un doppione si vede prima di sceglierlo.
+  function suffissoEsame(ep, k) {
+    const u = S.catalogo && S.catalogo.ultimi && S.catalogo.ultimi[ep], x = u && u.e && u.e[k];
+    if (!x) return null;
+    const ora = Date.now() + (S.scarto || 0), pezzi = [], f = Array.isArray(x.f) ? x.f.filter(Number.isFinite) : [];
+    const tinta = (cls, t) => `<span class="${u.v ? "" : cls}">${esc(t)}</span>`;
+    if (f.length) pezzi.push(tinta("uok", `✓ ${f.map(hhmm).join(", ")}`));
+    else if (x.ok) pezzi.push(tinta("uok", "✓"));
+    if (x.w) {
+      const min = Number.isFinite(x.a) && x.a > 0 && !u.v ? Math.max(0, Math.floor((ora - x.a) / 60e3)) : null;
+      pezzi.push(tinta(min != null && Number.isFinite(x.r) && ora >= x.r ? "uros" : "uatt", min != null ? durata(min) : "in attesa"));
+    }
+    if (u.v && Number.isFinite(u.l)) pezzi.push(`<span>letto ${esc(hhmm(u.l))}</span>`);
+    if (!pezzi.length) return null;
+    const titolo = `${f.length ? `Già fatto: richieste delle ${f.map(hhmm).join(", ")}` : x.ok ? "Già fatto" : ""}${
+      x.w ? `${f.length || x.ok ? " · " : ""}in attesa${Number.isFinite(x.a) && x.a > 0 ? ` dalle ${hhmm(x.a)}` : ""}` : ""}${Number.isFinite(u.l) ? ` · letto alle ${hhmm(u.l)}` : ""}`;
+    return { html: ` <span class="ult${u.v ? " vecchio" : ""}">${pezzi.join(" ")}</span>`, titolo };
+  }
   function vistaRichieste(p) {
     const c = S.catalogo;
     if (!c) return `<div class="carica"><div class="giro"></div></div>`;
@@ -1809,7 +1839,8 @@
     const gruppi = c.gruppi.map((g) => `<div class="gruppo"><h3>${esc(g.nome)}</h3>${g.profili.length ? `<div class="chips">${g.profili.map((pr, i) => {
       const on = pr.esami.every((k) => s.esami.has(k));
       return `<button class="chip prof${on ? " on" : ""}" data-a="profilo" data-g="${esc(g.nome)}" data-i="${i}">${ICO_PROFILO}${esc(pr.nome)}</button>`;
-    }).join("")}</div>` : ""}<div class="griglia">${g.esami.map((k) => `<button class="esame${s.esami.has(k) ? " on" : ""}" data-a="esame" data-k="${esc(k)}">${esc(c.nomi[k] || k)}</button>`).join("")}</div></div>`).join("");
+    }).join("")}</div>` : ""}<div class="griglia">${g.esami.map((k) => { const u = suffissoEsame(p.ep, k); return `<button class="esame${s.esami.has(k) ? " on" : ""}" data-a="esame" data-k="${esc(k)}"${
+      u ? ` aria-label="${esc(`${c.nomi[k] || k} · ${u.titolo}`)}"` : ""}>${esc(c.nomi[k] || k)}${u ? u.html : ""}</button>`; }).join("")}</div></div>`).join("");
     return `<div class="carta q-w"><input id="quesito" type="text" enterkeyhint="done" autocomplete="off" placeholder="Quesito diagnostico" value="${esc(s.q)}"><div class="chips">${quesiti}</div></div>
       <div class="carta">${gruppi}</div>${ristampeHtml(p)}`;
   }
@@ -2253,6 +2284,7 @@
       if (S.scheda === "cartella") caricaCartella(ep, !!S.cartelle.get(ep));
       if (S.scheda === "terapia") caricaTerapie(ep, !!S.terapie.get(ep));
       if (S.scheda === "richieste") caricaRistampe(ep);
+      if (S.scheda === "richieste") caricaCatalogo();
     }
     else if (a === "ristampa") {
       const l = S.ristampe.get(ep), r = Array.isArray(l) ? l.find((x) => x.id === b.dataset.id) : null;

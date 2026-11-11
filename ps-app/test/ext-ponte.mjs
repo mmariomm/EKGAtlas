@@ -1277,6 +1277,9 @@ await tocca(tel, '[data-a="quesito"][data-q="Febbre"]');
 check((await accesi()).length === 0 && await tel.locator("#quesito").inputValue() === "", "toccato di nuovo li toglie");
 check(await tel.locator("#ordina").count() === 0 && await tel.locator(".cta").count() === 0 && !/Scegli gli esami/.test(await testoTel(tel)),
   "(5) senza un esame scelto niente barra, e niente bottone spento «Scegli gli esami»: la barra compare scegliendo");
+// accanto agli esami, come sul PC: niente, finché non sono stati chiesti
+const ultTel = (nome) => tel.locator(`[data-a="esame"]:has-text("${nome}")`).first().locator(".ult").innerText({ timeout: 1000 }).catch(() => "");
+check(!(await ultTel("TROPONINA US")) && !(await ultTel("EMOCROMO POC")), "TROPONINA US ed EMOCROMO POC mai chiesti: accanto al nome niente");
 await tocca(tel, '[data-a="esame"]:has-text("TROPONINA US")');
 await tocca(tel, '[data-a="esame"]:has-text("EMOCROMO POC")');
 check(await tel.locator("#ordina").count() === 1, "(5) scelto un esame, la barra c'è");
@@ -1333,6 +1336,15 @@ check(await finche(async () => (await doc.evaluate(() => JSON.parse(localStorage
   "un tocco su «Stampa» nella striscia del PC: le etichette si stampano lì, come sempre");
 check(/Etichette prese in stampa sul PC/.test(await aspettaTel(tel, /Etichette prese in stampa sul PC/, 15000)),
   "e il telefono lo sa: «Etichette prese in stampa sul PC», non «Ordine non completo»");
+// gli esami appena ordinati, accanto al nome come nelle Richieste del PC: «0′» in attesa (ambra), e il perché nel nome per la voce
+await tocca(tel, '[data-a="scheda"][data-s="esiti"]');
+await tocca(tel, '[data-a="scheda"][data-s="richieste"]');
+check(await finche(async () => /^\d+′$/.test(await ultTel("TROPONINA US")) && /^\d+′$/.test(await ultTel("EMOCROMO POC")), 15000)
+  && await tel.locator('[data-a="esame"]:has-text("TROPONINA US")').first().locator(".ult .uatt").count() === 1
+  && /^TROPONINA US · in attesa dalle \d\d:\d\d( · letto alle \d\d:\d\d)?$/.test(await tel.locator('[data-a="esame"]:has-text("TROPONINA US")').first().getAttribute("aria-label")),
+  `ordinati: accanto al nome «${await ultTel("TROPONINA US")}» in attesa, come sul PC — un doppione si vede prima di sceglierlo`);
+check(!(await ultTel("PCR")), "…e gli altri no");
+await shot(tel, "tel-richieste-gia-chieste");
 const carta = await tel.locator(".ord").first().innerText();
 check(!/Quesito: il tuo/.test(carta) && (carta.match(/2 esami/g) || []).length <= 1, `la carta dell'ordine: niente «Quesito: il tuo», niente «2 esami» ripetuto (${carta.replace(/\s+/g, " ")})`);
 check(await tel.locator(".ord").first().locator(".c b > span").innerText() === "Etichette prese in stampa sul PC" && (carta.match(/\d\d:\d\d/g) || []).length === 1,

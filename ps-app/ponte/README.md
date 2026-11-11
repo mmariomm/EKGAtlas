@@ -87,7 +87,11 @@ sessione. Vedi:
   come di un altro paziente (è leggendole che lo si scopre, e la copia si toglie) — anche di una TC o di una visita, il cui testo non si legge —, e dà solo
   quelle offerte nella sessione. Oltre 15 MB: «PDF troppo grande: aprilo sul PC».
 - **Richieste** — il quesito (i tre pacchetti in testa, e i quesiti che sul PC hanno imparato il loro pacchetto), i profili e gli esami, in pillole che vanno
-  a capo (alte almeno 44 pt; scelto = pieno). Con quesito mancante il bottone resta spento, ma un
+  a capo (alte almeno 44 pt; scelto = pieno). Accanto al nome di un esame, come nelle Richieste del PC e con
+  le stesse parole: **«✓ 11:40»** le richieste già tornate (verde), **«40′»** quella in attesa (ambra, rosso
+  oltre la seconda soglia), grigio con «letto 11:02» se la lettura è vecchia — un doppione si vede prima di
+  sceglierlo. Il PC lo manda col catalogo (`ultimi`, per paziente), riletto aprendo le Richieste e quando
+  un ordine del telefono finisce; i minuti li conta il telefono. Con quesito mancante il bottone resta spento, ma un
   tocco porta il cursore sul quesito. Il
   bottone chiede conferma **col nome intero, l'età e il posto** («Ordino 2 esami per ROSSI MARIO ·
   77 anni · OBI 2? Tocca di nuovo»; per un omonimo «⚠ Ordino …», col segno); un secondo tocco entro
@@ -358,7 +362,7 @@ un ordine la risposta è «non si sa», mai un no, e l'ordine che nasce lo stess
 ordine o un promemoria non passa poi alla scheda dopo (sarebbero due). Mai un silenzio.
 
 **I comandi** (e solo questi, con argomenti controllati uno per uno): `pazienti`, `esiti(ep)`,
-`aggiornaValori(ep)`, `richieste` (il catalogo; con una stazione di stampa collegata, `stampa: {stazione, dove}`), `ordina(ep, oid, esami, quesito, mio, nato, dest?)`, `nota(ep,
+`aggiornaValori(ep)`, `richieste` (il catalogo, con `ultimi`: per paziente ed esame quello che il PC scrive accanto al nome — ore tornate, in attesa da quando, rosso da quando; con una stazione di stampa collegata, `stampa: {stazione, dove}`), `ordina(ep, oid, esami, quesito, mio, nato, dest?)`, `nota(ep,
 testo)`, `promemoria(ep, testo)`, `fatto(ep, id)`, `cartella(ep, rileggi?)`, `cartellaSalva(ep, campi: {NOME:
 {prima, dopo}})`, `terapie(ep, rileggi?)`, `terapiaCerca(ep, q)`, `terapiaAggiungi(ep, rq, voce, visti)`, `accetta(k | ep, rq)`, `ristampe(ep)` (per richiesta anche `et` e `fo`: quante etichette e quanti fogli), `ristampa(ep, rid, oid, dest?, quali?)` (`quali`: `etichette` | `foglio` | `tutto`), `pdf(ep, ref, i)`, `stampa(rid, i, n, size, b)`, `stampaReferto(ep, ref, rid, dest?)`, `stazioneCollega(sta, nome)`,
 più `ciao`/`esci`/`tocco`/`ordini` per la sessione e lo stato degli ordini. Niente navigazione libera, niente script, niente appunti. L'ordine passa per

@@ -12084,19 +12084,7 @@
     }
     // Per le Richieste: esame per esame (il nome del catalogo, identico), le
     // ore delle richieste già tornate e la più vecchia ancora in attesa.
-    ultimiEsami() {
-      const st = this.episodeId ? statoEsami(statoDi(this.episodeId)) : null;
-      const m = new Map();
-      if (!st) return m;
-      for (const e of st.esami) {
-        const k = chiaveEsame(e.label), x = m.get(k) || { fatti: [], attesa: 0, inAttesa: false, fatto: false };
-        if (e.fatto) { x.fatto = true; if (e.ts) x.fatti.push(e.ts); }
-        else { x.inAttesa = true; if (e.ts && (!x.attesa || e.ts < x.attesa)) x.attesa = e.ts; }
-        m.set(k, x);
-      }
-      m.vecchio = st.vecchio; m.letto = st.letto;
-      return m;
-    }
+    ultimiEsami() { return ultimiDi(this.episodeId); }
     // «· 11:40, 14:30», «· in attesa 40′»; letto da più di mezz'ora: «· letto 11:02»
     // «✓ 11:40» fatto, in verde; «40′» in attesa, ambra (senza ⏳) — rosso oltre la
     // seconda soglia del suo tipo; letto da più di mezz'ora: in grigio, «letto 11:02»
@@ -17275,6 +17263,46 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     }, { once: true });
     document.documentElement.appendChild(f);
   }
+  // Gli esami di un paziente, per nome (il nome del catalogo, identico): le
+  // ore delle richieste già tornate e la più vecchia ancora in attesa. Le
+  // Richieste del pannello e, per il telefono, ponteUltimi.
+  function ultimiDi(ep) {
+    const st = ep ? statoEsami(statoDi(ep)) : null;
+    const m = new Map();
+    if (!st) return m;
+    for (const e of st.esami) {
+      const k = chiaveEsame(e.label), x = m.get(k) || { fatti: [], attesa: 0, inAttesa: false, fatto: false };
+      if (e.fatto) { x.fatto = true; if (e.ts) x.fatti.push(e.ts); }
+      else { x.inAttesa = true; if (e.ts && (!x.attesa || e.ts < x.attesa)) x.attesa = e.ts; }
+      m.set(k, x);
+    }
+    m.vecchio = st.vecchio; m.letto = st.letto;
+    return m;
+  }
+  // Con il catalogo, per il telefono: quello che le Richieste del pannello
+  // scrivono accanto a ogni esame («✓ 11:40», «40′»), in dati — il telefono lo
+  // scrive con le stesse parole, e i minuti contano lì. Per ogni paziente
+  // dell'elenco (non gli episodi precedenti), per chiave del telefono («r:c»):
+  // `f` le ore delle richieste tornate (le ultime tre), `ok` tornato, `w` in
+  // attesa, `a` da quando, `r` da quando è rosso (la seconda soglia del suo
+  // tipo); `v` la lettura vecchia, `l` quando è stata letta.
+  function ponteUltimi(cat) {
+    const chiavi = Object.keys(cat.nomi).map((x) => {
+      const [r, c] = x.split(":");
+      return { x, k: chiaveEsame(examLabel(r, c)), ros: (RADIO_SET.includes(r) ? ATTESA_IMG : ATTESA_LAB)[1] };
+    });
+    const out = {};
+    for (const i of PANNELLO.pazModello().info.values()) {
+      if (i.prec) continue;
+      const m = ultimiDi(i.p.ep), e = {};
+      for (const { x, k, ros } of chiavi) {
+        const u = m.get(k);
+        if (u) e[x] = { f: u.fatti.slice().sort((a, b) => a - b).slice(-3), ...(u.fatto ? { ok: 1 } : {}), ...(u.inAttesa ? { w: 1 } : {}), ...(u.attesa ? { a: u.attesa, r: u.attesa + ros * 60e3 } : {}) };
+      }
+      if (Object.keys(e).length) out[i.p.ep] = { ...(m.vecchio ? { v: 1 } : {}), ...(m.letto ? { l: m.letto } : {}), e };
+    }
+    return out;
+  }
   // Quello che serve al telefono per ordinare: i quesiti (prima i tre
   // pacchetti, con quanti esami portano su questo computer), i profili e gli
   // esami della griglia, per laboratorio. Gli stessi filtri del pannello: un
@@ -17523,7 +17551,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       // (con la chiave di ognuno: sulla mappa i posti dicono solo quella)
       return { ok: true, dati: { ts: t?.ts || 0, righe: Array.isArray(t?.righe) ? t.righe.map((x) => ({ ...x, k: chiaveTriage(x) })) : [], rilegge: !!(r && r.ok) } };
     }
-    if (cmd === "richieste") return fatto({ ok: true, dati: ponteCatalogo(), registro: "catalogo degli esami" });
+    if (cmd === "richieste") { const c = ponteCatalogo(); return fatto({ ok: true, dati: { ...c, ultimi: ponteUltimi(c) }, registro: "catalogo degli esami" }); }
     // chi è al Triage, portato sulla mappa dal telefono: lo stesso gesto del PC (non è fra i pazienti)
     if (cmd === "posto" && /^tr[0-9a-z]{1,10}$/.test(String(a.ep || "")) && !pontePaziente(a.ep)) {
       const o = triageOspiti(PANNELLO.pazModello().pazienti).find((r) => r.k === a.ep);

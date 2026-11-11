@@ -1363,7 +1363,8 @@ che non può leggere niente: cifrato da un capo all'altro, nessun dato su nessun
   o su un'area, o fuori dalla mappa per tornare fra «Senza posto»; lo fa il PC (`posto`, lo stesso gesto del
   trascinamento sulla sua mappa: un posto per paziente, un letto uno solo, le aree molti) e il telefono
   ridisegna dalla sua risposta. Un PC che non lo conosce: mappa in sola lettura, o niente scelta, senza errori.
-- **Ordinare dal telefono**: la conferma porta nome intero, età e posto (due righe: «Ordino 2 esami · tocca di nuovo» e, sotto,
+- **Ordinare dal telefono**: accanto a ogni esame, come sul PC, «✓ 11:40» se è già tornato e «40′» se è
+  in attesa (un doppione si vede prima di sceglierlo); la conferma porta nome intero, età e posto (due righe: «Ordino 2 esami · tocca di nuovo» e, sotto,
   «ROSSI MARIO · 77 anni · OBI 2»; due pazienti con lo stesso nome: «⚠ ROSSI MARIO · …9001 · …», col segno dell'elenco); un doppio tocco non conferma; se la rete perde
   la risposta il telefono dice «Non so se l'ordine è partito» e non lo rifà alla cieca (lo stesso
   ordine rimandato parte una volta sola), a meno che non lo veda già nato sul PC. Niente ordini su un episodio precedente o per un paziente
