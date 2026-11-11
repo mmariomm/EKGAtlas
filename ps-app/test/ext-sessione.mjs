@@ -787,6 +787,27 @@ if (prova("prima le etichette: senza la stampa automatica, i PDF del primo ordin
   lento = 0;
 }
 
+// ---- 2e. dal telefono, una gamba senza risposta -----------------------------
+// Il laboratorio è partito; la radiologia, dopo, il service worker non la
+// conferma (la risposta persa): anche lei può essere partita — «Da
+// controllare», mai «Non partiti» (che direbbe di rifarla).
+if (prova("dal telefono, la radiologia senza risposta del service worker: da controllare, mai «Non partiti»")) {
+  await daCapo();
+  await suPagina(doc, A.patientUrl);
+  await nienteSmart(doc);
+  await sw.evaluate(() => {
+    chrome.runtime.onMessage.removeListener(ordMessaggio);
+    self.__senzaRx = (m, s, r) => (m && m.t === "ordineNuovo" && /r$/.test((m.job && m.job.id) || "") ? undefined : ordMessaggio(m, s, r));
+    chrome.runtime.onMessage.addListener(self.__senzaRx);
+  });
+  const r = await sw.evaluate((e) => ponteSuScheda("ordina", { ep: "999001", quesito: "dolore toracico", esami: e, id: "telgambe0001" }), [`${RES.POC}:324`, `${RES.RX}:35`]);
+  await sw.evaluate(() => { chrome.runtime.onMessage.removeListener(self.__senzaRx); chrome.runtime.onMessage.addListener(ordMessaggio); });
+  const av = (r && r.dati && r.dati.avviso) || "";
+  check(!!r && r.ok && (r.dati.ordini || []).length === 1 && /^Da controllare: radiologia \(il service worker non risponde/.test(av) && !/Non partiti/.test(av),
+    `il laboratorio partito, la radiologia senza risposta: «Da controllare: radiologia (…)», mai «Non partiti» (got ${JSON.stringify(r && r.ok)} · «${av}»)`);
+  await finche(async () => !(await ordini()).some((x) => ["coda", "avvio", "corre"].includes(x.stato)), 60000);
+}
+
 // ---- 3. mai due motori per un ordine ------------------------------------
 if (prova("la scheda d'ordine che ha avuto il piano non si sostituisce mai")) {
   // Il service worker: un ordine «avvio» la cui scheda ha già chiesto chi è

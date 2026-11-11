@@ -17630,8 +17630,10 @@
         const perche = r.no ? r.why || "rifiutato" : "il service worker non risponde: guarda il carrello prima di rifarlo";
         // (senza risposta non si sa se è partito: «Da controllare» sul telefono, come sul PC — mai «niente inviato»)
         if (!ordini.length) return { ok: false, ...(r.no ? {} : { incerto: true }), errore: r.no ? `Ordine non partito: ${perche}` : `Non so se l'ordine è partito: ${perche}` };
-        const fuori = gambe.slice(g).map(([, , nome]) => nome).join(", ");
-        return { ok: true, dati: { ordini, avviso: `Non partiti: ${fuori} (${perche})` }, registro: `ordine per ${p.name}: non partiti ${fuori}` };
+        // (una gamba dopo la prima senza risposta: anche lei può essere partita — da controllare; quelle dopo, non mandate)
+        const dubbio = r.no ? "" : gambe[g][2], fuori = gambe.slice(r.no ? g : g + 1).map(([, , nome]) => nome).join(", ");
+        const avviso = [dubbio ? `Da controllare: ${dubbio} (${perche})` : "", fuori ? `Non partiti: ${fuori}${dubbio ? "" : ` (${perche})`}` : ""].filter(Boolean).join(" · ");
+        return { ok: true, dati: { ordini, avviso }, registro: `ordine per ${p.name}: ${[dubbio ? `da controllare ${dubbio}` : "", fuori ? `non partiti ${fuori}` : ""].filter(Boolean).join(", ")}` };
       }
       ordini.push({ id, ep: p.ep, paziente: p.name, n: l.length, rx: kind === "radio" });
     }

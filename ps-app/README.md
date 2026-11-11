@@ -1474,7 +1474,8 @@ che non può leggere niente: cifrato da un capo all'altro, nessun dato su nessun
   in attesa (un doppione si vede prima di sceglierlo); la conferma porta nome intero, età e posto (due righe: «Ordino 2 esami · tocca di nuovo» e, sotto,
   «ROSSI MARIO · 77 anni · OBI 2»; due pazienti con lo stesso nome: «⚠ ROSSI MARIO · …9001 · …», col segno dell'elenco); un doppio tocco non conferma; se la rete perde
   la risposta il telefono dice «Non so se l'ordine è partito» e non lo rifà alla cieca (lo stesso
-  ordine rimandato parte una volta sola), a meno che non lo veda già nato sul PC. Niente ordini su un episodio precedente o per un paziente
+  ordine rimandato parte una volta sola), a meno che non lo veda già nato sul PC; così anche per la
+  radiologia dopo il laboratorio, se il PC non risponde: «Da controllare: radiologia», mai «Non partiti». Niente ordini su un episodio precedente o per un paziente
   dimesso sul PC. Un ordine finito male si vede da ogni pagina del telefono, finché non lo chiudi.
   Sul PC la striscia dice «dall'iPhone». Con una [stazione di stampa](#stazione-di-stampa-le-stampanti-dellinfermeria)
   collegata, sopra il bottone «Stampa: PC · Infermeria»: parte da quella del PC, e **si ricorda** (sul
