@@ -23,9 +23,11 @@ solo se l'app non è sulla Home) e
 si apre il pannello, già collegato; lo stesso codice è nel suo menu ⋯. L'associazione
 **non scade**: dura finché non la togli (**Revoca** sul PC, **«Dimentica PC»** sul telefono, o un QR nuovo), e vale per **quel telefono solo**: il
 primo che entra. Un altro telefono che inquadra lo stesso QR si sente dire «Il PC è associato a un
-altro telefono», con **«Cancella e riassocia»**: scrive il codice **93** e quel telefono diventa
-l'associato (il primo esce, come con «Revoca» e un'associazione nuova; resta senza scadenza). Il
-codice sbagliato dice «Codice sbagliato» e non cambia niente. Sul PC la pagina ⋯ → iPhone dice
+altro telefono», con **«Usa questo telefono»**: due tocchi (il primo arma, «Usa questo telefono? Tocca
+di nuovo»; un doppio tocco per sbaglio non vale) e quel telefono diventa l'associato (il primo esce,
+come con «Revoca» e un'associazione nuova; resta senza scadenza). Niente codice da ricordare: lo può
+chiedere solo un telefono che ha la chiave del QR. Capita soprattutto col proprio telefono: il QR
+aperto con la Fotocamera (Safari) e poi l'icona della Home, che ha una memoria sua. Sul PC la pagina ⋯ → iPhone dice
 «iPhone cambiato alle 14:32». Il QR si rivede con «Mostra il QR» solo nei primi due minuti e solo finché nessun
 telefono è entrato; dopo, «Associa» ne fa uno nuovo (e il telefono di prima esce). Conviene
 aggiungerlo alla schermata Home (Condividi → Aggiungi alla schermata Home): l'icona riapre il pannello.
@@ -283,14 +285,14 @@ l'associazione. Il QR si rivede solo nei primi due minuti e prima che
 un telefono entri; il primo che entra lega l'associazione al suo `dev` (`ponte.coppia.dev`), e il PC
 risponde «no» al saluto di ogni altro — salvo `cambio`, qui sotto.
 
-**«Cancella e riassocia».** Il telefono rifiutato tiene la chiave del QR e può rimandare il saluto con
-un campo in più, `cambio`: il codice scritto dal medico (stesso messaggio cifrato di ogni saluto, con
-`salutoTel`: senza la chiave non si apre e il PC non risponde nemmeno). Il codice si controlla **sul PC**
-(`PONTE_CODICE_CAMBIO` in `ponte-sw.js`, l'unico posto). Giusto: la sessione di prima finisce
-(«Un altro iPhone ha preso il posto di questo»), `ponte.coppia.dev` passa al nuovo telefono, e la risposta è quella di ogni saluto. Sbagliato: `{no: "codice"}`, niente cambia.
-Cinque sbagli di fila: `{no: "bloccato", fino}` per 10 minuti, anche col codice giusto. Un saluto di
-cambio già visto non vale due volte. Il vecchio telefono, se rientra, trova «associato a un altro
-telefono» e può riprendersi il posto allo stesso modo.
+**«Usa questo telefono».** Il telefono rifiutato tiene la chiave del QR e può rimandare il saluto con
+un campo in più, `cambio: true` (stesso messaggio cifrato di ogni saluto, con `salutoTel`: senza la
+chiave non si apre e il PC non risponde nemmeno). La sessione di prima finisce («Un altro iPhone ha
+preso il posto di questo»), `ponte.coppia.dev` passa al nuovo telefono, e la risposta è quella di ogni
+saluto. Un saluto di cambio già visto (rimandato da chi sta in mezzo) non vale due volte. Il vecchio
+telefono, se rientra, trova «associato a un altro telefono» e può riprendersi il posto allo stesso
+modo. (Un PC con l'estensione di prima voleva un codice: il telefono dice «Non cambiato: sul PC ⋯ →
+iPhone → Associa l'iPhone, e inquadra il QR nuovo».)
 
 **Da K, con HKDF-SHA256** (sale `ps-ponte/1`, WebCrypto, nessuna libreria — `public/ponte/cripto.js`,
 copiato tale e quale in `extension/ponte-cripto.js` da `npm run build`, e un test controlla che
@@ -560,9 +562,9 @@ suo aiutante non l'ha stampato (e il suo file temporaneo, come per ogni foglio).
   cornice: la pagina del gestionale vede la cornice ma non ci legge dentro (un'altra origine); si apre
   solo dalle origini del gestionale (`web_accessible_resources`, solo `ponte.html`) e da un indirizzo
   che cambia a ogni avvio del browser (`use_dynamic_url`).
-- **«Cancella e riassocia»**: la vera protezione è la chiave del QR, che ha solo chi l'ha inquadrato;
-  il 93 evita soltanto un cambio per sbaglio (sono due cifre) e non va preso per una password. Un cambio
-  si vede sul PC («iPhone cambiato alle …», nel Registro) e il primo telefono ne esce.
+- **«Usa questo telefono»**: la protezione è la chiave del QR, che ha solo chi l'ha inquadrato; i due
+  tocchi evitano soltanto un cambio per sbaglio. Un cambio si vede sul PC («iPhone cambiato alle …»,
+  nel Registro) e il primo telefono ne esce.
 - **PC sbloccato e incustodito**: dà già tutto il gestionale a chi si siede. Il ponte aggiunge che una
   sessione aperta si vede e si chiude con un tocco; il QR di prima non si rivede. La chiave vale
   finché non la si revoca, anche col browser chiuso e riaperto: se nel gestionale rientra un altro medico, il

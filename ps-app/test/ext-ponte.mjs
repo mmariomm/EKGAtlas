@@ -583,11 +583,10 @@ const altroCtx = await telBrowser.newContext(IPHONE);
 const altro = await altroCtx.newPage();
 await altro.goto(url1);
 check(/associato a un altro telefono/.test(await aspettaTel(altro, /associato a un altro telefono/, 15000)), "un altro telefono con lo stesso QR: «Il PC è associato a un altro telefono»");
-check(await altro.evaluate(() => localStorage.length) === 1, "…e la sua chiave la tiene (serve a «Cancella e riassocia», più sotto)");
-check(await altro.locator('[data-a="cambia"]').innerText() === "Cancella e riassocia" && await altro.locator("#app input").count() === 1
-  && JSON.stringify(await altro.locator("#app button").allInnerTexts()) === '["Cancella e riassocia","Scansiona il QR"]' && await altro.locator(".grande.quiet[data-a=scansiona]").count() === 1
-  && !/Revoca/.test(await testoTel(altro)), "su quella schermata: «Cancella e riassocia» col campo per il codice, e sotto, più quieto, «Scansiona il QR»; nient'altro (niente spiegazioni)");
-await shot(altro, "tel-2-cancella-e-riassocia");
+check(await altro.evaluate(() => localStorage.length) === 1, "…e la sua chiave la tiene (serve a «Usa questo telefono», più sotto)");
+check(await altro.locator("#app input").count() === 0
+  && JSON.stringify(await altro.locator("#app button").allInnerTexts()) === '["Usa questo telefono","Scansiona il QR"]' && await altro.locator(".grande.quiet[data-a=scansiona]").count() === 1
+  && !/Revoca|[Cc]odice/.test(await testoTel(altro)), "su quella schermata: «Usa questo telefono», e sotto, più quieto, «Scansiona il QR»; nient'altro (niente codice, niente spiegazioni)");
 check(/Un altro telefono ha provato a entrare/.test(await registroPonte()), "il registro del ponte lo dice");
 await altroCtx.close();
 // il ripetitore gli aveva dato la presa del telefono: questo si è fermato, e non fa a gara
@@ -608,26 +607,26 @@ check(/ROSSI MARIO/.test(await aspettaTel(tel, /ROSSI MARIO/, 15000)) && /Aperto
 await tel2.close();
 
 // ===========================================================================
-sezione("«Cancella e riassocia»: un secondo telefono, col codice");
-// il codice è 93, e si controlla sul PC; la richiesta viaggia cifrata con la chiave del QR
+sezione("«Usa questo telefono»: un secondo telefono, due tocchi");
+// niente codice da ricordare: la protezione è la chiave del QR, con cui la richiesta viaggia cifrata
 const dev0 = (await chiaveTel(tel)).dev;
 const cp0 = await coppiaPc();
 const nuovoTel = async () => { const c = await telBrowser.newContext(IPHONE); return { c, p: await c.newPage() }; };
-// (prima la risposta di prima: arrivando, svuota il campo — e il codice nuovo andrebbe perso)
-const scrivi = async (t, codice) => {
+const bottoneCambio = (t) => t.locator('[data-a="cambia"]').innerText().catch(() => "");
+// i due tocchi: il primo arma, il secondo (dopo il secondo di un doppio tocco) lo fa
+const usaQuesto = async (t) => {
   await finche(() => t.locator('[data-a="cambia"]').isEnabled().catch(() => false), 10000);
-  await t.locator("#cambio").fill(codice); await tocca(t, '[data-a="cambia"]');
+  await tocca(t, '[data-a="cambia"]');
+  await sospendi(1000);
+  await tocca(t, '[data-a="cambia"]');
 };
-const sbagliati = async () => (await coppiaPc())?.errori || 0;
-const orologioPc = (ms) => sw.evaluate((x) => { self.__oraVera = self.__oraVera || Date.now; const v = self.__oraVera; Date.now = () => v() + x; }, ms);
-const orologioVero = () => sw.evaluate(() => { if (self.__oraVera) Date.now = self.__oraVera; });
 const registroSenza = async (re) => !re.test(await registroPonte());
 
 // 1. un telefono SENZA la chiave del QR non può nemmeno chiederlo: il messaggio non si apre, il PC non risponde e non cambia niente
 const estraneo = await nuovoTel();
 await estraneo.p.goto(relay.url + "/ponte/");
 const KF = P.casuale(32), CHF = await P.chiaviCoppia(KF);
-const richiesta = await P.sigilla(CHF.salutoTel, P.TIPO.SALUTO_TEL, 0, { v: 1, n: P.b64u(P.casuale(16)), dev: P.b64u(P.casuale(16)), cambio: "93" });
+const richiesta = await P.sigilla(CHF.salutoTel, P.TIPO.SALUTO_TEL, 0, { v: 1, n: P.b64u(P.casuale(16)), dev: P.b64u(P.casuale(16)), cambio: true });
 const risposte = await estraneo.p.evaluate(({ url, frame }) => new Promise((ok) => {
   const got = [], ws = new WebSocket(url);
   ws.binaryType = "arraybuffer";
@@ -636,11 +635,11 @@ const risposte = await estraneo.p.evaluate(({ url, frame }) => new Promise((ok) 
   setTimeout(() => { ws.close(); ok(got); }, 2500);
 }), { url: relay.url.replace(/^http/, "ws") + "/ponte/ws?r=" + CH1.stanza + "&ruolo=tel", frame: Array.from(richiesta) });
 const cpE = await coppiaPc();
-check(!risposte.includes("binario") && cpE.dev === dev0 && !cpE.cambiata && !(await statoPonte()).cambiato && await sbagliati() === 0 && await registroSenza(/Cancella e riassocia|cambiato/),
-  `un telefono senza la chiave, col codice giusto: nessuna risposta, niente cambia, nemmeno un tentativo sbagliato (risposte: ${risposte.join(",") || "nessuna"})`);
+check(!risposte.includes("binario") && cpE.dev === dev0 && !cpE.cambiata && !(await statoPonte()).cambiato && await registroSenza(/Usa questo telefono|cambiato/),
+  `un telefono senza la chiave che chiede il posto: nessuna risposta, niente cambia (risposte: ${risposte.join(",") || "nessuna"})`);
 await estraneo.c.close();
 
-// 2. il secondo telefono (la chiave ce l'ha: ha inquadrato il QR) vede il bottone; codice sbagliato: niente cambia
+// 2. il secondo telefono (la chiave ce l'ha: ha inquadrato il QR) vede «Usa questo telefono»; un tocco solo, o un doppio tocco: niente cambia
 const secondo = await nuovoTel();
 // (le richieste di questo telefono, catturate sulla strada: più sotto una viene rimandata)
 const uscite = [];
@@ -653,34 +652,25 @@ await secondo.c.routeWebSocket(/\/ponte\/ws/, (ws) => {
 });
 await secondo.p.goto(url1);
 await aspettaTel(secondo.p, /associato a un altro telefono/, 15000);
-check(await secondo.p.locator('[data-a="cambia"]').count() === 1, "il secondo telefono, sulla schermata «associato a un altro telefono», vede «Cancella e riassocia»");
-await scrivi(secondo.p, "12");
-check(/Codice sbagliato/.test(await aspettaTel(secondo.p, /Codice sbagliato/, 10000)), "codice sbagliato: «Codice sbagliato»");
+check(await bottoneCambio(secondo.p) === "Usa questo telefono" && await secondo.p.locator("#app input").count() === 0,
+  "il secondo telefono, sulla schermata «associato a un altro telefono»: «Usa questo telefono», nessun campo per un codice");
+await tocca(secondo.p, '[data-a="cambia"]');
+await tocca(secondo.p, '[data-a="cambia"]');   // il secondo tocco di un doppio tocco, subito dopo
+await sospendi(1500);
 const cpS = await coppiaPc();
-check(cpS.dev === dev0 && !cpS.cambiata && cpS.scade === cp0.scade && !(await statoPonte()).cambiato && !!(await statoPonte()).sessione && await sbagliati() === 1,
-  "…e sul PC non cambia niente: stesso telefono, stessa scadenza, la sessione di prima è ancora lì");
-await shot(secondo.p, "tel-3-codice-sbagliato");
+check(await bottoneCambio(secondo.p) === "Usa questo telefono? Tocca di nuovo" && cpS.dev === dev0 && !cpS.cambiata && !(await statoPonte()).cambiato && !!(await statoPonte()).sessione,
+  "il primo tocco arma («Usa questo telefono? Tocca di nuovo»), un doppio tocco non vale: sul PC non cambia niente, la sessione di prima è ancora lì");
+await shot(secondo.p, "tel-2-usa-questo-telefono");
+await sospendi(6000);
+check(await bottoneCambio(secondo.p) === "Usa questo telefono" && (await coppiaPc()).dev === dev0, "lasciato lì, dopo 6 secondi si disarma da solo");
 
-// 3. cinque sbagli: per 10 minuti niente cambi, nemmeno col codice giusto
-for (const [i, c] of ["7", "0", "94"].entries()) { await scrivi(secondo.p, c); await finche(async () => (await sbagliati()) === i + 2, 8000); }
-await scrivi(secondo.p, "931");
-const bloccato = await aspettaTel(secondo.p, /Troppi tentativi: riprova alle \d\d:\d\d/, 10000);
-check(/Troppi tentativi: riprova alle \d\d:\d\d/.test(bloccato), `il quinto: «Troppi tentativi», e fino a che ora (${bloccato.replace(/\s+/g, " ").slice(-50)})`);
-const cpB = await coppiaPc();
-check(cpB.blocco > Date.now() + 9 * 60e3 && cpB.blocco <= Date.now() + 10 * 60e3 + 5e3 && cpB.dev === dev0, "sul PC: il blocco dura 10 minuti, e niente è cambiato");
-await scrivi(secondo.p, "93");
-check(/Troppi tentativi/.test(await aspettaTel(secondo.p, /Troppi tentativi/, 10000)) && (await coppiaPc()).dev === dev0,
-  "durante il blocco anche il 93 è rifiutato");
-
-// 4. passati i 10 minuti, il 93 prende il posto
-await orologioPc(10 * 60e3 + 5e3);
-await scrivi(secondo.p, "93");
+// 3. due tocchi: questo telefono prende il posto
+await usaQuesto(secondo.p);
 const lista2 = await aspettaTel(secondo.p, /ROSSI MARIO/, 20000);
-await orologioVero();
-check(/ROSSI MARIO/.test(lista2) && /BIANCHI ANNA/.test(lista2), "col 93 (finito il blocco): questo telefono è quello associato, e compare l'elenco");
+check(/ROSSI MARIO/.test(lista2) && /BIANCHI ANNA/.test(lista2), "«Usa questo telefono», due tocchi: questo telefono è quello associato, e compare l'elenco");
 const cpC = await coppiaPc();
-check(cpC.dev === (await chiaveTel(secondo.p)).dev && cpC.dev !== dev0 && cpC.scade === cp0.scade && cpC.k === cp0.k && !cpC.errori && !cpC.blocco && Math.abs(cpC.cambiata - Date.now() - 10 * 60e3) < 60e3,
-  "sul PC: il telefono dell'associazione è il nuovo, stessa chiave e stessa scadenza (il cambio non la allunga), i conti dei codici sbagliati azzerati");
+check(cpC.dev === (await chiaveTel(secondo.p)).dev && cpC.dev !== dev0 && cpC.scade === cp0.scade && cpC.k === cp0.k && Math.abs(cpC.cambiata - Date.now()) < 60e3 && !("errori" in cpC) && !("blocco" in cpC),
+  "sul PC: il telefono dell'associazione è il nuovo, stessa chiave e stessa scadenza (il cambio non la allunga)");
 const stC = await statoPonte();
 check(!!stC.sessione && stC.cambiato === cpC.cambiata && /iPhone cambiato alle \d\d:\d\d/.test(await registroPonte()), "e il registro del ponte dice «iPhone cambiato alle HH:MM»");
 // (il pannello del PC è ridotto, sulla vista «iPhone»: riaperto, la cornice è lì)
@@ -691,20 +681,20 @@ check(await finche(async () => /iPhone cambiato alle \d\d:\d\d/.test(await ponte
 await shot(doc, "pc-5-iphone-cambiato");
 await $panel(doc, "#collapse").click();
 
-let richiesta93 = null;
-for (const f of uscite) { try { if ((await P.apri(CH1.salutoTel, new Uint8Array(f), P.TIPO.SALUTO_TEL)).dati.cambio === "93") richiesta93 = f; } catch { /* altro */ } }
-// 5. il telefono di prima: se rientra, «associato a un altro telefono» (con la sua chiave, come prima)
+let richiestaCambio = null;
+for (const f of uscite) { try { if ((await P.apri(CH1.salutoTel, new Uint8Array(f), P.TIPO.SALUTO_TEL)).dati.cambio === true) richiestaCambio = f; } catch { /* altro */ } }
+// 4. il telefono di prima: se rientra, «associato a un altro telefono» (con la sua chiave, come prima)
 await sospendi(500);
 await tocca(tel, '[data-a="riapri"]');
 const fuori = await aspettaTel(tel, /associato a un altro telefono/, 15000);
-check(/associato a un altro telefono/.test(fuori) && await tel.locator('[data-a="cambia"]').count() === 1 && (await chiaveTel(tel))?.dev === dev0,
-  "il telefono di prima, rientrando: «Il PC è associato a un altro telefono», col suo «Cancella e riassocia»");
+check(/associato a un altro telefono/.test(fuori) && await bottoneCambio(tel) === "Usa questo telefono" && (await chiaveTel(tel))?.dev === dev0,
+  "il telefono di prima, rientrando: «Il PC è associato a un altro telefono», col suo «Usa questo telefono»");
 // …e se lo riprende allo stesso modo
-await scrivi(tel, "93");
-check(/ROSSI MARIO/.test(await aspettaTel(tel, /ROSSI MARIO/, 20000)) && (await coppiaPc()).dev === dev0 && (await coppiaPc()).scade === cp0.scade, "col 93 si riprende il posto: di nuovo l'elenco, sul PC il telefono di prima");
+await usaQuesto(tel);
+check(/ROSSI MARIO/.test(await aspettaTel(tel, /ROSSI MARIO/, 20000)) && (await coppiaPc()).dev === dev0 && (await coppiaPc()).scade === cp0.scade, "due tocchi e si riprende il posto: di nuovo l'elenco, sul PC il telefono di prima");
 await secondo.p.reload();
 await secondo.c.close();
-// la richiesta del 93 di prima, catturata sulla strada e rimandata da chi sta in mezzo, non vale una seconda volta
+// la richiesta di prima, catturata sulla strada e rimandata da chi sta in mezzo, non vale una seconda volta
 const rimando = await nuovoTel();
 await rimando.p.goto(relay.url + "/ponte/");
 const rimandata = await rimando.p.evaluate(({ url, frame }) => new Promise((ok) => {
@@ -713,10 +703,10 @@ const rimandata = await rimando.p.evaluate(({ url, frame }) => new Promise((ok) 
   ws.onopen = () => ws.send(new Uint8Array(frame));
   ws.onmessage = (e) => { if (typeof e.data !== "string") got.push(Array.from(new Uint8Array(e.data))); };
   setTimeout(() => { ws.close(); ok(got); }, 2500);
-}), { url: relay.url.replace(/^http/, "ws") + "/ponte/ws?r=" + CH1.stanza + "&ruolo=tel", frame: Array.from(richiesta93) });
+}), { url: relay.url.replace(/^http/, "ws") + "/ponte/ws?r=" + CH1.stanza + "&ruolo=tel", frame: Array.from(richiestaCambio || []) });
 let rifiutata = false;
 for (const f of rimandata) { try { rifiutata = (await P.apri(CH1.salutoPc, new Uint8Array(f), P.TIPO.SALUTO_PC)).dati.no === "altro telefono"; } catch { /* altro */ } }
-check(!!richiesta93 && rifiutata && (await coppiaPc()).dev === dev0, "la richiesta del 93 di prima, rimandata più tardi dal ripetitore: rifiutata, il telefono associato resta quello");
+check(!!richiestaCambio && rifiutata && (await coppiaPc()).dev === dev0, "la richiesta di prima, rimandata più tardi dal ripetitore: rifiutata, il telefono associato resta quello");
 await rimando.c.close();
 await tel.reload();
 await aspettaTel(tel, /ROSSI MARIO/, 20000);

@@ -88,7 +88,7 @@
     cartelle: new Map(), // ep → la cartella letta sul PC: { ep, letto, campi: [{ nome, v, ro }] }
     cbozze: new Map(),   // ep → Map(nome → { base, testo }): quello che il medico ha scritto, e su che cosa
     cstato: new Map(),   // ep → { testo, ricarica }: com'è andato «Salva», se è andato male
-    cambio: null,        // «Cancella e riassocia», sulla schermata «associato a un altro telefono»
+    cambio: null,        // «Usa questo telefono», sulla schermata «associato a un altro telefono»: { arma, occupato, errore }
     camera: "",          // «Scansiona il QR»: perché la fotocamera non c'è
     stampa: null,        // «Stampa un PDF»: { tono, titolo, testo, fine, ts }
     stazione: null,      // il QR di una stazione di stampa, inquadrato: { sta, nome, codice, scade, fase, testo }
@@ -349,7 +349,7 @@
       if (!S.saluto || m.eco !== S.saluto.n) return;   // un saluto vecchio, o non nostro
       const mio = S.saluto;
       S.saluto = null;
-      if (m.no) return mio.cambio ? cambioNo(m) : rifiuta();   // il PC è di un altro telefono
+      if (m.no) return mio.cambio ? cambioNo() : rifiuta();   // il PC è di un altro telefono
       S.canale = P.canaleTel(await P.chiaviSessione(S.coppia.k, mio.byte, P.daB64u(m.n)));
       S.cambio = null;
       S.nSessione = mio.n;
@@ -479,41 +479,46 @@
     if (perche === "riavvio") return riapri();
     render();
   }
-  // Il PC è di un altro telefono. La chiave del QR resta (serve a «Cancella e
-  // riassocia»); non si prova da sé, e dati non ce ne sono.
+  // Il PC è di un altro telefono. La chiave del QR resta (serve a «Usa questo
+  // telefono»); non si prova da sé, e dati non ce ne sono.
   function rifiuta() {
     S.canale = null; S.saluto = null; S.nSessione = "";
-    S.cambio = { testo: "", errore: "", occupato: false };
+    S.cambio = { arma: 0, errore: "", occupato: false };
     S.fase = "rifiutato"; S.menu = false;
     render();
   }
-  // «Cancella e riassocia»: un saluto col codice che il medico ha scritto. Il
-  // PC lo controlla (il codice non è qui) e, se è giusto, risponde come a
-  // ogni saluto: da lì la sessione parte da sola, e arriva l'elenco.
+  // «Usa questo telefono»: due tocchi, come un ordine (il primo arma, il secondo entro 6 secondi; un doppio
+  // tocco per sbaglio non vale), poi un saluto che chiede il posto. La protezione è la chiave del QR, che questo
+  // telefono ha: il PC risponde come a ogni saluto, il telefono di prima esce, e la sessione parte da sola.
   async function cambia() {
-    const c = S.cambio;
+    const c = S.cambio, ora = Date.now();
     if (!c || c.occupato || !S.chiavi) return;
-    if (!c.testo.trim()) { fuocoSu("cambio"); return; }
+    if (!c.arma || ora - c.arma > 6000) {
+      c.arma = ora; c.errore = ""; render();
+      setTimeout(() => { if (S.cambio === c && c.arma && Date.now() - c.arma >= 6000) { c.arma = 0; render(); } }, 6100);
+      return;
+    }
+    if (ora - c.arma < 800) return;   // un doppio tocco per sbaglio è un tocco solo
+    c.arma = 0;
     if (!S.ws || S.ws.readyState !== 1) { c.errore = "Non collegato: riprova"; collega(); render(); return; }
     c.occupato = true; c.errore = ""; render();
     const n = P.casuale(16);
     const mio = { n: P.b64u(n), byte: n, cambio: true, t0: Date.now() };
     S.saluto = mio;
-    manda(await P.sigilla(S.chiavi.salutoTel, P.TIPO.SALUTO_TEL, 0, { v: 1, n: mio.n, dev: S.coppia.dev, cambio: c.testo.trim().slice(0, 12) }));
+    manda(await P.sigilla(S.chiavi.salutoTel, P.TIPO.SALUTO_TEL, 0, { v: 1, n: mio.n, dev: S.coppia.dev, cambio: true }));
     setTimeout(() => {
       if (S.cambio !== c || !c.occupato) return;
       if (S.saluto === mio) S.saluto = null;
       c.occupato = false; c.errore = "Il PC non risponde"; render();
     }, 8000);
   }
-  function cambioNo(m) {
+  // il PC non lo fa (un PC con l'estensione di prima, che voleva un codice): la strada che vale sempre, un QR nuovo
+  function cambioNo() {
     const c = S.cambio;
     if (!c) return;
-    c.occupato = false; c.testo = "";
-    c.errore = m.no === "codice" ? "Codice sbagliato"
-      : m.no === "bloccato" && Number.isFinite(m.fino) ? `Troppi tentativi: riprova alle ${hhmm(m.fino)}` : "Il PC è associato a un altro telefono";
+    c.occupato = false; c.arma = 0;
+    c.errore = "Non cambiato: sul PC ⋯ → iPhone → Associa l'iPhone, e inquadra il QR nuovo";
     render();
-    fuocoSu("cambio");
   }
   // Aperto su un altro telefono, o in un'altra scheda: questo si ferma, e
   // riprende solo se il medico lo chiede.
@@ -1460,10 +1465,9 @@
            <p>Per rientrare serve un QR nuovo: sul PC <b>⋯ → iPhone → Associa l'iPhone</b>.</p>`, scansiona(), true);
       }
       case "rifiutato": {
-        const c = S.cambio || { testo: "", errore: "", occupato: false };
+        const c = S.cambio || { arma: 0, errore: "", occupato: false };
         return piena(ICO.lucchetto, "Il PC è associato a un altro telefono", "",
-          `<div class="cambio"><input id="cambio" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="12" autocomplete="off" enterkeyhint="go" placeholder="Codice" aria-label="Codice" value="${esc(c.testo)}">
-           <button class="grande" data-a="cambia"${c.occupato ? " disabled" : ""}>Cancella e riassocia</button>
+          `<div class="cambio"><button class="grande${c.arma ? " arma" : ""}" data-a="cambia"${c.occupato ? " disabled" : ""}>${c.occupato ? "Cambio telefono…" : c.arma ? "Usa questo telefono? Tocca di nuovo" : "Usa questo telefono"}</button>
            ${c.errore ? `<p class="errcod" role="alert">${esc(c.errore)}</p>` : ""}</div>${scansiona(true)}`, true);
       }
       case "avvio":
@@ -2366,13 +2370,11 @@
       ritoccaRiep();
     }
     else if (t.id === "promin") S.promTesto = t.value;
-    else if (t.id === "cambio" && S.cambio) S.cambio.testo = t.value;
   });
   $app.addEventListener("keydown", (e) => {
     if (e.key !== "Enter") return;
     if (e.target.id === "promin") { e.preventDefault(); aggiungiProm(S.vista.ep); }
     else if (e.target.id === "quesito") { e.preventDefault(); e.target.blur(); }
-    else if (e.target.id === "cambio") { e.preventDefault(); cambia(); }
     else if (e.target.id === "tq") { e.preventDefault(); e.target.blur(); cercaFarmaco(); }
   });
   // Tornati sull'app (iOS chiude le prese delle pagine in sottofondo): ci si
