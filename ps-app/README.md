@@ -873,8 +873,10 @@ richiesta da confermare.
   gravi per primi (K, Na, Hb, troponina, lattati, pH…), la troponina con la misura precedente e la
   sua ora — `K 5.9↑ · Hb 9.1↓ · Trop 48↑ (12 alle 11:40) · 3 nuovi` —; oltre i sei, «+N». **«N
   nuovi»** conta i valori cambiati dall'ultima lettura e i referti mai aperti: un tocco li segna
-  visti. A destra **⭳ Salva i referti (N)** (solo con l'estensione) e, mentre salva a mano,
-  «Salvo i referti 2/5…».
+  visti. A destra, da solo, **↻ Rileggi**: i valori, poi i referti non ancora salvati (anche quelli
+  che da soli non sono riusciti); mentre lavora dice a che punto è («↻ 1/2…», «↻ referti 2/5…»).
+  Niente altro: Salva, ↺ e Diagnosi non ci sono più (i referti si salvano da soli, si dimentica
+  con ⋯ → Dimentica i dati…, la diagnosi va nelle Registrazioni).
 - **In attesa**: in ogni sezione, ciò che è stato chiesto e non è ancora refertato — dalle righe
   del diario della pagina senza l'icona del referto — una riga sola ciascuna, con un sottile
   segno ambra a sinistra (niente fascia gialla) e **da quanto** aspetta (`1h20 RX TORACE ·
@@ -944,8 +946,8 @@ range non cambiano; i referti (ECG, Imaging) stanno sotto il Lab.
   non è «il solito» porta un **asterisco o una croce**, spiegati nella legenda sotto la tabella.
 - **⭳ Carica i valori** legge i prelievi non ancora letti: finché non c'è una tabella è **un solo
   bottone grande** al posto della tabella (i dettagli — quanti prelievi, da dove — sono nel passaggio
-  del mouse, non in una riga che ripete le stesse parole); fatta la prima lettura diventa il piccolo
-  **↻ Aggiorna**, che rilegge **tutti** i prelievi ancora aperti, a passo lento e uno alla volta.
+  del mouse, non in una riga che ripete le stesse parole); fatta la prima lettura è il piccolo
+  **↻ Rileggi** in cima, che rilegge **tutti** i prelievi ancora aperti, a passo lento e uno alla volta.
   Con l'estensione il bottone legge **lo storico del portale**, in una scheda di sottofondo che si
   chiude da sola (vedi *Da dove viene la tabella*): lì ci sono **tutti** i valori del laboratorio,
   refertati e no, con una pagina sola. Le finestre Risultati — una richiesta per prelievo — si
@@ -960,12 +962,12 @@ range non cambiano; i referti (ECG, Imaging) stanno sotto il Lab.
   elenca ogni prelievo letto con la colonna in cui è finito.
 - **Un tocco su un valore lo segna**: giallo; un secondo tocco arancio; un terzo lo spegne. I segni
   sono tuoi, restano col paziente (24 ore, come una voce di «Da fare» senza ora) e sopravvivono al cambio di pagina.
-- **Cosa è cambiato dall'ultima volta che hai guardato**: dopo un **↻ Aggiorna**, in quel prelievo
+- **Cosa è cambiato dall'ultima volta che hai guardato**: dopo un **↻ Rileggi**, in quel prelievo
   un valore cambiato ha **sfondo azzurro**, e lo stesso vale per un analita comparso da zero. Lo
   conta **«N nuovi»** nella riga in cima (il passaggio del mouse dice «N valori nuovi dall'ultima
   lettura»): un tocco spegne i marchi. La prima lettura di un prelievo è sempre il riferimento:
   non è mai un muro di marchi.
-- Un avviso dice quali prelievi non si sono lasciati leggere (il **Registro** dice perché; **↻ Aggiorna**
+- Un avviso dice quali prelievi non si sono lasciati leggere (il **Registro** dice perché; **↻ Rileggi**
   riprova). Quanti ne mancano da leggere lo dice il passaggio del mouse su **⭳ Carica i valori**.
 - La tabella mette insieme due cose: i prelievi letti **in questa scheda del browser** — sempre,
   anche col bookmarklet e senza estensione — e, quando è di questo paziente, la **scheda
@@ -1002,7 +1004,7 @@ o una richiesta in attesa.
   apre lo stesso, con lo stesso tocco**.
 - **Salvare i referti.** Prima era solo una decisione del medico; ora, **su sua richiesta**, lo fa
   anche l'apertura del paziente (vedi in cima agli Esiti). Lo prende l'apertura, un tocco sul
-  referto (il testo è lì sotto, e la copia resta: pallino verde), **⭳ Salva i referti** o
+  referto (il testo è lì sotto, e la copia resta: pallino verde), **↻ Rileggi** o
   **⭳ Carica i valori** (dopo i valori), che prendono tutti quelli non ancora salvati — ECG,
   immagini, visite e consulenze, **mai il laboratorio** — **due alla volta al massimo**, con una
   breve pausa a caso prima di ognuno, gli altri in fila («in fila» sulla loro riga). Di **ECG e
@@ -1755,7 +1757,7 @@ mai attaccati a un referto (niente li collega). Il referto in PDF resta lì acca
 
 - **Valori** (i prelievi in tabella): letti da `RcsAccessiRisultatiElenco.do`, HTML sullo stesso
   server. Restano in memoria **per la scheda e per quell'episodio**, così la tabella si
-  ricostruisce all'istante; **↻ Aggiorna** li rilegge tutti, uno alla volta, man mano che il
+  ricostruisce all'istante; **↻ Rileggi** li rilegge tutti, uno alla volta, man mano che il
   laboratorio completa. Chiusa la scheda, spariscono.
 - **Referti** (righe LIS/RIS/AMB): il visualizzatore **non è su SA4PSO** — gira su un altro host
   interno e mostra il PDF come `blob:` di quell'origine, quindi una pagina di SA4PSO non può
@@ -2333,9 +2335,9 @@ nella tendina del gestionale») — poi **Prepara nel gestionale** (o Ctrl+Invio
     quando li chiedi — aprendo un prelievo, o con **⭳ Carica i valori** che li prende tutti, uno
     alla volta, insieme allo storico del portale aperto in sottofondo dal link della pagina —
     e un prelievo che ha già fallito non si ritenta da solo. **Un PDF non si salva mai da
-    solo**: lo prende un tocco sul referto, **⭳ Salva i referti** o **⭳ Carica i valori** negli
+    solo**: lo prende un tocco sul referto, **↻ Rileggi** o **⭳ Carica i valori** negli
     Esiti (mai il laboratorio), due alla volta al massimo con una pausa a caso prima di ognuno (gli
-    altri in fila, e la riga in cima dice a che punto è), dal link del gestionale o dal portale
+    altri in fila, e ↻ dice a che punto è), dal link del gestionale o dal portale
     come sempre, col controllo d'identità della regola 18; il testo dei PDF già
     salvati si legge invece sempre, dalla copia su questo computer, senza chiedere niente. E la tabella
     multi-prelievo viene **letta dalla pagina che hai davanti**, non chiesta all'API che la
@@ -2484,7 +2486,7 @@ nella tendina del gestionale») — poi **Prepara nel gestionale** (o Ctrl+Invio
 
 > **Postazione condivisa**: `localStorage` e la memoria dell'estensione sono legati al **profilo
 > Chrome**, non al login dell'ospedale. Usa l'estensione in un profilo tuo. Se il profilo è
-> davvero condiviso, non usare **⭳ Salva i referti** né **⭳ Carica i valori**, né aprire i referti (i PDF resterebbero su disco fino a 8 ore), e a fine turno **⋯ → Dimentica i dati…**.
+> davvero condiviso, non usare **↻ Rileggi** né **⭳ Carica i valori**, né aprire i referti (i PDF resterebbero su disco fino a 8 ore), e a fine turno **⋯ → Dimentica i dati…**.
 
 ---
 

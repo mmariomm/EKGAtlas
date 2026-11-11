@@ -1219,7 +1219,7 @@ if (await prova("un referto salvato: «Stampa» nel visore va sull'A4, una volta
   if (!(await $panel(doc, ".card").count())) { await $panel(doc, "#expand").click(); await doc.waitForSelector("#psassist-host .card", { timeout: 8000 }); }
   await $panel(doc, '[data-seg="esiti"]').click();
   const salvato = () => doc.waitForFunction(() => document.getElementById("psassist-host").shadowRoot.querySelector(".rdot.saved"), null, { timeout: 30000 }).then(() => true).catch(() => false);
-  if (!(await $panel(doc, ".rdot.saved").count()) && await $panel(doc, "#refsave").count()) await $panel(doc, "#refsave").click();
+  if (!(await $panel(doc, ".rdot.saved").count()) && await $panel(doc, "#risall:not([disabled])").count()) await $panel(doc, "#risall").click();
   await salvato();
   const id = await $panel(doc, ".rrow.saved").first().getAttribute("data-esito").catch(() => "");
   await $panel(doc, `[data-pdf="${id}"]`).click();

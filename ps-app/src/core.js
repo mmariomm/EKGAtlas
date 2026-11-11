@@ -6144,7 +6144,6 @@
     .wunuovi:hover { background: #DCEAF7; }
     .wutools { display: flex; align-items: center; gap: 6px; margin-left: auto; }
     .wutools .mini { float: none; }
-    .wuprog { font-size: 11.5px; font-weight: 600; color: #35506B; }
     .wuauto { float: right; margin-right: 6px; font-size: 11px; font-weight: 600; color: var(--neutro); font-variant-numeric: tabular-nums; letter-spacing: 0; text-transform: none; }
     /* ogni sezione: il suo colore sul bordo e, appena accennato, sul fondo */
     .wusec { --wu-c: var(--neutro); border-left: 3px solid var(--wu-c); border-radius: 0 10px 10px 0; padding: 9px 12px 10px;
@@ -11374,8 +11373,8 @@
       return JSON.stringify([s ? [s.date || [], s.righe || []] : null,
         this.esiti.filter((e) => e.kind === "valori").map((e) => (tabStore.get(this.risKey(e.id), null) || {}).rows || [])]);
     }
-    // I referti che «Salva i referti» (nel menu ⋯, solo estensione) può ancora
-    // tenere: sulla schermata Esiti, quelli non ancora salvati.
+    // I referti che ↻ Rileggi (solo estensione) può ancora tenere: sulla
+    // schermata Esiti, quelli non ancora salvati.
     refertiDaSalvare() {
       if (this.view !== "esiti" || !hasExt() || this.runState) return [];
       return this.refertiMostrati().filter((e) => !(this.refCache || {})[e.id]);
@@ -11501,11 +11500,14 @@
       const au = this._auto, salva = this._salva;
       const nAuto = au ? (au.labFatto ? 0 : ra ? ra.total - ra.done : au.nLab) + (salva ? salva.totale - salva.fatti : au.nRef) : 0;
       const rilegge = icoIn("aggiorna", 13);   // (html: la freccia che rilegge, poi le parole)
-      const etLeggi = au ? rilegge.replace("margin-right:4px;", "") : ra ? `${rilegge}${ra.done}/${ra.total}…` : sotto ? `${rilegge}storico…` : primaLettura ? "⭳ Carica i valori" : `${rilegge}Aggiorna`;
+      const etLeggi = au ? rilegge.replace("margin-right:4px;", "") : ra ? `${rilegge}${ra.done}/${ra.total}…` : sotto ? `${rilegge}storico…`
+        : salva ? `${rilegge}referti ${salva.fatti}/${salva.totale}…` : primaLettura ? "⭳ Carica i valori" : `${rilegge}Rileggi`;
       const titLeggi = sotto ? "Leggo lo storico del portale in una scheda di sottofondo: si chiude da sola."
+        : salva ? "Salvo i referti non ancora salvati, due alla volta, e ne leggo il testo"
+        : !puoiLeggere ? "Riprende i referti non ancora salvati (anche quelli che da soli non sono riusciti) e ne legge il testo"
         : primaLettura ? `Legge i valori${conPortale ? ": lo storico del portale — tutti i prelievi, refertati e no — in una scheda di sottofondo, e le finestre Risultati del gestionale se serve" : " dal gestionale, un prelievo alla volta"}${
           daLeggere && !conPortale ? ` (${daLeggere} ${daLeggere === 1 ? "prelievo ancora da leggere" : "prelievi ancora da leggere"})` : ""}`
-        : "Rilegge tutti i prelievi ancora aperti, uno alla volta";
+        : "Rilegge i prelievi ancora aperti, uno alla volta, poi riprende i referti non ancora salvati";
       const grande = puoiLeggere && !t && !au;
       // letti ma senza data e ora: il perché sta nel passaggio del mouse, non in due righe
       const infoSenzaData = senzaData.length ? `<span class="infochip" tabindex="0" title="${esc(
@@ -11534,12 +11536,11 @@
       const valori = `
         <section class="sec wusec wulab" aria-label="Laboratorio">
           <div class="lbl wuh"><span class="wut"${t ? ` title="Tocca un valore per segnarlo: giallo, poi arancio, poi via"` : ""}>Lab</span>${t ? `<span class="wucnt"> (${righeTabella(st.righe).length} esami · ${t.nCol} prelievi)</span>` : ""}
-            ${puoiLeggere && !grande ? `<button class="mini" id="risall" ${ra || sotto || au ? `disabled ${this.dopoOrdine(etLeggi, titLeggi, true)}` : `title="${esc(titLeggi)}">${etLeggi}`}</button>` : ""}
             ${nAuto > 0 ? `<span class="wuauto" role="status" title="Carico da solo i valori e i referti nuovi: ne restano ${nAuto}">↓ ${nAuto}</span>` : ""}
             ${t ? `<button class="mini" id="storfiltro">${this.soloAlterati ? "tutti" : "solo alterati"}</button>` : ""}
             ${infoSenzaData}
           </div>
-          ${grande ? `<div class="carica"><button type="button" class="grande" id="risall" ${ra || sotto ? `disabled ${this.dopoOrdine(etLeggi, titLeggi, true)}` : `title="${esc(titLeggi)}">${etLeggi}`}</button></div>` : ""}
+          ${grande ? `<div class="carica"><button type="button" class="grande" id="risall" ${ra || sotto || salva ? `disabled ${this.dopoOrdine(etLeggi, titLeggi, true)}` : `title="${esc(titLeggi)}">${etLeggi}`}</button></div>` : ""}
           ${attesaLab.length ? `<div class="wuwaits">${attesaLab.map(rigaAttesa).join("")}</div>` : ""}
           ${this.notaPortale && !sotto ? `<div class="hint" title="Si legge da solo aprendo il link «Storico Dati Clinici»">Storico del portale non letto: ${esc(this.notaPortale)}.</div>` : ""}
           ${rotti.length ? `<div class="hint" title="Il Registro dice perché">${rotti.length === 1 ? "1 prelievo non letto" : `${rotti.length} prelievi non letti`} (${
@@ -11625,12 +11626,12 @@
       const chip = (x) => `<span class="wuv"><b>${esc(x.sigla)}</b> <span class="wuval">${esc(x.v)}${x.stato < 0 ? "↓" : "↑"}</span>${
         x.prima ? `<span class="wuprima"> (${esc(x.prima.v)}${x.prima.quando ? ` alle ${esc(x.prima.quando)}` : ""})</span>` : ""}</span>`;
       const MAXV = 6;
-      const daSalvare = this.refertiDaSalvare();
-      const nSaved = referti.filter((e) => cached[e.id]).length;
-      const strumenti = [
-        au ? "" : salva ? `<span class="wuprog" role="status">Salvo i referti ${salva.fatti}/${salva.totale}…</span>`
-          : daSalvare.length ? `<button type="button" class="mini" id="refsave" title="Tiene una copia di ${daSalvare.length === 1 ? "questo referto" : `questi ${daSalvare.length} referti`} su questo computer (due alla volta) e ne legge il testo">⭳ Salva i referti (${daSalvare.length})</button>` : "",
-      ].filter(Boolean).join("");
+      // In cima a destra, da solo, ↻ Rileggi: i valori, poi i referti non ancora
+      // salvati (anche quelli che da soli non sono riusciti). Senza tabella e
+      // senza il caricamento da solo c'è il bottone grande, nel Lab; senza
+      // valori da leggere, ↻ riprende solo i referti.
+      const rileggiQui = puoiLeggere ? !grande : this.refertiDaSalvare().length > 0;
+      const strumenti = rileggiQui ? `<button type="button" class="mini" id="risall" ${ra || sotto || au || salva ? `disabled ${this.dopoOrdine(etLeggi, titLeggi, true)}` : `title="${esc(titLeggi)}">${etLeggi}`}</button>` : "";
       const sep = `<span class="wusep" aria-hidden="true">·</span>`;
       const sommario = `<div class="wusum">
           <div class="wusumv">${fuori.length ? fuori.slice(0, MAXV).map(chip).join(sep)
@@ -12717,7 +12718,7 @@
       segnaErrore("referto", { episodio: this.episodeId || "", referto: e.id, sistema: e.sistema || "", motivo: why.slice(0, 200) });
     }
 
-    // «⭳ Salva i referti» e «⭳ Carica i valori»: quelli non ancora salvati
+    // ↻ Rileggi e «⭳ Carica i valori» (e da soli, all'apertura): quelli non ancora salvati
     // (mai il laboratorio), due alla volta con una pausa a caso prima di
     // ognuno, e di ognuno si legge subito il testo (dalla copia appena presa).
     // Il pannello non salva MAI da solo: lo decide il medico, con uno di
@@ -14870,7 +14871,6 @@
         this.openEsito(b.getAttribute("data-esito"))));
       $("#reflab")?.addEventListener("toggle", (e) => { this.labAperto = e.target.open; });
       $("#ritiro")?.addEventListener("toggle", (e) => { this.ritiroAperto = e.target.open; });
-      $("#refsave")?.addEventListener("click", () => this.saveAllReferti());
       $("#copylog")?.addEventListener("click", (e) => { e.preventDefault(); this.copyLog(); });
       this.bindStanza();
       this.dfRiattacca();   // la lista «Da fare» rimasta aperta

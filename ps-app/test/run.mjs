@@ -5409,8 +5409,9 @@ async function scenarioAggiornaTutti(browser) {
     "prima di leggere niente il bottone invita a caricare");
   await $panel(page, "#risall").click();
   await attendiTabella(page, 2);
-  check(scen, (await $panel(page, "#risall").innerText()).trim() === "Aggiorna" && (await $panel(page, "#risall svg").count()) === 1,
-    "letti i prelievi, lo stesso bottone diventa «↻ Aggiorna» (la freccia è l'icona, non il glifo)");
+  const soli = await page.evaluate(() => [...document.getElementById("psassist-host").shadowRoot.querySelectorAll(".wusum .wutools > *")].map((b) => b.id || b.className));
+  check(scen, (await $panel(page, "#risall").innerText()).trim() === "Rileggi" && (await $panel(page, "#risall svg").count()) === 1 && JSON.stringify(soli) === '["risall"]',
+    `letti i prelievi, in cima agli Esiti un bottone solo, «↻ Rileggi» (la freccia è l'icona, non il glifo) (got ${soli.join(", ")})`);
   const prima = hits(mock, "RcsAccessiRisultatiElenco");
   // the lab has updated a value since the prefetch
   mock.state.hbNuova = "92";
@@ -7166,8 +7167,9 @@ async function scenarioEsitiLayout(browser) {
   check(scen, /2 prelievi ancora da leggere/.test(await $panel(page, "#risall").getAttribute("title")), "i dettagli (quanti prelievi) stanno nel passaggio del mouse");
   await $panel(page, "#risall").click();
   await attendiTabella(page, 2);
-  check(scen, (await $panel(page, "#risall").count()) === 1 && (await $panel(page, "#risall.mini").count()) === 1 && /Aggiorna/.test(await $panel(page, "#risall").innerText()),
-    "letti i valori, il bottone diventa il piccolo «↻ Aggiorna»");
+  check(scen, (await $panel(page, "#risall").count()) === 1 && (await $panel(page, ".wusum .wutools #risall.mini").count()) === 1 && /Rileggi/.test(await $panel(page, "#risall").innerText())
+    && (await $panel(page, ".wuh #risall").count()) === 0,
+    "letti i valori, il bottone diventa il piccolo «↻ Rileggi», in cima agli Esiti (non più nella testata del Lab)");
   // l'unità: «x10» nudo non dice niente, per un conteggio cellulare si scrive per esteso
   const um = await $panel(page, ".sttab tbody th.stn").evaluateAll((l) => l.map((t) => t.textContent.replace(/\s+/g, " ").trim()));
   check(scen, um.includes("GB (×10⁹/L)") && !um.some((t) => /\(x10\)/.test(t)), `«x10» diventa ×10⁹/L per i globuli bianchi (got: ${um.slice(0, 4).join(" | ")})`);
@@ -7214,8 +7216,8 @@ async function scenarioEsitiLayout(browser) {
   check(scen, fondi.every((f) => f.rgb && !(f.rgb[0] > f.rgb[1] + 6 && f.rgb[0] > f.rgb[2] + 6)), "e nessuno tende al rosso, che resta dei valori fuori range");
   await shot(page, "esiti-largo");
   // stretta, in colonna (Affianca): una colonna sola, il Lab sempre in cima
-  await $panel(page, "#menubtn").click();
-  await $panel(page, "#winaffianca").click();
+  await affianca(page);
+  if (!(await $panel(page, '[data-seg="esiti"].on').count())) await $panel(page, '[data-seg="esiti"]').click();
   await page.waitForTimeout(300);
   const g2 = await geo();
   labPrima(g2, "nella colonna di «Affianca»");
@@ -7229,10 +7231,9 @@ async function scenarioEsitiLayout(browser) {
   await context.close();
 }
 
-// Quello che esce dalle schermate di tutti i giorni: il cronometro compare solo
-// mentre corre («Tempi» nel ⋯), i paragrafi in fondo a EO, Consensi, Dimissioni
-// e Tempi se ne vanno, «Copia di nuovo» solo dopo una scelta, i comandi rari
-// (JSON, Importa, Salva i referti) nel menu ⋯.
+// Quello che esce dalle schermate di tutti i giorni: i paragrafi in fondo a EO,
+// Consensi e Dimissioni se ne vanno, «Copia di nuovo» solo dopo una scelta, i
+// comandi rari fuori dal menu ⋯ (Esporta e Importa, piccoli, sotto i fogli).
 async function scenarioMenuAltro(browser) {
   const scen = "menu-altro";
   const mock = createMock({ withResults: true });
@@ -8099,7 +8100,7 @@ const scenarios = [
   ["print: una richiesta per erogatore, che compare tardi", (b) => scenarioRichiestePerErogatore(b, { tardi: true })],
   ["lab + rx manual walk", scenarioLabPlusRxManual],
   ["valori: una tabella, una colonna per prelievo", scenarioRisultati],
-  ["↻ Aggiorna rilegge tutti i prelievi", scenarioAggiornaTutti],
+  ["↻ Rileggi rilegge tutti i prelievi", scenarioAggiornaTutti],
   ["valori nuovi e aggiornati dopo il refresh", scenarioNuoviValori],
   ["referto RX letto come testo", scenarioRefertoTesto],
   ["nomi inattesi e righe non lette", scenarioNomiInattesi],

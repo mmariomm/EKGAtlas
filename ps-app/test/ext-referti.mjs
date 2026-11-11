@@ -310,17 +310,22 @@ const errori = async () => { const [s] = ctx.serviceWorkers(); return (await s.e
   await pI.close();
 }
 
-// «Salva i referti» sta negli Esiti, nella riga in cima: non più nel menu ⋯
+// Un bottone solo per rileggere: «↻ Rileggi» in cima agli Esiti, o — finché non c'è una tabella —
+// il grande «⭳ Carica i valori» nel Lab: i valori, poi i referti non ancora salvati. «⭳ Salva i
+// referti» non c'è più (né nel menu ⋯), né ↺ o ⧉ Diagnosi accanto: lo fa lui, e da soli all'apertura.
 voli = []; maxInVolo = 0;
 const giaChiesti = mock.state.requests.filter((q) => eDoc(q.url)).length;
-const saveBtn = page.locator("#psassist-host .wusum #refsave");
-check(await saveBtn.count() === 1 && /\(4\)/.test(await saveBtn.innerText()), "«⭳ Salva i referti (4)» sta nella riga in cima agli Esiti");
+const rileggi = page.locator("#psassist-host #risall");
+const soli = await page.evaluate(() => [...document.getElementById("psassist-host").shadowRoot.querySelectorAll(".wusum .wutools > *")].map((b) => b.id || b.className));
+check(await rileggi.count() === 1 && /Rileggi|Carica i valori/.test(await rileggi.innerText()) && soli.every((x) => x === "risall")
+  && await page.locator("#psassist-host #refsave, #psassist-host #refreset, #psassist-host #refdiag, #psassist-host .wuprog").count() === 0,
+  `un bottone solo per rileggere («${(await rileggi.innerText().catch(() => "")).trim()}»), niente Salva, ↺, Diagnosi accanto (in cima: ${soli.join(", ") || "—"})`);
 await page.locator("#psassist-host #menubtn").click();
-check(await page.locator("#psassist-host .menu #refsave").count() === 0, "e non più nel menu ⋯");
+check(await page.locator("#psassist-host .menu #refsave").count() === 0, "e niente «Salva i referti» nel menu ⋯");
 await page.keyboard.press("Escape");
-await saveBtn.click();
-const progresso = await page.locator("#psassist-host .wuprog").innerText({ timeout: 3000 }).catch(() => "");
-check(/Salvo i referti \d\/4/.test(progresso), `mentre salva, la riga in cima dice a che punto è (got: ${progresso})`);
+await rileggi.click();
+const progresso = await page.waitForFunction(() => { const b = document.getElementById("psassist-host").shadowRoot.querySelector("#risall"); return b && /referti \d\/4/.test(b.textContent) ? b.textContent.trim() : false; }, null, { timeout: 30000 }).then((h) => h.jsonValue()).catch(() => "");
+check(/^referti \d\/4…$/.test(progresso) && !(await page.locator("#psassist-host .wuprog").count()), `mentre salva, è il bottone stesso a dire a che punto è (got: ${progresso})`);
 check(await page.locator("#psassist-host .rdot.coda").count() >= 1, "chi aspetta il suo turno lo dice la sua riga («in fila»)");
 await page.waitForFunction(
   () => document.getElementById("psassist-host").shadowRoot.querySelectorAll(".rdot.saved").length === 4,
@@ -331,7 +336,7 @@ check(saved === 4, `4 referti salvati (got ${saved})`);
 check(maxInVolo === 1, `uno alla volta (got ${maxInVolo})`);
 const scaricati = mock.state.requests.filter((q) => eDoc(q.url)).length - giaChiesti;
 check(scaricati === 4, `ogni referto scaricato una volta sola (got ${scaricati})`);
-// «Salva referti» agisce solo su quelli che si vedono: il referto di
+// ↻ agisce solo su quelli che si vedono: il referto di
 // laboratorio nascosto non viene nemmeno scaricato
 check(mock.state.requests.filter((q) => q.url.includes("aaaa1111")).length === 0,
   "e il referto di laboratorio, che non si vede, non viene scaricato");
