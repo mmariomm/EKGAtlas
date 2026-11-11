@@ -145,6 +145,8 @@ await ctx.route(`${ORIGIN}/**`, async (r) => {
     out = mock.handle({ method: "GET", url: dove });
   }
   if (req.method() === "POST" && /^Prestazioni/.test(p.get("ccsForm") || "") && sess.dopoConferma) sess.dopoConferma(mock, p);
+  // (una Conferma che torna coi suoi tempi, come le vere: 3–14 s)
+  if (req.method() === "POST" && /^Prestazioni/.test(p.get("ccsForm") || "") && sess.confermaLenta) await sospendi(sess.confermaLenta);
   if (sess.area && mock === A && req.method() === "GET" && p.get("MVPG") === "PsoEpisodioClinicoAmbulatorio" && /html/.test((out.headers || {})["content-type"] || "")) {
     sess.log.push({ t: Date.now(), cosa: "paziente", area: sess.area });
     out = { ...out, body: Buffer.from(altraArea(Buffer.from(out.body).toString("latin1")), "latin1") };
@@ -208,7 +210,7 @@ const SOLO = (process.argv[2] || "").toLowerCase();
 const prova = (t) => {
   if (SOLO && !t.toLowerCase().includes(SOLO)) return false;
   console.log("\nsessione: " + t); nuovi();
-  Object.assign(sess, { corrente: null, log: [], ora: 0, forzaOra: null, area: null, dopoConferma: null });
+  Object.assign(sess, { corrente: null, log: [], ora: 0, forzaOra: null, area: null, dopoConferma: null, confermaLenta: 0 });
   return true;
 };
 const ESAMI = ["CREATININEMIA", "EMOCROMOCITOMETRICO", "TROPONINA"];   // tre esami POC: un erogatore, una richiesta
@@ -387,8 +389,11 @@ if (prova("dopo la Conferma il medico cambia area: provata lo stesso; se il gest
 // etichette LIS — identica a quella buona —, la richiesta non è registrata, e
 // il carrello ha ancora l'esame col suo bottone Conferma.) Lo si dice in pochi
 // secondi, «Non partita»; un tocco su «Conferma di nuovo» la rifà UNA volta,
-// sul carrello, con la stessa prova; senza tocco, mai. E se il carrello non ha
-// più la sua Conferma non è «non partita»: le attese, poi «da controllare».
+// sul carrello, con la stessa prova; senza tocco, mai. Solo per una Conferma
+// tornata in fretta (sotto 1,5 s): una tornata coi suoi tempi, anche col
+// carrello fermo, è «da controllare». E se il carrello non ha più la sua
+// Conferma, o al tocco non è più quello della ricevuta: mai «non partita» né
+// una Conferma premuta.
 const ignoraLaPrima = () => {
   let n = 0;
   sess.dopoConferma = (mock, p) => { if (mock === A && n++ === 0) mock.state.richieste[p.get("RICHIESTA_ID")].confirmed = false; };
@@ -452,6 +457,109 @@ if (prova("la Conferma rifatta che il gestionale ignora ancora: «Non partita»,
     `la seconda non presa: «Non partita · apri il carrello», niente «Conferma di nuovo» (got «${vista}»)`);
   await sospendi(5000);
   check(conferme(A).length === 2, `mai una terza Conferma (got ${conferme(A).length})`);
+  sess.dopoConferma = null;
+}
+if (prova("la Conferma ignorata ma tornata coi suoi tempi: da controllare, anche col carrello fermo — mai «Conferma di nuovo»")) {
+  await daCapo();
+  A = createMock({ dopoConferma: 300 });
+  Object.assign(sess, { corrente: null, log: [], ora: 0, forzaOra: null, area: null, confermaLenta: 2500 });
+  await suPagina(doc, A.patientUrl);
+  await nienteSmart(doc);
+  ignoraLaPrima();
+  const nasce = nuovaPagina();
+  await ordina(doc, ["TROPONINA"]);
+  await nasce;
+  await suPagina(doc, B.patientUrl);
+  const ultima = () => ordini().then((l) => l.find((x) => x.paziente === "ROSSI MARIO" && !["coda", "avvio", "corre"].includes(x.stato)));
+  await finche(ultima, 60000);
+  const rec = await ultima();
+  const v = rec?.vista || {};
+  const rid = Object.keys(A.state.richieste)[0];
+  const iPost = A.state.requests.findIndex((q) => q.method === "POST" && /^Prestazioni/.test(q.params.ccsForm || ""));
+  const carrelloDopo = A.state.requests.slice(iPost + 1).filter((q) => q.method === "GET" && q.params.MVPG === "RcsRichiestaPrestazioniRicercaErogatore" && q.params.RICHIESTA_ID === rid).length;
+  check(rec?.stato === "avviso" && v.tag === "Da controllare" && /guarda le sue richieste/.test(v.testo || "") && !v.riconferma && v.tono === "warn" && !A.state.richieste[rid].confirmed,
+    `tornata in 2,5 s, il carrello fermo: «Da controllare», ambra, mai «Non partita» né «Conferma di nuovo» (got ${JSON.stringify(rec && [rec.stato, v.tag, v.testo, v.tono, !!v.riconferma])})`);
+  check(iPost >= 0 && carrelloDopo === 0, `e il carrello non si legge da solo per giudicarla (got ${carrelloDopo} letture dopo la Conferma)`);
+  await sospendi(3000);
+  check(conferme(A).length === 1, `una Conferma sola (got ${conferme(A).length})`);
+  sess.dopoConferma = null; sess.confermaLenta = 0;
+}
+if (prova("«Conferma di nuovo» su una richiesta confermata intanto a mano: niente premuto, niente ristampato")) {
+  await daCapo();
+  A = createMock({ dopoConferma: 300 });
+  Object.assign(sess, { corrente: null, log: [], ora: 0, forzaOra: null, area: null });
+  await suPagina(doc, A.patientUrl);
+  await nienteSmart(doc);
+  ignoraLaPrima();
+  const nasce = nuovaPagina();
+  await ordina(doc, ["TROPONINA"]);
+  await nasce;
+  await suPagina(doc, B.patientUrl);
+  const prima = await striscia(doc, /ROSSI MARIO.*Non partita.*Conferma di nuovo/, 40000).catch(() => "");
+  const rid = Object.keys(A.state.richieste)[0];
+  check(!!prima && (await sorvegliate(doc)).some((x) => x.rid === rid), `«Non partita · Conferma di nuovo», e la richiesta è fra quelle da confermare (got «${prima}»)`);
+  // il medico la conferma a mano sul carrello: la sua scheda l'ha provata, stampato, e tolta dalle «da confermare»
+  A.state.richieste[rid].confirmed = true;
+  await doc.evaluate((r) => localStorage.setItem("psassist:daConfermare.v1", JSON.stringify(JSON.parse(localStorage.getItem("psassist:daConfermare.v1") || "[]").filter((x) => x.rid !== r))), rid);
+  const fogli0 = chiesti(A, /RcsStampaEtichetteLISHMIMU|jasperservlet/);
+  await $panel(doc, AZIONE).click();
+  const vista = await striscia(doc, /ROSSI MARIO.*era già confermata/, 40000).catch(() => "");
+  await sospendi(4000);
+  const rec = (await ordini()).find((x) => x.paziente === "ROSSI MARIO" && /c$/.test(x.id));
+  check(/Confermata/.test(vista) && !!rec && !rec.stampa && rec.stato === "avviso", `«Confermata · era già confermata», senza fogli (got «${vista}» · ${JSON.stringify(rec && [rec.stato, !!rec.stampa])})`);
+  check(conferme(A).length === 1 && chiesti(A, /RcsStampaEtichetteLISHMIMU|jasperservlet/) === fogli0 && (await doc.locator("#psassist-print").count()) === 0,
+    `niente premuto e niente ristampato: le etichette le ha già stampate chi l'ha confermata (got ${conferme(A).length} conferme · ${chiesti(A, /RcsStampaEtichetteLISHMIMU|jasperservlet/) - fogli0} fogli)`);
+  sess.dopoConferma = null;
+}
+if (prova("«Conferma di nuovo» due volte per la stessa richiesta: la seconda non parte (il registro delle rifatte)")) {
+  await daCapo();
+  A = createMock({ dopoConferma: 300 });
+  Object.assign(sess, { corrente: null, log: [], ora: 0, forzaOra: null, area: null });
+  await suPagina(doc, A.patientUrl);
+  await nienteSmart(doc);
+  ignoraLaPrima();
+  const nasce = nuovaPagina();
+  await ordina(doc, ["TROPONINA"]);
+  await nasce;
+  await suPagina(doc, B.patientUrl);
+  await striscia(doc, /ROSSI MARIO.*Non partita.*Conferma di nuovo/, 40000).catch(() => "");
+  const rec0 = (await ordini()).find((x) => x.paziente === "ROSSI MARIO" && x.vista && x.vista.riconferma);
+  await $panel(doc, AZIONE).click();
+  await finche(async () => conferme(A).length > 1, 40000);
+  await finche(async () => !(await ordini()).some((x) => ["coda", "avvio", "corre"].includes(x.stato)), 30000);
+  // un avviso nuovo, finito, con «Conferma di nuovo», per la STESSA richiesta (una copia di quello di prima)
+  const finto = { ...rec0, id: "pcriconf001", stato: "avviso", agg: Date.now(), vista: { ...rec0.vista, riconferma: true } };
+  await sw.evaluate((x) => ordLeggi().then((l) => ordScrivi([...l, x])), finto);
+  const r2 = await sw.evaluate((id) => new Promise((res) => {
+    chrome.tabs.query({}).then((ts) => { const t = ts.find((x) => /EPISODIO_ID=999002/.test(x.url || "")); ordMessaggio({ t: "ordineRiconferma", id }, { tab: t, url: t.url }, res); });
+  }), finto.id);
+  await sospendi(3000);
+  const dopo = (await ordini()).find((x) => x.id === finto.id);
+  check(!(r2 && r2.ok) && conferme(A).length === 2 && !!dopo && !dopo.vista?.riconferma && !(await ordini()).some((x) => x.id === "pcriconf001c"),
+    `già rifatta una volta: il registro delle rifatte dice di no — nessuna terza Conferma, e il bottone se ne va (got ${JSON.stringify(r2 && r2.ok)} · ${conferme(A).length} conferme · ${JSON.stringify(dopo && dopo.vista)})`);
+  sess.dopoConferma = null;
+}
+if (prova("«Conferma di nuovo» ma il carrello, al tocco, ha perso un esame: niente premuto")) {
+  await daCapo();
+  A = createMock({ dopoConferma: 300 });
+  Object.assign(sess, { corrente: null, log: [], ora: 0, forzaOra: null, area: null });
+  await suPagina(doc, A.patientUrl);
+  await nienteSmart(doc);
+  ignoraLaPrima();
+  const nasce = nuovaPagina();
+  await ordina(doc, ["TROPONINA"]);
+  await nasce;
+  await suPagina(doc, B.patientUrl);
+  const prima = await striscia(doc, /ROSSI MARIO.*Non partita.*Conferma di nuovo/, 40000).catch(() => "");
+  const rid = Object.keys(A.state.richieste)[0];
+  check(!!prima && (await $panel(doc, AZIONE).innerText().catch(() => "")).trim() === "Conferma di nuovo", `tornata in fretta, il carrello fermo: «Non partita · Conferma di nuovo» (got «${prima}»)`);
+  // intanto qualcuno toglie l'esame dal carrello: al tocco il carrello non è più quello della ricevuta
+  A.state.richieste[rid].cart.clear();
+  await $panel(doc, AZIONE).click();
+  const vista = await striscia(doc, /ROSSI MARIO.*non è più quello della ricevuta/, 40000).catch(() => "");
+  check(/Non partita/.test(vista) && /apri il carrello/.test(vista), `al tocco il carrello ha perso l'esame: «Non partita · apri il carrello», e il perché (got «${vista}»)`);
+  await sospendi(3000);
+  check(conferme(A).length === 1 && !A.state.richieste[rid].confirmed, `niente premuto: una Conferma sola, quella di prima (got ${conferme(A).length})`);
   sess.dopoConferma = null;
 }
 if (prova("la Conferma ignorata ma il carrello senza la sua Conferma: le attese, poi da controllare — mai «Non partita»")) {

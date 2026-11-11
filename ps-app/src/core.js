@@ -8276,28 +8276,14 @@
       }
       if (esito === "incerta") {
         // Nessuna prova dalla cornice: la pagina del paziente, riletta con
-        // pazienza — e, se non la elenca, il carrello (il gestionale l'ha presa?)
-        const prova = await provaConferma(rid, ep, { patientUrl: plan?.patientUrl, panel: this, carrello: listUrl });
-        if (prova && prova.nonPartita) esito = "nonPartita";
-        else if (prova) {
+        // pazienza. (Il carrello no: quanto ci ha messo la Conferma nella
+        // cornice non si sa, e senza la strada veloce non si giudica da lui.)
+        const prova = await provaConferma(rid, ep, { patientUrl: plan?.patientUrl, panel: this });
+        if (prova) {
           let partita = false;
           try { partita = maybeAutoPrint(this, prova.doc, prova.url); } catch { partita = false; }
           esito = partita ? "stampata" : "confermata";
         }
-      }
-      if (esito === "nonPartita") {
-        // Il carrello ha ancora i suoi esami e la sua Conferma: il gestionale
-        // non l'ha presa. Mai una seconda Conferma da sola: un tocco apre il
-        // carrello, e lì la preme il medico.
-        tabStore.set("confirm.v1", null);
-        if (TRACCIA) TRACCIA.attiva = false;
-        segnaErrore("ordine", { episodio: ep, richiesta: rid, motivo: "Conferma non presa dal gestionale", traccia: riassuntoTraccia() });
-        const str = { tag: "Non partita", testo: "Il gestionale non ha preso la Conferma: premi tu Conferma", tono: "err" };
-        this.message = { head: "Il gestionale non ha preso la Conferma", body: "Il carrello ha ancora i suoi esami e il suo bottone Conferma: aprilo e premi tu Conferma." };
-        this.segnala({ tag: "Non partita", testo: "apri il carrello e premi Conferma", titolo: "tocca per il carrello", tono: "err", paziente: chi,
-          onTap: () => { consegna(str); nav(listUrl); } });
-        this.render();
-        return;
       }
       const fine = { n, ts: Date.now() };
       if (esito === "stampata" || esito === "confermata") confermataProvata(rid);
@@ -8658,6 +8644,21 @@
       if (!r || !r.ok) return;
       this.log(`${now()}  ── «Conferma di nuovo» per ${p.patientName || "il paziente"}: richiesta ${rid}, una volta ──`);
       this.segnala({ tag: "", testo: "Confermo di nuovo…", tono: "run" });
+      // Confermata intanto altrove (il medico sul carrello: la sua scheda l'ha
+      // provata, ha stampato le etichette e l'ha tolta dalle «da confermare»):
+      // niente si preme e niente si stampa da qui. Se la pagina del paziente
+      // la elenca, «Confermata · era già confermata» — la Ristampa resta in
+      // fondo alle sue Richieste, un tocco del medico; se no, il carrello.
+      if (!daConfermare().some((x) => x.rid === rid)) {
+        const gia = await provaConferma(rid, ep, { patientUrl: p.patientUrl || "", panel: this, una: true });
+        if (LAVORO !== L || this._lavoroChiuso) return;
+        if (gia && gia.doc) {
+          this.log(`${now()}  non è più da confermare, e la pagina del paziente la elenca: era già confermata — niente premuto, niente stampato`);
+          ricordaStampe(ep, printModel(gia.doc, gia.url), { gesto: L.gesto || L.id, rid });
+          return this.consegnaLavoro({ tag: "Confermata", testo: "era già confermata: Ristampa in fondo alle sue Richieste", tono: "ok" }, null, "avviso");
+        }
+        return alCarrello("non risulta più da confermare: guarda le sue richieste — niente premuto");
+      }
       // la ricevuta del giro di allora, senza la foto delle richieste di prima:
       // le richieste nate da allora sono altri ordini, non si stampano con questa
       const { prima, ...rc } = p.receipt || {};
@@ -8674,6 +8675,17 @@
       const items = Array.isArray(rc.items) ? rc.items : [];
       const last = items[items.length - 1];
       if (!last) return alCarrello("la ricevuta del giro non c'è più: niente premuto");
+      // Il carrello che è qui adesso, subito prima di premere: ancora col SUO
+      // Conferma e con tutti gli esami della ricevuta per questo erogatore. Se
+      // no non è più quello di allora (un esame tolto, la richiesta passata):
+      // niente si preme, decide il medico.
+      const vivo = examModel(document, location.href);
+      const nel = new Set((vivo.exams || []).filter((e) => e.isDel).map((e) => String(e.code)));
+      const suoi = items.filter((i) => String(i.res) === String(vivo.res)).map((i) => String(i.code));
+      if (String(vivo.richiestaId) !== rid || !vivo.confirmButton || !suoi.length || !suoi.every((c) => nel.has(c))) {
+        this.log(`${now()}  il carrello non è più quello della ricevuta (${vivo.confirmButton ? "manca un esame" : "senza la sua Conferma"}): niente premuto`);
+        return alCarrello("il carrello non è più quello della ricevuta: niente premuto");
+      }
       tabStore.set("confirm.v1", { richiestaId: rid, episodeId: ep, lastCode: last.code, lastLabel: last.label, count: items.length, ts: Date.now() });
       let cliccato = false;
       try { cliccato = maybeAutoConfirm(this); } catch (e) { this.log(`${now()}  conferma interrotta: ${e?.message || e}`); }
@@ -15160,13 +15172,16 @@
   const GUARDA = "guarda le sue richieste: se c'è, Ristampa; se no, apri il carrello";
   const RIFARLA = "Se c'è già fra le sue richieste: Ristampa. Se no: premi tu Conferma";
   const RIFARLA_PERCHE = "La Conferma è partita, ma la pagina del paziente non mostra questa richiesta. Prima di rifarla guarda le sue richieste (in fondo alle Richieste, «Altre…»): se c'è, Ristampa; se no, controlla il carrello e premi tu Conferma.";
-  // `carrello`: l'elenco della richiesta. Se la pagina del paziente non la
-  // elenca, si legge anche lui (carrelloFermo): ancora coi suoi esami e col
-  // SUO bottone Conferma, il gestionale non l'ha presa — «Non partita», senza
-  // aspettare. Quando: subito dopo la prima lettura se la Conferma è tornata
-  // sospettamente in fretta (`subito`, CONFERMA_SOSPETTA: un indizio di quando
-  // guardare, mai una prova), se no dopo l'ultima attesa. `una`: una lettura
-  // sola, senza attese. → { doc, url } confermata, { nonPartita } o null.
+  // `carrello`: l'elenco della richiesta. SOLO se la Conferma è tornata
+  // sospettamente in fretta (`subito`: prima di CONFERMA_SOSPETTA — l'unica
+  // Conferma ignorata delle registrazioni è tornata in 0,2 s, le vere in
+  // 3–14 s) e la pagina del paziente alla prima lettura non la elenca, si
+  // legge anche lui (carrelloFermo): ancora coi suoi esami e col SUO bottone
+  // Conferma, il gestionale non l'ha presa — «Non partita». Una Conferma
+  // tornata coi suoi tempi non si giudica dal carrello (che aspetto abbia
+  // quello di una richiesta confermata, le registrazioni non lo dicono): resta
+  // «Da controllare». `una`: una lettura sola, senza attese.
+  // → { doc, url } confermata, { nonPartita } o null.
   async function provaConferma(rid, ep, { patientUrl = "", panel = null, carrello = "", subito = false, una = false } = {}) {
     // solo l'indirizzo di una pagina da leggere: mai quello di un modulo inviato
     const leggibile = (x) => { try { return !!x && new URL(x).origin === location.origin && !/[?&](ccsForm|Insert|Delete|Update)=/i.test(x); } catch { return false; } };
@@ -15174,7 +15189,7 @@
     const u = [qui, patientUrl, (tuttiPazienti().find((p) => p.ep === ep) || {}).url].find(leggibile) || "";
     if (!rid || !ep || !u) return null;
     const attese = una ? [] : CONFIRM_WAITS;
-    let guardato = !carrello;
+    let guardato = !carrello || !subito;   // (il carrello solo sulla strada veloce)
     for (let k = 0; ; k++) {
       try {
         const { doc, url } = await fetchDoc(u);
@@ -15187,7 +15202,7 @@
       } catch (e) {
         panel?.log(`${now()}  controllo della conferma non riuscito: ${e?.head || e?.message || e}`);
       }
-      if (!guardato && (subito || k >= attese.length)) {
+      if (!guardato) {
         guardato = true;
         if (await carrelloFermo(rid, ep, carrello, panel)) return { nonPartita: true };
       }

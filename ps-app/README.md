@@ -742,20 +742,23 @@ lette stanno in `sessionStorage` (`smart.giro.v1`) e muoiono con lei.
    lì sta dietro un piccolo **+ aggiungi**.
    **«Confermata» solo con una prova**: una pagina dello stesso episodio che elenca i fogli da
    stampare di quella richiesta. Se dopo il clic arriva altro — un errore del server, di nuovo
-   il carrello, niente — il pannello legge la pagina del paziente (solo letture, mai un invio),
-   e se non la elenca legge anche il **carrello** di quella richiesta: se ha ancora i suoi esami
-   e il **suo bottone Conferma**, il gestionale non l'ha presa (nel 3.85 è successo così: la
-   Conferma tornata in mezzo secondo invece dei soliti 3–14, con la pagina delle etichette
-   identica a quella buona). Allora la striscia è **rossa** in pochi secondi, «Non partita ·
+   il carrello, niente — il pannello legge la pagina del paziente (solo letture, mai un invio).
+   **Solo se la Conferma è tornata in fretta** — sotto 1,5 secondi: nel 3.85 l'unica Conferma che il
+   gestionale ha ignorato è tornata in due decimi di secondo, quelle vere in 3–14, con la pagina
+   delle etichette identica a quella buona — e la pagina del paziente non la elenca, legge anche il
+   **carrello** di quella richiesta: se ha ancora tutti i suoi esami e il **suo bottone Conferma**,
+   il gestionale non l'ha presa. Allora la striscia è **rossa** in pochi secondi, «Non partita ·
    **Conferma di nuovo**»: un tocco, e la scheda dell'ordine apre quel carrello, rilegge la pagina
-   del paziente (se adesso la elenca, niente si preme) e preme la Conferma vera **una volta**, coi
-   controlli di sempre, poi la stessa prova. Una sola per richiesta: se il gestionale non prende
-   nemmeno quella, «Non partita · apri il carrello», e lì decidi tu. Quanto ci ha messo la Conferma
-   dice solo **quando** guardare il carrello (sotto 1,5 secondi subito, se no dopo le attese),
-   mai com'è andata. Un carrello che non c'è più, o senza la sua Conferma, non è «non partita»:
-   la pagina del paziente si rilegge dopo 2, 4 e 8 secondi, e se nemmeno così la richiesta risulta
-   la striscia è **ambra**, «guarda le sue richieste: se c'è, Ristampa; se no, apri il carrello»,
-   mai verde. Niente viene riconfermato da solo: senza il tuo tocco, mai una seconda Conferma.
+   del paziente (se adesso la elenca, niente si preme), guarda il carrello che ha davanti (ancora
+   col suo Conferma e con tutti gli esami della ricevuta, se no niente si preme) e preme la
+   Conferma vera **una volta**, coi controlli di sempre, poi la stessa prova. Una sola per
+   richiesta: se il gestionale non prende nemmeno quella, «Non partita · apri il carrello», e lì
+   decidi tu. Una Conferma tornata **coi suoi tempi** non si giudica dal carrello (com'è il
+   carrello di una richiesta già confermata, le registrazioni non lo mostrano), né un carrello
+   che non c'è più o senza la sua Conferma: la pagina del paziente si rilegge dopo 2, 4 e 8
+   secondi, e se nemmeno così la richiesta risulta la striscia è **ambra**, «Da controllare ·
+   guarda le sue richieste: se c'è, Ristampa; se no, apri il carrello», mai verde, mai «Conferma
+   di nuovo». Niente viene riconfermato da solo: senza il tuo tocco, mai una seconda Conferma.
    **Nessuna richiesta dimenticata.** Col carrello finito — prima della conferma in sottofondo, e
    alla fine di un giro in revisione — il pannello annota la richiesta — solo numeri:
    richiesta, episodio, ora, quanti esami; mai un nome — e la tiene d'occhio: se dopo **2
@@ -2302,18 +2305,26 @@ nella tendina del gestionale») — poi **Prepara nel gestionale** (o Ctrl+Invio
    500, il carrello che ricompare, il tempo scaduto, la cornice sparita: «incerta». Allora si
    legge la pagina del paziente (GET, mai un invio) e, se non la elenca ancora, la si rilegge
    dopo 2, 4 e 8 secondi — il LIS può metterci un po' a registrarla: se la elenca, è
-   confermata e i fogli si prendono da lì. Se non la elenca si legge anche il carrello di
-   quella richiesta (GET dell'elenco, `carrelloFermo`): con tutti gli esami della ricevuta e il
-   **suo** bottone Conferma, il gestionale non l'ha presa — «Non partita», subito, senza le
-   attese se la Conferma è tornata in meno di 1,5 secondi (`CONFERMA_SOSPETTA`: dice quando
-   guardare, mai com'è andata), se no dopo l'ultima. Un carrello sparito, di un'altra
-   richiesta, senza Conferma, o una ricevuta che manca: non si sa, la striscia è ambra («guarda
-   le sue richieste: se c'è, Ristampa; se no, apri il carrello»). Nessuna seconda conferma parte
-   da sola. **«Conferma di nuovo»** (`ordineRiconferma`) c'è solo per «Non partita», parte solo dal
+   confermata e i fogli si prendono da lì. Solo sulla **strada veloce** — la Conferma tornata in
+   meno di 1,5 secondi (`CONFERMA_SOSPETTA`), misurata nella scheda di un ordine — e se la prima
+   lettura non la elenca, si legge anche il carrello di quella richiesta (GET dell'elenco,
+   `carrelloFermo`): con tutti gli esami della ricevuta e il **suo** bottone Conferma, il
+   gestionale non l'ha presa — «Non partita», subito. Altrimenti il carrello non si legge
+   affatto per giudicarla (com'è il carrello di una richiesta confermata nessuna registrazione lo
+   mostra: si fallisce chiusi), e così per una Conferma della cornice, di cui il tempo non si sa:
+   un carrello fermo dopo una Conferma lenta, uno sparito, di un'altra richiesta, senza Conferma,
+   o una ricevuta che manca — non si sa, la striscia è ambra, «Da controllare» («guarda le sue
+   richieste: se c'è, Ristampa; se no, apri il carrello»). Nessuna seconda conferma parte da
+   sola. **«Conferma di nuovo»** (`ordineRiconferma`) c'è solo per «Non partita», parte solo dal
    tocco del medico e **una volta per richiesta** (annotata in `storage.session` prima di partire):
    è un ordine in coda come gli altri, la sua scheda apre quel carrello, rilegge la pagina del
-   paziente (se la elenca, niente si preme: si stampa), e preme la Conferma vera con tutti i
-   controlli di `maybeAutoConfirm`; poi la stessa prova. Non presa di nuovo: «apri il carrello».
+   paziente (se la elenca, niente si preme: si stampa — ma una richiesta che intanto non è più fra le «da
+   confermare», confermata a mano altrove, non si ripreme né si ristampa: «Confermata · era già
+   confermata», e la Ristampa resta in fondo alle sue Richieste), guarda il carrello **vivo** — la pagina che
+   ha davanti: il suo bottone Conferma, e ogni esame della ricevuta per quell'erogatore ancora lì
+   col suo «togli»; se no niente si preme, «Non partita · apri il carrello» — e preme la Conferma
+   vera con tutti i controlli di `maybeAutoConfirm`; poi la stessa prova. Non presa di nuovo:
+   «apri il carrello».
    La lettura del carrello passa dal cancello del motore (regola 19): mentre un altro ordine
    manda esami, aspetta. Prova: `test/ext-sessione.mjs`. La pagina delle etichette LIS che il
    gestionale mostra subito dopo il clic non è una prova: è arrivata identica anche dopo una
