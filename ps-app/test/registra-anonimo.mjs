@@ -469,6 +469,52 @@ check(!nomi.includes("eviewer.json") && !/Visualizzatore di immagini/.test(riep)
   check(rt.gate.ok, `e il cancello passa (${rt.gate.punti})`);
 }
 
+// ------------- quello che il pannello manda (core.js): la diagnosi, il Registro, l'errore grave
+// Le funzioni VERE, prese da src/core.js così come sono (come fa tools/build.mjs per registra-pdf.js).
+const core = readFileSync(join(root, "src/core.js"), "utf8");
+const corpoDi = (i) => { let d = 0; for (let k = core.indexOf("{", i); k < core.length; k++) { if (core[k] === "{") d++; else if (core[k] === "}" && !--d) return core.slice(i, k + 1); } return ""; };
+const funzione = (nome) => corpoDi(core.indexOf(`function ${nome}(`));
+const riga = (inizio) => { const i = core.indexOf(inizio); return core.slice(i, core.indexOf(";\n", i) + 1); };
+{
+  const VERSION = "9.9.9", location = { href: `${G}/sa4pso/x` };
+  const { mascheraDiagnosi, diagnosiTesto, senzaQuesito, improntaNascita, impronta } = new Function("VERSION", "location",
+    `${funzione("mascheraDiagnosi")}\n${riga("const senzaQuesito =")}\n${funzione("diagnosiTesto")}\n${funzione("improntaNascita")}\n${funzione("impronta")}
+     return { mascheraDiagnosi, diagnosiTesto, senzaQuesito, improntaNascita, impronta };`)(VERSION, location);
+  // (le pagine vere: il codice fiscale nell'indirizzo, nel testo, in uno script; la nascita con / - .)
+  const html = `<!DOCTYPE html><html><head><title>Referto</title></head><body><a href="/sa4/restrict2/Sa4ViewerExtRedirect.do?CODICE_FISCALE=${P1.cf}&amp;REFERTO_ID=123456">apri</a>
+    <p>Paziente: Verdone Carlo, nato il ${P1.nato} — CF ${P1.cf}</p><p>${P1.nato.replace(/\//g, "-")} · ${P1.nato.replace(/\//g, ".")} · 1950-03-12 · cf ${P1.cf.toLowerCase()}</p><script>var cf = '${P1.cf}';</script></body></html>`;
+  const d = diagnosiTesto({ cosa: "referto TC CRANIO (RIS)", url: `${G}/sa4/restrict2/Sa4ViewerExtRedirect.do?REFERTO_ID=123456`, html, diag: "nessun PDF", quando: "08:01" });
+  const corpo = d.split("\n---\n")[1] || "";
+  check(!/VRDCRL|vrdcrl|12[/.-]03|03-12|C12F/.test(corpo) && (corpo.match(/\[CF\]/g) || []).length === 4 && (corpo.match(/\[data\]/g) || []).length === 4 && /<a href="[^"]*CODICE_FISCALE=\[CF\]/.test(corpo),
+    `la diagnosi: il codice fiscale e la data di nascita diventano [CF] e [data] PRIMA delle cifre, non «${P1.cf.slice(0, 12)}###Z» né «12/03/###» (${corpo.replace(/\s+/g, " ").slice(60, 230)})`);
+  // un codice fiscale con le cifre coperte, comunque arrivato: il cancello lo conta, la ripulitura lo toglie
+  const coperto = P1.cf.replace(/\d{3}(?=[A-Z]$)/, "###");
+  const cp = cancello({ "testi/diagnosi-1.txt": `CF ${coperto} e <a href="x?CF=${P1.cf.slice(0, 12)}***${P1.cf.slice(-1)}">` }, {});
+  check(!cp.ok && cp.punti === 2 && cp.dove["testi/diagnosi-1.txt"]["codice fiscale"] === 2, `il cancello vede anche il codice fiscale con le cifre coperte («…F###Z», «…F***Z»: ${cp.punti} punti)`);
+  const rcp = anonimizza({ inizio: T0, origini: { gestionale: G }, pagine: [], testi: [{ nome: "diagnosi-1.txt", testo: `---\n<p>CF ${coperto}</p>` }] }, { vocabolario, sfasamento: 30 });
+  check(/<p>CF ESMPIO80A01Z\d{3}X<\/p>/.test(rcp.files["testi/diagnosi-1.txt"]) && rcp.gate.ok, `…e la ripulitura lo sostituisce con uno finto (${rcp.files["testi/diagnosi-1.txt"].split("\n")[1]}; cancello ${rcp.gate.punti})`);
+  // il quesito del triage con le virgolette dentro (o un a capo): non esce niente, fino alla fine della riga
+  for (const q of ['Dolore "forte" al torace da ieri', "Dolore toracico\nirradiato al braccio"]) {
+    const s = senzaQuesito(`08:01  quesito del triage mantenuto: "${q}"`);
+    check(s === '08:01  quesito del triage mantenuto: "…"', `senza quesito: ${JSON.stringify(q)} → ${JSON.stringify(s)}`);
+  }
+  check(senzaQuesito("08:02  quesito del triage sostituito col tuo, scritto nel pannello") === "08:02  quesito del triage sostituito col tuo, scritto nel pannello"
+    && senzaQuesito("08:03  aggiunto ✓ EMOCROMO") === "08:03  aggiunto ✓ EMOCROMO", "…e le righe senza quesito restano com'erano");
+  // l'errore grave «di un altro paziente»: nel Registro e nel registro degli errori la nascita solo «diverse», mai la sua impronta
+  const metodo = corpoDi(core.indexOf("    erroreIdentita(e, id, righe) {") + 4);
+  const righe = [], voci = [];
+  const pannello = new Function("CF_UNO", "impronta", "improntaNascita", "segnaErrore", "now", "shortLabel", "GRAVE_ALTRO", `return { ${metodo} };`)(
+    /[A-Z]{6}\d{2}[A-Z]\d{2}[A-Z]\d{3}[A-Z]/, impronta, improntaNascita, (t, v) => voci.push(v), () => "08:02", (s) => s, "grave");
+  Object.assign(pannello, { episodeId: P1.ep, log: (l) => righe.push(l), segnala: () => {}, avvisoVisto: () => ({}), nomePaziente: () => P1.nome,
+    identitaPaz: () => ({ cf: P1.cf, cfImp: impronta(P1.cf), nome: P1.nome, nascita: P1.nato }) });
+  pannello.erroreIdentita({ label: "TC CRANIO", id: "777" }, { via: "data di nascita" }, ["REFERTO", `Paziente: ${P2.nome} nato il ${P2.nato}`, `CF ${P2.cf}`]);
+  const impronte = [improntaNascita(P1.nato), improntaNascita(P2.nato)];
+  const fuori = righe.join("\n") + JSON.stringify(voci);
+  check(righe.length === 1 && /ERRORE GRAVE: il PDF di TC CRANIO \(referto 777\) è di un altro paziente \(data di nascita\)/.test(righe[0]) && /· date di nascita diverse$/.test(righe[0])
+    && !impronte.some((x) => fuori.includes(x)) && voci[0] && voci[0].nascita === "diverse" && !("nascitaLette" in voci[0]),
+    `l'errore grave dice «date di nascita diverse», senza l'impronta della data (che si rovescia: ${impronte.join(", ")}) — ${righe[0] && righe[0].slice(-90)}`);
+}
+
 // --------------------------------------------------------------- lo zip
 const zip = creaZip({ "a.txt": "ciao", "pagine/001-x.html": "<p>è</p>" });
 const dir = mkdtempSync(join(tmpdir(), "psa-zip-"));

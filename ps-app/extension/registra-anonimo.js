@@ -308,6 +308,8 @@
   }
 
   const CF_RE = /(?<![A-Za-z0-9])[A-Z]{6}\d{2}[A-Z]\d{2}[A-Z]\d{3}[A-Z](?![A-Za-z0-9])/g;
+  // un codice fiscale con le cifre coperte («VRDCRL50C12F###Z»): nome, nascita e sesso ci sono ancora
+  const CF_PARZ_RE = /(?<![A-Za-z0-9#*])(?=[A-Z0-9]*[#*])[A-Z]{6}[\d#*]{2}[A-Z][\d#*]{2}[A-Z][\d#*]{3}[A-Z](?![A-Za-z0-9#*])/g;
   const EMAIL_RE = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;
   const TEL_RE = [
     /(?:\+39[\s.]?)?(?<![\d])3\d{2}[\s.-]?\d{6,7}(?!\d)/g,                       // cellulare
@@ -680,6 +682,7 @@
     const motivi = (s) => {
       let t = String(s);
       t = t.replace(CF_RE, (v) => cfFinto(v));
+      t = t.replace(CF_PARZ_RE, (v) => cfFinto(v));
       t = t.replace(EMAIL_RE, (v) => (/@esempio\.it$/i.test(v) ? v : (conta.email++, "utente@esempio.it")));
       for (const re of TESSERA_RE) t = t.replace(re, (all, g) => { const v = typeof g === "string" && g ? g : all; if (!/\d/.test(v)) return all; conta.tessere++; return all.replace(v, "0".repeat(v.length)); });
       for (const re of TEL_RE) t = t.replace(re, (all, g) => { const v = typeof g === "string" && g ? g : all; if ((v.match(/\d/g) || []).length < 7) return all; conta.telefoni++; return all.replace(v, v.replace(/\d/g, "0")); });
@@ -696,7 +699,7 @@
     const contaDentro = (s) => {
       const t = String(s);
       const n = (re) => { re.lastIndex = 0; const c = (t.match(re) || []).length; re.lastIndex = 0; return c; };
-      conta.cf += n(CF_RE); conta.email += n(EMAIL_RE); conta.indirizzi += n(INDIRIZZO_RE);
+      conta.cf += n(CF_RE) + n(CF_PARZ_RE); conta.email += n(EMAIL_RE); conta.indirizzi += n(INDIRIZZO_RE);
       for (const re of TEL_RE) conta.telefoni += n(re);
       for (const re of TESSERA_RE) conta.tessere += n(re);
       for (const v of visto.nascita) if (t.includes(v)) conta.nascita++;
@@ -1994,6 +1997,8 @@
     for (const [file, contenuto] of Object.entries(files)) {
       const L = lettura(contenuto), raw = L.d;
       for (const m of raw.matchAll(CF_RE)) if (!FINTO_CF.test(m[0])) segna(file, "codice fiscale");
+      const coperti = (raw.match(CF_PARZ_RE) || []).length;   // (anche con le cifre coperte)
+      if (coperti) segna(file, "codice fiscale", coperti);
       if (!indice.size) continue;
       const w = L.parole.map((x) => x.w);
       for (let i = 0; i < w.length; i++) {
