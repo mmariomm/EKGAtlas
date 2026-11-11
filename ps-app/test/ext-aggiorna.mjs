@@ -555,6 +555,34 @@ console.log("\naggiorna: l'aiutante che non risponde (può essere a metà della 
   comportati();
 }
 
+console.log("\naggiorna: già nella cartella, lo zip non serve");
+{
+  // L'aiutante ha finito la copia della 99.3.0 senza che la risposta arrivasse (o la cartella è stata rifatta
+  // da installa.cmd), e lo zip qui non c'è più — su GitHub nemmeno: si chiede all'aiutante prima di
+  // scaricarlo, e si ricarica e basta.
+  const PIU = "99.3.0";
+  gh.versione = PIU;
+  gh.zip = null;
+  comportati();
+  azzeraLavori();
+  await dimentica();
+  await azzeraZip();
+  await doc.goto("about:blank");
+  await sw.evaluate(() => chrome.tabs.query({ url: "https://smarthealth.multimedica.it/*" }).then((t) => chrome.tabs.remove(t.map((x) => x.id))));
+  const m = manifestDi(EST);
+  writeFileSync(join(EST, "manifest.json"), JSON.stringify({ ...m, version: PIU }, null, 2));
+  const r = await controlla();
+  check(r.nuova === PIU && r.puo === true, `(la ${PIU} già nella cartella: si può, got ${JSON.stringify(r)})`);
+  const z0 = zipScaricati();
+  const nasce = ctx.waitForEvent("serviceworker", { timeout: 30000 }).catch(() => null);
+  await entro(sw.evaluate(() => { aggAuto().catch(() => {}); return true; }), 5000);
+  const nuovo = await nasce;
+  const v = nuovo ? await entro(nuovo.evaluate(() => chrome.runtime.getManifest().version), 5000) : "";
+  check(v === PIU && zipScaricati() === z0 && !lavori().some((x) => x.aggiorna),
+    `la ${PIU} già nella cartella: si ricarica, senza scaricare lo zip né mandarlo all'aiutante (got ${v || "nessuna ricarica"}, zip ${zipScaricati() - z0})`);
+  if (nuovo) sw = nuovo;
+}
+
 console.log("\naggiorna: un ordine premuto mentre l'aiutante scambia la cartella");
 {
   // All'avvio del browser, con lo zip già scaricato e la scheda del medico aperta: lo scambio è nella fila

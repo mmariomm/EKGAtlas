@@ -31,7 +31,7 @@ const check = (c, m) => { console.log((c ? "  ✓ " : "  ✗ ") + m); if (!c) fa
 // PowerShell, le si prova davvero).
 {
   const ps = readFileSync(join(root, "stampa/host.ps1"), "utf8");
-  console.log("\naiutante di stampa (host.ps1), senza PowerShell: le copie");
+  console.log("\naiutante di stampa (host.ps1), senza PowerShell: le copie, e lo scambio della cartella");
   check(/^\$VERSIONE = '4'/m.test(ps), "la versione è la 4 (l'estensione manda le copie in un foglio solo dalla 4)");
   check(/\$copie = 1\r?\n\s*if \(\(\$d\.copie -is \[int\] -or \$d\.copie -is \[long\]\) -and \$d\.copie -ge 1 -and \$d\.copie -le 10\) \{ \$copie = \[int\]\$d\.copie \}/.test(ps),
     "copie: un intero da 1 a 10, qualunque altra cosa è 1");
@@ -39,6 +39,14 @@ const check = (c, m) => { console.log((c ? "  ✓ " : "  ✗ ") + m); if (!c) fa
     "più di una: «,Nx» in coda alle opzioni di SumatraPDF (noscale,disable-auto-rotation,3x), prima di chiamarlo");
   check(/Rispondi @\{ ok = \$true; esito = \$r\.esito; stampante = \$r\.stampante; pagina = \$r\.pagina; copie = \$r\.copie; versione = \$VERSIONE \}/.test(ps),
     "e la risposta dice le copie mandate e la versione");
+  // lo scambio: manifest.json copiato per ultimo, dopo il resto e installata.json — «chi» (che legge la
+  // versione da lì) dice la nuova solo a copia finita, mai a metà (Get-ChildItem copia in ordine alfabetico)
+  const copia = ps.slice(ps.indexOf("function Aggiorna"), ps.indexOf("# a metà: torna quella di prima"));
+  const tutto = copia.indexOf("Get-ChildItem -LiteralPath $nuova | Where-Object { $_.Name -ne 'manifest.json' } | Copy-Item -Destination $EST -Recurse -Force");
+  const marca = copia.indexOf("Copy-Item -LiteralPath (Join-Path $prima 'installata.json') -Destination $EST -Force");
+  const man = copia.indexOf("Copy-Item -LiteralPath (Join-Path $nuova 'manifest.json') -Destination $EST -Force");
+  check(tutto > 0 && marca > tutto && man > marca && !/Get-ChildItem -LiteralPath \$nuova \| Copy-Item/.test(copia),
+    "aggiorna: prima tutto tranne manifest.json, poi installata.json, manifest.json per ultimo");
 }
 
 const PWSH = process.env.PWSH || "pwsh";
