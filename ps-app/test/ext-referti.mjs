@@ -126,10 +126,10 @@ const salvati = (p, n) => p.waitForFunction((k) => document.getElementById("psas
     const a = r.querySelector(".wuauto");
     // (il ↻ è l'icona che rilegge, sola: nessuna parola accanto)
     const ri = r.querySelector("#risall");
-    return a ? { t: a.textContent.trim(), leggo: /Leggo i valori…/.test(r.querySelector(".wulab")?.innerText || ""), prog: !!r.querySelector(".wuprog"), salva: !!r.querySelector("#refsave"), ricarica: ri ? (ri.querySelector("svg") ? "↻" : "") + ri.textContent.trim() : "" } : false;
+    return a ? { t: a.textContent.trim(), leggo: /Leggo i valori…/.test(r.querySelector(".wulab")?.innerText || ""), prog: !!r.querySelector(".wuprog"), accanto: ri && ri.parentElement.classList.contains("wutools") ? ri.parentElement.children.length - 1 : -1, ricarica: ri ? (ri.querySelector("svg") ? "↻" : "") + ri.textContent.trim() : "" } : false;
   }, null, { timeout: 15000 }).then((h) => h.jsonValue()).catch(() => null);
   check(!!mentre && mentre.leggo, `mentre carica, il Lab vuoto dice «Leggo i valori…» (got: ${JSON.stringify(mentre)})`);
-  check(!!mentre && /^↓ \d+$/.test(mentre.t) && !mentre.prog && !mentre.salva && mentre.ricarica === "↻",
+  check(!!mentre && /^↓ \d+$/.test(mentre.t) && !mentre.prog && mentre.accanto === 0 && mentre.ricarica === "↻",
     `mentre carica da solo: «↓ N» accanto a ↻, nient'altro (got: ${JSON.stringify(mentre)})`);
   await salvati(page, 4);
   check(await page.locator("#psassist-host .rdot.saved").count() === 4, "aprendo il paziente, i 4 referti si salvano da soli");

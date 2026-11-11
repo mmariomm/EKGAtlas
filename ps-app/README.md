@@ -882,7 +882,7 @@ riprende da solo appena l'ordine ha finito. Si ferma se lasci il paziente (chi e
 parte). **Quello che da solo non è riuscito** (un referto, i valori) non si ritenta a ogni giro:
 da solo al più **due volte**, dopo 2 e dopo 10 minuti (i valori anche quando la loro firma nella
 pagina cambia); un tocco o un bottone ci provano sempre; un PDF che si è rivelato di un altro
-paziente da solo non si riprende più (un tocco lo riprende). Il laboratorio a metà,
+paziente da solo non si riprende più (un tocco, in quella scheda, ne ridice l'errore; in una scheda nuova lo riscarica e lo ricontrolla). Il laboratorio a metà,
 con la pagina aperta, si ricontrolla ogni 10 minuti **solo mentre la guardi** (tornandoci, se ne
 sono passati 10), e dopo due ricontrolli senza niente di nuovo smette: lo rifà aprire gli Esiti. Mentre lavora, accanto a **↻** c'è un discreto **«↓ 2»** — quanti ne restano —, e se il Lab
 non ha ancora una tabella dice **«Leggo i valori…»**; se non c'è proprio niente da leggere (né
