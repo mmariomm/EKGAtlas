@@ -292,6 +292,18 @@ if (prova("un carrello aperto in una scheda: la lista smart non si legge")) {
   const sync = await doc.evaluate(() => JSON.parse(localStorage.getItem("psassist:smart.sync.v1") || "null"));
   check(/PsoRichiestaCreaRcs/.test(crea) && durante?.ok && durante.dati?.rilegge === false && !sess.log.some((x) => x.cosa === "smart"),
     `con la creazione di una richiesta aperta in una scheda, aprendo l'iPhone la smart non si legge (got ${JSON.stringify({ rilegge: durante?.dati?.rilegge, esito: sync?.esito, letta: sess.log.filter((x) => x.cosa === "smart").length })})`);
+  // …e nemmeno le pagine dei pazienti che il ponte apre dietro (il telefono, il ⟳ del tabellone): ferme, col perché
+  const dietro = await sw.evaluate(async (u) => {
+    let nate = 0;
+    const conta = () => { nate++; };
+    chrome.tabs.onCreated.addListener(conta);
+    const v = await Promise.race([ponteValoriSotto(u, "999001", "auto"), new Promise((ok) => setTimeout(() => ok({ ok: "tempo" }), 20000))]);
+    await Promise.race([ponteTabelloneGiro([{ ep: "999001", url: u }]), new Promise((ok) => setTimeout(ok, 20000))]);
+    chrome.tabs.onCreated.removeListener(conta);
+    return { v, nate };
+  }, A.patientUrl);
+  check(dietro.v?.ok === false && /carrello aperto/.test(dietro.v.testo || "") && dietro.nate === 0,
+    `con un carrello aperto, il telefono e il ⟳ del tabellone non aprono la pagina di un paziente dietro, e lo dicono (got ${JSON.stringify(dietro)})`);
   await carrello.close();
   await smartDaRileggere(doc);
   await telApre();

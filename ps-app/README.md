@@ -2579,7 +2579,9 @@ nella tendina del gestionale») — poi **Prepara nel gestionale** (o Ctrl+Invio
     una scheda, dove il medico ordina a mano —, e lo stesso vale **prima di ogni salto** fra le sue
     schede (`smartAvanti`): un ordine partito o in coda, un motore chiesto, un carrello aperto
     intanto, e si ferma lì con quello che ha letto — mai «intera», nessuno dimesso da una lettura a
-    metà. Un motore che parte mentre lei legge la aspetta, al più 20 secondi dalla sua partenza; le schede
+    metà. Un motore che parte mentre lei legge la aspetta, al più 20 secondi dalla sua partenza. Con un
+    carrello aperto non si apre nemmeno la pagina di un paziente da leggere dietro (il telefono, il ⟳ del
+    tabellone, prima di ognuno): il telefono dice «c'è un carrello aperto sul PC», il ⟳ si ferma lì; le schede
     di sottofondo (referto, storico, telefono) si aprono dopo, e così la scheda che dà i PDF di
     una stampa chiesta dalla scheda del medico; i PDF di una stampa aspettano la fine del motore
     (al più 4 minuti), e il motore dopo aspetta che quei PDF siano presi. Le etichette non vanno a

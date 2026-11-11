@@ -896,8 +896,10 @@ async function ponteSchedaNata(id, viva = () => true, max = 2000) {
   }
 }
 async function ponteValoriApri(u, ep, modo) {
-  // (mai una pagina del gestionale mentre un motore inserisce esami: bg.js)
+  // (mai una pagina del gestionale mentre un motore inserisce esami: bg.js — né con un carrello aperto
+  // in una scheda, dove il medico ordina a mano: la pagina cambierebbe la sua richiesta «corrente», regola 19)
   if (typeof dopoIlMotore === "function") await dopoIlMotore();
+  if (typeof carrelloAperto === "function" && await carrelloAperto()) return { ok: false, testo: "c'è un carrello aperto sul PC: riprova quando hai finito di ordinare" };
   const davanti = (await ponteSchede())[0];
   const vuota = { url: "about:blank", active: false };
   const t = await chrome.tabs.create(davanti ? { ...vuota, windowId: davanti.windowId, index: davanti.index + 1 } : vuota)
@@ -951,7 +953,8 @@ async function ponteValoriFine(id, esito) {
 // Il giro del ⟳ del tabellone: un paziente alla volta, come aprendolo (la scheda
 // dietro, modo «tabellone»). Prima di ognuno si aspetta il motore, e la lista
 // smart che lo stesso ⟳ sta leggendo (una scheda dietro alla volta); se un ordine
-// è ancora al lavoro dopo l'attesa, il giro si ferma lì — un altro ⟳ lo rifà.
+// è ancora al lavoro dopo l'attesa, o c'è un carrello aperto in una scheda, il
+// giro si ferma lì — un altro ⟳ lo rifà.
 let ponteGiroTabellone = null;
 const PONTE_SMART_ATTESA = 45e3;
 async function ponteTabelloneGiro(l) {
@@ -960,6 +963,7 @@ async function ponteTabelloneGiro(l) {
       && (await sottoVive().catch(() => [])).some(([, s]) => s.cosa === "smart");) await attendi(500);
     if (typeof dopoIlMotore === "function") await dopoIlMotore();
     if (typeof motoreAlLavoro === "function" && motoreAlLavoro(await ordLeggi().catch(() => []))) return;
+    if (typeof carrelloAperto === "function" && await carrelloAperto()) return;
     await ponteValoriSotto(x.url, x.ep, "tabellone");
   }
 }
