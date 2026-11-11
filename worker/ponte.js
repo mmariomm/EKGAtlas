@@ -45,13 +45,11 @@ export class PonteStanza extends DurableObject {
   }
 
   webSocketMessage(ws, dati) { this.stanza.messaggio(ws, dati, Date.now()); }
-  // Chi ha chiuso per bene riceve la risposta (con web_socket_auto_reply_to_close, dal 2026-04-07, la dà
-  // già Cloudflare: rifarla è innocuo). Dopo una presa caduta (1006) non c'è nessuno a cui rispondere:
-  // una chiusura mandata lì resterebbe in sospeso.
-  webSocketClose(ws, codice) {
-    this.stanza.esce(ws, Date.now());
-    if (codice !== 1006) try { ws.close(codice === 1005 ? 1000 : codice, "chiusa"); } catch { /* già chiusa */ }
-  }
+  // La risposta alla chiusura la dà Cloudflare (web_socket_auto_reply_to_close: compatibility_date dal
+  // 2026-04-07, qui 2026-06-07). Qui niente ws.close(): chi chiude è quasi sempre un service worker che
+  // Chrome ha appena fermato (1001) o una presa caduta (1006) — dall'altra parte non c'è più nessuno, e
+  // una chiusura mandata lì può restare in sospeso e tenere sveglio il Durable Object.
+  webSocketClose(ws) { this.stanza.esce(ws, Date.now()); }
   webSocketError(ws) { this.stanza.esce(ws, Date.now()); }
 
   // una sveglia rimasta dalla versione di prima: suona una volta e non si rimette

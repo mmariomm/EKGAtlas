@@ -160,6 +160,18 @@ check(PONTE.inattivoMs === 75e3 && !("prossimaSveglia" in L) && !/sveglia/i.test
   esce(st, tel3, 10);
   check(JSON.stringify(io.inviati) === JSON.stringify([["pc2", '{"pari":false}']]), "il telefono esce: il PC lo sa");
 }
+// il telefono in sottofondo (zitto da più di 30 s) che un'altra scheda sostituisce: ritirato, senza
+// chiusure (forse è già morto); quando torna e parla, «Aperto su un altro dispositivo» gli arriva allora
+{
+  const { io, nuova, st } = finto();
+  const pc = nuova("pc"), telA = nuova("telA"), telB = nuova("telB"), dati = new Uint8Array([7]);
+  st.entra(pc, "pc", 0); st.entra(telA, "tel", 0);
+  telA.battito = 10e3; pc.battito = 40e3;
+  st.entra(telB, "tel", 10e3 + PONTE.vivoMs + 1);
+  check(telA.st.via === 4001 && !io.chiusi.length, "un telefono zitto da più di 30 s, sostituito da un'altra scheda: ritirato senza chiusure sulla rete");
+  st.messaggio(telA, dati, 10e3 + PONTE.vivoMs + 2);
+  check(JSON.stringify(io.chiusi) === JSON.stringify([["telA", 4001, "sostituita"]]), "…torna e parla: 4001 adesso («Aperto su un altro dispositivo»)");
+}
 // la stazione di stampa: la stessa logica, i ruoli `medico` e `stazione` (fra loro, mai col telefono)
 {
   check(leggiStanza("https://x/ponte/ws?r=" + a.stanza + "&ruolo=medico").ok && leggiStanza("https://x/ponte/ws?r=" + a.stanza + "&ruolo=stazione").ok,
@@ -330,8 +342,8 @@ await blocco(async () => {
     prese[1].uscita = true;
     d.webSocketClose(prese[1], 1006, "", false);
     check(prese[1].chiusa === null && prese[2].mandati.at(-1) === '{"pari":false}', "la presa del PC cade (1006): il telefono lo sa, e nessuna chiusura mandata a chi non c'è più");
-    d.webSocketClose(prese[2], 1000, "fine", true);
-    check(JSON.stringify(prese[2].chiusa) === '[1000,"chiusa"]', "il telefono chiude per bene (1000): riceve la risposta");
+    d.webSocketClose(prese[2], 1001, "", true);
+    check(prese[2].chiusa === null, "un service worker fermato da Chrome chiude con 1001: nessuna chiusura mandata indietro (la risposta la dà Cloudflare, web_socket_auto_reply_to_close)");
     await d.alarm();
     check(disco.length === 0, `niente sveglie e niente disco: nessuna chiamata a storage (${disco.join(", ") || "nessuna"})`);
   } finally { g.Response = prima.R; g.WebSocketPair = prima.P; g.WebSocketRequestResponsePair = prima.Q; }
@@ -342,6 +354,7 @@ const jsonc = (t) => JSON.parse(t.replace(/^\s*\/\/.*$/gm, "").replace(/\s\/\/ .
 const cfg = jsonc(readFileSync(join(root, "../wrangler.jsonc"), "utf8"));
 check(cfg.main === "worker/index.js" && cfg.migrations.some((m) => (m.new_sqlite_classes || []).includes("PonteStanza"))
   && cfg.assets.not_found_handling === "single-page-application", "wrangler.jsonc: il Worker, il Durable Object su SQLite, il sito resta una SPA");
+check(String(cfg.compatibility_date) >= "2026-04-07", `compatibility_date ${cfg.compatibility_date}: dal 2026-04-07 Cloudflare risponde da sé alle chiusure (web_socket_auto_reply_to_close), e il Durable Object non manda ws.close()`);
 check(cfg.observability.logs && cfg.observability.logs.invocation_logs === false, "nessuna riga di log per richiesta: l'indirizzo della presa porta la stanza");
 check(JSON.stringify(cfg.assets.run_worker_first) === '["/ponte/*","/api/*"]',
   "il Worker si sveglia solo per /ponte/ e /api/: le pagine del sito arrivano dai file statici");

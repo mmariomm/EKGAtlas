@@ -24,6 +24,9 @@ export const PONTE = {
   // uno ogni 20, e senza «pong» in 10 si rifanno da soli) è morta: non conta
   // più per chi c'è (di chi entra si ritirano solo le vecchie del suo ruolo). Nessuna sveglia apposta.
   inattivoMs: 75e3,
+  // un telefono che ha battuto da meno di 30 secondi (uno ogni 20) è davanti a qualcuno: se un'altra
+  // scheda prende il suo posto, la chiusura gli arriva subito; se no è in sottofondo, o morto — si ritira
+  vivoMs: 30e3,
   // le prese ritirate che Cloudflare non ha ancora buttato: oltre queste, le più
   // vecchie si chiudono davvero (solo un tetto: un client che si rifà ogni
   // minuto e mezzo ne lascia una ventina finché le connessioni cadono)
@@ -107,14 +110,16 @@ export class Stanza {
     // in stanza; ritirarla senza dirglielo la lascerebbe sorda per sempre, chiuderla costa)
     this.io.scrivi(presa, { ruolo, ...nuovoConto(ora) });
     // TUTTE le altre dello stesso ruolo, non solo la prima: chi si rifà non ne
-    // lascia indietro. Il telefono che si sente ancora (un'altra scheda, un
+    // lascia indietro. Il telefono che ha appena battuto (un'altra scheda, un
     // altro telefono) è vivo: la chiusura gli arriva subito, «Aperto su un altro
-    // dispositivo». Un PC, una stazione: la presa vecchia è di un service worker
-    // che non c'è più (uno vivo chiude la sua prima di aprirne un'altra) — si ritira.
+    // dispositivo»; zitto da più di 30 s è in sottofondo o morto: si ritira, e
+    // se torna e parla la chiusura gli arriva allora. Un PC, una stazione: la
+    // presa vecchia è di un service worker che non c'è più (uno vivo chiude la
+    // sua prima di aprirne un'altra) — si ritira.
     for (const p of tutte) {
       const st = this.io.leggi(p);
       if (!st || st.via || st.ruolo !== ruolo) continue;
-      if (ruolo === "tel" && !this.muta(p, st, ora)) this.chiudi(p, st, 4001, "sostituita", false, ora);
+      if (ruolo === "tel" && ora - Math.max(st.ultimo || 0, this.io.battito(p) || 0) <= PONTE.vivoMs) this.chiudi(p, st, 4001, "sostituita", false, ora);
       else this.ritira(p, st, 4001, false, ora);   // (al posto suo c'è già quella nuova: nessun avviso)
     }
     const ritirate = tutte.filter((p) => this.io.leggi(p)?.via && !this.io.leggi(p).chiusa);
