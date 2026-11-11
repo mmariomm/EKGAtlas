@@ -674,12 +674,13 @@ async function stzScollega() {
 
 // ============================================================= il puntino
 // Sull'icona nella barra, un puntino rosso (il badge più piccolo che Chrome
-// disegna: un solo spazio) — e solo quando serve: l'ultimo foglio non è
-// stampato (fallito, o esito sconosciuto), o l'aiutante di stampa non risponde.
-// I fogli arrivati e stampati bene non dicono niente: la carta si vede. Si
-// spegne quando si apre la pagina della stazione o il popup (`visto`); un
-// problema nuovo lo riaccende. Solo su una stazione collegata. Niente
-// notifiche di Windows, nessun permesso in più.
+// disegna: un solo spazio) — e solo quando serve: un foglio non stampato
+// (fallito, o esito sconosciuto) dopo l'ultima occhiata, anche se dopo ne sono
+// usciti altri bene, o l'aiutante di stampa non risponde. I fogli arrivati e
+// stampati bene non dicono niente: la carta si vede. Si spegne quando si apre
+// la pagina della stazione o il popup (`visto`); un problema nuovo lo
+// riaccende. Solo su una stazione collegata. Niente notifiche di Windows,
+// nessun permesso in più.
 const STA_AIUTANTE_OGNI = 30 * 60e3;
 async function stzPuntino() {
   if (!chrome.action || !chrome.action.setBadgeText) return;
@@ -688,8 +689,7 @@ async function stzPuntino() {
   const q = o[STA.qui];
   let ko = 0;
   if (q && q.conferma && !q.revoca) {
-    const l = o[STA.lavori] || [], u = l[l.length - 1];
-    if (u && (u.esito === "fallito" || u.esito === "sconosciuto")) ko = u.ts || 0;
+    for (const u of o[STA.lavori] || []) if (u.esito === "fallito" || u.esito === "sconosciuto") ko = Math.max(ko, u.ts || 0);
     if (a && a.ko) ko = Math.max(ko, a.ts || 0);
   }
   const rosso = ko > (o[STA.visto] || 0);

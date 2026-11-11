@@ -20,6 +20,11 @@
  * cartella temporanea rimasta, chrome.runtime.reload() e l'estensione nuova
  * che parte (e lo dice all'aiutante), la pillola «Ricarica la pagina» nella
  * scheda col pannello vecchio, e il tocco sulla pillola che la riapre.
+ * E mai in un giro: lo zip scaricato una volta per versione (anche col
+ * service worker che riparte), la sveglia che non si sposta, sei ore di pausa
+ * dopo un no; all'avvio del browser lo scambio con le schede aperte solo nel
+ * primo minuto e con lo zip già scaricato; l'aiutante che non risponde (forse
+ * a metà della copia): niente ricarica, poi «chi» e la ricarica senza rimandare lo zip.
  *   node test/ext-aggiorna.mjs
  */
 import { chromium } from "playwright";
@@ -160,6 +165,29 @@ const chiudiMenu = async () => { if (await $panel(doc, ".menu").count()) await $
 const puntino = () => $panel(doc, "#menubtn").evaluate((b) => b.classList.contains("agg")).catch(() => null);
 const voce = () => $panel(doc, "#aggapp").count();
 const zipScaricati = () => gh.richieste.filter((x) => /\.zip$/.test(x.url)).length;
+const pausa = () => sw.evaluate(() => chrome.storage.local.get("aggiornaPausa").then((o) => o.aggiornaPausa || null));
+const azzeraZip = () => sw.evaluate(() => Promise.all([caches.delete("psassist-aggiorna"), chrome.storage.local.remove("aggiornaPausa")]));
+const allarme = () => sw.evaluate(() => chrome.alarms.get("psassist-aggiorna").then((a) => a && a.scheduledTime));
+// (l'orologio finto: la pausa scritta più indietro)
+const indietro = (ms) => sw.evaluate((d) => chrome.storage.local.get("aggiornaPausa").then((o) => chrome.storage.local.set({ aggiornaPausa: { ...o.aggiornaPausa, ts: Date.now() - d } })), ms);
+const manifestDi = (d) => JSON.parse(readFileSync(join(d, "manifest.json"), "utf8"));
+const entro = (p, ms) => Promise.race([p, sospendi(ms).then(() => null)]).catch(() => null);
+// il service worker che si ferma e riparte (come fa Chrome dopo mezzo minuto di quiete): la memoria
+// del service worker si perde, storage e Cache Storage restano. Lo risveglia una pagina dell'estensione.
+// (Playwright tiene lo stesso oggetto `sw`: un segno nella memoria dice se è ripartito davvero)
+const cdpPag = await ctx.newPage();
+const cdp = await ctx.newCDPSession(cdpPag);
+await cdp.send("ServiceWorker.enable");
+async function riavviaSw() {
+  await sw.evaluate(() => { self.__primaDelRiavvio = true; });
+  await cdp.send("ServiceWorker.stopAllWorkers");
+  await sospendi(300);
+  await cdpPag.goto(`chrome-extension://${ID}/ponte.html`);
+  await cdpPag.evaluate(() => chrome.runtime.sendMessage({ t: "nessuno" }).catch(() => null)).catch(() => null);
+  const nuovo = await finche(() => Promise.race([sw.evaluate(() => typeof self.__primaDelRiavvio === "undefined"), sospendi(2000).then(() => false)]), 15000);
+  await cdpPag.goto("about:blank");
+  return !!nuovo;
+}
 
 console.log("\naggiorna: la versione su GitHub");
 {
@@ -277,6 +305,11 @@ console.log("\naggiorna: mai a metà di qualcosa");
   check(r === true, `una registrazione in corso: occupato (got ${r})`);
   await sw.evaluate(() => chrome.storage.local.remove(REG));
   await finche(async () => !(await sw.evaluate(() => regAttiva())), 5000);
+  // una registrazione automatica che aspetta il suo minuto (dopo un incidente, prima di salvarsi)
+  await sw.evaluate(() => chrome.storage.session.set({ [REG_INC]: { ts: Date.now(), motivi: ["prova"] } }));
+  r = await sw.evaluate(() => aggOccupato());
+  await sw.evaluate(() => chrome.storage.session.remove(REG_INC));
+  check(r === true, `una registrazione automatica che aspetta il suo minuto: occupato (got ${r})`);
   // un foglio che arriva sulla stazione di stampa (questo PC fa anche da stazione)
   await sw.evaluate(() => stz.inCorso.set("prova", { n: 1 }));
   r = await sw.evaluate(() => aggOccupato());
@@ -284,6 +317,32 @@ console.log("\naggiorna: mai a metà di qualcosa");
   await sw.evaluate(() => stz.inCorso.delete("prova"));
   r = await sw.evaluate(() => aggOccupato());
   check(r === false, `tutto finito: libero (got ${r})`);
+  // nel dubbio aspetta: una scheda del gestionale che non risponde in tempo (la pagina ferma), o che
+  // non si lascia leggere (una pagina d'errore), è occupata; quella di un PDF delle stampe non conta
+  const ferma = doc.evaluate(() => { const t0 = Date.now(); while (Date.now() - t0 < 5000); }).catch(() => {});
+  await sospendi(300);
+  r = await sw.evaluate(() => aggOccupato());
+  check(r === true, `una scheda del gestionale che non risponde in tempo: occupato (got ${r})`);
+  await ferma;
+  // (una scheda che non si lascia leggere — una pagina d'errore, un documento che Chrome non apre agli script:
+  // qui executeScript che fallisce per quella scheda)
+  const nonLeggibile = (url) => sw.evaluate((u) => chrome.tabs.query({ url: u }).then((ts) => {
+    const ids = new Set(ts.map((t) => t.id));
+    self.__exe = self.__exe || chrome.scripting.executeScript;
+    chrome.scripting.executeScript = (o) => (ids.has(o.target.tabId) ? Promise.reject(new Error("Frame with ID 0 is showing error page")) : self.__exe.call(chrome.scripting, o));
+  }), url);
+  const leggibili = () => sw.evaluate(() => { if (self.__exe) chrome.scripting.executeScript = self.__exe; });
+  await nonLeggibile(`${A.ORIGIN}/sa4pso/*`);
+  r = await sw.evaluate(() => aggOccupato());
+  await leggibili();
+  check(r === true, `una scheda del gestionale che non si lascia leggere: occupato (got ${r})`);
+  const pdf = await ctx.newPage();
+  await pdf.goto(`${A.ORIGIN}/jasperserverSAN/stampa.pdf`).catch(() => {});
+  await nonLeggibile(`${A.ORIGIN}/jasperserverSAN/*`);
+  r = await sw.evaluate(() => aggOccupato());
+  await leggibili();
+  check(r === false, `una scheda dei PDF delle stampe (lì il pannello non nasce) non conta (got ${r})`);
+  await pdf.close();
   check(!lavori().some((x) => x.aggiorna) && zipScaricati() === prima0, "niente zip scaricato, niente all'aiutante");
   await doc.evaluate(() => document.getElementById("prova-cartella")?.remove());
 }
@@ -303,8 +362,38 @@ console.log("\naggiorna: lo zip deve essere quello giusto");
   check(!lavori().some((x) => x.aggiorna), "all'aiutante non è arrivato niente");
   gh.zip = zipDi(NUOVA);
   comportati({ aggiornaNo: "la cartella è in uso" });
+  // all'avvio del browser lo scambio parte anche con le schede (ripristinate) aperte — ma solo con lo zip
+  // già scaricato, e solo entro un minuto dalla partenza del service worker (dopo, il medico lavora)
+  const z0 = zipScaricati();
+  await sw.evaluate(() => { aggNato = Date.now(); });
   r = await sw.evaluate(() => aggiorna({ avvio: true }));
-  check(!r.ok && /Aggiornamento non riuscito: la cartella è in uso/.test(r.why) && !r.ricarica, `l'aiutante dice di no: lo si dice, niente ricarica (got ${r.why})`);
+  check(!r.ok && r.why === "Dopo la chiusura del gestionale" && zipScaricati() === z0 + 1 && !lavori().some((x) => x.aggiorna),
+    `all'avvio, ma lo zip non c'era ancora: si scarica, e lo scambio aspetta la chiusura del gestionale (got ${r.why}, zip ${zipScaricati() - z0})`);
+  await sw.evaluate(() => { aggNato = Date.now() - 61e3; });
+  r = await sw.evaluate(() => aggiorna({ avvio: true }));
+  check(!r.ok && r.why === "Dopo la chiusura del gestionale" && !lavori().some((x) => x.aggiorna),
+    `all'avvio, con lo zip pronto, ma più di un minuto dopo la partenza: lo scambio aspetta (got ${r.why})`);
+  // (il minuto che passa mentre si chiede all'aiutante che cosa c'è nella cartella: lo vede il controllo nella fila degli ordini)
+  await sw.evaluate(() => { aggNato = Date.now(); self.__inst = aggInstallata; aggInstallata = async (...a) => { const i = await self.__inst(...a); aggNato = Date.now() - 61e3; return i; }; });
+  r = await sw.evaluate(() => aggiorna({ avvio: true }));
+  await sw.evaluate(() => { aggInstallata = self.__inst; });
+  check(!r.ok && r.why === "Dopo la chiusura del gestionale" && !lavori().some((x) => x.aggiorna),
+    `…e se il minuto passa intanto, l'ultimo controllo prima dello scambio aspetta lo stesso (got ${r.why})`);
+  await sw.evaluate(() => { aggNato = Date.now(); });
+  r = await sw.evaluate(() => aggiorna({ avvio: true }));
+  check(!r.ok && /Aggiornamento non riuscito: la cartella è in uso/.test(r.why) && !r.ricarica && zipScaricati() === z0 + 1,
+    `all'avvio, con lo zip pronto, entro il minuto: lo scambio parte con la scheda aperta; l'aiutante dice di no: lo si dice, niente ricarica (got ${r.why})`);
+  // all'avvio le schede ripristinate stanno ancora caricando (qui: una che per qualche secondo non risponde):
+  // nel dubbio è occupato, e si riprova finché dura il minuto
+  azzeraLavori();
+  await sw.evaluate(() => chrome.storage.local.remove("aggiornaPausa"));
+  await sw.evaluate(() => { aggNato = Date.now(); });
+  const carica = doc.evaluate(() => { const t0 = Date.now(); while (Date.now() - t0 < 4000); }).catch(() => {});
+  await sospendi(200);
+  await sw.evaluate(() => aggAuto(true));
+  await carica;
+  const allAvvio = lavori().filter((x) => x.aggiorna);
+  check(allAvvio.length === 1 && !allAvvio[0].ok, `all'avvio, una scheda che non risponde ancora: si riprova nel minuto, e lo scambio parte (all'aiutante ${allAvvio.length})`);
   check(JSON.parse(readFileSync(join(EST, "manifest.json"), "utf8")).version === MIA && temporanei().length === 0, "la cartella è quella di prima, e niente di temporaneo resta");
   comportati();
 }
@@ -313,7 +402,7 @@ console.log("\naggiorna: da sé, quando è il momento");
 {
   azzeraLavori();
   gh.zip = zipDi(NUOVA);
-  await sw.evaluate(() => { aggZipPronto = null; });
+  await azzeraZip();
   await dimentica();
   await controlla();
   // non è il momento: un testo scritto e non salvato. La sveglia gira, e non fa niente.
@@ -333,11 +422,49 @@ console.log("\naggiorna: da sé, quando è il momento");
   await sw.evaluate(() => aggAuto());
   check(!ra.ok && ra.why === "Dopo la chiusura del gestionale" && zipScaricati() === prima1 + 1 && JSON.parse(readFileSync(join(EST, "manifest.json"), "utf8")).version === MIA,
     `«Dopo la chiusura del gestionale», e lo zip non si riscarica a ogni giro (got ${ra.why}, zip ${zipScaricati() - prima1})`);
+  // il service worker si ferma e riparte, più volte, con la scheda aperta: lo zip non si riscarica
+  // (è nella Cache Storage, non nella memoria del service worker), nessuna domanda all'aiutante,
+  // VERSION.txt non si rilegge, e la sveglia non si sposta in avanti.
+  const sveglia = await allarme(), chi0 = lavori().filter((x) => x.chi).length, gh0 = gh.richieste.length;
+  let riavvii = 0;
+  const spostata = [];
+  for (let k = 0; k < 3; k++) {
+    if (await riavviaSw()) riavvii++;
+    const s1 = await allarme();
+    if (s1 !== sveglia) spostata.push(Math.round((s1 - sveglia) / 1000));
+    await sw.evaluate(() => aggAuto());
+  }
+  check(riavvii === 3, `(il service worker è ripartito 3 volte: ${riavvii})`);
+  check(zipScaricati() === prima1 + 1 && gh.richieste.length === gh0 && lavori().filter((x) => x.chi).length === chi0 && !lavori().some((x) => x.aggiorna),
+    `3 riavvii del service worker con la scheda aperta: lo zip scaricato una volta in tutto, niente rete, niente all'aiutante (zip ${zipScaricati() - prima1}, richieste ${gh.richieste.length - gh0}, «chi» ${lavori().filter((x) => x.chi).length - chi0})`);
+  check(spostata.length === 0, `la sveglia non si sposta a ogni riavvio (spostata di ${JSON.stringify(spostata)} s)`);
   // chiusa la scheda (qui: una pagina che non è del gestionale), al giro dopo si applica, da sé
   await doc.goto("about:blank");
   // (il gestionale simulato ha aperto anche una finestra del visualizzatore: è una scheda del gestionale anche lei, si chiude)
   await sw.evaluate(() => chrome.tabs.query({ url: "https://smarthealth.multimedica.it/*" }).then((t) => chrome.tabs.remove(t.map((x) => x.id))));
   check(await sw.evaluate(() => aggSchede()) === 0, "nessuna scheda del gestionale aperta");
+  // l'aiutante dice di no: niente ricarica, e quella versione aspetta sei ore — né zip né aiutante a ogni giro
+  comportati({ aggiornaNo: "la cartella è in uso" });
+  azzeraLavori();
+  const zip2 = zipScaricati(), gh2 = gh.richieste.length;
+  await sw.evaluate(() => aggAuto());
+  const no1 = lavori().filter((x) => x.aggiorna);
+  check(no1.length === 1 && !no1[0].ok && (await pausa())?.v === NUOVA && JSON.parse(readFileSync(join(EST, "manifest.json"), "utf8")).version === MIA,
+    `l'aiutante dice di no: una volta, niente ricarica, la versione in pausa (got ${JSON.stringify(await pausa())})`);
+  const n1 = lavori().length;
+  for (let k = 0; k < 3; k++) await sw.evaluate(() => aggAuto());
+  check(lavori().length === n1 && zipScaricati() === zip2 && gh.richieste.length === gh2,
+    `dopo il no, altri tre giri: niente all'aiutante, niente scaricato, niente rete (aiutante ${lavori().length - n1}, zip ${zipScaricati() - zip2})`);
+  await indietro(6 * 3600e3 - 60e3);
+  await sw.evaluate(() => aggAuto());
+  check(lavori().length === n1, `cinque ore e 59 minuti dopo: ancora niente (aiutante ${lavori().length - n1})`);
+  await indietro(6 * 3600e3 + 60e3);
+  await sw.evaluate(() => aggAuto());
+  check(lavori().filter((x) => x.aggiorna).length === 2 && zipScaricati() === zip2,
+    `sei ore dopo: si riprova, una volta, con lo zip già scaricato (all'aiutante ${lavori().filter((x) => x.aggiorna).length - 1}, zip ${zipScaricati() - zip2})`);
+  comportati();
+  azzeraLavori();
+  await sw.evaluate(() => chrome.storage.local.remove("aggiornaPausa"));
   const nasce = ctx.waitForEvent("serviceworker", { timeout: 30000 }).catch(() => null);
   await sw.evaluate(() => { aggAuto().catch(() => {}); return true; }).catch(() => {});
   const nuovo = await nasce;
@@ -372,6 +499,49 @@ console.log("\naggiorna: da sé, quando è il momento");
   if (nuovo) sw = nuovo;
   const dopo = await memoria();
   check(!dopo || !dopo.nuova, `dopo: nessuna versione nuova da offrire (got ${JSON.stringify(dopo)})`);
+}
+
+console.log("\naggiorna: l'aiutante che non risponde (può essere a metà della copia)");
+{
+  // una versione ancora più nuova; il gestionale chiuso; l'aiutante ci mette più di quanto lo si aspetta
+  // (qui il «non ha risposto in tempo» di ospite() arriva dopo 1,5 secondi: l'aiutante intanto continua)
+  const PIU = "99.2.0";
+  gh.versione = PIU;
+  gh.zip = zipDi(PIU);
+  comportati({ lento: 4000 });
+  azzeraLavori();
+  await dimentica();
+  await azzeraZip();
+  await doc.goto("about:blank");
+  await sw.evaluate(() => chrome.tabs.query({ url: "https://smarthealth.multimedica.it/*" }).then((t) => chrome.tabs.remove(t.map((x) => x.id))));
+  await sw.evaluate(() => {
+    self.__osp = ospite;
+    self.__vivo = true;
+    ospite = (m, ms) => (m.t === "aggiorna" ? Promise.race([self.__osp(m, ms), new Promise((r) => setTimeout(() => r({ ok: false, why: "l'aiutante di stampa non ha risposto in tempo", ignoto: true }), 1500))]) : self.__osp(m, ms));
+  });
+  let ricaricata = false;
+  ctx.waitForEvent("serviceworker", { timeout: 10000 }).then(() => { ricaricata = true; }, () => {});
+  await entro(sw.evaluate(() => aggAuto()), 20000);
+  const copiata = await finche(async () => lavori().some((x) => x.aggiorna && x.ok), 15000);
+  await sospendi(1500);
+  const vivo = await entro(sw.evaluate(() => self.__vivo === true && chrome.runtime.getManifest().version), 3000);
+  check(!ricaricata && vivo === NUOVA, `nessuna risposta in tempo: niente ricarica (che chiuderebbe l'aiutante a metà della copia) (got ${ricaricata ? "ricaricata" : vivo})`);
+  check(copiata && manifestDi(EST).version === PIU, `…e l'aiutante finisce la copia da sé (cartella ${manifestDi(EST).version})`);
+  const p = await entro(pausa(), 3000);
+  check(p && p.v === PIU, `la versione aspetta, come dopo un no (got ${JSON.stringify(p)})`);
+  const n1 = lavori().length;
+  await entro(sw.evaluate(() => aggAuto()), 10000);
+  check(lavori().length === n1, `il giro dopo: niente all'aiutante, né lo zip né «chi» (got ${lavori().length - n1})`);
+  // sei ore dopo: si chiede all'aiutante che cosa c'è nella cartella — è già la nuova: si ricarica e basta
+  await entro(indietro(6 * 3600e3 + 60e3), 3000);
+  const nasce = ctx.waitForEvent("serviceworker", { timeout: 30000 }).catch(() => null);
+  await entro(sw.evaluate(() => { aggAuto().catch(() => {}); return true; }), 5000);
+  const nuovo = await nasce;
+  const v2 = nuovo ? await entro(nuovo.evaluate(() => chrome.runtime.getManifest().version), 5000) : "";
+  check(v2 === PIU && lavori().filter((x) => x.aggiorna).length === 1 && lavori().slice(n1).some((x) => x.chi),
+    `sei ore dopo, l'aiutante dice che nella cartella c'è già la ${PIU}: si ricarica, senza rimandargli lo zip (got ${v2 || "nessuna ricarica"}, zip all'aiutante ${lavori().filter((x) => x.aggiorna).length})`);
+  if (nuovo) sw = nuovo;
+  comportati();
 }
 
 check(fuori.length === 0, `nessun'altra richiesta fuori dall'ospedale (got ${fuori.slice(0, 3).join(", ")})`);
