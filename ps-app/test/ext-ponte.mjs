@@ -456,8 +456,10 @@ check(!(await tel.evaluate(() => location.hash)), "il frammento con la chiave no
 const salvato = await tel.evaluate(() => Object.keys(localStorage).map((k) => [k, localStorage.getItem(k)]));
 const sv = salvato.length === 1 ? JSON.parse(salvato[0][1]) : {};
 const pc0 = sv && Array.isArray(sv.v) && sv.v.length === 1 ? sv.v[0] : null;
-check(salvato.length === 1 && salvato[0][0] === "psassist.ponte.pcs.v1" && pc0 && Object.keys(pc0).sort().join() === "dev,id,k,kind,nome" && !/ROSSI|BIANCHI/.test(salvato[0][1]),
-  "sul telefono resta solo la lista dei PC (chiave, numero del telefono, tipo e nome): nessun paziente, nessuna scadenza");
+const versionePc = await sw.evaluate(() => chrome.runtime.getManifest().version);
+check(salvato.length === 1 && salvato[0][0] === "psassist.ponte.pcs.v1" && pc0 && Object.keys(pc0).sort().join() === "dev,id,k,kind,nome,ver,visto" && !/ROSSI|BIANCHI/.test(salvato[0][1])
+  && pc0.ver === versionePc && Math.abs(Date.now() - pc0.visto) < 60e3,
+  `sul telefono resta solo la lista dei PC (chiave, numero del telefono, tipo e nome; la versione di PS Assist e quando il PC si è fatto sentire): nessun paziente, nessuna scadenza (${Object.keys(pc0 || {}).sort().join()})`);
 const titoli = JSON.stringify(await tel.locator(".lbl").evaluateAll((l) => l.map((x) => x.textContent)));
 const fila = (await tel.locator("main > .carta").first().locator(".paz .nome").allInnerTexts()).join(",");
 check(/OBI 2/.test(lista) && titoli === '["Alta intensità","Bassa"]' && /^BIANCHI ANNA,ROSSI MARIO$/.test(fila),
@@ -2411,6 +2413,80 @@ sezione("le registrazioni del PC dal telefono: elenco, scarica a pezzi, cancella
   check(/iPhone · 2 registrazioni cancellate dal PC/.test(await registroPonte()), "il registro del ponte: «2 registrazioni cancellate dal PC»");
   await tocca(tel, '[data-a="indietro"]');
   await aspettaTel(tel, /BIANCHI ANNA/);
+}
+
+// ===========================================================================
+sezione("⋯ → Dispositivi: i PC associati, chi c'è, chi è collegato a questo iPhone");
+{
+  // Accanto al PC vero (con la sua stazione di stampa), il telefono ha in lista due PC
+  // di sola lettura: «Infermeria», acceso — un PC finto nella sua stanza del ripetitore,
+  // che risponde alla sonda come ponte-sw.js —, e «Studio medici», spento, sentito ieri sera.
+  const vero = await chiaveTel(tel);
+  const KM = P.casuale(32), KS = P.casuale(32), chM = await P.chiaviCoppia(KM);
+  const ieri = new Date(); ieri.setDate(ieri.getDate() - 1); ieri.setHours(18, 40, 0, 0);
+  const mini = { k: P.b64u(KM), dev: P.b64u(P.casuale(16)), kind: "lettura", nome: "Infermeria", id: "provaMini01" };
+  const spento = { k: P.b64u(KS), dev: P.b64u(P.casuale(16)), kind: "lettura", nome: "Studio medici", id: "provaSpento1", ver: "3.84.0", visto: ieri.getTime() };
+  const { default: WS } = await import("ws");
+  const finto = new WS(`${relay.url.replace(/^http/, "ws")}/ponte/ws?r=${chM.stanza}&ruolo=pc`);
+  const sentito = [];   // quello che arriva al PC finto: il «c'è?» del ripetitore, e i saluti
+  finto.on("message", async (d, bin) => {
+    if (!bin) { sentito.push(String(d)); return; }
+    try {
+      const m = (await P.apri(chM.salutoTel, new Uint8Array(d), P.TIPO.SALUTO_TEL)).dati;
+      sentito.push(m.sonda === true ? "sonda" : "saluto");
+      if (m.sonda === true) finto.send(await P.sigilla(chM.salutoPc, P.TIPO.SALUTO_PC, 0, { v: 1, eco: m.n, sonda: { kind: "lettura", nome: "Infermeria", versione: "3.85.3", stazione: null } }));
+    } catch { /* non di questa stanza */ }
+  });
+  await new Promise((ok, no) => { finto.once("open", ok); finto.once("error", no); });
+  // la stazione del PC vero, come se fosse collegata (quello che ponte-sw.js legge da stazione-sw.js e dal giornale delle stampe)
+  await sw.evaluate(() => { self.__staVera = ponteStazioneDi; self.ponteStazioneDi = async () => ({ nome: "Infermeria", presente: true, ultimo: { esito: "stampato", fa: 4 * 60e3 } }); });
+  await tel.evaluate((v) => localStorage.setItem("psassist.ponte.pcs.v1", JSON.stringify({ v, attivo: v[0].id })), [vero, mini, spento]);
+  await tel.reload();
+  await aspettaTel(tel, /BIANCHI ANNA/, 20000);
+  await sospendi(500);
+  const s0 = sentito.length, e0 = relay.entrate().tel, aperte0 = relay.prese().tel;
+  await tocca(tel, '[data-a="menu"]');
+  check(await tel.locator('.menu [data-a="dispositivi"]').count() === 1 && /Dispositivi$/.test((await tel.locator('.menu [data-a="dispositivi"]').innerText()).trim()), "nel ⋯ c'è «Dispositivi»");
+  await tocca(tel, '[data-a="dispositivi"]');
+  const pronta = await finche(async () => { const t = await testoTel(tel); return /Collegato a questo iPhone/.test(t) && /Disponibile/.test(t) && /Non disponibile/.test(t) && /stampato alle/.test(t); }, 15000);
+  const righe = await tel.locator(".dsp").evaluateAll((l) => l.map((x) => ({ id: x.dataset.pc, t: x.innerText.replace(/\s+/g, " ").trim() })));
+  check(pronta && /Dispositivi/.test(await tel.locator("header").innerText()) && righe.map((r) => r.id).join() === [vero.id, mini.id, spento.id].join(),
+    `una riga per PC associato, l'attivo in cima (${righe.map((r) => r.t).join(" | ")})`);
+  const [r0 = "", r1 = "", r2 = ""] = righe.map((r) => r.t);
+  check(new RegExp(`^💻 PC v${versionePc.replace(/\./g, "\\.")} Collegato a questo iPhone .{1,3} Infermeria · raggiungibile · ultimo foglio stampato alle \\d\\d:\\d\\d$`).test(r0),
+    `il PC attivo: «PC», la sua versione, «Collegato a questo iPhone», e la sua stazione con l'ultimo foglio (${r0})`);
+  check(/^👁.{0,2} Infermeria Lettura e stampa v3\.85\.3 Disponibile$/.test(r1), `l'altro PC acceso: il suo nome, «Lettura e stampa», la versione che dice adesso, «Disponibile» (${r1})`);
+  check(/^👁.{0,2} Studio medici Lettura e stampa v3\.84\.0 Non disponibile · visto ieri alle 18:40$/.test(r2), `quello spento: «Non disponibile», e quando si è fatto sentire (${r2})`);
+  check(await finche(async () => relay.entrate().tel - e0 === 2 && relay.prese().tel === aperte0, 10000),
+    `una presa breve per ognuno degli altri due PC, chiusa subito: resta aperta solo quella della sessione (${relay.entrate().tel - e0} nuove, ${relay.prese().tel} aperte)`);
+  check(await finche(async () => sentito.slice(s0).join() === '{"pari":true},sonda,{"pari":false}', 8000),
+    `il PC acceso sente il telefono arrivare, la sonda (nessuna sessione), e il telefono che se ne va (${sentito.slice(s0).join()})`);
+  const lista = await tel.evaluate(() => JSON.parse(localStorage.getItem("psassist.ponte.pcs.v1")).v);
+  const m2 = lista.find((p) => p.id === mini.id) || {}, sp2 = lista.find((p) => p.id === spento.id) || {};
+  check(m2.ver === "3.85.3" && Math.abs(Date.now() - m2.visto) < 30e3 && sp2.ver === "3.84.0" && sp2.visto === spento.visto && !/ROSSI|BIANCHI|Infermeria · /.test(JSON.stringify(lista)),
+    "sul telefono, per ogni PC, solo la versione e quando si è fatto sentire (quello acceso: adesso): niente pazienti, niente stazione");
+  check(!(await piccoli(tel)).length, "ogni bottone è grande almeno 44 punti");
+  await shot(tel, "tel-dispositivi");
+  await tel.emulateMedia({ colorScheme: "dark" }); await shot(tel, "tel-dispositivi-buio"); await tel.emulateMedia({ colorScheme: "light" });
+  // riaperta subito: la risposta di prima, nessuna presa nuova; fuori dalla pagina, niente in sottofondo
+  const e1 = relay.entrate().tel;
+  await tocca(tel, '[data-a="indietro"]');
+  await aspettaTel(tel, /BIANCHI ANNA/);
+  await tocca(tel, '[data-a="menu"]');
+  await tocca(tel, '[data-a="dispositivi"]');
+  await aspettaTel(tel, /Collegato a questo iPhone/, 10000);
+  await sospendi(1500);
+  check(relay.entrate().tel === e1 && /Disponibile/.test(await testoTel(tel)), "riaperta subito: la risposta di prima, nessuna presa nuova");
+  await tocca(tel, '[data-a="indietro"]');
+  await sospendi(3000);
+  check(relay.entrate().tel === e1, "e fuori dalla pagina, niente in sottofondo: nessuna presa verso gli altri PC");
+  // com'era: il PC finto se ne va, la stazione vera torna quella di prima, e sul telefono solo il PC vero
+  finto.close();
+  await sw.evaluate(() => { self.ponteStazioneDi = self.__staVera; delete self.__staVera; });
+  const resta = (await tel.evaluate(() => JSON.parse(localStorage.getItem("psassist.ponte.pcs.v1")).v)).filter((p) => p.id === vero.id);
+  await tel.evaluate((v) => localStorage.setItem("psassist.ponte.pcs.v1", JSON.stringify({ v, attivo: v[0].id })), resta);
+  await tel.reload();
+  await aspettaTel(tel, /BIANCHI ANNA/, 20000);
 }
 
 // ===========================================================================

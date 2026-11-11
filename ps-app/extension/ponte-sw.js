@@ -295,6 +295,7 @@ async function ponteSaluto(b) {
       return;
     }
   }
+  if (m.sonda === true) return ponteSonda(m);   // ⋯ → Dispositivi sul telefono: chi è questo PC, e nessuna sessione
   const nPc = PonteCripto.casuale(16);
   pt.attesa = { canale: PonteCripto.canalePc(await PonteCripto.chiaviSessione(pt.k, nTel, nPc)), ts: ponteOra(), dev: m.dev, nTel: m.n };
   // (con l'ora del PC: il telefono ne tiene lo scarto, e un ordine porta l'ora del tocco sull'orologio del PC)
@@ -419,7 +420,7 @@ function ponteArgomenti(d) {
   return a;
 }
 // quelli che l'app manda da sé: non sono il medico, non tengono aperta la sessione
-const PONTE_DA_SE = new Set(["ciao", "ordini"]);
+const PONTE_DA_SE = new Set(["ciao", "ordini", "dispositivo"]);
 // La build mini (PS Assist · Lettura e stampa) è di SOLA LETTURA: il ponte
 // risponde solo ai comandi di lettura e alla ristampa (legge la pagina aperta e
 // stampa, non scrive niente nel gestionale). Elenco a consenso esplicito: tutto
@@ -433,6 +434,7 @@ const PONTE_LETTURA = new Set([
   "esiti", "aggiornaValori", "richieste", "cartella", "terapie",
   "pdf", "ristampe", "ristampa", "stampa",   // «stampa»: un PDF del telefono sull'A4 di QUESTO PC (non scrive nel gestionale)
   "stampaReferto",                            // un referto già salvato su questo PC, stampato (non scrive nel gestionale)
+  "dispositivo",                              // chi è questo PC e la sua stazione di stampa (⋯ → Dispositivi): legge e basta
 ]);
 const ponteSolaLettura = () => typeof self !== "undefined" && self.PSA_SOLA_LETTURA === true;
 // Chi è questo PC, per il menu del telefono (nel saluto `ciao`): il tipo
@@ -447,7 +449,46 @@ async function ponteChiSono() {
   const nome = typeof n === "string" && n.trim() ? n.trim().slice(0, 40) : (ponteSolaLettura() ? "Sola lettura" : "PC completo");
   const s = (await chrome.storage.session.get(PONTE_OPERATORE).catch(() => ({})))[PONTE_OPERATORE];
   const operatore = s && typeof s.nome === "string" && Date.now() - (s.ts || 0) < 36e5 ? s.nome.slice(0, 60) : "";
-  return { kind: ponteSolaLettura() ? "lettura" : "completo", nome, ...(operatore ? { operatore } : {}) };
+  const versione = ponteVersione();
+  return { kind: ponteSolaLettura() ? "lettura" : "completo", nome, ...(versione ? { versione } : {}), ...(operatore ? { operatore } : {}) };
+}
+
+// ------------------------------------------- i dispositivi, per il telefono
+// ⋯ → Dispositivi sul telefono: chi è questo PC (il tipo, il nome, la versione
+// di PS Assist) e la sua stazione di stampa, se ne ha una — il nome, se il PC
+// la raggiunge adesso, e com'è andato l'ultimo foglio mandato lì. Solo
+// lettura: niente pazienti, niente chiavi, niente da scrivere. Il PC attivo lo
+// dà nella sessione (`dispositivo`). Un altro PC della lista lo dà al saluto
+// «sonda» di una presa breve, che il telefono apre solo quando il medico apre
+// quella pagina: lo stesso saluto cifrato con la chiave dell'associazione (e
+// solo del telefono dell'associazione), ma senza una sessione dopo — qui non
+// cambia niente: né l'attesa, né il telefono legato, né il registro.
+const PONTE_FOGLIO_FINITO = new Set(["stampato", "mandato", "fallito", "sconosciuto"]);
+function ponteVersione() {
+  try { return String(chrome.runtime.getManifest().version || "").slice(0, 20); } catch { return ""; }
+}
+async function ponteStazioneDi() {
+  const c = (await chrome.storage.local.get("stazione.coppia").catch(() => ({})))["stazione.coppia"];
+  if (!c || c.revoca) return null;
+  // (quello che stazione-sw.js scrive per le pagine del PC: `presente` = la stazione è nella sua stanza adesso)
+  const pub = (await chrome.storage.session.get("stazione").catch(() => ({}))).stazione;
+  // l'ultimo foglio mandato alla stazione (un ordine, una ristampa, un PDF dal telefono), dal giornale delle stampe di bg.js
+  let u = null;
+  for (const r of await ordLeggi().catch(() => [])) {
+    for (const f of Array.isArray(r && r.fogli) ? r.fogli : []) {
+      if (f && f.stazione && PONTE_FOGLIO_FINITO.has(f.stato) && Number(f.ts) > (u ? Number(u.ts) : 0)) u = f;
+    }
+  }
+  // (`fa`, non l'ora: l'orologio del telefono non è questo)
+  const ultimo = u ? { esito: u.stato, fa: Math.max(0, ponteOra() - Number(u.ts)), ...(u.nonRisponde ? { nonRisponde: true } : {}) } : null;
+  return { nome: corto(c.nome || "Infermeria", 40), presente: !!(pub && pub.presente), ...(ultimo ? { ultimo } : {}) };
+}
+async function ponteDispositivo() {
+  const { kind, nome, versione } = await ponteChiSono();   // (chi è loggato nel gestionale qui non serve)
+  return { kind, nome, ...(versione ? { versione } : {}), stazione: await ponteStazioneDi() };
+}
+async function ponteSonda(m) {
+  ponteManda(await PonteCripto.sigilla(pt.chiavi.salutoPc, PonteCripto.TIPO.SALUTO_PC, 0, { v: 1, eco: m.n, sonda: await ponteDispositivo() }));
 }
 const PONTE_RQ_MAX = 40;   // le scritture ricordate per sessione (in memoria, solo qui)
 async function ponteComando(s, d) {
@@ -480,6 +521,7 @@ async function ponteRisposta(s, d) {
     if (ponteSolaLettura() && !PONTE_LETTURA.has(d.cmd)) return { ok: false, errore: "Questo PC è in sola lettura", solaLettura: true };
     if (d.cmd === "ciao") return { ok: true, dati: { inattivoMin: PONTE_INATTIVO / 60e3, ...(await ponteChiSono()) } };
     if (d.cmd === "ordini") return { ok: true, dati: await ponteOrdiniTel() };
+    if (d.cmd === "dispositivo") return { ok: true, dati: await ponteDispositivo() };
     if (d.cmd === "aggiornaValori") { const a = ponteArgomenti(d); return await ponteOffriPdf(s, await ponteAggiornaValori(a), a.ep); }
     if (d.cmd === "ordina") {
       // Un ordine arrivato più di 30 secondi dopo il tocco (rimasto in una presa
