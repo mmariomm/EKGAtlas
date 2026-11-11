@@ -251,10 +251,29 @@ await doc.waitForTimeout(1500);
 const dopoS = (await scorre()).pagine, dopoM = (await aMano()).pagine;
 check(dopoM > primaM && dopoS === primaS, `mentre registri a mano, le pagine vanno lì e non negli ultimi minuti (a mano ${primaM}→${dopoM}, ultimi minuti ${primaS}→${dopoS})`);
 check(await sw.evaluate(() => regIncidente("un ordine finito male, di prova")) === false, "un incidente intanto non salva niente da solo");
+// una riga del Registro scritta un attimo prima che la pagina cambi (il gestionale ricarica a quasi
+// ogni clic): «Dimentica i dati…», due tocchi, «Annulla» — la riga «annullato» —, e subito un'altra pagina
+await apriPannello(doc);
+await $panel(doc, "#menubtn").click();
+await $panel(doc, "#resetpaz").click();
+await $panel(doc, "#resetpaz").click();
+await $panel(doc, ".stannulla").click();
+await suPagina(doc, A.worklistUrl);
+await doc.waitForTimeout(1500);
 await apriPannello(doc);
 await vista(doc);
 await $panel(doc, "#regferma").click();
 check(await finche(async () => (await elenco()).length === 2, 60000) && (await elenco())[0].motivo === "manuale", "«Ferma e salva»: lo zip a mano, accanto a quello automatico");
+{
+  const zm = (await elenco())[0] || {};
+  const buf = Buffer.from(await sw.evaluate(async (id) => b64(await RegistraDb.tx("zipdati", "readonly", (s) => s.get(id))), zm.id), "base64");
+  const zf = join(OUT, "mano.zip"), dir = join(OUT, "mano");
+  writeFileSync(zf, buf);
+  mkdirSync(dir, { recursive: true });
+  try { execFileSync("unzip", ["-q", "-o", zf, "-d", dir]); } catch (e) { check(false, "lo zip a mano si apre: " + e.message); }
+  const reg = (() => { try { return readFileSync(join(dir, "testi/registro.txt"), "utf8"); } catch { return ""; } })();
+  check(/Dimentica i dati.{0,2} annullato/.test(reg), `la riga scritta un attimo prima di cambiare pagina è nello zip (testi/registro.txt: ${(/[^\n]*annullato[^\n]*/.exec(reg) || [reg.replace(/\s+/g, " ").slice(0, 120) || "vuoto"])[0]})`);
+}
 
 // ===========================================================================
 sezione("spenta: niente in memoria");

@@ -7912,16 +7912,26 @@
     // si sono lasciati leggere: il registratore (registra.js) li tiene solo se
     // sta tenendo qualcosa, e nello zip passano dall'anonimizzazione come ogni
     // pagina (testi/registro.txt, testi/diagnosi-N.txt). Il quesito, come in
-    // ⧉ Copia, non esce mai. Le righe vanno a mucchi, ogni secondo e mezzo.
+    // ⧉ Copia, non esce mai. Le righe vanno a mucchi, ogni secondo e mezzo, e
+    // subito quando la pagina se ne va (il gestionale ricarica a quasi ogni
+    // clic): quelle dell'ultimo secondo e mezzo non si perdono. Tutte, a
+    // mucchi di 200.
     registroAlRegistratore(riga) {
       if (!hasExt() || TABELLONE) return;
       (this._regRighe = this._regRighe || []).push(senzaQuesito(String(riga)).slice(0, 2000));
-      if (this._regRigheT) return;
-      this._regRigheT = setTimeout(() => {
-        const righe = this._regRighe.splice(0, 200);
-        this._regRighe = []; this._regRigheT = 0;
-        ask({ t: "regRegistro", righe }).catch(() => {});
-      }, 1500);
+      if (!this._regVia) {
+        this._regVia = true;
+        window.addEventListener("pagehide", () => this.registroManda());
+        document.addEventListener("visibilitychange", () => { if (document.hidden) this.registroManda(); });
+      }
+      if (!this._regRigheT) this._regRigheT = setTimeout(() => this.registroManda(), 1500);
+    }
+    registroManda() {
+      clearTimeout(this._regRigheT);
+      this._regRigheT = 0;
+      const tutte = this._regRighe || [];
+      this._regRighe = [];
+      while (tutte.length) ask({ t: "regRegistro", righe: tutte.splice(0, 200) });
     }
     segnaDiagnosi(d) {
       if (d && hasExt() && !TABELLONE) ask({ t: "regDiagnosi", testo: diagnosiTesto(d) }).catch(() => {});

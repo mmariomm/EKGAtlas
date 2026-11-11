@@ -646,7 +646,7 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   // dal pannello: le righe del Registro (senza il quesito) e la diagnosi di un documento che non si è
   // lasciato leggere (senza numeri né valori). Nello zip escono come testi, anonimizzati come le pagine.
   if (msg.t === "regRegistro") {
-    const righe = Array.isArray(msg.righe) ? msg.righe.slice(0, 200).map((r) => String(r).slice(0, 2000)) : [];
+    const righe = Array.isArray(msg.righe) ? msg.righe.slice(-200).map((r) => String(r).slice(0, 2000)) : [];   // (le più recenti)
     const scheda = sender.tab.id;
     if (righe.length) regPronto.then(() => { if (regCattura()) regAccoda("registro", { ts: Date.now(), scheda, righe }); });
     return reply({ ok: true }), true;
