@@ -1345,7 +1345,7 @@ che non può leggere niente: cifrato da un capo all'altro, nessun dato su nessun
 
 - **Una volta**: ⋯ → **iPhone** → **Associa l'iPhone**, e si inquadra il QR con la
   fotocamera (accanto, un codice di sei cifre: lo stesso compare sul telefono). **Non scade**: dura
-  finché non la togli (**Revoca l'iPhone** sul PC, «Dimentica PC» sul telefono); vale per un
+  finché non la togli (**Revoca l'iPhone** sul PC, «Scollega» nel ⋯ del telefono); vale per un
   telefono solo, il primo che entra; il QR si rivede solo nei primi due minuti e il suo link vale
   pochi minuti, una volta sola. Regge il browser chiuso e riaperto, il logout e il rientro; una scheda del gestionale alla pagina d'accesso chiude la sessione, non
   l'associazione. Telefono perso sbloccato: **Revoca l'iPhone** sul PC.
@@ -1369,23 +1369,26 @@ che non può leggere niente: cifrato da un capo all'altro, nessun dato su nessun
   o su un'area, o fuori dalla mappa per tornare fra «Senza posto»; lo fa il PC (`posto`, lo stesso gesto del
   trascinamento sulla sua mappa: un posto per paziente, un letto uno solo, le aree molti) e il telefono
   ridisegna dalla sua risposta. Un PC che non lo conosce: mappa in sola lettura, o niente scelta, senza errori.
-- **Ordinare dal telefono**: la conferma porta nome intero, età e posto (due righe: «Ordino 2 esami · tocca di nuovo» e, sotto,
+- **Ordinare dal telefono**: accanto a ogni esame, come sul PC, «✓ 11:40» se è già tornato e «40′» se è
+  in attesa (un doppione si vede prima di sceglierlo); la conferma porta nome intero, età e posto (due righe: «Ordino 2 esami · tocca di nuovo» e, sotto,
   «ROSSI MARIO · 77 anni · OBI 2»; due pazienti con lo stesso nome: «⚠ ROSSI MARIO · …9001 · …», col segno dell'elenco); un doppio tocco non conferma; se la rete perde
   la risposta il telefono dice «Non so se l'ordine è partito» e non lo rifà alla cieca (lo stesso
   ordine rimandato parte una volta sola), a meno che non lo veda già nato sul PC. Niente ordini su un episodio precedente o per un paziente
   dimesso sul PC. Un ordine finito male si vede da ogni pagina del telefono, finché non lo chiudi.
   Sul PC la striscia dice «dall'iPhone». Con una [stazione di stampa](#stazione-di-stampa-le-stampanti-dellinfermeria)
-  collegata, sopra il bottone «Stampa: PC · Infermeria» (quella del PC, cambiabile per l'ordine); la
-  stazione si collega da qui, **⋯ → Collega stampante**, inquadrando il suo QR.
-  **Stampante predefinita del telefono**: **⋯ → «Stampa su» [💻 PC] [🖨️ Infermeria]** (si ricorda sul
-  telefono, per PC; non scelta, segue il PC) per «Stampa PDF» e per il **🖨️ accanto a un referto
-  PDF** negli Esiti (stampa la copia salvata sul PC, una volta sola per tocco; comando
-  `stampaReferto`, solo stampa). Nelle «Richieste fatte», **Ristampa** su una richiesta con etichette
+  collegata, sopra il bottone «Stampa: PC · Infermeria»: parte da quella del PC, e **si ricorda** (sul
+  telefono, per PC) — l'ultima toccata vale anche per le ristampe, «Stampa PDF» e il **🖨️ accanto a un
+  referto PDF** negli Esiti (stampa la copia salvata sul PC, una volta sola per tocco; comando
+  `stampaReferto`, solo stampa); la stazione si collega da qui, **⋯ → Scansiona il QR**, inquadrando il suo QR.
+  Il ⋯ del telefono tiene solo quello che non c'è altrove: i PC (con due o più), Stampa PDF, Scansiona il
+  QR, Registrazioni, **Scollega** (l'elenco si rilegge da solo, la sessione finisce da sola). Nelle «Richieste fatte», **Ristampa** su una richiesta con etichette
   e foglio apre **🏷️ Etichette · 📄 Foglio · Entrambi**.
 - **Cartella dal telefono**: anamnesi, remota, farmaci, allergie ed esame obiettivo, scrivibili dove
   la pagina del paziente li lascia scrivere; «Salva» li scrive col «Conferma» della pagina, in una
   scheda di sottofondo, e rilegge. Mai sopra un testo cambiato sul PC o non ancora salvato in una
-  scheda; la pagina aperta di quel paziente dice «Aggiornato dal telefono · Ricarica».
+  scheda. La pagina di quel paziente aperta sul PC si ricarica da sola (era di prima: il suo «Conferma»
+  rimanderebbe i testi vecchi); se intanto ci hai scritto qualcosa, no — si perderebbe —: dice
+  «Aggiornato dal telefono · Ricarica», e il suo «Conferma» è fermo finché non la ricarichi.
   Sopra l'esame obiettivo (solo lì, e solo dove si può scrivere) una fila di chip: i tuoi EO di base per nome,
   poi **Altri…** (Casi e Frasi, in un foglio; la ricerca solo se sono più di 15). I testi sono quelli del PC, con
   le tue modifiche (comando `eo`, niente dal gestionale). Un tocco: campo vuoto, ci va il testo; altrimenti in
@@ -1413,8 +1416,10 @@ che non può leggere niente: cifrato da un capo all'altro, nessun dato su nessun
   non si ripreme. Le regole: [Perché è robusto](#perché-è-robusto-regole-di-sicurezza-nel-codice), 22.
 - **Si vede sul PC**: finché il telefono è collegato, ogni scheda mostra **«iPhone collegato ·
   Scollega»** (la spia è ferma), e ogni comando va nel **Registro**. Dopo **3 minuti senza comandi** del medico la
-  sessione si chiude da sola; tornando sull'app si riapre da sola, sul paziente e sulla scheda dov'eri
-  (in memoria, mai su disco, dopo che il PC ha risposto).
+  sessione si chiude da sola — un tocco o uno scorrere col telefono in mano conta come un comando (al più
+  uno al minuto, `tocco`): mentre leggi non si chiude —; tornando sull'app si riapre da sola, sul paziente e sulla scheda dov'eri
+  (in memoria, mai su disco, dopo che il PC ha risposto). Così anche se l'estensione sul PC si riavvia: il
+  telefono si ricollega da solo, senza «Sessione chiusa».
 - **Registrazioni** (⋯ sul telefono): gli zip salvati sul PC (⋯ → Registrazioni), con quando, quanto, a mano o
   automatica e perché, il controllo — niente pazienti. **Scarica** lo porta sul telefono a pezzi, cifrato come
   tutto il resto (al più 100 MB), e lo tiene in memoria; poi **Condividi…** lo passa a iOS (all'app di Claude, a
@@ -1697,7 +1702,7 @@ telefono), li stampa sulle sue stampanti e dice com'è andata.
   («Infermeria»: lo vede il medico). Il gestionale lì non serve; basta Chrome aperto (la pagina può
   restare chiusa).
 - **Collegarla, col telefono.** La pagina mostra un **QR** e sotto un codice di sei cifre.
-  Sull'iPhone, nell'app: **⋯ → Collega stampante**, e si inquadra il QR: una carta «Stazione di
+  Sull'iPhone, nell'app: **⋯ → Scansiona il QR**, e si inquadra il QR: una carta «Stazione di
   stampa · Infermeria», con lo stesso codice, e **Collega**. Il telefono passa l'offerta al PC,
   dentro il ponte; il PC e la stazione fanno la loro chiave fra loro. Poi lo dicono tutti e tre: il
   telefono «Collegata al PC», la stazione «Collegata al PC del medico», il PC in **⋯ → Impostazioni**
@@ -1711,9 +1716,9 @@ telefono), li stampa sulle sue stampanti e dice com'è andata.
   stampa · 2 esami → Infermeria») e la stampantina in intestazione è «→ Infermeria» (rossa quando
   non risponde). Vale per le etichette e i fogli A4 di un ordine (e per la loro **Ristampa**) e per
   l'etichetta anagrafica; il resto (consensi, «Stampa le richieste») resta qui. Un PDF dal telefono e un
-  referto stampato dal telefono vanno dove dice il suo «Stampa su».
+  referto stampato dal telefono vanno dove dice il telefono.
   Sul telefono, sopra «Conferma e stampa», la stessa scelta, **«Stampa: PC · Infermeria»**: parte
-  da quella del PC, e si cambia per quell'ordine.
+  da quella del PC, e il telefono si ricorda l'ultima toccata (per PC).
 - **Com'è andata, per quello che è.** «Stampo le etichette in Infermeria…», poi **«Stampato in
   Infermeria»** solo quando la stazione l'ha detto («Mandato in Infermeria» in ambra, o il suo
   errore). La stazione spenta o che non risponde: **«Infermeria non risponde»**, con **Stampa qui**:
@@ -2050,9 +2055,12 @@ nella tendina del gestionale») — poi **Prepara nel gestionale** (o Ctrl+Invio
   riporta solo le scritte delle voci; due voci uguali dal telefono non si scelgono). Dose, unità e
   via in vista; diluizione, frequenza, durata, continua e al bisogno dietro «Altro»; mai le note,
   mai l'ora. Un riepilogo col nome, e **«Conferma per ROSSI M.»**: un farmaco per Conferma.
-  Il PC fa il giro di sempre in una **scheda di sottofondo** (comandi `terapie`, `terapiaCerca`,
-  `terapiaAggiungi`): la pagina del paziente, il **suo** pulsante «Terapia» (mai un indirizzo fatto
-  da noi), gli stessi controlli (un altro paziente: «Errore grave», niente scritto), la voce con la
+  Il PC fa il giro di sempre in **una scheda di sottofondo**, la stessa per leggere, cercare e
+  aggiungere (comandi `terapie`, `terapiaCerca`, `terapiaAggiungi`): la pagina del paziente, il **suo**
+  pulsante «Terapia» (mai un indirizzo fatto da noi), e lì resta, ferma, finché serve — le ricerche nella
+  sua tendina, senza ricaricare; prima di aggiungere la pagina si rilegge col suo pulsante
+  «Prescrizione», e il controllo di quello che il telefono ha visto si fa su quella. Si chiude dopo
+  l'aggiunta, a ogni dubbio, col foglio chiuso sul telefono, o dopo 2 minuti senza lavoro. Gli stessi controlli (un altro paziente: «Errore grave», niente scritto), la voce con la
   stessa scritta (una sola, se no si ferma), ogni campo scritto e **riletto** — qualunque cosa non
   torni: si ferma, niente confermato. Poi **preme il «Conferma» della pagina**
   (`TERAPIA_SERIALIZED` lo compone lei; i nascosti non si toccano) e guarda la pagina che torna:
@@ -2451,7 +2459,8 @@ nella tendina del gestionale») — poi **Prepara nel gestionale** (o Ctrl+Invio
 20. **Una terapia dal telefono: un «Conferma», una volta, e visto.** È l'unica Conferma che il
     programma preme nella pagina Terapia, perché il medico l'ha scelto: il suo tocco su
     «Conferma per …» dopo il riepilogo. Prima del clic: la pagina aperta col pulsante del
-    paziente, l'episodio (indirizzo e modulo), il nome e la tabella — se no «Errore grave» —; la
+    paziente (o, nella scheda tenuta dalla ricerca, riletta col suo pulsante «Prescrizione» subito
+    prima: mai una pagina di prima), l'episodio (indirizzo e modulo), il nome e la tabella — se no «Errore grave» —; la
     voce della tendina con la stessa scritta, una sola; ogni campo riletto (quello non scritto
     com'era, le note e l'ora sempre vuote); nessuna terapia con quel farmaco confermata dopo la
     lettura del telefono; nessun ordine al lavoro; la Terapia di quel paziente non toccata in una

@@ -3828,6 +3828,12 @@
       return s;
     });
   }
+  // Le allergie (e l'«Attenzione») di una pagina del paziente letta adesso — riletta per il telefono, o appena
+  // salvata dal telefono —: la stessa verità per la riga sotto il nome e per il riepilogo della Terapia.
+  function segnaAnag(ep, doc) {
+    const all = allergiePagina(doc), att = attenzionePagina(doc);
+    if (ep && (all || att)) scriviStato(ep, (s) => { s.anag = { allergie: all, attenzione: att, ts: Date.now() }; return s; });
+  }
   // Gli esami appena messi in carrello da PS Assist, con il numero della richiesta.
   function segnaOrdineNostro(ep, rid, items) {
     const esami = (items || []).map((it) => {
@@ -12068,19 +12074,7 @@
     }
     // Per le Richieste: esame per esame (il nome del catalogo, identico), le
     // ore delle richieste già tornate e la più vecchia ancora in attesa.
-    ultimiEsami() {
-      const st = this.episodeId ? statoEsami(statoDi(this.episodeId)) : null;
-      const m = new Map();
-      if (!st) return m;
-      for (const e of st.esami) {
-        const k = chiaveEsame(e.label), x = m.get(k) || { fatti: [], attesa: 0, inAttesa: false, fatto: false };
-        if (e.fatto) { x.fatto = true; if (e.ts) x.fatti.push(e.ts); }
-        else { x.inAttesa = true; if (e.ts && (!x.attesa || e.ts < x.attesa)) x.attesa = e.ts; }
-        m.set(k, x);
-      }
-      m.vecchio = st.vecchio; m.letto = st.letto;
-      return m;
-    }
+    ultimiEsami() { return ultimiDi(this.episodeId); }
     // «· 11:40, 14:30», «· in attesa 40′»; letto da più di mezz'ora: «· letto 11:02»
     // «✓ 11:40» fatto, in verde; «40′» in attesa, ambra (senza ⏳) — rosso oltre la
     // seconda soglia del suo tipo; letto da più di mezz'ora: in grigio, «letto 11:02»
@@ -17093,7 +17087,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
   let PONTE_CARTELLA = null; // questa scheda l'ha aperta il ponte per salvare la cartella: { ep, fase, campi }
   let PONTE_TERAPIA = null;  // …o per la pagina Terapia: { ep, nome, fase, cosa, q | voce, visti, prima }
   let PONTE_ACCETTA = null;  // …o per «Accetta in ambulatorio»: { ep?, k?, nome, area, fase }
-  let PONTE_AGG = "";        // l'episodio di questa pagina che il telefono ha appena salvato («Ricarica»)
+  let PONTE_AGG = "";        // l'episodio di questa pagina che il telefono ha appena salvato: il suo «Conferma» è fermo («Ricarica»)
   const ICO_TEL = ICO.tel;   // (sulla griglia delle altre: 16 px, tratto 1.6)
   const PONTE_CSS = `
     .pontespia { display: inline-flex; align-items: center; gap: 7px; margin-top: 6px; padding: 4px 4px 4px 11px; border-radius: 999px;
@@ -17110,8 +17104,9 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
   // scheda, a pannello aperto o ridotto. Chi passa davanti al PC lo vede.
   const ponteSpia = () => (PONTE_STATO && PONTE_STATO.sessione ? `<div class="pontespia" role="status" title="Il medico sta usando il pannello dall'iPhone: ogni comando finisce nel Registro">
       <span class="pdot"></span>${ICO_TEL}<span>iPhone collegato</span><button type="button" id="ponteoff" title="Chiude la sessione dell'iPhone">Scollega</button></div>` : "")
-    // la cartella di questa pagina è stata salvata dal telefono: questa pagina è vecchia (mai ricaricata da sola)
-    + (PONTE_AGG ? `<div class="pontespia" role="status" title="Anamnesi, farmaci o allergie salvati dall'iPhone: questa pagina mostra ancora i testi di prima">
+    // la cartella di questa pagina è stata salvata dal telefono mentre qui c'era un testo scritto: la pagina è vecchia
+    // (non si è ricaricata da sola per non perderlo), e il suo «Conferma» è fermo finché non la si ricarica
+    + (PONTE_AGG ? `<div class="pontespia" role="status" title="Anamnesi, farmaci o allergie salvati dall'iPhone: questa pagina mostra ancora i testi di prima, e il suo «Conferma» è fermo">
       ${ICO_TEL}<span>Aggiornato dal telefono</span><button type="button" id="ponterica">Ricarica</button></div>` : "");
 
   const pontePaziente = (ep) => tuttiPazienti().find((p) => p.ep === ep) || null;
@@ -17243,6 +17238,46 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       setTimeout(() => f.remove(), 120e3);
     }, { once: true });
     document.documentElement.appendChild(f);
+  }
+  // Gli esami di un paziente, per nome (il nome del catalogo, identico): le
+  // ore delle richieste già tornate e la più vecchia ancora in attesa. Le
+  // Richieste del pannello e, per il telefono, ponteUltimi.
+  function ultimiDi(ep) {
+    const st = ep ? statoEsami(statoDi(ep)) : null;
+    const m = new Map();
+    if (!st) return m;
+    for (const e of st.esami) {
+      const k = chiaveEsame(e.label), x = m.get(k) || { fatti: [], attesa: 0, inAttesa: false, fatto: false };
+      if (e.fatto) { x.fatto = true; if (e.ts) x.fatti.push(e.ts); }
+      else { x.inAttesa = true; if (e.ts && (!x.attesa || e.ts < x.attesa)) x.attesa = e.ts; }
+      m.set(k, x);
+    }
+    m.vecchio = st.vecchio; m.letto = st.letto;
+    return m;
+  }
+  // Con il catalogo, per il telefono: quello che le Richieste del pannello
+  // scrivono accanto a ogni esame («✓ 11:40», «40′»), in dati — il telefono lo
+  // scrive con le stesse parole, e i minuti contano lì. Per ogni paziente
+  // dell'elenco (non gli episodi precedenti), per chiave del telefono («r:c»):
+  // `f` le ore delle richieste tornate (le ultime tre), `ok` tornato, `w` in
+  // attesa, `a` da quando, `r` da quando è rosso (la seconda soglia del suo
+  // tipo); `v` la lettura vecchia, `l` quando è stata letta.
+  function ponteUltimi(cat) {
+    const chiavi = Object.keys(cat.nomi).map((x) => {
+      const [r, c] = x.split(":");
+      return { x, k: chiaveEsame(examLabel(r, c)), ros: (RADIO_SET.includes(r) ? ATTESA_IMG : ATTESA_LAB)[1] };
+    });
+    const out = {};
+    for (const i of PANNELLO.pazModello().info.values()) {
+      if (i.prec) continue;
+      const m = ultimiDi(i.p.ep), e = {};
+      for (const { x, k, ros } of chiavi) {
+        const u = m.get(k);
+        if (u) e[x] = { f: u.fatti.slice().sort((a, b) => a - b).slice(-3), ...(u.fatto ? { ok: 1 } : {}), ...(u.inAttesa ? { w: 1 } : {}), ...(u.attesa ? { a: u.attesa, r: u.attesa + ros * 60e3 } : {}) };
+      }
+      if (Object.keys(e).length) out[i.p.ep] = { ...(m.vecchio ? { v: 1 } : {}), ...(m.letto ? { l: m.letto } : {}), e };
+    }
+    return out;
   }
   // Quello che serve al telefono per ordinare: i quesiti (prima i tre
   // pacchetti, con quanti esami portano su questo computer), i profili e gli
@@ -17492,7 +17527,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       // (con la chiave di ognuno: sulla mappa i posti dicono solo quella)
       return { ok: true, dati: { ts: t?.ts || 0, righe: Array.isArray(t?.righe) ? t.righe.map((x) => ({ ...x, k: chiaveTriage(x) })) : [], rilegge: !!(r && r.ok) } };
     }
-    if (cmd === "richieste") return fatto({ ok: true, dati: ponteCatalogo(), registro: "catalogo degli esami" });
+    if (cmd === "richieste") { const c = ponteCatalogo(); return fatto({ ok: true, dati: { ...c, ultimi: ponteUltimi(c) }, registro: "catalogo degli esami" }); }
     // chi è al Triage, portato sulla mappa dal telefono: lo stesso gesto del PC (non è fra i pazienti)
     if (cmd === "posto" && /^tr[0-9a-z]{1,10}$/.test(String(a.ep || "")) && !pontePaziente(a.ep)) {
       const o = triageOspiti(PANNELLO.pazModello().pazienti).find((r) => r.k === a.ep);
@@ -17605,13 +17640,24 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
           reply({ ok: true });
           return;
         }
-        // salvato dal telefono: se questa è la sua pagina, lo dice (non si ricarica da sola)
+        // salvato dal telefono, e questa è la sua pagina: è di prima, e il suo «Conferma» rimanderebbe i testi
+        // vecchi sopra quelli del telefono. Da subito il «Conferma» è fermo (confermaFerma); pulita, la pagina si
+        // ricarica da sola (una GET); con qualcosa scritto qui intanto, no — si perderebbe —: la pill
+        // «Aggiornato dal telefono · Ricarica», e il «Conferma» resta fermo finché non la si ricarica
         if (m.t === "ponteCartellaAggiornata") {
-          if (!LAVORO && !PONTE_VALORI && !PONTE_CARTELLA && PANNELLO && typeof m.ep === "string" && formCartella(document, m.ep)) {
+          if (!LAVORO && !PONTE_VALORI && !PONTE_CARTELLA && !PONTE_TERAPIA && !PONTE_ACCETTA && PANNELLO && typeof m.ep === "string" && formCartella(document, m.ep)) {
             PONTE_AGG = m.ep;
-            if (!PANNELLO.root.activeElement) PANNELLO.render();
+            if (paginaToccata()) { if (!PANNELLO.root.activeElement) PANNELLO.render(); }
+            else ponteRicarica();
           }
           reply({ ok: true });
+          return;
+        }
+        // la scheda della Terapia tenuta per il telefono (ferma sulla pagina Terapia di quel paziente): il lavoro nuovo, qui
+        if (m.t === "ponteTerapiaLavoro") {
+          const ok = !!PONTE_TERAPIA && !!m.lavoro && m.lavoro.ep === PONTE_TERAPIA.ep && PONTE_TERAPIA.fase === "fermo" && eTerapie();
+          reply({ ok });
+          if (ok) { PONTE_TERAPIA = m.lavoro; ponteTerapiaQui().catch(() => ask({ t: "ponteTerapiaFatto", ok: false, incerto: PONTE_TERAPIA.fase === "inviato", testo: "errore nella scheda" })); }
           return;
         }
         if (m.t !== "ponteEsegui") return;
@@ -17625,6 +17671,8 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       };
       chrome.storage.session.get("ponte").then((o) => segui(o.ponte)).catch(() => {});
       chrome.storage.onChanged.addListener((ch, area) => { if (area === "session" && ch.ponte) segui(ch.ponte.newValue); });
+      window.addEventListener("click", confermaFerma, true);
+      window.addEventListener("submit", confermaFerma, true);
       setInterval(() => { if (PONTE_STATO && PONTE_STATO.accoppiato) ask({ t: "ponteSveglia" }); }, 30e3);
     } catch { /* niente estensione */ }
   }
@@ -17694,9 +17742,11 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
   }
   // Il comando `cartella`: l'ultima lettura (data dal service worker), o la
   // pagina del paziente riletta (solo lettura, e solo se è del suo episodio).
+  // Con la lettura, le allergie con le parole del PC (`ponteAllergie`): il telefono le mette sotto il nome e nel
+  // riepilogo della Terapia — una verità sola con il campo Allergie che mostra.
   async function ponteCartella(p, a) {
     const m = a.memo;
-    if (!a.rileggi && m && m.ep === p.ep && Array.isArray(m.campi)) return { ok: true, dati: m, registro: `cartella di ${p.name}` };
+    if (!a.rileggi && m && m.ep === p.ep && Array.isArray(m.campi)) return { ok: true, dati: { ...m, allergie: ponteAllergie(p.ep) }, registro: `cartella di ${p.name}` };
     const url = ponteUrlPaziente(p);
     if (!url) return { ok: false, errore: `Apri una volta ${p.name || "il paziente"} sul PC: serve la sua pagina` };
     const { doc, url: fin } = await fetchDoc(url, {});
@@ -17704,7 +17754,8 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     if (findEpisodeId(doc, fin) !== p.ep) return { ok: false, errore: "La pagina del paziente sul PC è di un altro episodio: non mostro niente" };
     const c = cartellaPagina(doc, p.ep);
     if (!c) return { ok: false, errore: "Nella pagina del paziente sul PC non c'è la cartella" };
-    return { ok: true, dati: c, nuova: true, registro: `cartella di ${p.name} (riletta)` };
+    segnaAnag(p.ep, doc);
+    return { ok: true, dati: { ...c, allergie: ponteAllergie(p.ep) }, nuova: true, registro: `cartella di ${p.name} (riletta)` };
   }
   // In una scheda del medico: c'è, per questo paziente, un testo cambiato e
   // non salvato in uno di quei campi? (rispetto a come la pagina l'ha caricato)
@@ -17716,6 +17767,32 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       const ta = f.querySelector(`textarea[name="${n}"]`);
       return !!ta && normTesto(ta.value) !== normTesto(ta.defaultValue);
     });
+  }
+  // C'è qui qualcosa scritto e non salvato — un testo, una spunta, una scelta, in un modulo qualunque della
+  // pagina —, o il medico ha il cursore in un campo (anche del pannello)? Allora la pagina non si ricarica da
+  // sola: si perderebbe. Nel dubbio, «toccata» (resta ferma e lo dice).
+  function paginaToccata() {
+    if (PANNELLO && PANNELLO.root.activeElement) return true;
+    const a = document.activeElement;
+    if (a && (a.isContentEditable || a.tagName === "TEXTAREA" || a.tagName === "SELECT" || (a.tagName === "INPUT" && !/^(hidden|submit|button|image|reset)$/.test(a.type)))) return true;
+    return [...document.querySelectorAll("textarea, input, select")].some((el) =>
+      el.tagName === "SELECT" ? (el.multiple ? [...el.options].some((o) => o.selected !== o.defaultSelected) : el.options.length > 0 && el.selectedIndex !== Math.max(0, [...el.options].findIndex((o) => o.defaultSelected)))
+      : el.type === "checkbox" || el.type === "radio" ? el.checked !== el.defaultChecked
+      : !/^(hidden|submit|button|image|reset|file)$/.test(el.type) && normTesto(el.value) !== normTesto(el.defaultValue));
+  }
+  // Il «Conferma» della cartella di una pagina di prima (il telefono l'ha salvata dopo che si è aperta): fermo,
+  // anche cliccato da qualcun altro (un tasto, il pannello), finché la pagina non si ricarica — mai i testi
+  // vecchi sopra quelli del telefono. Lo dice, col perché e la strada.
+  function confermaFerma(e) {
+    if (!PONTE_AGG) return;
+    const f = formCartella(document, PONTE_AGG), t = e.target;
+    if (!f || !t) return;
+    const tasto = e.type === "click" && t.closest ? t.closest('input[type="submit"], input[type="image"], button[type="submit"], button:not([type])') : null;
+    if (e.type === "submit" ? t !== f : !tasto || tasto.form !== f) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    terapiaDice("err", "il telefono ha salvato la cartella dopo che questa pagina si è aperta: «Conferma» qui rimanderebbe i testi di prima. Niente inviato. Copia quello che hai scritto, poi ricarica la pagina.",
+      { testo: "Ricarica", fai: ponteRicarica }, "Cartella");
   }
   // «Ricarica» sulla pill: la pagina del paziente, con l'indirizzo che il
   // gestionale ha dato (una GET: mai il modulo inviato di nuovo)
@@ -17739,8 +17816,10 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     }
     const f = formCartella(document, c.ep);
     const nomi = Object.keys(c.campi);
+    // (la pagina com'è adesso, con le sue allergie: le rileggono anche il telefono e la riga sotto il nome)
+    const rilette = () => { segnaAnag(c.ep, document); const l = cartellaPagina(document, c.ep); return l && { ...l, allergie: ponteAllergie(c.ep) }; };
     if (dopo) {
-      const letta = cartellaPagina(document, c.ep);
+      const letta = rilette();
       const verificati = Object.fromEntries(nomi.map((n) => {
         const x = letta.campi.find((y) => y.nome === n);
         return [n, !!x && normTesto(x.v) === normTesto(c.campi[n].dopo)];
@@ -17756,8 +17835,8 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       else if (normTesto(ta.value) !== normTesto(c.campi[n].prima)) cambiati.push(n);
     }
     // (niente scritto, niente cliccato: e la lettura fresca va al telefono)
-    if (chiusi.length) return fine({ ok: false, chiusi, testo: "non più modificabile", letta: cartellaPagina(document, c.ep) });
-    if (cambiati.length) return fine({ ok: false, cambiati, testo: "cambiato sul PC", letta: cartellaPagina(document, c.ep) });
+    if (chiusi.length) return fine({ ok: false, chiusi, testo: "non più modificabile", letta: rilette() });
+    if (cambiati.length) return fine({ ok: false, cambiati, testo: "cambiato sul PC", letta: rilette() });
     // il service worker lo annota PRIMA del clic: la pagina che torna si verifica, non si ricompila
     const via = await ask({ t: "ponteCartellaInvio" });
     if (!via || !via.ok) return;
@@ -17782,7 +17861,9 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
   // (o si ricarica) si guarda e basta.
   async function ponteTerapiaQui() {
     const c = PONTE_TERAPIA;
-    const fine = (esito) => ask({ t: "ponteTerapiaFatto", ...esito });
+    // (finito il lavoro, la scheda tenuta per il telefono aspetta il prossimo: il suo PONTE_TERAPIA è «fermo»)
+    const fine = (esito) => { PONTE_TERAPIA = c ? { ep: c.ep, fase: "fermo" } : null; return ask({ t: "ponteTerapiaFatto", ...esito }); };
+    if (c && c.fase === "fermo") return;
     if (!c || c.fase === "perso") return fine({ ok: false, testo: "la scheda non sa più che cosa fare" });
     const dopo = c.fase === "inviato", ordine = "un ordine sta ancora lavorando sul PC: riprova fra poco";
     if (!eTerapie()) {
@@ -17802,6 +17883,16 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     const altro = terapiaDiChi(form, c.ep, c.nome);
     if (altro) return fine({ ok: false, incerto: dopo, grave: altro });
     if (form.querySelector('table[id^="TerapiaTable"]')?.id !== "TerapiaTable" + c.ep) return fine({ ok: false, incerto: dopo, testo: "non riconosco la tabella delle terapie" });
+    // la scheda tenuta, prima di leggere o di scrivere: la pagina di adesso, col SUO pulsante «Prescrizione» (una
+    // GET) — e il lavoro si fa sulla pagina che torna, coi controlli di sempre
+    if (c.fase === "rileggo") {
+      const a = linkTerapia(c.ep);
+      if (!a) return fine({ ok: false, testo: "nella pagina Terapia non c'è il pulsante «Prescrizione»" });
+      if (!(await terapiaAspetta())) return fine({ ok: false, testo: ordine });
+      const via = await ask({ t: "ponteTerapiaPagina" });
+      if (via && via.ok) a.click();
+      return;
+    }
     const lettura = terapieLette(form, c.ep), v = c.voce;
     // dopo «Conferma»: la terapia è fra le confermate, con un TERAPIA_PROG che prima non c'era?
     if (dopo) {
@@ -18224,7 +18315,11 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
   function reportOperatore() {
     if (!hasExt()) return;
     try {
-      const testo = document.body ? document.body.textContent.slice(0, 20000) : "";
+      // (nel suo testo soltanto: il textContent di tutta la pagina incolla la cella dopo — l'episodio, il nome
+      // e il codice fiscale del paziente — come se fossero il nome dell'operatore)
+      const giro = document.body ? document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT) : null;
+      let testo = "";
+      for (let n = giro && giro.nextNode(), k = 0; n && k < 4000; n = giro.nextNode(), k++) if (/connesso come/i.test(n.nodeValue)) { testo = n.nodeValue; break; }
       const m = /connesso come[^:]*:\s*([^<\n]{1,60})/i.exec(testo);
       const nome = m ? m[1].replace(/\s+/g, " ").trim() : "";
       if (nome) ask({ t: "ponteOperatore", nome }).catch(() => {});
@@ -18750,8 +18845,8 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     const a = !all ? "Allergie: non lette" : all.nega ? "Allergie: nega" : all.testo ? `Allergie: ${all.testo}` : "Allergie: non compilate";
     return `${nomeBreve(nome) || nome}${eta != null ? ` · ${eta}` : ""} · ${a}`;
   }
-  // (`azione`: un bottone in più, { testo, fai })
-  function terapiaDice(tono, testo, azione = null) {
+  // (`azione`: un bottone in più, { testo, fai }; `titolo`: di che cosa parla — la Terapia, o la cartella dal telefono)
+  function terapiaDice(tono, testo, azione = null, titolo = "Terapia") {
     let h = document.getElementById("psassist-terapia");
     if (!h) {
       h = document.createElement("div");
@@ -18763,7 +18858,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     h.shadowRoot.innerHTML = `<style>.b{position:fixed;left:12px;bottom:12px;z-index:2147483647;max-width:min(560px,92vw);background:${fondo};color:#fff;border-radius:10px;
       padding:10px 12px;font:13px/1.45 -apple-system,'Segoe UI',Roboto,Arial,sans-serif;box-shadow:0 6px 20px rgba(9,42,74,.35);display:flex;gap:10px;align-items:flex-start}
       button{border:1px solid rgba(255,255,255,.5);background:transparent;color:#fff;border-radius:7px;padding:2px 8px;font:inherit;cursor:pointer}</style>
-      <div class="b" role="status" data-tono="${esc(tono)}"><span><b>PS Assist · Terapia</b> — ${esc(testo)}</span>${azione ? `<button id="fai">${esc(azione.testo)}</button>` : ""}<button id="via" aria-label="Chiudi">✕</button></div>`;
+      <div class="b" role="status" data-tono="${esc(tono)}"><span><b>PS Assist · ${esc(titolo)}</b> — ${esc(testo)}</span>${azione ? `<button id="fai">${esc(azione.testo)}</button>` : ""}<button id="via" aria-label="Chiudi">✕</button></div>`;
     h.shadowRoot.getElementById("via").addEventListener("click", () => h.remove());
     if (azione) h.shadowRoot.getElementById("fai").addEventListener("click", () => { h.remove(); azione.fai(); });
   }

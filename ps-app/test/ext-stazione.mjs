@@ -263,7 +263,7 @@ await nudoCtx.close();
 sezione("il QR della stazione, inquadrato dal telefono: «Collega»");
 await tocca('[data-a="menu"]');
 await shot(tel, "tel-menu");
-check(await tel.locator('.menu [data-a="scansiona"]').innerText() === "🖨️ Collega stampante", "⋯ sul telefono: «🖨️ Collega stampante»");
+check(await tel.locator('.menu [data-a="scansiona"]').innerText() === "📷 Scansiona il QR", "⋯ sul telefono: «📷 Scansiona il QR» (un QR solo per tutto: anche la stazione)");
 await tocca('.menu [data-a="scansiona"]');
 const carta = await aspettaTel(/Collegala al PC/, 15000);
 check(/Stazione di stampa/.test(carta) && /Infermeria/.test(carta) && carta.includes(codiceQr) && await tel.locator('[data-a="stacollega"]').count() === 1,
@@ -288,10 +288,9 @@ await tocca('[data-a="stachiudi"]');
 // (dopo «Collega» rilegge il catalogo del PC) — prima la scelta compariva solo
 // riaprendo l'app, e dal telefono non si poteva scegliere l'Infermeria
 await tocca('[data-a="menu"]');
-const menuSta = await finche(async () => { const t = await tel.locator(".menu .stdove").innerText().catch(() => ""); return /Infermeria/.test(t) ? t : ""; }, 10000) || "";
-check(/Stampa su/.test(menuSta) && /💻 PC/.test(menuSta) && /🖨️ Infermeria/.test(menuSta) && await tel.locator('.menu .stdove [data-d="qui"]').getAttribute("aria-pressed") === "true"
-  && await tel.locator('.menu [data-a="stampaPdf"]').count() === 1 && await tel.locator('.menu [data-a="stampaPdfSta"]').count() === 0,
-  `collegata, senza ricaricare: nel ⋯ del telefono «Stampa su [💻 PC] [🖨️ Infermeria]» (il PC, com'è sul PC) e una sola «📄 Stampa PDF» (got «${menuSta.replace(/\n+/g, " · ")}»)`);
+const menuSta = await finche(async () => { const t = await tel.locator('.menu [data-a="stampaPdf"]').innerText().catch(() => ""); return /· PC$/.test(t) ? t : ""; }, 10000) || "";
+check(!!menuSta && await tel.locator(".menu .stdove").count() === 0 && !/Stampa su/.test(await tel.locator(".menu").innerText()) && await tel.locator('.menu [data-a="stampaPdf"]').count() === 1,
+  `collegata, senza ricaricare: nel ⋯ del telefono una sola «📄 Stampa PDF · PC» (com'è sul PC), e niente riga «Stampa su» (got «${menuSta}»)`);
 await tocca('[data-a="menu"]');   // (lo richiude)
 const imp = await ctx.newPage();
 await imp.goto(EXTURL("portale.html"));
@@ -353,16 +352,23 @@ check(/Etichette/.test(righeSta) && /A4/.test(righeSta) && /Stampato su Zebra In
 await shot(pSta, "stazione-4-pagina-collegata");
 
 // ===========================================================================
-sezione("⋯ → «Stampa su» Infermeria, poi «Stampa PDF» dal telefono: alla stazione, non al PC");
+sezione("«Stampa: PC · Infermeria» sopra un ordine si ricorda: poi «Stampa PDF» dal telefono, alla stazione, non al PC");
 await tel.reload();
 await aspettaTel(/ROSSI MARIO/, 30000);
+// la scelta si fa dove si stampa: sopra «Conferma e stampa» (scelto un esame), e resta — per questo PC, sul telefono
+await tocca('[data-a="paz"]:has-text("ROSSI MARIO")');
+await aspettaTel(/Richieste/, 10000);
+await tocca('[data-a="scheda"][data-s="richieste"]');
+await tocca('[data-a="esame"]:has-text("TROPONINA US")');
+await finche(async () => (await tel.locator('.cta .dove [data-d="stazione"]').count()) > 0, 10000);
+await tocca('.cta .dove [data-d="stazione"]');
+await tocca('[data-a="esame"]:has-text("TROPONINA US")');   // (e niente ordine: l'esame tolto)
+await tocca('[data-a="indietro"]');
+await aspettaTel(/ROSSI MARIO/, 10000);
 await tocca('[data-a="menu"]');
-await finche(async () => (await tel.locator('.menu .stdove [data-d="stazione"]').count()) > 0, 10000);
-await tocca('.menu .stdove [data-d="stazione"]');
 const memDove = await tel.evaluate(() => JSON.parse(localStorage.getItem("psassist.ponte.dove.v1") || "null"));
-check(await tel.locator('.menu .stdove [data-d="stazione"]').getAttribute("aria-pressed") === "true" && /Stampa PDF · Infermeria/.test(await tel.locator('.menu [data-a="stampaPdf"]').innerText())
-  && !!memDove && Object.values(memDove).join() === "stazione",
-  `«Stampa su» → «🖨️ Infermeria»: il menu resta aperto, la voce dice «Stampa PDF · Infermeria», e la scelta sta sul telefono per questo PC (got ${JSON.stringify(memDove)})`);
+check(/Stampa PDF · Infermeria/.test(await tel.locator('.menu [data-a="stampaPdf"]').innerText()) && !!memDove && Object.values(memDove).join() === "stazione",
+  `«Stampa: Infermeria» toccato sopra un ordine: si ricorda (sul telefono, per questo PC) — la voce del ⋯ dice «Stampa PDF · Infermeria» (got ${JSON.stringify(memDove)})`);
 const staP = lavori("sta").length, pcP = lavori("pc").length;
 const pdfSta = Buffer.from("%PDF-1.4\n1 0 obj << /Type /Catalog >> endobj\ntrailer << /Root 1 0 R >>\n%%EOF\n");
 const [fcSta] = await Promise.all([tel.waitForEvent("filechooser", { timeout: 8000 }), tocca('.menu [data-a="stampaPdf"]')]);
@@ -395,18 +401,28 @@ const inf2 = await finito(prima, (x) => x.id.startsWith("tel") && x.stato === "a
 check(!!inf2 && inf2.pubblico.titolo === "Stampato in Infermeria" && lavori("sta").length === sta0 + st1.length && lavori("pc").length === pcPrima,
   `l'ordine dal telefono: i fogli in Infermeria, una volta (got ${JSON.stringify(inf2 && inf2.pubblico)})`);
 check(/Stampato in Infermeria/.test(await aspettaTel(/Stampato in Infermeria/, 15000)), "e il telefono dice «Stampato in Infermeria»");
-// per un ordine solo: «PC»
+// «PC», toccato: per questo ordine e quelli dopo (si ricorda)
 await tocca('[data-a="esame"]:has-text("TROPONINA US")');
 await tel.locator("#quesito").fill("dolore toracico");
 await tel.locator("#quesito").press("Enter");
 await tocca('.cta .dove [data-d="qui"]');
-check(await doveTel() === "PC" && !/→/.test(await tel.locator("#ordina").innerText()), "«PC» per questo ordine: il bottone non dice più «→ Infermeria»");
+check(await doveTel() === "PC" && !/→/.test(await tel.locator("#ordina").innerText()), "«PC» toccato: il bottone non dice più «→ Infermeria»");
 prima = await idsOra();
 await tocca("#ordina"); await sospendi(900); await tocca("#ordina");
 const qui2 = await finito(prima, (x) => x.id.startsWith("tel") && x.stato === "avviso" && /^Stampato/.test(x.pubblico?.titolo || ""));
 check(!!qui2 && /^Stampato su /.test(qui2.pubblico.titolo) && lavori("pc").length === pcPrima + locali.length && lavori("sta").length === sta0 + st1.length,
   `…e i fogli escono sulle stampanti del PC del medico, non in Infermeria (got ${JSON.stringify(qui2 && qui2.pubblico)})`);
-check((await sw.evaluate(() => chrome.storage.local.get("stampa"))).stampa?.dove === "stazione", "la scelta del PC resta «Infermeria»: il telefono l'ha cambiata per un ordine solo");
+check((await sw.evaluate(() => chrome.storage.local.get("stampa"))).stampa?.dove === "stazione", "la scelta del PC resta «Infermeria»: il telefono ha la sua");
+// riaperta l'app, la scelta del telefono è quella toccata l'ultima volta: «PC»
+await tel.reload();
+await aspettaTel(/ROSSI MARIO/, 30000);
+await tocca('[data-a="paz"]:has-text("ROSSI MARIO")');
+await aspettaTel(/Richieste/, 10000);
+await tocca('[data-a="scheda"][data-s="richieste"]');
+await tocca('[data-a="esame"]:has-text("TROPONINA US")');
+check(await finche(async () => await doveTel() === "PC", 10000), "riaperta l'app, sopra «Conferma e stampa» c'è ancora «PC»: si ricorda l'ultima scelta");
+await tocca('.cta .dove [data-d="stazione"]');   // (di nuovo Infermeria, per le prove dopo)
+await tocca('[data-a="esame"]:has-text("TROPONINA US")');
 
 // ===========================================================================
 sezione("«Richieste fatte» sul telefono: «Ristampa» sul PC e in Infermeria, una volta");
