@@ -223,6 +223,14 @@ async function aspettaTel(t, re, timeout = 20000) {
 }
 const tocca = (t, sel) => t.locator(sel).first().click();
 const qrUrl = () => sw.evaluate(() => ponteQr());
+// «Associa» / «Nuovo QR» sulla pagina iPhone del PC, fino al QR. L'associazione non scade: con un
+// telefono già entrato, «Nuovo QR» lo butta fuori, e vuole due tocchi («… Tocca di nuovo»).
+async function nuovoQr(p) {
+  await p.locator("#associa").click();
+  await p.waitForFunction(() => /Tocca di nuovo/.test(document.getElementById("associa").textContent) || document.querySelector("#qr svg"), null, { timeout: 8000 });
+  if (!(await p.locator("#qr svg").count())) await p.locator("#associa").click();
+  await p.waitForSelector("#qr svg", { timeout: 8000 });
+}
 // la chiave del telefono: ora la lista dei PC (pcs.v1) — l'associazione attiva
 const chiaveTel = (t) => t.evaluate(() => {
   try {
@@ -2164,8 +2172,7 @@ await orologio();
 // il link del QR, invece, vale solo per il primo scambio, e poco: un QR nuovo, e passati 7 minuti non apre più
 await ponte2.reload();
 await ponte2.waitForSelector("#stato b");
-await ponte2.locator("#associa").click();
-await ponte2.waitForSelector("#qr svg", { timeout: 8000 });
+await nuovoQr(ponte2);   // (il telefono di prima è ancora associato: due tocchi)
 const urlE = await qrUrl();
 await avanti(7 * 60e3);
 {
@@ -2710,8 +2717,7 @@ sezione("«Scansiona il QR» dentro l'app");
   const pqr = await ctx.newPage();
   await pqr.goto(EXTURL("ponte.html"));
   await pqr.waitForSelector("#stato b");
-  await pqr.locator("#associa").click();
-  await pqr.waitForSelector("#qr svg", { timeout: 8000 });
+  await nuovoQr(pqr);   // (il telefono di prima è ancora associato: due tocchi)
   const url4 = await qrUrl();
   const K4 = P.b64u(P.leggiFrammento(new URL(url4).hash).k);
 
