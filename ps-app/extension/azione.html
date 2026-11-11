@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="it"><head><meta charset="utf-8"><title>PS Assist · Lettura e stampa</title>
 <style>
-  :root { --blu: #0B5CAD; --testo: #16232E; --grigio: #5B6B7A; --bordo: #D9E2EC; --fondo: #F4F8FB; --rosso: #B3261E; }
+  :root { --blu: #0B5CAD; --testo: #16232E; --grigio: #5B6B7A; --bordo: #D9E2EC; --fondo: #F4F8FB; }
   * { box-sizing: border-box; }
   body { font: 14px/1.45 -apple-system, "Segoe UI", Roboto, Arial, sans-serif; color: var(--testo); background: #fff; margin: 0; padding: 14px; min-width: 258px; }
   h1 { font-size: 14px; margin: 0 0 2px; }
@@ -12,7 +12,6 @@
            background: var(--fondo); color: var(--testo); padding: 11px 12px; font: inherit; font-weight: 650; cursor: pointer; }
   button:hover { background: #ECF3F9; border-color: #C4D0DC; }
   button .ic { flex: none; width: 20px; text-align: center; font-size: 15px; }
-  button .ic.rec { color: var(--rosso); }
   button small { display: block; font-weight: 500; color: var(--grigio); font-size: 11.5px; margin-top: 1px; }
   button .tx { min-width: 0; }
 </style></head>
@@ -20,7 +19,7 @@
   <h1>PS Assist · Lettura e stampa</h1>
   <p class="sub"><span class="occ">👁️</span> Sola lettura · questo PC non scrive nel gestionale</p>
   <div class="voci">
-    <button id="staz" type="button"><span class="ic rec" aria-hidden="true">●</span><span class="tx">Mostra QR — Stazione di stampa<small>per collegare le stampanti all'iPhone (⋯ → Collega stampante)</small></span></button>
+    <button id="staz" type="button"><span class="ic" aria-hidden="true">🖨️</span><span class="tx">Mostra QR — Stazione di stampa<small>per collegare le stampanti all'iPhone (⋯ → Collega stampante)</small></span></button>
     <button id="iphone" type="button"><span class="ic" aria-hidden="true">📱</span><span class="tx">Associa l'iPhone<small>per leggere i pazienti di questo PC dal telefono</small></span></button>
   </div>
 <script src="azione.js"></script>
