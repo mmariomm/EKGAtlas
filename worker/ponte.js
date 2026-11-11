@@ -52,8 +52,9 @@ export class PonteStanza extends DurableObject {
   webSocketClose(ws) { this.stanza.esce(ws, Date.now()); }
   webSocketError(ws) { this.stanza.esce(ws, Date.now()); }
 
-  // una sveglia rimasta dalla versione di prima: suona una volta e non si rimette
-  alarm() { this.stanza.pulisci(this.ctx.getWebSockets(), Date.now()); }
+  // Una sveglia rimasta dalla versione di prima: suona una volta, non tocca niente e non si
+  // rimette. (Ritirare lì le prese mute toglierebbe di mezzo anche un PC solo addormentato.)
+  alarm() {}
 }
 
 export async function ponteFetch(request, env) {

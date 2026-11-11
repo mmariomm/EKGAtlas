@@ -180,13 +180,6 @@ export class Stanza {
     if (avvisa) this.avvisa(p, st, ora);
     try { this.io.scrivi(p, { ...st, via: codice, chiusa: true }); } catch { /* chiusa intanto */ }
   }
-  // Le prese mute si ritirano (una sveglia rimasta da prima, o una prova)
-  pulisci(prese, ora) {
-    for (const p of prese) {
-      const st = this.io.leggi(p);
-      if (st && !st.via && this.muta(p, st, ora)) this.ritira(p, st, 4002, true, ora);
-    }
-  }
 }
 
 // Le intestazioni dell'app del telefono: solo il suo codice, e la rete solo

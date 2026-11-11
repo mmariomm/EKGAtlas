@@ -344,7 +344,10 @@ await blocco(async () => {
     check(prese[1].chiusa === null && prese[2].mandati.at(-1) === '{"pari":false}', "la presa del PC cade (1006): il telefono lo sa, e nessuna chiusura mandata a chi non c'è più");
     d.webSocketClose(prese[2], 1001, "", true);
     check(prese[2].chiusa === null, "un service worker fermato da Chrome chiude con 1001: nessuna chiusura mandata indietro (la risposta la dà Cloudflare, web_socket_auto_reply_to_close)");
+    // il telefono addormentato da 10 minuti (in tasca): la sveglia rimasta da prima non lo tocca
+    prese[2].att = { ...prese[2].att, ultimo: Date.now() - 10 * 60e3 }; battiti.set(prese[2], Date.now() - 10 * 60e3);
     await d.alarm();
+    check(!prese[2].att.via && prese[2].chiusa === null, "la sveglia rimasta dalla versione di prima non ritira e non chiude niente (un telefono addormentato resta in stanza)");
     check(disco.length === 0, `niente sveglie e niente disco: nessuna chiamata a storage (${disco.join(", ") || "nessuna"})`);
   } finally { g.Response = prima.R; g.WebSocketPair = prima.P; g.WebSocketRequestResponsePair = prima.Q; }
 });
