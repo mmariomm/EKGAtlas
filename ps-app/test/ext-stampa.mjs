@@ -421,15 +421,17 @@ if (await prova("la forma del pannello si sceglie in Impostazioni, e la scheda l
   const voci = await menu(doc);
   check(!/Forma|Affianca|Al passaggio|Al centro/.test(voci), `nel menu ⋯ niente Forma (got: ${voci})`);
   await $panel(doc, "#menubtn").click();
-  if (!impostazioni || impostazioni.isClosed()) { impostazioni = await ctx.newPage(); }
-  await impostazioni.goto(`chrome-extension://${ID}/portale.html`);
-  const premuto = () => impostazioni.evaluate(() => [...document.querySelectorAll("#pannello [data-forma]")].filter((b) => b.getAttribute("aria-pressed") === "true").map((b) => b.dataset.forma).join());
+  // (una scheda delle Impostazioni sua, chiusa alla fine: quella delle prove di stampa resta com'era,
+  // con le stampanti che l'aiutante le ha detto — qui l'aiutante non c'è)
+  const pan = await ctx.newPage();
+  await pan.goto(`chrome-extension://${ID}/portale.html`);
+  const premuto = () => pan.evaluate(() => [...document.querySelectorAll("#pannello [data-forma]")].filter((b) => b.getAttribute("aria-pressed") === "true").map((b) => b.dataset.forma).join());
   await finche(async () => (await formaSw()) === "passaggio", 5000);
-  await impostazioni.reload();
-  await impostazioni.waitForFunction(() => document.querySelector('#pannello [aria-pressed="true"]'), null, { timeout: 5000 }).catch(() => {});
-  check((await formaSw()) === "passaggio" && (await premuto()) === "passaggio" && /pill/.test(await impostazioni.locator("#formadice").innerText()),
+  await pan.reload();
+  await pan.waitForFunction(() => document.querySelector('#pannello [aria-pressed="true"]'), null, { timeout: 5000 }).catch(() => {});
+  check((await formaSw()) === "passaggio" && (await premuto()) === "passaggio" && /pill/.test(await pan.locator("#formadice").innerText()),
     `Impostazioni → Il pannello: la forma di adesso, Al passaggio (scritta dal pannello: got ${(await formaSw())} · ${await premuto()})`);
-  await impostazioni.click('#pannello [data-forma="affianca"]');
+  await pan.click('#pannello [data-forma="affianca"]');
   const colonna = () => doc.evaluate(() => {
     const w = document.getElementById("psassist-host")?.shadowRoot?.querySelector(".wrap.win");
     const r = w && w.getBoundingClientRect();
@@ -438,10 +440,11 @@ if (await prova("la forma del pannello si sceglie in Impostazioni, e la scheda l
   await doc.bringToFront();
   const c1 = await finche(async () => { const c = await colonna(); return c.f === "affianca" && c.l > c.vw * 0.6 ? c : null; }, 5000);
   check(!!c1 && c1.w < c1.vw * 0.4 && (await premuto()) === "affianca", `scelta Affianca, la scheda del gestionale la segue subito: la colonna a destra (got ${JSON.stringify(c1 || await colonna())})`);
-  await impostazioni.click('#pannello [data-forma="passaggio"]');
+  await pan.click('#pannello [data-forma="passaggio"]');
   const c2 = await finche(async () => { const c = await colonna(); return c.f === "passaggio" && c.l < c.vw * 0.2 ? c : null; }, 5000);
   check(!!c2, `di nuovo Al passaggio: la finestra torna al centro (got ${JSON.stringify(c2 || await colonna())})`);
-  await shot(impostazioni, "impostazioni-pannello");
+  await shot(pan, "impostazioni-pannello");
+  await pan.close();
 }
 
 // ---- 3. i fogli vanno da soli alla loro stampante -------------------------
