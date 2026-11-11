@@ -58,6 +58,7 @@ check(man.name === "PS Assist · Lettura e stampa", `il nome: «${man.name}»`);
 check(man.key === LETTURA_KEY && man.key !== baseMan.key, "una chiave fissa, distinta da quella della build normale");
 check(man.content_scripts[0].js[0] === "sola-lettura.js" && man.content_scripts[0].js[1] === "content.js", "sola-lettura.js è il primo content script, davanti a content.js");
 check(!JSON.stringify(man.content_scripts).includes("ricetta-siss"), "la ricetta SISS (scrittura) è tolta dai content script");
+check(man.action && man.action.default_popup === "azione.html" && !/●/.test(readFileSync(join(MINI, "azione.html"), "utf8")), "il popup dell'icona (azione.html) c'è, e la stazione non ha un ● rosso (dice «registra»)");
 check(man.options_ui && man.options_ui.page === "ponte.html", "la sua pagina è ponte.html (stato dell'associazione e aggiornamento)");
 
 // ---- il ripetitore e il gestionale simulato -------------------------------

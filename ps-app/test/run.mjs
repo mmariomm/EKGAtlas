@@ -7329,14 +7329,15 @@ async function scenarioMenuAltro(browser) {
     "Esc da Riferimenti torna agli Esiti, la finestra resta aperta");
   await context.close();
 
-  // «Ricarica estensione» non si offre mentre un giro sta mandando: recarica l'estensione e lo ucciderebbe a metà
+  // niente più «Ricarica» in fondo al ⋯ (l'estensione si aggiorna da sola, e solo quando è sicuro): né a riposo, né con un giro
   const mock2 = createMock({ lagRenders: { 320: 99 } });
   const b = await newPage(browser, mock2);
   await b.context.addInitScript(() => { window.chrome = { runtime: { id: "finta", sendMessage(_m, cb) { if (typeof cb === "function") cb({ ok: false }); } } }; });
   await b.page.goto(mock2.patientUrl);
   await richieste(b.page);
   await $panel(b.page, "#menubtn").click();
-  check(scen, (await $panel(b.page, "#extreload").count()) === 1, "a riposo «Ricarica estensione» c'è, nel menu ⋯");
+  check(scen, (await $panel(b.page, "#extreload").count()) === 0 && (await $panel(b.page, "#aggapp").count()) === 0 && !/Ricarica|Aggiorna app/.test(await $panel(b.page, ".menu .mpiede").innerText()),
+    "a riposo nel menu ⋯ né «Ricarica» né «Aggiorna app»: solo la versione");
   await $panel(b.page, "#menubtn").click();
   await $panel(b.page, "#q").fill("controllo");
   await $panel(b.page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
@@ -7344,7 +7345,7 @@ async function scenarioMenuAltro(browser) {
   await $panel(b.page, "#go").click();
   await b.page.waitForSelector("#psassist-host .card #stopbtn", { timeout: 10000 });   // (il pannello resta aperto, col giro)
   await $panel(b.page, "#menubtn").click();
-  check(scen, (await $panel(b.page, "#extreload").count()) === 0, "mentre il giro manda, «Ricarica estensione» non c'è");
+  check(scen, (await $panel(b.page, "#extreload").count()) === 0, "mentre il giro manda, neanche");
   await $panel(b.page, "#menubtn").click();
   await $panel(b.page, "#stopbtn").click().catch(() => {});
   await b.context.close();
@@ -7405,7 +7406,7 @@ async function scenarioMenuSezioni(browser) {
     t: s.querySelector(":scope > .mtit")?.textContent || "",
     ids: [...s.querySelectorAll(":scope > button, :scope > .mforma")].map((b) => b.id || b.className),
   })));
-  // (fuori dalle sezioni c'è solo il piede: la versione, «Ricarica», «Aggiorna app»)
+  // (fuori dalle sezioni c'è solo il piede: la versione)
   const sparse = (page) => page.evaluate(() => [...document.getElementById("psassist-host").shadowRoot.querySelectorAll(".menu button")].filter((b) => !b.closest(".msez") && !b.closest(".mpiede")).length);
   // ogni voce con la sua icona, sulla griglia delle altre (16 px, tratto 1.6), e la parola
   const senzaIcona = (page) => page.evaluate(() => [...document.getElementById("psassist-host").shadowRoot.querySelectorAll(".menu .msez > button")].filter((b) => {
@@ -7485,8 +7486,8 @@ async function scenarioMenuSezioni(browser) {
     `con l'estensione, sul paziente: Ricetta SISS, Terapia, Stampa · Tabellone, iPhone, Cronometro, Riferimenti, Consegne · Impostazioni, Registrazioni, Registro, Reset (got ${vedi(s)})`);
   check(scen, !(await senzaIcona(b.page)).length, `con l'estensione anche: un'icona per voce (senza: ${(await senzaIcona(b.page)).join(", ")})`);
   const piede = (await $panel(b.page, ".menu .mpiede .mver").innerText()).replace(/\s+/g, " ").trim();
-  check(scen, /^PS Assist \S+ · Ricarica$/.test(piede) && (await $panel(b.page, ".menu .mpiede .mver #extreload").count()) === 1,
-    `«Ricarica estensione» è un link accanto alla versione: «PS Assist … · Ricarica» (got ${piede})`);
+  check(scen, /^PS Assist \S+$/.test(piede) && (await $panel(b.page, "#menubtn.agg").count()) === 0,
+    `in fondo al ⋯ solo la versione, «PS Assist …»: niente «Ricarica», e il ⋯ senza puntino (got ${piede})`);
   await shotSide(b.page, "menu-sezioni-paziente");
   await chiudi(b.page);
   await b.page.goto(mock2.worklistUrl);

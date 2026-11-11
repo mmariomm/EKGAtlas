@@ -49,22 +49,29 @@ l'intera pagina — nessuna estensione può impedirlo. Il pannello però **si ri
 quesito, esami selezionati, sezioni aperte e posizione tornano come li hai lasciati (per lo
 stesso paziente, nella stessa scheda), quindi in pratica non te ne accorgi.
 
-**Aggiornare a una nuova versione: ⋯ → «Aggiorna app».** Con la stampa automatica installata
+**Si aggiorna da sola, senza che tu tocchi niente.** Con la stampa automatica installata
 (`stampa\installa.cmd`, qui sotto) l'estensione si carica **una volta** da
-`%LOCALAPPDATA%\PSAssist\estensione` (ce la copia `installa.cmd`, e lo dice). Da lì: quando su
-GitHub c'è una versione più nuova, un puntino sul **⋯** e la voce **Aggiorna app** (la versione nel
-suggerimento). Un tocco: Chrome scarica lo zip, l'aiutante di Windows mette la cartella nuova al
-posto della vecchia (che resta in `estensione.prima`) e l'estensione si ricarica, senza riavviare
-Chrome e senza amministratore. Non mentre un ordine, una stampa o un ordine dal telefono è in corso
-(«Dopo l'ordine in corso»). Le schede già aperte mostrano **«Ricarica la pagina»**: un tocco, quando
-vuoi (la pagina non si ricarica mai da sola: lì può esserci un testo non mandato). Se la versione
-nuova non parte, doppio clic su `ripristina.cmd` in `%LOCALAPPDATA%\PSAssist\stampa` e ⟳ in
-`chrome://extensions`. Senza aiutante, o caricata da un'altra cartella, il ⋯ dice come fare; a mano
-resta il modo di sempre: sostituisci i file nella STESSA cartella e **Ricarica** (in fondo al ⋯,
-accanto alla versione), che non c'è mentre un giro di esami sta mandando.
-Per sapere se c'è una versione nuova PS Assist legge, una volta al giorno e aprendo il ⋯,
-`VERSION.txt` da `raw.githubusercontent.com` (e lo zip, solo al tocco): richieste senza cookie e
-senza dati, l'eccezione dichiarata nella regola 9.
+`%LOCALAPPDATA%\PSAssist\estensione` (ce la copia `installa.cmd`, e lo dice). Da lì il service
+worker guarda GitHub all'avvio e ogni sei ore; se c'è una versione più nuova, Chrome scarica lo zip,
+l'aiutante di Windows mette la cartella nuova al posto della vecchia (che resta in
+`estensione.prima`) e l'estensione si ricarica, senza riavviare Chrome e senza amministratore. Lo fa
+**solo quando è sicuro**, e se no riprova ogni quarto d'ora: mai con un ordine in corso o in coda
+(anche dal telefono), una stampa o un foglio che arriva sulla stazione di stampa, una registrazione,
+o un **testo non salvato** in una scheda del gestionale (una cartella, una dimissione riscritta, la
+terapia a metà, il pannello). Nel dubbio (una scheda non risponde) aspetta. Sulla build completa lo
+**scambio** avviene solo **senza schede del gestionale aperte** (se no ogni pannello resterebbe
+orfano a metà turno, con «Ricarica la pagina»): lo zip si scarica e si controlla comunque in silenzio,
+una volta, e lo scambio parte al primo giro (ogni quarto d'ora) a gestionale chiuso — o all'avvio di
+Chrome, subito (le schede ripristinate mostrano al massimo la pillola). La mini applica come prima. Non c'è né un puntino né
+«Aggiorna app» né «Ricarica»: niente da toccare. Le schede già aperte mostrano **«Ricarica la
+pagina»**: un tocco, quando vuoi (la pagina non si ricarica mai da sola: lì può esserci un testo non
+mandato). Se la versione nuova non parte, doppio clic su `ripristina.cmd` in
+`%LOCALAPPDATA%\PSAssist\stampa` e ⟳ in `chrome://extensions`. Senza aiutante, o caricata da
+un'altra cartella, non si aggiorna da sé: il ⋯ lo dice, in fondo, e come rimediare (sostituire i file
+nella STESSA cartella e ⟳ in `chrome://extensions`).
+Per sapere se c'è una versione nuova PS Assist legge, ogni sei ore, `VERSION.txt` da
+`raw.githubusercontent.com` (e lo zip, solo quando lo applica): richieste senza cookie e senza dati,
+l'eccezione dichiarata nella regola 9.
 
 **Stampa automatica** (facoltativa, Windows, niente admin): etichette all'etichettatrice e il resto
 all'A4, senza dialogo. Prima si avvisa l'IT, poi si installa una volta dalla cartella `stampa`
@@ -139,10 +146,9 @@ ma con lo zip **`ps-assist-lettura.zip`**:
 4. Per farlo anche stazione di stampa dell'infermeria, la sua pagina «Stazione di stampa»
    (`stazione.html`): come per la build completa (vedi «Stazione di stampa»).
 
-**Si aggiorna da sola.** Non avendo un pannello, la build mini controlla GitHub all'avvio e ogni sei
-ore e applica da sé la versione nuova quando il PC è libero — scaricando il **suo** zip e con tutti i
-controlli di sicurezza (versione, **stessa chiave**, cartella installata, host fisso, mai a metà di
-una stampa). La sua pagina mostra «Aggiornato alla versione X · data».
+**Si aggiorna da sola**, come la build completa (vedi «Si aggiorna da sola»): scarica il **suo** zip, con
+tutti i controlli di sicurezza (versione, **stessa chiave**, cartella installata, host fisso) e mai
+a metà di una stampa o di un foglio per la stazione. La sua pagina mostra «Aggiornato alla versione X · data».
 
 ---
 
@@ -201,8 +207,8 @@ pagina non ha voci non c'è. In cima **Forma** (vedi sopra), con **Al centro**. 
   (Segue il gestionale, Stampa automatica) si spuntano: al posto dell'icona il loro stato (il
   pallino blu con la spunta, acceso);
 
-e in fondo la versione, con accanto **Ricarica** (l'estensione) e sopra, quando c'è una versione
-nuova, **Aggiorna app**. Le schermate che si aprono dal ⋯ (Riferimenti, Cronometro, Registrazioni,
+e in fondo la versione (e, solo se la versione nuova da qui non si può applicare, una riga che dice
+come rimediare). Le schermate che si aprono dal ⋯ (Riferimenti, Cronometro, Registrazioni,
 iPhone, Ricetta SISS, Terapia) dicono dove sei: al posto delle schede **«‹ [icona] Nome»**, e ‹ (o
 Esc) torna alla scheda da cui eri venuto. Il cronometro compare in intestazione **solo mentre corre**
 (un tocco sul tempo apre la scheda, ⏹ lo ferma).
@@ -1632,7 +1638,7 @@ Windows), con **Stampa una pagina di prova** per ciascuna. Da lì:
   invece di tre. L'esito è uno, e vale per tutte: «Etichetta stampata», «Mandata a…», non uscita
   (al dialogo una volta, «3 copie»), sconosciuto. La striscia dice «3 copie», il giornale
   dell'ordine `copie: 3` su ogni copia, il registro dell'aiutante le opzioni («…,3x»). Serve
-  l'aiutante dalla **versione 4** (arriva con «Aggiorna app»; l'estensione glielo chiede col
+  l'aiutante dalla **versione 4** (arriva con l'aggiornamento da sé; l'estensione glielo chiede col
   «ci sei?», e se lo ricorda): con quello di prima, le copie partono una a una come sempre; e un
   aiutante che non ridice «copie: 3» ne ha stampata una: le altre partono dopo, una a una — mai
   «tre» detto per una. La prima volta, tre tocchi e conta che ne escano tre: le copie le fa il
@@ -1720,6 +1726,13 @@ telefono), li stampa sulle sue stampanti e dice com'è andata.
 - **La stazione riceve fogli e risponde, nient'altro**: non può mandare un comando al PC del medico
   né leggerci niente, e dopo la stampa non tiene niente del foglio. Nella sua pagina, «Ultimi
   fogli»: l'ora, etichette o A4, le pagine, com'è andata — mai un nome.
+- **Un puntino rosso sull'icona**, quasi invisibile (il badge più piccolo di Chrome: uno spazio),
+  solo quando serve: l'ultimo foglio non è stampato (fallito o esito sconosciuto) o l'aiutante di
+  stampa non risponde (lo guarda ogni mezz'ora). I fogli stampati bene non dicono niente: la carta
+  si vede. Si spegne aprendo la pagina della stazione o il popup. Nessuna notifica di Windows,
+  nessun permesso in più. La build intera ha ora la sua icona (senza popup: un clic apre la
+  stazione); l'icona va **fissata** nella barra (il puzzle) perché il puntino si veda. Nel popup
+  della build mini la voce della stazione ha una stampante 🖨️, non un ● rosso (che dice «registra»).
 
 I fogli viaggiano cifrati da un capo all'altro, come i messaggi del ponte, attraverso lo stesso
 ripetitore (fuori dall'ospedale e ritorno: lo dice la regola 9). Come è fatto, la chiave, che cosa
@@ -1863,7 +1876,7 @@ Per ricostruire le pagine di esempio, imparare il flusso e i tempi veri e costru
   icone usate; per uno automatico, dopo che cosa), e `eviewer.json` se c'è il visualizzatore.
 - **Il visualizzatore di immagini (eViewer)**, quello che apre la fotocamera «IMMAGINE» del paziente
   (`http://mmeviewer.multimedica.root.lan:18188`, un host, ogni porta, http e https: in `host_permissions`
-  e nei content script; con «Aggiorna app» Chrome **non chiede niente** — l'estensione non
+  e nei content script; con l'aggiornamento da sé Chrome **non chiede niente** — l'estensione non
   pacchettizzata ricaricata ha subito il permesso —, ma una finestra dell'eViewer già aperta va
   riaperta). Si registra come il gestionale — istantanee del DOM (a ogni cambiamento, al più 15 al
   minuto, come sul SISS), il flusso, e in più i **clic** — ma **senza immagini**: le miniature `data:`
@@ -2261,12 +2274,12 @@ nella tendina del gestionale») — poi **Prepara nel gestionale** (o Ctrl+Invio
    pazienti, vanno dal PC del medico a quello dell'infermeria passando dal ripetitore — escono
    dall'ospedale e ci tornano, cifrati da un capo all'altro; il ripetitore non li legge né li
    tiene. Solo con una stazione collegata e scelta («Stampa: Infermeria»).
-   **E una seconda, per gli aggiornamenti (⋯ → «Aggiorna app»):** il service worker legge
-   `ps-app/dist/VERSION.txt` da `raw.githubusercontent.com` (una volta al giorno e aprendo il ⋯) e,
-   solo al tocco del medico, `ps-assist-latest.zip` — due GET senza cookie, senza referrer e senza
-   niente dell'ospedale (`aggiorna.js`). Lo zip va all'aiutante su questo PC, che controlla
-   chiave e versione del manifest e scambia la cartella dell'estensione; mai con un ordine, una
-   stampa o un giro in corso.
+   **E una seconda, per gli aggiornamenti (da sé):** il service worker legge
+   `ps-app/dist/VERSION.txt` da `raw.githubusercontent.com` (all'avvio e ogni sei ore) e,
+   solo quando è il momento di applicarlo, `ps-assist-latest.zip` — due GET senza cookie, senza
+   referrer e senza niente dell'ospedale (`aggiorna.js`). Lo zip va all'aiutante su questo PC, che
+   controlla chiave e versione del manifest e scambia la cartella dell'estensione; mai con un
+   ordine, una stampa, una registrazione o un testo non salvato in corso.
 10. **Due schede, due pazienti, zero interferenze**: i passaggi di consegna tra pagina e pagina
    (ricevuta e conferma automatica) vivono nella singola scheda (sessionStorage).
    **La scheda dell'ordine.** Con l'estensione il giro lo fa una scheda di sottofondo, e tutti
@@ -2575,7 +2588,7 @@ ps-app/
 ├── stampa/              ← la stampa automatica per Windows: installa.cmd, l'aiutante host.ps1 e SumatraPDF.exe (ufficiale 3.6.1, GPLv3, nello zip: installa.cmd non scarica più niente); ripristina.cmd
 ├── extension/ricetta-*  ← ⋯ → Ricetta SISS: ricetta-sw.js (service worker: la ricetta, la scheda, i preferiti),
 │                          ricetta-siss.js (nella scheda del Prescrittivo: compila e si ferma sull'Anteprima)
-├── extension/aggiorna*  ← ⋯ → «Aggiorna app»: aggiorna.js (service worker: VERSION.txt, lo zip, l'aiutante, la ricarica),
+├── extension/aggiorna*  ← l'aggiornamento da sé: aggiorna.js (service worker: VERSION.txt, lo zip, l'aiutante, la ricarica),
 │                          aggiornata.js (la pillola «Ricarica la pagina» nelle schede rimaste col pannello vecchio)
 ├── tools/verifica-build.mjs ← al rilascio: la build, lo zip e la versione committati sono quelli di adesso
 ├── esempi-gestionale/   ← pagine vere del gestionale, contenuti inventati (+ come)
