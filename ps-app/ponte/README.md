@@ -212,7 +212,9 @@ apre un'altra da sola, senza passare da «Sessione chiusa»: ricollegarsi è que
 del PC riavviata (Chrome, il PC che dorme, un aggiornamento) non la chiude nessuno: il telefono se ne accorge al
 primo messaggio e si ricollega da solo, senza «Sessione chiusa». In tutti e due i casi, se eri su un
 paziente, si riapre lì, sulla stessa scheda: del paziente resta in memoria (mai su disco) solo quale era e la
-scheda, e si riapre solo dopo che il PC ha risposto e se è ancora nel suo elenco. L'associazione resta: rientrato nel gestionale, o riaperto il browser del PC,
+scheda, e si riapre solo dopo che il PC ha risposto e se è ancora nel suo elenco — da sé, non un tocco: la sua
+pagina sul PC non si apre per questo (niente «apri»), e i 10 minuti fra una lettura da sé e l'altra valgono
+anche dopo il ricollegamento. L'associazione resta: rientrato nel gestionale, o riaperto il browser del PC,
 il telefono riprende con la stessa chiave. **Revoca l'iPhone** (sulla pagina ⋯ → iPhone, due tocchi)
 e la chiave di quel telefono non apre più niente: per rientrare serve un QR nuovo.
 

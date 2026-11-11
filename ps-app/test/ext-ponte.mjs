@@ -2291,6 +2291,10 @@ await guardaChiusa();
 check(!ctx.pages().some((p) => p.frames().some((f) => f.url().includes("/ponte.html"))), "(nessuna pagina del ponte aperta, né scheda né cornice)");
 await sw.evaluate(() => { self.__vecchio = true; });
 const dalPc0 = rete.dalPc.length;
+// (BIANCHI come chi la lista dell'area ha portato e nessuno ha aperto in questo turno: un tocco sul
+// telefono aprirebbe la sua pagina sul PC — riaprirlo da sé, ricollegandosi, no)
+const bianchiTs = await doc2.evaluate(() => { const K = "psassist:patients.v1", l = JSON.parse(localStorage.getItem(K) || "[]"), p = l.find((x) => x.ep === "999002"); const ts = p && p.ts; if (p) Object.assign(p, { ts: 0, lista: Date.now() }); localStorage.setItem(K, JSON.stringify(l)); return ts; });
+const aperteRiavvio = APERTE.length;
 // Chrome lo ferma (qui lo si ferma dal protocollo di debug, come farebbe Chrome)
 // (da una pagina dell'estensione che non gli parla: quella del portale)
 const pag = await ctx.newPage();
@@ -2315,6 +2319,12 @@ check(await finche(async () => !!(await statoPonte())?.sessione && await tel.loc
   && !(await tel.evaluate(() => window.__chiusa)) && await sw.evaluate(() => !self.__vecchio),
   "l'estensione sul PC riavviata: il telefono si ricollega da solo, sullo stesso paziente e sulla stessa scheda, senza «Sessione chiusa»");
 await shot(tel, "tel-7-riavvio-ricollegato");
+{
+  await sospendi(4000);
+  const dopo = APERTE.slice(aperteRiavvio).filter((x) => /EPISODIO_ID=999002/.test(x.url));
+  check(!dopo.length && !/Apro sul PC/.test(await testoTel(tel)), `…e riaprire BIANCHI da sé non apre la sua pagina sul PC: nessun tocco (${dopo.length} pagine aperte)`);
+  await doc2.evaluate((ts) => { const K = "psassist:patients.v1", l = JSON.parse(localStorage.getItem(K) || "[]"), p = l.find((x) => x.ep === "999002"); if (p) p.ts = ts || Date.now(); localStorage.setItem(K, JSON.stringify(l)); }, bianchiTs);
+}
 // il «riparti» che l'ha chiusa, catturato per strada
 let riparti = null;
 for (const f of rete.dalPc.slice(dalPc0)) {
