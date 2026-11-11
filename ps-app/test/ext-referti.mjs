@@ -126,8 +126,9 @@ const salvati = (p, n) => p.waitForFunction((k) => document.getElementById("psas
     const a = r.querySelector(".wuauto");
     // (il ↻ è l'icona che rilegge, sola: nessuna parola accanto)
     const ri = r.querySelector("#risall");
-    return a ? { t: a.textContent.trim(), prog: !!r.querySelector(".wuprog"), salva: !!r.querySelector("#refsave"), ricarica: ri ? (ri.querySelector("svg") ? "↻" : "") + ri.textContent.trim() : "" } : false;
+    return a ? { t: a.textContent.trim(), leggo: /Leggo i valori…/.test(r.querySelector(".wulab")?.innerText || ""), prog: !!r.querySelector(".wuprog"), salva: !!r.querySelector("#refsave"), ricarica: ri ? (ri.querySelector("svg") ? "↻" : "") + ri.textContent.trim() : "" } : false;
   }, null, { timeout: 15000 }).then((h) => h.jsonValue()).catch(() => null);
+  check(!!mentre && mentre.leggo, `mentre carica, il Lab vuoto dice «Leggo i valori…» (got: ${JSON.stringify(mentre)})`);
   check(!!mentre && /^↓ \d+$/.test(mentre.t) && !mentre.prog && !mentre.salva && mentre.ricarica === "↻",
     `mentre carica da solo: «↓ N» accanto a ↻, nient'altro (got: ${JSON.stringify(mentre)})`);
   await salvati(page, 4);
@@ -169,6 +170,19 @@ const salvati = (p, n) => p.waitForFunction((k) => document.getElementById("psas
   check(mock.state.requests.filter((q) => eDoc(q.url)).length === richiestePrima && (await pS.locator("#psassist-host .wuauto").count()) === 0,
     "nessuna richiesta al server: i salvati non si riscaricano, e non c'è niente di nuovo da caricare");
   await pS.close();
+}
+
+// la pill sulla pagina del paziente (senza nessun gesto) dice cosa c'è di nuovo: il primo, e quanti
+{
+  const pP = await ctx.newPage();
+  await pP.addInitScript(() => { try { sessionStorage.removeItem("psassist:navPannello.v1"); localStorage.setItem("psassist:collapsed", "true"); } catch { /* niente */ } });
+  await pP.goto(mock.patientUrl);
+  await pP.waitForSelector("#psassist-host #expand", { timeout: 15000 });
+  await pP.waitForSelector("#psassist-host #expand .pnov", { timeout: 15000 }).catch(() => {});
+  const nov = (await pP.locator("#psassist-host #expand .pnov").innerText().catch(() => "")).replace(/\s+/g, " ").trim();
+  check(/^(?:[^·]+ · )?(?:nuovo|\d+ nuovi)$/.test(nov) && (await pP.locator("#psassist-host .card").count()) === 0,
+    `la pill chiusa dice cosa c'è di nuovo: «${nov}»`);
+  await pP.close();
 }
 
 // la pagina mostra un referto nuovo: si carica da solo lui, e solo lui

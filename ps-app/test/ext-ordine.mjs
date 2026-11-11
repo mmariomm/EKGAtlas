@@ -151,7 +151,7 @@ async function finche(fn, timeout = 30000) {
 // il pannello si apre dalla pill (si arriva dal gestionale), poi Richieste
 async function ordina(page, esami, { quesito = "dolore toracico", solo = false } = {}) {
   if (!(await $panel(page, ".card").count())) {
-    await $panel(page, "#expand").click();
+    await $panel(page, "#expand").click({ position: { x: 12, y: 8 } });
     await page.waitForSelector("#psassist-host .card", { timeout: 8000 });
   }
   if (!(await $panel(page, "#q").count())) await $panel(page, '[data-seg="richieste"]').click();
@@ -780,6 +780,9 @@ if (prova("una scheda d'ordine zitta — si chiede se c'è, e la coda aspetta"))
   await $panel(doc, STOP).click();
   check(await aspettaChiusa(w, 8000), "⏹ su una scheda che non risponde: la chiude");
   await silenzia([]);
+  // (il secondo ordine, di BIANCHI, ha la striscia: l'esito di ROSSI è il bottoncino «✕ ROSSI M.» accanto — un tocco lo apre)
+  await doc.waitForSelector("#psassist-host #strsegno, #psassist-host #gchipsegno, #psassist-host #expand .segno", { timeout: 10000 }).catch(() => {});
+  await doc.evaluate(() => { const r = document.getElementById("psassist-host")?.shadowRoot; (r?.querySelector("#strsegno, #gchipsegno") || r?.querySelector("#expand .segno"))?.click(); });
   const chiusa = await striscia(doc, /Scheda chiusa/, 10000).catch(() => "");
   check(/non mandat/.test(chiusa) && /Da controllare: EMOCROMO/.test(chiusa), `chiusa: quello in volo da controllare, il resto non mandato (got: ${chiusa || "niente"})`);
   // e solo adesso parte BIANCHI
@@ -1301,7 +1304,7 @@ if (prova("a pannello aperto l'ordine si vede nel chip, e le letture dicono che 
   check(!/invio|creo|controllo|confermo/i.test(riga), `mentre gira, solo chi e a che esame: niente passi nella riga (got: ${riga})`);
   await shot(doc, "15a-chip");
   await suPagina(doc, B.patientUrl);
-  await $panel(doc, "#expand").click();
+  await $panel(doc, "#expand").click({ position: { x: 12, y: 8 } });
   await doc.waitForSelector("#psassist-host .card", { timeout: 8000 });
   if (!(await $panel(doc, '[data-seg="esiti"].on').count())) await $panel(doc, '[data-seg="esiti"]').click();
   const leggi = $panel(doc, "#risall");
@@ -1329,7 +1332,7 @@ if (prova("la richiesta di un ordine ancora aperto non è «da confermare»")) {
   const metti = (stato) => sw.evaluate((st) => chrome.storage.session.set({ ordini: [{ id: "finto1", stato: st, rid: "699001", ep: "999001", paziente: "ROSSI MARIO", n: 2,
     ts: Date.now(), agg: Date.now(), vista: { badge: "esame 2 di 2", tono: "run", ferma: true, prog: [1, 2] }, pubblico: { tono: "run", titolo: "esame 2 di 2", testo: "" } }] }), stato);
   await metti("corre");
-  await $panel(doc, "#expand").click();
+  await $panel(doc, "#expand").click({ position: { x: 12, y: 8 } });
   await doc.waitForSelector("#psassist-host .card", { timeout: 8000 });
   await $panel(doc, '[data-seg="richieste"]').click();
   await doc.waitForTimeout(300);
@@ -1585,6 +1588,9 @@ if (prova("⏹ su una scheda d'ordine che aspetta — l'ordine finisce, la coda 
   const bottone = await tastoStop(doc);
   check(bottone === "⏹", `e ⏹ c'è (got «${bottone}» · ${JSON.stringify((await ordini()).map((x) => [x.paziente, x.stato, x.vista && x.vista.tag]))})`);
   await $panel(doc, STOP).click();
+  // (fermato, l'esito di ROSSI è un segno accanto alla striscia di BIANCHI, che intanto parte: un tocco lo apre)
+  await doc.waitForSelector("#psassist-host #strsegno, #psassist-host #gchipsegno, #psassist-host #expand .segno", { timeout: 10000 }).catch(() => {});
+  await doc.evaluate(() => { const r = document.getElementById("psassist-host")?.shadowRoot; (r?.querySelector("#strsegno, #gchipsegno") || r?.querySelector("#expand .segno"))?.click(); });
   const fermo = await striscia(doc, /ROSSI MARIO.*Interrotto/, 15000).catch(() => "");
   check(!!fermo && conferme(A).length === 0, `⏹: «Interrotto», niente confermato (got: ${fermo || "niente"})`);
   {

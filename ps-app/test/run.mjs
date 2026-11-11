@@ -4595,11 +4595,12 @@ async function scenarioPassaggio(browser) {
   await page.mouse.down();
   await page.mouse.move(p0.x - 300, p0.y + 200, { steps: 8 });
   await page.mouse.up();
-  const p1 = await centro("#pinpill"), pos = await ls("pillpos.v1");
+  const p1 = await centro("#pinpill"), pos = await ls("pillpos.v1"), sx1 = (await $panel(page, "#pinpill").boundingBox()).x;
   check(scen, Math.abs(p1.x - (p0.x - 300)) <= 2 && Math.abs(p1.y - (p0.y + 200)) <= 2 && !!pos && (await $panel(page, "#pinpill[aria-pressed=false]").count()) === 1,
     `aperta, la pill si trascina e resta dove la lasci, senza fissarla (${Math.round(p0.x)},${Math.round(p0.y)} → ${Math.round(p1.x)},${Math.round(p1.y)})`);
   await fuori();
-  check(scen, !(await aperta()) && Math.abs((await centro("#expand")).x - p1.x) <= 2, "e ridotta è lì");
+  // (la pill ridotta può portare accanto al nome cosa c'è di nuovo: stessa posizione = stesso bordo sinistro)
+  check(scen, !(await aperta()) && Math.abs((await $panel(page, "#expand").boundingBox()).x - sx1) <= 2, "e ridotta è lì");
 
   // affiancata in alto a destra, la pill sopra la finestra non copre ⋯ e —
   await page.evaluate(() => { localStorage.setItem("psassist:win.v1", JSON.stringify({ x: 0.63, y: 0.02, w: 0.36, h: 0.96 })); localStorage.removeItem("psassist:pillpos.v1"); });
@@ -5502,6 +5503,10 @@ async function scenarioRefertoTesto(browser) {
   check(scen, /RADIOGRAFIA TORACE 2 PROIEZIONI/.test(testo), "il titolo dell'esame è nel testo");
   check(scen, /Non focolai a carattere broncopneumonico/.test(testo), `il corpo del referto, parola per parola (got: ${testo.replace(/\s+/g, " ").slice(0, 60)})`);
   check(scen, !/\u0000/.test(testo), "nessun byte di codifica lasciato a vista");
+  check(scen, !/Ospedale di esempio|DOTTORE ESEMPIO/.test(testo) && /Quesito Diagnostico: dispnea/.test(testo),
+    `via l'intestazione dell'ospedale e la firma del medico, il quesito resta (got: ${testo.replace(/\s+/g, " ").slice(0, 160)})`);
+  check(scen, /Non focolai a carattere broncopneumonico\./.test(await $panel(page, ".wuex").first().innerText().catch(() => "")),
+    "sulla riga chiusa, una riga: la prima frase del referto (non il titolo)");
 
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   await $panel(page, "#copytxt").click();
@@ -5525,6 +5530,20 @@ async function scenarioRefertoTesto(browser) {
   await context.close();
 }
 
+// Il Lab senza niente da leggere e senza referti di laboratorio non è una fascia vuota: lo dice.
+async function scenarioLabVuoto(browser) {
+  const scen = "lab-vuoto";
+  const mock = conPagina(createMock({}), (html) => html.replace(/REFERTO_SISTEMA=HL7LIS/g, "REFERTO_SISTEMA=HL7CONS"));
+  const { context, page } = await newPage(browser, mock);
+  await page.goto(mock.patientUrl);
+  await page.waitForSelector("#psassist-host", { state: "attached" });
+  await $panel(page, '[data-seg="esiti"]').click();
+  await page.waitForSelector("#psassist-host [data-esito]", { state: "attached", timeout: 15000 });
+  const lab = (await $panel(page, ".wulab").innerText().catch(() => "")).replace(/\s+/g, " ");
+  check(scen, /Nessun esame di laboratorio/.test(lab), `il Lab senza prelievi né referti dice «Nessun esame di laboratorio» (got: ${lab})`);
+  await context.close();
+}
+
 // Un nome che il pannello non conosce, e una riga che non sa leggere, devono
 // diventare un avviso: mai un buco che il medico scopre da solo.
 async function scenarioNomiInattesi(browser) {
@@ -5538,12 +5557,11 @@ async function scenarioNomiInattesi(browser) {
   await $panel(page, "#risall").click();
   await attendiTabella(page, 2);
 
-  const avviso = await $panel(page, ".avvnomi").innerText().catch(() => "");
-  check(scen, /nome non in elenco|nomi non in elenco/.test(avviso), `avvisa dei nomi che non conosce (got: ${avviso})`);
-  // La finestra Risultati ha una riga che il programma non sa leggere
-  // («Aspetto del campione = limpido»): viaggia con la tabella, e l'avviso
-  // la conta — un buco che il medico non deve scoprire da solo.
-  check(scen, /riga non letta|righe non lette/.test(avviso), `e delle righe che non ha letto (got: ${avviso})`);
+  // niente riga ambra sullo schermo: il dettaglio sta nel Registro (nomi non in elenco, righe non lette con il valore)
+  check(scen, (await page.locator("#psassist-host .avvnomi").count()) === 0, "nessuna riga ambra «nomi non in elenco» sullo schermo del medico");
+  const reg = await registroDi(page);
+  check(scen, /non in elenco \(scritti per esteso\): Ricerca sangue occulto/.test(reg), `il Registro dice quale nome non è in elenco (got: ${reg.slice(-160)})`);
+  check(scen, /righe non lette: .*Aspetto del campione = limpido/.test(reg), `e la riga che non ha letto, col suo valore (got: ${reg.slice(-160)})`);
 
   // il nome sconosciuto è scritto per esteso, non abbreviato a caso
   const tabella = await $panel(page, ".sttab").innerText();
@@ -5552,15 +5570,6 @@ async function scenarioNomiInattesi(browser) {
   check(scen, /POSITIVO/.test(tabella), "e il suo valore c'è");
   check(scen, (await page.locator("#psassist-host .sttab th.stn.grezza").count()) === 1,
     "ed è marcato come non riconosciuto");
-
-  // «quali» mostra esattamente cosa è rimasto fuori
-  await $panel(page, "#avvnomi").click();
-  await page.waitForTimeout(200);
-  const elenco = await $panel(page, ".avvlista").innerText();
-  check(scen, /Non in elenco: Ricerca sangue occulto/.test(elenco.replace(/\s+/g, " ")),
-    `il nome non in elenco è mostrato per esteso (got: ${elenco.replace(/\n/g, " · ").slice(0, 90)})`);
-  check(scen, /Aspetto del campione/.test(elenco) && /limpido/.test(elenco),
-    `la riga non letta è mostrata con nome e valore (got: ${elenco.replace(/\n/g, " · ").slice(0, 90)})`);
 
   // e i valori conosciuti non vengono toccati
   check(scen, /\bHb\b/.test(tabella) && /\bGB\b/.test(tabella), "gli esami noti restano con la loro sigla");
@@ -6680,7 +6689,7 @@ async function scenarioPillAltroPaziente(browser) {
   await alPill();
   check(scen, (await segno()) === "−3m Bianchi · RX polso", `sulla pagina di ROSSI, il tempo di BIANCHI dice di chi è e cosa (got: «${await segno()}»)`);
   const tuttaPill = norm(await $panel(page, "#expand").innerText()), titoloSegno = await $panel(page, "#expand .prurg").getAttribute("title");
-  check(scen, tuttaPill === "ROSSI MARIO −3m Bianchi · RX polso", `accanto al nome di chi hai davanti, ma con il suo cognome (got: ${tuttaPill})`);
+  check(scen, tuttaPill === "ROSSI MARIO TC ENCEFALO · nuovo −3m Bianchi · RX polso", `accanto al nome di chi hai davanti (e a ciò che c'è di nuovo per lui), ma con il suo cognome (got: ${tuttaPill})`);
   check(scen, /BIANCHI ANNA · RX polso/.test(titoloSegno), `e il nome intero nel passaggio del mouse (got: ${titoloSegno})`);
   // un tocco sul segno NON apre la finestra: apre il suo menu
   await $panel(page, "#expand .prurg").click();
@@ -8160,6 +8169,7 @@ const scenarios = [
   ["↻ Aggiorna rilegge tutti i prelievi", scenarioAggiornaTutti],
   ["valori nuovi e aggiornati dopo il refresh", scenarioNuoviValori],
   ["referto RX letto come testo", scenarioRefertoTesto],
+  ["lab vuoto", scenarioLabVuoto],
   ["nomi inattesi e righe non lette", scenarioNomiInattesi],
   ["cronometro: parte, sopravvive al cambio pagina, si ferma", scenarioTempi],
   ["da fare: una lista per paziente, i promemoria dentro, il post-it sulla riga", scenarioPromemoria],

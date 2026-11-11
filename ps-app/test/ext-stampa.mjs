@@ -225,6 +225,13 @@ const striscia = async (page, re, timeout = 30000) => {
   }, re.source, { timeout }).catch(() => null);
   return h ? h.jsonValue() : "";
 };
+// l'esito di un altro paziente è un segno (nella pill, o accanto alla striscia): un tocco lo apre, come farebbe il medico
+const apriSegno = (p) => p.waitForFunction(() => {
+  const b = document.getElementById("psassist-host")?.shadowRoot?.querySelector("#strsegno, #gchipsegno, #expand .segno");
+  if (!b) return false;
+  b.click();
+  return true;
+}, null, { timeout: 10000 }).catch(() => {});
 const azione = (p) => $panel(p, AZIONE).innerText().then((t) => t.trim()).catch(() => "");
 // la striscia adesso (o il chip in intestazione), e le righe sotto: rossa?, «Ristampa»?, i ✕ (t: togli, v: visto)
 const strisciaOra = (p) => p.evaluate(() => { const r = document.getElementById("psassist-host")?.shadowRoot; return (r?.querySelector(".pill.run")?.innerText || r?.querySelector(".gchip")?.dataset.riga || "").replace(/\s+/g, " ").trim(); }).catch(() => "");
@@ -242,7 +249,7 @@ async function suPagina(p, url) {
 }
 async function apriPannello(page) {
   if (!(await $panel(page, ".card").count())) {
-    await $panel(page, "#expand").click();
+    await $panel(page, "#expand").click({ position: { x: 12, y: 8 } });
     await page.waitForSelector("#psassist-host .card", { timeout: 8000 });
   }
   if (!(await $panel(page, "#q").count())) await $panel(page, '[data-seg="richieste"]').click();
@@ -488,7 +495,7 @@ if (await prova("una conferma nella scheda del medico: la striscia, nessuna ante
   check(!!carrello, "(solo carrello: la richiesta è nel carrello, da confermare)");
   await nessunOrdine();
   await suPagina(doc, carrello.consegna.url);
-  if (!(await $panel(doc, ".card").count())) await $panel(doc, "#expand").click();
+  if (!(await $panel(doc, ".card").count())) await $panel(doc, "#expand").click({ position: { x: 12, y: 8 } });
   await $panel(doc, "#dcconferma").waitFor({ timeout: 10000 });
   await $panel(doc, "#dcconferma").click();   // il primo tocco legge il carrello
   await finche(async () => /Confermo 1 esame/.test(await $panel(doc, "#dcconferma").innerText().catch(() => "")), 10000);
@@ -854,6 +861,7 @@ if (await prova("la scheda dell'ordine ricaricata o chiusa mentre stampa: «stam
   // «Ristampa» dell'ordine interrotto: solo il foglio che non è uscito
   await suPagina(doc, B.patientUrl);
   azzeraLavori();
+  await apriSegno(doc);
   const str = await striscia(doc, /Stampa interrotta/, 8000);
   check(/ROSSI MARIO/.test(str) && (await azione(doc)) === "Ristampa", `la striscia: «Stampa interrotta», e «Ristampa» (got ${str})`);
   await shot(doc, "stampa-interrotta");
@@ -926,6 +934,7 @@ if (await prova("⏹ sulla striscia mentre il service worker stampa: il foglio i
   await sospendi(1500);
   check(lavori().length === 1, `uscito solo il foglio che era già partito (got ${lavori().length})`);
   // la lista, mai partita: sotto la striscia è rossa, «non uscita», con «Ristampa» e il ✕ «Visto» — non un ✕ «togli» che a stampa finita non toglie più niente
+  await apriSegno(doc);
   const ri = await finche(async () => { const r = await righeOra(doc); return r.length === 1 ? r : null; }, 10000);
   check(!!ri && ri[0].err && ri[0].rist && ri[0].x.join() === "v|Visto: togli",
     `la lista non uscita: rossa, «Ristampa», ✕ «Visto: togli» (got ${JSON.stringify(await righeOra(doc))})`);
@@ -1161,6 +1170,10 @@ if (await prova("la striscia: la cosa più seria, poi la più nuova; un «Stampa
     resto: { mancano: [], controllare: [], nel: [] } };
   const scrivi = (l) => sw.evaluate((x) => ordScrivi(x), l);
   await scrivi([stampato(ora - 60e3), errore]);
+  // (l'errore è di BIANCHI, e sei su ROSSI: non prende il posto della striscia di ROSSI, resta «✕ BIANCHI A.» accanto; un tocco lo apre)
+  const segnoErr = await doc.waitForFunction(() => document.getElementById("psassist-host")?.shadowRoot?.querySelector("#strsegno.err")?.textContent.trim() || false, null, { timeout: 8000 }).then((h) => h.jsonValue()).catch(() => "");
+  check(/^✕ BIANCHI A\.$/.test(segnoErr) && /Stampato/.test(await strisciaOra(doc)), `un «Stampato» di ROSSI e un errore di BIANCHI: la striscia è di ROSSI, l'errore è «✕ BIANCHI A.» accanto (got ${segnoErr || "niente"} · ${await strisciaOra(doc)})`);
+  await doc.evaluate(() => document.getElementById("psassist-host").shadowRoot.querySelector("#strsegno").click());
   let s = await striscia(doc, /completa a mano/, 8000);
   check(/BIANCHI ANNA/.test(s), `un «Stampato» più vecchio e un errore dopo: la striscia dice l'errore (got ${s || await striscia(doc, /./, 1000)})`);
   await scrivi([tel, errore]);
@@ -1200,7 +1213,7 @@ if (await prova("un referto salvato: «Stampa» nel visore va sull'A4, una volta
   await scelte(ATTIVA);
   await suPagina(doc, A.patientUrl);
   await azzeraStampe(doc);   // (la stampa dal dialogo delle prove di prima non conta qui)
-  if (!(await $panel(doc, ".card").count())) { await $panel(doc, "#expand").click(); await doc.waitForSelector("#psassist-host .card", { timeout: 8000 }); }
+  if (!(await $panel(doc, ".card").count())) { await $panel(doc, "#expand").click({ position: { x: 12, y: 8 } }); await doc.waitForSelector("#psassist-host .card", { timeout: 8000 }); }
   await $panel(doc, '[data-seg="esiti"]').click();
   const salvato = () => doc.waitForFunction(() => document.getElementById("psassist-host").shadowRoot.querySelector(".rdot.saved"), null, { timeout: 30000 }).then(() => true).catch(() => false);
   if (!(await $panel(doc, ".rdot.saved").count()) && await $panel(doc, "#refsave").count()) await $panel(doc, "#refsave").click();
@@ -1456,18 +1469,18 @@ const bottoneBrac = (p) => p.evaluate(() => {
 const ordiniBrac = async () => (await ordini()).filter((x) => /^Etichetta anagrafica/.test(x.stampa?.jobs?.[0]?.name || ""));
 // (partita una stampa il pannello si riduce alla striscia: per toccare di nuovo lo si riapre)
 const tocca = async (p) => {
-  if (!(await $panel(p, ".card").count())) { await $panel(p, "#expand").click(); await p.waitForSelector("#psassist-host .card", { timeout: 8000 }); }
+  if (!(await $panel(p, ".card").count())) { await $panel(p, "#expand").click({ position: { x: 12, y: 8 } }); await p.waitForSelector("#psassist-host .card", { timeout: 8000 }); }
   await $panel(p, "#bracciale").click();
 };
 // tocchi di fila sul bottone, `gap` ms l'uno dall'altro: dentro i 400 ms (CLIC_FINESTRA) che li fanno copie
 // (col mouse, sul posto: un clic di Playwright, coi suoi controlli, può metterci più della finestra)
 const tocchi = async (p, n, gap = 100) => {
-  if (!(await $panel(p, ".card").count())) { await $panel(p, "#expand").click(); await p.waitForSelector("#psassist-host .card", { timeout: 8000 }); }
+  if (!(await $panel(p, ".card").count())) { await $panel(p, "#expand").click({ position: { x: 12, y: 8 } }); await p.waitForSelector("#psassist-host .card", { timeout: 8000 }); }
   const b = await $panel(p, "#bracciale").boundingBox();
   for (let k = 0; k < n; k++) { if (k) await sospendi(gap); await p.mouse.click(b.x + b.width / 2, b.y + b.height / 2); }
 };
 async function intestazione(page) {
-  if (!(await $panel(page, ".card").count())) { await $panel(page, "#expand").click(); await page.waitForSelector("#psassist-host .card", { timeout: 8000 }); }
+  if (!(await $panel(page, ".card").count())) { await $panel(page, "#expand").click({ position: { x: 12, y: 8 } }); await page.waitForSelector("#psassist-host .card", { timeout: 8000 }); }
   await $panel(page, '[data-seg="richieste"]').click().catch(() => {});
   await sospendi(300);
 }
@@ -1542,7 +1555,7 @@ if (await prova("l'etichetta anagrafica: il bottone accanto al nome, le copie a 
   check(!!dietro && await aspettaChiusa(dietro), "la scheda dei PDF, finito, si chiude");
   // finita: un tocco è una stampa nuova (il PDF chiesto di nuovo), e parte ~400 ms dopo il tocco, non un secondo
   azzeraLavori();
-  if (!(await $panel(doc, ".card").count())) { await $panel(doc, "#expand").click(); await doc.waitForSelector("#psassist-host .card", { timeout: 8000 }); }
+  if (!(await $panel(doc, ".card").count())) { await $panel(doc, "#expand").click({ position: { x: 12, y: 8 } }); await doc.waitForSelector("#psassist-host .card", { timeout: 8000 }); }
   await $panel(doc, "#bracciale").waitFor({ timeout: 8000 }).catch(() => {});
   const t0 = Date.now();
   await $panel(doc, "#bracciale").click();

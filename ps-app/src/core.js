@@ -1951,22 +1951,31 @@
         if (k >= 0) prima = { v: r.valori[k].v, quando: quando(st.date[k]) };
       }
       const pos = PRIMA_DI_TUTTI.indexOf(nuda);
-      out.push({ sigla: s, v: r.valori[i].v, stato: r.valori[i].stato, prima, ord: pos < 0 ? 99 : pos });
+      out.push({ sigla: s, v: r.valori[i].v, stato: r.valori[i].stato, prima, ord: pos < 0 ? 99 : pos, nome: r.nome, col: i });
     }
     return out.sort((a, b) => a.ord - b.ord);
   }
   // Una riga per dire cosa dice un referto, sulla sua riga chiusa: le
-  // conclusioni se ci sono, se no la prima frase vera (non l'intestazione,
-  // non un'etichetta «Quesito: …», non il medico).
+  // conclusioni se ci sono, se no la prima frase che dice qualcosa — mai la
+  // riga dell'esame o il titolo (sono già l'etichetta della riga), né
+  // un'etichetta «Quesito: …», né l'intestazione, né il medico.
   function anteprimaReferto(righe) {
     const r = (righe || []).map((x) => String(x || "").trim()).filter(Boolean);
-    const i = r.findIndex((x) => /^conclusion[ei]\b/i.test(x));
+    const unaRiga = (t) => (t.length > 220 ? t.slice(0, 220).replace(/\s+\S*$/, "") + "…" : t);
+    const i = r.findIndex((x) => /^(?:conclusion[ei]|in conclusione|impressione(?:\s+diagnostica)?)\b/i.test(x));
     if (i >= 0) {
-      const dopo = r[i].replace(/^conclusion[ei]\s*:?\s*/i, "");
-      return dopo || r[i + 1] || "";
+      const dopo = r[i].replace(/^(?:conclusion[ei]|in conclusione|impressione(?:\s+diagnostica)?)\s*:?\s*/i, "");
+      return unaRiga(dopo || r[i + 1] || "");
     }
-    return r.find((x) => /[a-zà-ù]/.test(x) && x.split(/\s+/).length >= 4 && !/^[^:]{1,28}:/.test(x)
-      && !/ospedale|azienda|presidio|\bdott|\bdr\.|medico|paziente|\bnat[oa]\b|\bdata\b|pagina/i.test(x)) || r[0] || "";
+    // la riga dell'esame («69-35 RX TORACE (6979) 01/10/2026 10:51») o un titolo tutto maiuscolo
+    const titolo = (x) => /^\d+-\d+\s+\S.*\(\s*[A-Z0-9]+\s*\)\s+\d/i.test(x) || !/[a-zà-ù]/.test(x);
+    const meta = /^(?:quesito(?:\s+diagnostico)?|anamnesi|dati\s+clinici|notizie\s+cliniche|tecnica|metodica|indicazione|motivo|richiesta|esame|data|ora|paziente|medico|operatore|modalit[àa]|reparto|confronto|precedenti)(?![A-Za-zÀ-ÿ])[^:]{0,20}:/i;
+    const intest = /ospedale|azienda|presidio|\bdott|\bdr\.|medico|paziente|\bnat[oa]\b|\bdata\b|pagina/i;
+    const corpo = r.filter((x) => /[a-zà-ù]/.test(x) && !titolo(x) && !meta.test(x));
+    const parole = (x) => x.split(/\s+/).length;
+    return unaRiga(corpo.find((x) => parole(x) >= 4 && !intest.test(x))
+      || corpo.find((x) => parole(x) >= 2 && !intest.test(x))
+      || r.find((x) => !titolo(x)) || r[0] || "");
   }
   // Al massimo due scaricamenti di referti insieme, per tutta la scheda: un
   // tocco su un referto e «Salva» passano dalla stessa fila.
@@ -5776,6 +5785,9 @@
     .pill .l2 { font-size: 11.5px; font-weight: 500; opacity: .93; max-width: 100%;
                 white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .pill .tick { font-size: 13px; font-weight: 800; }
+    /* cosa c'è di nuovo, sulla pill del paziente: una scritta corta, mai a capo */
+    .pill .pnov { font-size: 11.5px; font-weight: 500; opacity: .95; max-width: 210px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .pill .pnov::before { content: "·"; margin-right: 6px; opacity: .7; }
     /* un ordine finito di un altro paziente: un segno piccolo nella pill, non la striscia */
     .pill .segno { display: inline-flex; align-items: center; gap: 3px; padding: 1px 7px; border-radius: 999px; background: #fff; color: var(--ok); font-size: 11px; font-weight: 800; cursor: pointer; white-space: nowrap; }
     .pill .segno.warn { color: var(--att); }
@@ -5823,6 +5835,7 @@
     .pieg { flex: none; border: 0; border-radius: 999px; min-width: 26px; height: 26px; padding: 0 7px; cursor: pointer; font: inherit;
             font-size: 12px; font-weight: 800; background: var(--att); color: #fff; box-shadow: 0 4px 14px rgba(9,42,74,.22); }
     .pieg.err { background: var(--err); }
+    .pieg.ok { background: var(--ok); }
     /* La striscia a pannello aperto: un chip in intestazione, la sua riga corta */
     #girow { display: contents; }
     .gchip { flex: 0 1000 auto; min-width: 64px; overflow: hidden; display: inline-flex; flex-direction: row-reverse; align-items: center; gap: 4px; height: 30px; padding: 0 3px 0 9px;
@@ -6227,12 +6240,6 @@
     /* a name we were never taught: shown in full, and underlined so it can
        never be mistaken for one of the curated sigle */
     .sttab th.stn.grezza { text-decoration: underline dotted #C08A2E; text-underline-offset: 2px; }
-    /* un avviso discreto, non un riquadro: una riga piccola sopra la tabella */
-    .avvnomi { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--att); padding: 0 2px; margin-bottom: 5px; }
-    .avvnomi .avvi { flex: 0 0 auto; width: 14px; height: 14px; border-radius: 50%; background: #E5C588;
-                     color: #4d2f02; font-weight: 800; font-size: 11px; text-align: center; line-height: 14px; }
-    .avvnomi .avvb { border: 0; background: transparent; color: var(--att); font: inherit;
-                     font-weight: 700; cursor: pointer; text-decoration: underline; padding: 0; }
     .infochip { float: right; margin-right: 6px; font-size: 11px; font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--att);
                 background: var(--att-f); border-radius: 999px; padding: 1px 8px; cursor: help; }
     .infochip:focus-visible { outline: 2px solid var(--azione); outline-offset: 1px; }
@@ -6314,8 +6321,6 @@
     .wuact .mini { float: none; }
     .rdot.coda { border-style: dashed; border-color: #8397A8; }
     .rrow.altro .rlab { color: var(--neutro); }
-    .avvlista { white-space: pre-wrap; font-size: 11px; line-height: 1.45; color: var(--neutro);
-                background: #FFFDF7; border: 1px solid #EEDFC0; border-radius: 8px; padding: 6px 9px; margin-bottom: 6px; }
     .archhd { display: flex; align-items: center; gap: 8px; width: 100%; margin-top: 8px; cursor: pointer;
               border: 1px solid #E3E8EF; border-radius: 9px; background: #F8FBFE; padding: 7px 10px;
               font: 600 12px/1 inherit; color: var(--neutro); }
@@ -7454,7 +7459,6 @@
       this.portale = "";                // indirizzo del portale aggiunto dal medico
       this.soloAlterati = false;        // valori: show only what is out of range
       this.nColEsiti = 0;               // colonne della tabella degli Esiti: decide la larghezza
-      this.mostraNomi = false;          // the unexpected-name list, open or closed
       this.mostraArch = false;          // l'elenco degli archiviati, aperto o chiuso
       this.rottiTab = new Set();        // prelievi che hanno già fallito: niente ritentativi da soli
       // La finestra aperta e la pill ridotta vivono in due posti diversi: la
@@ -8115,6 +8119,40 @@
       if (this.collapsed) this.render();
       else this.rifaiChipGiro();
     }
+    // Cosa c'è di nuovo, sulla pill della pagina del paziente: il primo valore
+    // nuovo fuori range (i più gravi per primi) o, senza, il referto nuovo più
+    // recente, e quanti sono — gli stessi conti della riga in cima agli Esiti.
+    // Solo quello che il pannello ha già letto: da qui non parte nessuna lettura.
+    // Niente di nuovo, niente scritta.
+    novitaPill() {
+      try {
+        if (!this.epDiQuesta() || this.runState) return "";
+        const st = this.datiEsiti();
+        let nVal = 0, primo = "";
+        if (st) {
+          const nov = new Map();
+          for (const d of st.date) {
+            if (!d.id) continue;
+            const v = tabStore.get(this.risKey(d.id), null);
+            const n = v && v.rows ? this.novita(d.id, v.rows) : null;
+            if (n && n.size) { nov.set(chiaveCol(d), n); nVal += n.size; }
+          }
+          const x = nVal ? fuoriRangeUltimi(st).find((y) => nov.get(chiaveCol(st.date[y.col]))?.has(valKey(y.nome))) : null;
+          if (x) primo = `${x.sigla} ${x.v}${x.stato < 0 ? "↓" : "↑"}`;
+        }
+        const visti = refertiVisti(this.episodeId);
+        const ref = this.refertiMostrati().filter((e) => !visti.has(e.id));
+        const n = nVal + ref.length;
+        if (!n) return "";
+        if (!primo && ref.length) primo = shortLabel((ref.find((e) => ["rx", "ecg"].includes(refertoTipo(e))) || ref[0]).label);   // (prima ECG e immagini)
+        const conto = !primo ? `${n} ${n === 1 ? "nuovo" : "nuovi"}` : n === 1 && !nVal ? "nuovo" : `${n} ${n === 1 ? "nuovo" : "nuovi"}`;
+        return primo ? `${primo} · ${conto}` : conto;
+      } catch { return ""; }
+    }
+    pillNovita() {
+      const t = this.novitaPill();
+      return t ? `<span class="pnov" title="${esc(t)} — apri gli Esiti">${esc(t)}</span>` : "";
+    }
     // un tocco sul segno: l'ordine torna una striscia intera, coi suoi bottoni
     apriSegno() {
       const s = this.segnoOrdine;
@@ -8159,6 +8197,7 @@
       return `<span class="gchip ${tono}" role="status" title="${esc(tutto)}" data-riga="${esc([chi, ...parti, s && s.quesito].filter(Boolean).join(" "))}">${
         stop ? `<button class="gstop${stop === "⏹" ? " ferma" : ""}" id="gchipstop" title="${esc(titStop)}" aria-label="${esc(titStop)}">${stop}</button>` : ""}${
         s ? this.piegatiHtml("gchippieg") : ""}${
+        s ? this.segnoBtnHtml("gchipsegno") : ""}${
         s && s.azione ? `<button class="gaz" id="gchipaz" title="${esc(s.azione.titolo || "")}">${esc(s.azione.label)}</button>` : ""}${
         s && this.aggiornaOfferta() ? `<button class="gaz" id="gchipagg" title="${esc(AGGIORNA_TITOLO)}">Aggiorna</button>` : ""}${
         s && s.onTap
@@ -8166,6 +8205,13 @@
           : `<span class="gcorpo">${segno}<span class="gt">${testo}</span></span>`}</span>${
         // (le righe dei fogli, come sotto la striscia: ognuna col suo ✕ o «Ristampa»)
         s && s.righe && s.righe.length ? `<span class="gchiprighe">${this.righeHtml(s.righe)}</span>` : ""}`;
+    }
+    // accanto a una striscia (o al suo chip) il segno è un bottoncino, come gli avvisi piegati
+    segnoBtnHtml(id) {
+      const g = this.striscia && this.striscia.segno;
+      if (!g) return "";
+      const t = `${g.titolo} — tocca per aprirlo`;
+      return `<button class="pieg ${esc(g.tono)}" id="${id}" title="${esc(t)}" aria-label="${esc(t)}">${g.tono === "err" ? "✕" : g.tono === "warn" ? "⚠" : "✓"} ${esc(g.chi)}</button>`;
     }
     // a finestra aperta il segno di un ordine finito (di un altro paziente) è un chip piccolo in intestazione
     segnoChip() {
@@ -8955,6 +9001,7 @@
       if (coda) s.badge = `${s.badge ? s.badge + " · " : ""}+${coda} in coda`;
       if (piegati.length) s.piegati = { n: piegati.length, err: piegati.some((x) => grado(x) === 0), id: piegati[0].id,
         chi: [...new Set(piegati.map((x) => nomeCorto(x.paziente)))].join(", ") };
+      if (segno) s.segno = segno;   // (un ordine finito di un altro paziente, accanto alla striscia di questo: non sparisce)
       // sotto, una riga per foglio (e una per la richiesta che gira)
       const rg = this.righeOrdini(l, fuoco);
       if (rg.righe.length) s.righe = rg.righe;
@@ -9649,6 +9696,7 @@
               ${this.striscia.azione ? `<button class="strazione" id="strazione" title="${esc(this.striscia.azione.titolo || "")}">${esc(this.striscia.azione.label)}</button>` : ""}
               ${this.aggiornaOfferta() ? `<button class="strazione" id="straggiorna" title="${esc(AGGIORNA_TITOLO)}">Aggiorna</button>` : ""}
               ${this.piegatiHtml("strpieg")}
+              ${this.segnoBtnHtml("strsegno")}
               ${this.striscia.onStop ? (this.striscia.ferma
                 ? `<button class="stopmini" id="strstop" title="${esc(this.striscia.titoloStop || "Ferma l'ordine")}" aria-label="${esc(this.striscia.titoloStop || "Ferma l'ordine")}">${ICO.ferma}</button>`
                 : `<button class="stopmini" id="strstop" title="${esc(this.striscia.titoloStop || "Annulla (Esc)")}">✕</button>`) : ""}
@@ -9668,7 +9716,7 @@
             </div>
             ${running ? this.righeHtml([this.rigaGiro()]) : ""}
           ` : this.collapsed ? `
-            <button class="pill" id="expand" title="${esc(who)}${ep ? " · episodio " + esc(ep) : ""} — ${esc(APP)}, trascina per spostare">${pillInner}${this.chipRec()}${this.promUrgente()}${this.segnoHtml()}</button>
+            <button class="pill" id="expand" title="${esc(who)}${ep ? " · episodio " + esc(ep) : ""} — ${esc(APP)}, trascina per spostare">${pillInner}${sulPaziente ? this.pillNovita() : ""}${this.chipRec()}${this.promUrgente()}${this.segnoHtml()}</button>
             ${sulPaziente ? this.dfNotaSlot(this.epDiQuesta(), undefined, `${pp && Number.isFinite(pp.left) && pp.left < window.innerWidth / 2 ? " sx" : ""}${pp && Number.isFinite(pp.top) && pp.top > window.innerHeight - 180 ? " su" : ""}`) : ""}
           ` : `
             <div class="card${inStanza ? " stanza" : ""}${this.view === "iphone" && !this.runState ? " iphone" : ""}" role="dialog" aria-label="${esc(APP)}" tabindex="-1">
@@ -11748,6 +11796,7 @@
       });
       const ra = this._refreshAll;
       const t = st ? this.tabellaStorico(st, nov, leggiSegni(this.chiaveNota())) : null;
+      if (st) this.registraNomi(righeTabella(st.righe), st.scartate);
       const chi = st ? [st.paziente?.cognome, st.paziente?.nome].filter(Boolean).join(" ") : "";
       const sotto = this._sotto;
       // «Carica i valori» / «Aggiorna»: una volta sola. Senza tabella è il
@@ -11799,15 +11848,16 @@
           </div>
           ${grande ? `<div class="carica"><button type="button" class="grande" id="risall" ${ra || sotto ? `disabled ${this.dopoOrdine(etLeggi, titLeggi, true)}` : `title="${esc(titLeggi)}">${etLeggi}`}</button></div>` : ""}
           ${attesaLab.length ? `<div class="wuwaits">${attesaLab.map(rigaAttesa).join("")}</div>` : ""}
+          ${!t && (ra || sotto || (au && !au.labFatto)) ? `<div class="wuvuoto" role="status">Leggo i valori…</div>` : ""}
           ${this.notaPortale && !sotto ? `<div class="hint" title="Si legge da solo aprendo il link «Storico Dati Clinici»">Storico del portale non letto: ${esc(this.notaPortale)}.</div>` : ""}
           ${rotti.length ? `<div class="hint" title="Il Registro dice perché">${rotti.length === 1 ? "1 prelievo non letto" : `${rotti.length} prelievi non letti`} (${
             esc(rotti.map((e) => e.when).filter(Boolean).join(", "))}): <b>Aggiorna</b> riprova.</div>` : ""}
-          ${t ? `${this.avvisoNomi(righeTabella(st.righe), st.scartate)}${t.nRighe ? t.html
+          ${t ? `${t.nRighe ? t.html
             : `<div class="hint">Tutti nel range.</div>`}${this.piedeStorico(st, t.legenda)}` : ""}
           ${this.storico && (this.storico.periodo || this.storico.paziente?.idMPI) ? `<div class="hint">Storico del portale di <b>${esc(chi || "—")}</b> · identità confermata <b>${esc(this.storicoVia || "dal nome")}</b>.</div>`
             : this.storicoAltri ? `<div class="hint">Storico del portale di <b>${esc(this.storicoAltri)}</b>, non di questo paziente: non mostrato.</div>`
             : this.storicoDaConfermare ? `<div class="hint" title="Il codice fiscale sta nella finestra Risultati">Storico del portale con questo nome: serve il codice fiscale, <b>⭳ Carica i valori</b>.</div>` : ""}
-          ${soloReferti ? (lab.length ? "@@LAB@@" : `<div class="wuvuoto">Nessun valore.</div>`) : ""}
+          ${soloReferti ? (lab.length ? "@@LAB@@" : `<div class="wuvuoto">Nessun esame di laboratorio</div>`) : ""}
         </section>`;
 
       // ---- ECG e Imaging: i referti, uno per riga; il testo si apre lì sotto
@@ -12885,7 +12935,7 @@
       }
       tabStore.set(this.txtKey(e.id), { ts: Date.now(), righe });
       // nella scheda del paziente va quello che si mostra: di un ECG, il referto scritto
-      const mostra = refertoMostrato(e, righe);
+      const mostra = refertoMostrato(e, righe, this.identitaPaz());
       if (mostra.length) this.archiviaReferto(e, mostra);
       this.log(`${now()}  ${shortLabel(e.label)}: testo letto (${righe.length} righe, ${letto.lettore}${letto.motivo ? `; ${letto.motivo}` : ""}${id.esito === "ok" ? `; intestazione verificata: ${id.via}` : "; intestazione non verificata"})`);
       return { righe, letto };
@@ -12905,7 +12955,7 @@
         const s = refertoScrittoEcg(righe);
         return s.righe.length ? { stato: "testo", righe: s.righe, verificato } : { stato: "macchina", verificato };
       }
-      return { stato: "testo", righe: refertoScrittoRx(righe).righe, verificato };
+      return { stato: "testo", righe: refertoScrittoRx(righe, this.identitaPaz()).righe, verificato };
     }
 
     // In fila per scaricare: al massimo due insieme (un tocco e «Salva» stanno
@@ -14246,28 +14296,19 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     // full values of one accesso, inside the panel
     // Two things the doctor must never discover by himself: a name this
     // program does not know (its abbreviation would be a guess) and a row it
-    // refused to read. Both are declared, with the names, and nothing is
-    // hidden — the values are all on screen anyway.
-    avvisoNomi(rows, scartate) {
+    // refused to read. Non sono più una riga ambra sullo schermo: il nome fuori
+    // elenco è scritto per esteso e sottolineato a puntini nella tabella, e il
+    // dettaglio — quali nomi, quali righe non lette, con il loro valore — sta
+    // nel Registro, una volta per ogni cambiamento.
+    registraNomi(rows, scartate) {
       const inattesi = nomiInattesi(rows);
-      const amb = sigleAmbigue(rows);
-      const doppi = (rows || []).filter((r) => r.nome && amb.has(chiaveAmbigua(r))).map((r) => r.nome).filter((n, i, a) => a.indexOf(n) === i);
       const persi = (scartate || []).filter((x) => x && x.nome);
-      // due nomi che si abbrevierebbero uguale sono GIÀ scritti per esteso in
-      // tabella: non meritano un avviso a ogni emocromo, solo l'elenco «quali»
-      if (!inattesi.length && !persi.length) return "";
-      const pezzi = [];
-      if (inattesi.length) pezzi.push(`${inattesi.length} ${inattesi.length === 1 ? "nome non in elenco" : "nomi non in elenco"}`);
-      if (persi.length) pezzi.push(`${persi.length} ${persi.length === 1 ? "riga non letta" : "righe non lette"}`);
-      const elenco = [
-        inattesi.length ? "Non in elenco: " + inattesi.join(", ") : "",
-        doppi.length ? "Stessa abbreviazione: " + doppi.join(", ") : "",
-        persi.length ? "Non lette: " + persi.map((x) => `${x.nome} = ${x.valore}`).join(" · ") : "",
-      ].filter(Boolean).join("\n");
-      return `<div class="avvnomi" title="${esc((inattesi.length ? "Scritti per esteso e sottolineati: di questi non conosco la sigla.\n" : "") + elenco)}">
-          <span class="avvi">!</span><span>${esc(pezzi.join(" · "))}</span>
-          <button class="avvb" id="avvnomi" type="button">${this.mostraNomi ? "nascondi" : "quali"}</button>
-        </div>${this.mostraNomi ? `<div class="avvlista">${esc(elenco)}</div>` : ""}`;
+      if (!inattesi.length && !persi.length) return;
+      const firma = JSON.stringify([inattesi, persi.map((x) => [x.nome, x.valore])]);
+      if (firma === this._firmaNomi) return;
+      this._firmaNomi = firma;
+      this.log(`${now()}  valori: ${[inattesi.length ? `non in elenco (scritti per esteso): ${inattesi.join(", ")}` : "",
+        persi.length ? `righe non lette: ${persi.map((x) => `${x.nome} = ${x.valore}`).join(" · ")}` : ""].filter(Boolean).join(" — ")}`);
     }
 
     async openEsito(id) { return this.espandi(id); }
@@ -14712,6 +14753,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         else if (b.id === "gchippieg") this.mostraPiegati();
       });
       $("#strpieg")?.addEventListener("click", (e) => { e.stopPropagation(); this.mostraPiegati(); });
+      $("#strsegno")?.addEventListener("click", (e) => { e.stopPropagation(); this.apriSegno(); });
       // le righe sotto la striscia: ✕ toglie quella sola, «Ristampa» rifà i fogli non usciti
       this.root.querySelectorAll("[data-pjx]").forEach((b) => b.addEventListener("click", (e) => { e.stopPropagation(); b.disabled = true; this.rigaTocco(b.getAttribute("data-pjx")); }));
       this.root.querySelectorAll("[data-pjrist]").forEach((b) => b.addEventListener("click", (e) => { e.stopPropagation(); ask({ t: "ordineStampaQui", id: b.getAttribute("data-pjrist"), ...(b.hasAttribute("data-pjqui") ? { qui: true } : {}) }); }));
@@ -14865,7 +14907,6 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       });
       const filtra = () => { this.soloAlterati = !this.soloAlterati; this.render(); };
       $("#storfiltro")?.addEventListener("click", filtra);
-      $("#avvnomi")?.addEventListener("click", () => { this.mostraNomi = !this.mostraNomi; this.render(); });
       $("#valreset")?.addEventListener("click", (e) => {
         e.stopPropagation();
         if (!this.valArmato()) { this._valArmato = Date.now(); this.render(); return; }
@@ -16242,30 +16283,98 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     return { righe: tutte, soloMacchina: false };
   }
 
+  // ---- la cornice di un referto: quello che non dice niente di clinico -------
+  // Quando la struttura di una radiografia non si riconosce (refertoScrittoRx),
+  // non si mostra più «tutto»: si tolgono SOLO le righe che sono certamente
+  // cornice — mai una riga di cui non si è sicuri. L'identità del paziente
+  // (nome, nascita, codice fiscale, sesso, età…) dove sta, l'intestazione
+  // dell'ospedale e del reparto in testa, la firma in fondo, i piè di pagina.
+  function righeSenzaCornice(tutte, paz) {
+    const CF = /\b[A-Z]{6}[0-9LMNPQRSTUV]{2}[A-Z][0-9LMNPQRSTUV]{2}[A-Z][0-9LMNPQRSTUV]{3}[A-Z]\b/;
+    const DATA = /\b\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}\b/;
+    const PARTICELLE = new Set(["a", "il", "di", "de", "del", "della", "dal", "da", "la", "lo", "in", "van", "von", "dei", "degli", "e"]);
+    // un nome di persona: poche parole, ognuna con l'iniziale maiuscola (o una particella)
+    const nomeDi = (t) => {
+      const w = String(t).replace(/[.,]/g, " ").split(/\s+/).filter(Boolean);
+      return w.length >= 1 && w.length <= 6 && w.every((x) => /^[A-ZÀ-Ü][A-Za-zÀ-ÿ'’-]*$/.test(x) || PARTICELLE.has(x.toLowerCase())) && w.some((x) => /^[A-ZÀ-Ü]/.test(x));
+    };
+    const norm = (t) => String(t || "").toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^A-Z0-9 ]+/g, " ").trim().replace(/\s+/g, " ");
+    const mie = norm(paz && paz.nome).split(" ").filter((x) => x.length >= 2);
+    // il suo nome da solo sulla riga (in qualunque ordine)
+    const ilSuoNome = (r) => {
+      const w = norm(r).split(" ").filter(Boolean);
+      return mie.length >= 2 && w.length >= 2 && w.length <= mie.length + 1 && w.every((x) => mie.includes(x)) && mie.every((x) => w.includes(x));
+    };
+    // l'identità, dove sta scritta: «Paziente: ROSSI MARIO», «Nato il 01/01/1980», «Codice fiscale …», «Sesso: M»
+    const identita = (r) => {
+      if (CF.test(r.toUpperCase()) && !r.toUpperCase().replace(CF, "").replace(/\b(?:CODICE FISCALE|COD(?:\.|ICE)?\s*FISC(?:ALE|\.)?|C\.?\s?F\.?)\s*[:.]?/, "").replace(/[\s:.-]/g, "")) return true;
+      if (ilSuoNome(r)) return true;
+      let m = /^(?:paziente|cognome\s+e\s+nome|cognome|nominativo|assistito|sig\.?(?:ra)?)\s*:\s*(.+)$/i.exec(r);
+      if (m) return CF.test(m[1].toUpperCase()) || DATA.test(m[1]) || (nomeDi(m[1]) && m[1].trim().split(/\s+/).length >= 2) || ilSuoNome(m[1]);
+      m = /^(?:nat[oa](?:\s+(?:il|a))?|data\s+di\s+nascita|d\.?\s?n\.?|luogo\s+di\s+nascita|codice\s+fiscale|cod(?:\.|ice)?\s*fisc(?:ale|\.)?|c\.?\s?f\.?|sesso|et[àa]|residen\w+|tessera\s+sanitaria|n\.?\s*episodio|episodio|nosologico|id\s+paziente)(?![A-Za-zÀ-ÿ])\s*[:.]?\s*(.*)$/i.exec(r);
+      if (m) {
+        const v = m[1].trim();
+        return !v || CF.test(v.toUpperCase()) || DATA.test(v) || /^\d+(?:\s*anni)?$/i.test(v) || /^[MF]$/i.test(v) || /^(?:maschio|femmina)$/i.test(v)
+          || (v.split(/\s+/).length <= 5 && v.split(/\s+/).every((x) => /^[A-ZÀ-Ü0-9][A-Za-zÀ-ÿ0-9'’/-]*$/.test(x) || PARTICELLE.has(x.toLowerCase())));
+      }
+      return false;
+    };
+    const esame = (r) => /^\d+-\d+\s+\S.*\(\s*[A-Z0-9]+\s*\)\s+\d{1,2}\/\d{1,2}\/\d{2,4}\s+\d{1,2}[:.]\d{2}/i.test(r);
+    // l'intestazione di chi referta (solo in testa, prima di ogni riga clinica)
+    const intestazione = (r) => /^(?:ospedale|azienda|asst|ats|ausl|asl|presidio|p\.\s?o\.|struttura|u\.\s?o\.\s?c?\.?|unit[àa]\s+operativa|reparto|servizio|dipartimento|istituto|policlinico|casa\s+di\s+cura)\b/i.test(r)
+      || (/^(?:radiologia|radiodiagnostica|diagnostica\s+per\s+immagini|pronto\s+soccorso)\b\s*(?:[-–—:|]\s*(.*))?$/i.test(r)
+        && (!/[-–—:|]/.test(r) || /ospedale|azienda|presidio|asst|ats|\bu\.\s?o\.|reparto|servizio|dipartimento|policlinico/i.test(r)))
+      || /^(?:modalit[àa]|operatore|tecnico|esecutore|richiedente|medico\s+richiedente|reparto\s+richiedente|provenienza)(?![A-Za-zÀ-ÿ])/i.test(r)
+      || /^referto(?:\s+(?:radiologico|di\s+radiologia|medico))?\s*:?$/i.test(r);
+    // la firma: «Il Medico DOTTORE ESEMPIO», «Dott.ssa A. Bianchi», «Firmato digitalmente da …» — con dopo solo un nome
+    const firma = (r) => {
+      const m = /^(?:(?:il|la)\s+)?(?:medico(?:\s+(?:refertante|radiologo|specialista))?|radiologo|dirigente\s+medico|refertato\s+da|referto\s+(?:redatto|firmato)\s+da|firmato(?:\s+digitalmente)?(?:\s+da)?|firma|validato(?:\s+da)?|dott\.?(?:ssa)?|dr\.?(?:ssa)?|prof\.?(?:ssa)?)(?![A-Za-zÀ-ÿ])\.?\s*:?\s*(.*)$/i.exec(r);
+      return !!m && (!m[1].trim() || nomeDi(m[1]));
+    };
+    const piede = (r) => /^(?:pagina|pag\.)\s*\d+(?:\s*(?:di|\/)\s*\d+)?$/i.test(r) || /^[_\-=–—]{5,}$/.test(r);   // (e le righe di trattini)
+    const righe = tutte.filter((r) => !piede(r));
+    // 1. la testa: l'identità (ovunque) e l'intestazione (finché siamo in testa)
+    const out = [];
+    let testa = true;
+    for (const r of righe) {
+      if (identita(r)) continue;
+      if (testa && intestazione(r)) continue;
+      if (!(testa && esame(r))) testa = false;
+      out.push(r);
+    }
+    // 2. la coda: da una riga di firma in poi, se dopo non c'è che firma, nomi, piè di pagina
+    for (let i = Math.max(0, out.length - 6); i < out.length; i++) {
+      if (firma(out[i]) && out.slice(i + 1).every((x) => firma(x) || nomeDi(x))) { out.length = i; break; }
+    }
+    return out.length ? out : tutte;
+  }
+
   // Radiologia (RX…): si mostra la riga dell'esame (titolo, data e ora) e il
   // referto che sta tra le due righe di trattini, MAI l'anagrafica in testa
   // (ospedale, reparto, dati del paziente, modalità, operatore), i trattini
   // né il piè di pagina. Ogni esame del PDF ha la sua riga e il suo corpo.
   // Prudente: se la struttura non è quella (righe d'esame e coppie di trattini
-  // non tornano, o non ci sono) si mostra tutto, come prima: mai perdere testo.
-  function refertoScrittoRx(righe) {
+  // non tornano, o non ci sono) non si taglia a corpo: si tolgono solo le righe
+  // che sono certamente cornice (righeSenzaCornice), mai una di cui non si è sicuri.
+  function refertoScrittoRx(righe, paz) {
     const tutte = (righe || []).map((r) => String(r || "").trim()).filter(Boolean);
     const sep = (r) => /^[_\-=–—]{5,}$/.test(r);
     const esame = (r) => /^\d+-\d+\s+\S.*\(\s*[A-Z0-9]+\s*\)\s+\d{1,2}\/\d{1,2}\/\d{4}\s+\d{1,2}[:.]\d{2}$/i.test(r);
     const idx = [], esami = [];
     tutte.forEach((r, i) => { if (sep(r)) idx.push(i); else if (esame(r)) esami.push(i); });
     const n = idx.length / 2;
-    if (!esami.length || !Number.isInteger(n) || n !== esami.length) return { righe: tutte, tagliato: false };
+    const cornice = () => ({ righe: righeSenzaCornice(tutte, paz), tagliato: false });
+    if (!esami.length || !Number.isInteger(n) || n !== esami.length) return cornice();
     const out = [];
     for (let k = 0; k < n; k++) {
-      if (esami[k] > idx[2 * k]) return { righe: tutte, tagliato: false };   // l'esame viene prima del suo corpo
+      if (esami[k] > idx[2 * k]) return cornice();   // l'esame viene prima del suo corpo
       out.push(tutte[esami[k]], ...tutte.slice(idx[2 * k] + 1, idx[2 * k + 1]));
     }
     return { righe: out, tagliato: true };
   }
   // Quello che di un referto letto si mostra, archivia e manda al telefono.
-  function refertoMostrato(e, righe) {
-    return refertoTipo(e) === "ecg" ? refertoScrittoEcg(righe).righe : refertoScrittoRx(righe).righe;
+  function refertoMostrato(e, righe, paz) {
+    return refertoTipo(e) === "ecg" ? refertoScrittoEcg(righe).righe : refertoScrittoRx(righe, paz).righe;
   }
 
   // Il portale può mostrare più di un PDF (quello rimasto aperto prima, poi il
@@ -17408,7 +17517,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       // (un testo salvato prima del taglio, con l'intestazione dentro, si taglia anche qui)
       for (const s of [altra, st]) for (const x of (s && s.referti) || []) if (x && x.id && x.testo) {
         const rif = referti.find((e) => e.id === x.id);
-        testi.set(x.id, rif && refertoTipo(rif) !== "ecg" ? refertoScrittoRx(String(x.testo).split("\n")).righe.join("\n") : x.testo);
+        testi.set(x.id, rif && refertoTipo(rif) !== "ecg" ? refertoScrittoRx(String(x.testo).split("\n"), { nome: p.name || "" }).righe.join("\n") : x.testo);
       }
     }
     const dati = st && st.righe && st.righe.length ? normalizzaStorico(st) : null;
@@ -17436,7 +17545,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       const righe = g && g.ok && g.data ? ((await testoPdf(bufDaB64(g.data)).catch(() => null)) || {}).righe || [] : [];
       if (!righe.length) continue;
       if (identitaReferto(righe, { cf: chi.cf, cfImp, nome: p.name || "", nascita: chi.nascita }).esito === "altro") { altri.add(e.id); continue; }
-      const mostra = refertoMostrato(e, righe);
+      const mostra = refertoMostrato(e, righe, { nome: p.name || "" });
       if (!mostra.length) continue;
       const testo = mostra.slice(0, 200).join("\n").slice(0, 20000);
       testi.set(e.id, testo);
