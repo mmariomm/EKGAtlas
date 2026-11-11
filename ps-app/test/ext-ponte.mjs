@@ -1143,6 +1143,46 @@ sezione("la cartella dal telefono: leggere, scrivere col «Conferma» della pagi
     `ogni no nel registro degli errori: il perché e i nomi dei campi, mai un testo (${err.map((x) => x.dati.perche).join(" · ")})`);
   const memTel = await tel.evaluate(() => JSON.stringify({ ...localStorage }) + JSON.stringify({ ...sessionStorage }));
   check(!/KAPPAZETA|NUOVAZETA|OMEGAFARM|BETALLERG|SIGMAREMOTA|TAUOBIETT/.test(memTel), "sul telefono niente della cartella fuori dalla memoria della pagina");
+
+  // la pagina di ROSSI sul PC, salvata dal telefono: ricaricata (la stessa pagina di prima non c'è più) col testo nuovo
+  const anamnesiPc = () => doc.locator('textarea[name="ANAMNESI"]').inputValue().catch(() => "");
+  const segnaPagina = () => finche(() => doc.evaluate(() => { window.__diPrima = true; return true; }).catch(() => false), 10000);
+  const ricaricata = (testo) => finche(async () => !(await doc.evaluate(() => window.__diPrima === true).catch(() => true)) && (await anamnesiPc()).includes(testo), 15000);
+  const fuocoPannello = () => doc.evaluate(() => document.getElementById("psassist-host")?.shadowRoot?.activeElement?.id || "").catch(() => "");
+  const salvaAnamnesi = async (testo) => { await tel.locator("#cc-ANAMNESI").fill(testo); await salvaTel(); return salvato(); };
+  // il medico ha cliccato un tasto del pannello (il fuoco ci resta, ridisegno dopo ridisegno) e se n'è andato: la pagina, pulita, si ricarica lo stesso
+  await suPagina(doc, A.patientUrl);
+  if (await $panel(doc, "#expand").count()) { await $panel(doc, "#expand").click(); await doc.waitForSelector("#psassist-host .card", { timeout: 8000 }); }
+  await $panel(doc, "#menubtn").click();
+  await $panel(doc, "#menubtn").click();
+  const sulTasto = await fuocoPannello();
+  await segnaPagina();
+  check(sulTasto === "menubtn" && await salvaAnamnesi("Dolore toracico TASTOZETA"), `(il fuoco sul tasto ⋯ del pannello: «${sulTasto}»; il telefono salva)`);
+  check(await ricaricata("TASTOZETA"), "il fuoco su un tasto del pannello non è un testo da perdere: la pagina pulita si ricarica da sola, col testo del telefono");
+  await doc.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
+  // il cursore in un campo del pannello, con un testo: la pagina non si ricarica; il «Conferma» è fermo, e la pill arriva lasciato il campo
+  if (await $panel(doc, "#expand").count()) { await $panel(doc, "#expand").click(); await doc.waitForSelector("#psassist-host .card", { timeout: 8000 }); }
+  if (!(await $panel(doc, "#q").count())) await $panel(doc, '[data-seg="richieste"]').click();
+  await $panel(doc, "#q").fill("QUESITOZETA");
+  await segnaPagina();
+  check(await fuocoPannello() === "q" && await salvaAnamnesi("Dolore toracico CAMPOZETA"), "(il cursore nel «Quesito» del pannello, con un testo; il telefono salva)");
+  await sospendi(1500);
+  check(await doc.evaluate(() => window.__diPrima === true) && await fuocoPannello() === "q" && await $panel(doc, "#q").inputValue() === "QUESITOZETA",
+    "col cursore in un campo del pannello la pagina non si ricarica: il campo ha ancora il cursore e il testo");
+  // lascia il campo (riduce il pannello col suo tasto): la pill; poi il «Conferma» della pagina è fermo
+  await $panel(doc, "#collapse").click();
+  check(await finche(async () => /Aggiornato dal telefono/.test((await $panel(doc, ".pontespia").allInnerTexts().catch(() => [])).join(" ")), 5000),
+    "…lasciato il campo, la pill «Aggiornato dal telefono · Ricarica»");
+  const postC = CART.post.length;
+  await doc.locator('input[name="Update"]').click();
+  await sospendi(1000);
+  const fermoC = await doc.locator("#psassist-terapia").evaluate((h) => h.shadowRoot.querySelector(".b").textContent).catch(() => "");
+  check(CART.post.length === postC && /Niente inviato/.test(fermoC), `…e il «Conferma» della pagina è fermo: niente inviato (${fermoC.replace(/\s+/g, " ").slice(0, 80)})`);
+  if (await $panel(doc, "#expand").count()) { await $panel(doc, "#expand").click(); await doc.waitForSelector("#psassist-host .card", { timeout: 8000 }); }
+  await $panel(doc, "#q").fill("");
+  await $panel(doc, "#ponterica").click();
+  check(await ricaricata("CAMPOZETA"), "(«Ricarica»: la pagina col testo del telefono)");
+  await doc.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
   // via la cartella: le sezioni dopo hanno la pagina di sempre
   ctx.off("page", contaSchede);
   CART.on = false;

@@ -17421,7 +17421,7 @@
         if (m.t === "ponteCartellaAggiornata") {
           if (!LAVORO && !PONTE_VALORI && !PONTE_CARTELLA && !PONTE_TERAPIA && !PONTE_ACCETTA && PANNELLO && typeof m.ep === "string" && formCartella(document, m.ep)) {
             PONTE_AGG = m.ep;
-            if (paginaToccata()) { if (!PANNELLO.root.activeElement) PANNELLO.render(); }
+            if (paginaToccata()) pontePill();
             else ponteRicarica();
           }
           reply({ ok: true });
@@ -17544,15 +17544,24 @@
   }
   // C'è qui qualcosa scritto e non salvato — un testo, una spunta, una scelta, in un modulo qualunque della
   // pagina —, o il medico ha il cursore in un campo (anche del pannello)? Allora la pagina non si ricarica da
-  // sola: si perderebbe. Nel dubbio, «toccata» (resta ferma e lo dice).
+  // sola: si perderebbe. Nel dubbio, «toccata» (resta ferma e lo dice). (Il fuoco su un TASTO del pannello
+  // non conta: ci resta da solo, ridisegno dopo ridisegno, dall'ultimo clic.)
+  const campoCursore = (a) => !!a && (a.isContentEditable || a.tagName === "TEXTAREA" || a.tagName === "SELECT" || (a.tagName === "INPUT" && !/^(hidden|submit|button|image|reset)$/.test(a.type)));
   function paginaToccata() {
-    if (PANNELLO && PANNELLO.root.activeElement) return true;
-    const a = document.activeElement;
-    if (a && (a.isContentEditable || a.tagName === "TEXTAREA" || a.tagName === "SELECT" || (a.tagName === "INPUT" && !/^(hidden|submit|button|image|reset)$/.test(a.type)))) return true;
+    if (PANNELLO && campoCursore(PANNELLO.root.activeElement)) return true;
+    if (campoCursore(document.activeElement)) return true;
     return [...document.querySelectorAll("textarea, input, select")].some((el) =>
       el.tagName === "SELECT" ? (el.multiple ? [...el.options].some((o) => o.selected !== o.defaultSelected) : el.options.length > 0 && el.selectedIndex !== Math.max(0, [...el.options].findIndex((o) => o.defaultSelected)))
       : el.type === "checkbox" || el.type === "radio" ? el.checked !== el.defaultChecked
       : !/^(hidden|submit|button|image|reset|file)$/.test(el.type) && normTesto(el.value) !== normTesto(el.defaultValue));
+  }
+  // La pill «Aggiornato dal telefono · Ricarica», adesso: il ridisegno rimette il fuoco sul tasto del pannello
+  // dov'era. Un campo del pannello col cursore dentro non si ridisegna sotto le dita (quello che c'è scritto
+  // potrebbe non sopravvivere): la pill arriva appena lo si lascia — e il «Conferma» è fermo da subito.
+  function pontePill() {
+    if (!PANNELLO || !PONTE_AGG) return;
+    if (!campoCursore(PANNELLO.root.activeElement)) { PANNELLO.render(); return; }
+    PANNELLO.root.addEventListener("focusout", () => setTimeout(pontePill, 0), { once: true });
   }
   // Il «Conferma» della cartella di una pagina di prima (il telefono l'ha salvata dopo che si è aperta): fermo,
   // anche cliccato da qualcun altro (un tasto, il pannello), finché la pagina non si ricarica — mai i testi
