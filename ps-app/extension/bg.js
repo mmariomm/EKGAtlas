@@ -1514,6 +1514,9 @@ async function stazioneSonda() {
 // gestionale le passa alla stampa automatica). Dal telefono solo con la stampa
 // automatica: un dialogo su un PC che nessuno guarda non è una stampa.
 async function ordQui(id, { daTel = false } = {}) {
+  // (dal telefono prima di tutto la stampa automatica: anche un ordine che gira
+  // cambierebbe strada verso un dialogo su un PC che nessuno guarda)
+  if (daTel && !(await stampaScelte().catch(() => null))) return { ok: false, errore: "Sul PC la stampa automatica non è impostata" };
   const fatto = await inFilaOrd(async () => {
     const l = await ordLeggi();
     const rec = l.find((x) => x.id === id && x.dest === "stazione");
@@ -1528,12 +1531,15 @@ async function ordQui(id, { daTel = false } = {}) {
   if (fatto.ok || !fatto.rec) return fatto;
   const rec = fatto.rec;
   if (!rec.stampa || !["stampa", "avviso"].includes(rec.stato)) return { ok: false, errore: "Niente da stampare qui" };
-  if (daTel && !(await stampaScelte().catch(() => null))) return { ok: false, errore: "Sul PC la stampa automatica non è impostata" };
   const f = Array.isArray(rec.fogli) ? rec.fogli : [];
   // (dal telefono mai un foglio «forse stampato»: chi tocca non vede il PC — lì si guarda, e si decide al PC)
   if (daTel && f.some((x) => x.stato === "sconosciuto")) return { ok: false, errore: "Forse già stampate: guarda lì, poi decidi dal PC" };
   if (daTel && !f.some((x) => x.stato === "fallito")) return { ok: false, errore: "Niente da stampare sul PC" };
-  const non = rec.stampa.jobs.filter((_, i) => f[i] && !usciti(f[i]) && f[i].stato !== "tolto");
+  // In «stampa» (ordStampoFine) i fogli dell'ordine sono già solo quelli non
+  // stampati: tutti, così come sono — `fogli` ha ancora l'elenco intero, e i
+  // suoi indici non sono più quelli dei fogli. In «avviso» i fogli sono tutti:
+  // quelli non usciti, come fa «Stampa qui» sulla striscia (ordineStampaQui).
+  const non = rec.stato === "avviso" ? rec.stampa.jobs.filter((_, i) => f[i] && !usciti(f[i]) && f[i].stato !== "tolto") : [];
   const tutte = (await chrome.tabs.query({}).catch(() => [])).filter((t) => sulGestionale(t.url));
   for (const t of [...tutte.filter((x) => x.active), ...tutte.filter((x) => !x.active)]) {
     if (await ordDai(rec.id, t.id, true, non.length ? non : null, "qui")) return { ok: true };

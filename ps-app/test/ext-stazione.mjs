@@ -651,6 +651,28 @@ await suPagina(doc, A.patientUrl);
   check(!!qui && !/non risponde/.test(qui.pubblico ? JSON.stringify(qui.pubblico) : ""), `un tocco: l'ordine stampa qui, e la domanda se ne va (got ${JSON.stringify(qui && [qui.dest, qui.pubblico])})`);
   await sw.evaluate(() => chrome.storage.session.set({ ordini: [] }));
 }
+{
+  // «Stampa qui» su un ordine in «stampa»: i suoi fogli sono già solo quelli che la
+  // stazione non ha stampato (ordStampoFine), `fogli` ha ancora l'elenco intero —
+  // le etichette uscite, la lista e l'RX no. Escono la lista E l'RX: nessuno perso.
+  const ora = Date.now();
+  const jobs = [{ name: "Lista esami", printer: "normale", url: `${A.patientUrl}&lista=1` }, { name: "Richiesta radiologia", printer: "normale", url: `${A.patientUrl}&rx=1` }];
+  await sw.evaluate((x) => ordScrivi(x), [{ id: "pcqui00001", ep: "999001", paziente: "ROSSI MARIO", n: 1, stato: "stampa", ts: ora, agg: ora, worker: null, vista: null,
+    dest: "stazione", destNome: "Infermeria", confermata: ora, resto: { mancano: [], controllare: [], nel: [] },
+    stampa: { jobs, tag: "Confermata", fine: { n: 1, ts: ora }, riassunto: "1 esame confermato" },
+    fogli: [{ name: "Etichette provette", tipo: "etichette", stato: "stampato", stazione: true, stampante: "Infermeria" },
+      { name: "Lista esami", tipo: "a4", stato: "fallito", stazione: true, nonRisponde: true, why: "Infermeria non risponde" },
+      { name: "Richiesta radiologia", tipo: "a4", stato: "fallito", stazione: true, nonRisponde: true, why: "Infermeria non risponde" }] }]);
+  const dati = await sw.evaluate(async () => {
+    const vero = chrome.tabs.sendMessage;
+    let presi = null;
+    chrome.tabs.sendMessage = (id, m, ...r) => (m && m.t === "psassistStampa" ? ((presi = m.stampa.jobs.map((j) => j.name)), Promise.resolve({ ok: true })) : vero.call(chrome.tabs, id, m, ...r));
+    try { return { r: await ordQui("pcqui00001"), presi }; } finally { chrome.tabs.sendMessage = vero; }
+  });
+  check(!!dati.r?.ok && JSON.stringify(dati.presi) === JSON.stringify(["Lista esami", "Richiesta radiologia"]),
+    `«Stampa qui» su un ordine in «stampa»: la lista e l'RX, tutti e due — nessun foglio perso (got ${JSON.stringify(dati)})`);
+  await sw.evaluate(() => chrome.storage.session.set({ ordini: [] }));
+}
 prima = await idsOra();
 const pc2 = lavori("pc").length, sta2 = lavori("sta").length;
 await ordina(doc, ["TROPONINA"]);
