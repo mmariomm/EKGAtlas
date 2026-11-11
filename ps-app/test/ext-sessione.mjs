@@ -195,7 +195,7 @@ async function finche(fn, timeout = 30000) {
   for (const t0 = Date.now(); Date.now() - t0 < timeout; await sospendi(150)) if (await fn()) return true;
   return false;
 }
-async function ordina(page, esami, { quesito = "dolore toracico" } = {}) {
+async function ordina(page, esami, { quesito = "dolore toracico", solo = false } = {}) {
   if (!(await $panel(page, ".card").count())) {
     await $panel(page, "#expand").click();
     await page.waitForSelector("#psassist-host .card", { timeout: 8000 });
@@ -203,7 +203,7 @@ async function ordina(page, esami, { quesito = "dolore toracico" } = {}) {
   if (!(await $panel(page, "#q").count())) await $panel(page, '[data-seg="richieste"]').click();
   await $panel(page, "#q").fill(quesito);
   for (const e of esami) await $panel(page, `.opt[title*="${e}"]`).click();
-  await $panel(page, "#goconfirm").click();
+  await $panel(page, solo ? "#go" : "#goconfirm").click();
 }
 const nuovaPagina = (timeout = 15000) => ctx.waitForEvent("page", { timeout }).catch(() => null);
 async function suPagina(p, url) {
@@ -785,6 +785,50 @@ if (prova("«Conferma di nuovo» mentre la Conferma del medico è in volo: nient
   await doc2.close().catch(() => {});
   sess.dopoConferma = null; sess.confermaLenta = 0;
 }
+// «Conferma di nuovo» toccato, e subito dopo il medico preme a mano la
+// Conferma del gestionale sul carrello, in un'altra scheda: il server la
+// prende subito, la sua pagina arriva dopo 8 s. La scheda della riconferma
+// (il suo carrello lento, 2,5 s) trova la richiesta sulla pagina del paziente:
+// niente premuto, e niente stampato da lei — le etichette di quella Conferma
+// le stampa la scheda che l'ha premuta. «Confermata», e la Ristampa.
+if (prova("«Conferma di nuovo» toccato, poi il medico preme a mano: le etichette una volta, dalla scheda della sua Conferma")) {
+  const { prima, rid, rec0 } = await nonPartitaDaRifare();
+  check(!!prima && !!rec0, `«Non partita · Conferma di nuovo» (got «${prima}»)`);
+  const doc2 = await ctx.newPage();
+  await suPagina(doc2, rec0.consegna.url);
+  await sospendi(1500);
+  sess.dopoConferma = null;          // la Conferma del medico: presa subito dal server
+  sess.confermaLenta = 8000;         // ...ma la pagina dopo gli arriva fra 8 s
+  const re = new RegExp("RcsStampaEtichetteLISHMIMU\\.do\\?RICHIESTA_ID=" + rid);
+  const f0 = chiesti(A, re);
+  // la scheda della riconferma: il suo carrello arriva in 2,5 s
+  let lenti = 0;
+  const piano = async (r) => {
+    const q = r.request();
+    if (q.method() === "GET" && /RcsRichiestaPrestazioniRicercaErogatore/.test(q.url()) && lenti++ === 0) await sospendi(2500);
+    return r.fallback().catch(() => {});
+  };
+  await ctx.route(`${ORIGIN}/**`, piano);
+  const r2 = await tocca(rec0.id);   // prima il tocco su «Conferma di nuovo»
+  await sospendi(300);
+  const premuto = await doc2.evaluate(() => { const b = document.querySelector('input[type="submit"][name="Update"], input[type="submit"][name="Update1"]'); if (b) b.click(); return !!b; });
+  let recC = null;
+  await finche(async () => {
+    const rc = (await ordini()).find((x) => x.id === rec0.id + "c");
+    if (rc && !["coda", "avvio", "corre"].includes(rc.stato)) recC = rc;
+    return !!recC;
+  }, 30000);
+  await sospendi(14000);   // la pagina della Conferma del medico (8 s), e le sue etichette
+  recC = (await ordini()).find((x) => x.id === rec0.id + "c") || recC;
+  const et = (recC?.stampa?.jobs || []).filter((j) => re.test(j.url || ""));
+  check(premuto && !!(r2 && r2.ok) && conferme(A).length === 2, `due Conferme: quella ignorata e quella a mano — la riconferma non preme (got ${conferme(A).length})`);
+  check(!!recC && recC.pubblico?.titolo === "Confermata" && /Ristampa/.test(recC.pubblico?.testo || "") && !et.length,
+    `la riconferma: «Confermata», la Ristampa, niente da stampare da lei (got ${JSON.stringify(recC && [recC.stato, recC.pubblico, et.length])})`);
+  check(chiesti(A, re) - f0 === 1, `le etichette una volta, dalla scheda della Conferma a mano (got ${chiesti(A, re) - f0})`);
+  await ctx.unroute(`${ORIGIN}/**`, piano);
+  await doc2.close().catch(() => {});
+  sess.dopoConferma = null; sess.confermaLenta = 0;
+}
 if (prova("«Conferma di nuovo» con una Conferma premuta altrove che il service worker non ha saputo: la scheda guarda prima di premere")) {
   const { prima, rid, rec0 } = await nonPartitaDaRifare();
   check(!!prima && !!rec0, `«Non partita · Conferma di nuovo» (got «${prima}»)`);
@@ -872,6 +916,128 @@ if (prova("la Conferma ignorata ma il carrello senza la sua Conferma: le attese,
 // I fogli letti dopo un ordine (stampeFresche.v1: numeri, indirizzi, nomi di
 // esami) scadono in 12 ore: se ne vanno all'avvio di una pagina, anche se
 // nessuno scrive più — non solo alla prossima scrittura.
+// ---- la Conferma dal pannello, una volta sola -----------------------------
+// «Conferma per …» (la ricevuta) e «Conferma e stampa» (la riga della
+// richiesta da confermare) premono la Conferma vera del gestionale, che torna
+// in 3–14 s: intanto la pagina è ancora lì, col bottone. Un secondo tocco non
+// preme di nuovo; e nemmeno il primo, se un'altra Conferma per la stessa
+// richiesta è partita nell'ultimo minuto (da un'altra scheda) e non ha ancora
+// la sua prova: «Una Conferma è già partita: guarda le sue richieste».
+// (le Conferme annotate dalle prove di prima: ogni prova ha un simulatore nuovo, con gli stessi numeri di richiesta)
+const senzaConferme = (p) => p.evaluate(() => localStorage.removeItem("psassist:conferme.v1"));
+// (solo carrello: la richiesta resta da confermare, il suo carrello aperto nella scheda del medico con la ricevuta)
+async function soloCarrello() {
+  await daCapo();
+  await suPagina(doc, A.patientUrl);
+  await nienteSmart(doc);
+  await senzaConferme(doc);
+  const nasce = nuovaPagina();
+  await ordina(doc, ["TROPONINA"], { solo: true });
+  await nasce;
+  await striscia(doc, /in carrello.*Conferma dal gestionale/, 40000).catch(() => "");
+  await $panel(doc, AZIONE).click();   // «apri il carrello»
+  await doc.waitForURL(/RcsRichiestaPrestazioniRicercaErogatore/, { timeout: 15000 });
+  await doc.waitForSelector("#psassist-host .pill.run", { timeout: 10000 });
+  await $panel(doc, ".pill.run").click();
+  await doc.waitForSelector("#psassist-host #confirmnow", { timeout: 10000 });
+  return { rid: Object.keys(A.state.richieste)[0], url: doc.url() };
+}
+if (prova("«Conferma per …» due volte mentre la Conferma è in volo: una Conferma sola")) {
+  const { rid } = await soloCarrello();
+  check(conferme(A).length === 0, "solo carrello: niente confermato da solo");
+  sess.confermaLenta = 6000;
+  await doc.evaluate(() => {
+    const r = document.getElementById("psassist-host").shadowRoot;
+    r.querySelector("#confirmnow").click();
+    setTimeout(() => r.querySelector("#confirmnow")?.click(), 200);
+  });
+  await sospendi(9000);
+  check(conferme(A).length === 1 && conferme(A)[0].params.RICHIESTA_ID === rid,
+    `doppio clic su «Conferma per …», la Conferma lenta (6 s): una Conferma sola (got ${conferme(A).length})`);
+  sess.confermaLenta = 0;
+}
+if (prova("«Conferma e stampa» sulla riga, la Conferma lenta (14 s): la riga non torna a capo, una Conferma sola")) {
+  await daCapo();
+  await suPagina(doc, A.patientUrl);
+  await nienteSmart(doc);
+  await senzaConferme(doc);
+  const nasce = nuovaPagina();
+  await ordina(doc, ["TROPONINA"], { solo: true });
+  await nasce;
+  const daConf = () => ordini().then((l) => l.find((x) => x.stato === "avviso" && x.consegna?.url));
+  await finche(daConf, 60000);
+  await suPagina(doc, (await daConf()).consegna.url);
+  if (!(await $panel(doc, ".card").count())) await $panel(doc, "#expand").click();
+  await $panel(doc, "#dcconferma").waitFor({ timeout: 10000 });
+  const riga = () => doc.evaluate(() => document.getElementById("psassist-host")?.shadowRoot?.querySelector("#dcconferma")?.innerText || "").catch(() => "");
+  sess.confermaLenta = 14000;
+  await $panel(doc, "#dcconferma").click();   // il primo tocco legge il carrello
+  await finche(async () => /Confermo 1 esame/.test(await riga()), 10000);
+  // il secondo: la Conferma del gestionale. Da qui la pagina aspetta la risposta
+  // (gli evaluate aspettano la pagina nuova): si guarda e si tocca da dentro.
+  let dopo9 = null;
+  const ascolta = (m) => { if (m.text().startsWith("test:riga9 ")) dopo9 = m.text().slice(11); };
+  doc.on("console", ascolta);
+  await doc.evaluate(() => {
+    const dc = () => document.getElementById("psassist-host")?.shadowRoot?.querySelector("#dcconferma");
+    dc().click();
+    setTimeout(() => {
+      console.log("test:riga9 " + (dc()?.innerText || ""));
+      dc()?.click();                            // il medico, che non vede tornare niente, tocca ancora…
+      setTimeout(() => dc()?.click(), 1500);    // …e conferma
+    }, 9000);
+  });
+  await sospendi(18000);
+  doc.off("console", ascolta);
+  check(/Confermo…/.test(dopo9 || ""), `9 s dopo, la Conferma ancora in volo: la riga dice «Confermo…» (got «${dopo9}»)`);
+  check(conferme(A).length === 1, `una Conferma sola (got ${conferme(A).length})`);
+  sess.confermaLenta = 0;
+}
+if (prova("«Conferma per …» e «Conferma e stampa» con un'altra Conferma partita nell'ultimo minuto: niente premuto, lo dicono")) {
+  const { rid } = await soloCarrello();
+  // un'altra Conferma per questa richiesta, premuta adesso in un'altra scheda (conferme.v1)
+  const premuta = () => doc.evaluate((r) => {
+    const l = JSON.parse(localStorage.getItem("psassist:conferme.v1") || "[]").filter((x) => x.rid !== r);
+    localStorage.setItem("psassist:conferme.v1", JSON.stringify([...l, { rid: r, premuta: Date.now(), ts: Date.now() }]));
+  }, rid);
+  await premuta();
+  await $panel(doc, "#confirmnow").click();
+  await sospendi(2000);
+  const b1 = await doc.evaluate(() => { const b = document.getElementById("psassist-host")?.shadowRoot?.querySelector("#confirmnow"); return b ? [b.innerText, b.disabled] : null; }).catch(() => null);
+  check(conferme(A).length === 0 && !!b1 && b1[1] && /Una Conferma è già partita: guarda le sue richieste/.test(b1[0]),
+    `«Conferma per …»: niente premuto, il bottone lo dice, spento (got ${conferme(A).length} conferme · ${JSON.stringify(b1)})`);
+  // la stessa richiesta riaperta più tardi, senza ricevuta: la sua riga
+  await doc.evaluate(() => sessionStorage.removeItem("psassist:receipt.v1")).catch(() => {});
+  await premuta();
+  await suPagina(doc, doc.url());
+  if (!(await $panel(doc, ".card").count())) await $panel(doc, "#expand").click();
+  await $panel(doc, "#dcconferma").waitFor({ timeout: 10000 });
+  await $panel(doc, "#dcconferma").click();
+  await sospendi(2000);
+  const b2 = await doc.evaluate(() => { const b = document.getElementById("psassist-host")?.shadowRoot?.querySelector("#dcconferma"); return b ? [b.innerText, b.disabled] : null; }).catch(() => null);
+  check(conferme(A).length === 0 && !!b2 && b2[1] && /Una Conferma è già partita: guarda le sue richieste/.test(b2[0]),
+    `«Conferma e stampa»: niente letto né premuto, la riga lo dice (got ${conferme(A).length} conferme · ${JSON.stringify(b2)})`);
+}
+
+// Il gancio sul bottone Conferma (armPrintOnConfirm) arriva quando il service
+// worker ha detto chi è la scheda (fino a 3 s): una Conferma premuta a mano
+// prima si annota lo stesso (conferme.v1), prima che il clic parta.
+if (prova("la Conferma premuta a mano prima che la pagina sia pronta: annotata lo stesso")) {
+  const { rid, url } = await soloCarrello();
+  // il service worker occupato: la scheda aspetta la sua risposta per partire
+  const occupato = sw.evaluate(() => { const t = Date.now(); while (Date.now() - t < 6000); }).catch(() => {});
+  await doc.goto(url);
+  await sospendi(800);
+  const prima = await doc.evaluate(() => !document.getElementById("psassist-host"));
+  const t0 = Date.now();
+  await doc.click('input[type="submit"][name="Update"], input[type="submit"][name="Update1"]', { noWaitAfter: true });
+  await occupato;
+  await sospendi(2000);
+  const cf = JSON.parse((await doc.evaluate(() => localStorage.getItem("psassist:conferme.v1")).catch(() => null)) || "[]").find((x) => x.rid === rid);
+  check(prima && conferme(A).length === 1, `premuta a mano a pagina non ancora pronta (nessun pannello): una Conferma (got ${prima} · ${conferme(A).length})`);
+  check(!!cf && cf.premuta >= t0 - 50, `annotata prima che il clic parta (got ${JSON.stringify(cf)})`);
+}
+
 if (prova("i fogli letti dopo un ordine scadono: all'avvio di una pagina se ne vanno, anche se nessuno scrive più")) {
   await daCapo();
   await suPagina(doc, A.patientUrl);
@@ -912,6 +1078,52 @@ if (prova("prima le etichette: senza la stampa automatica, i PDF del primo ordin
   check(due.some((x) => x.partito - x.ts > 1000),
     `il secondo ordine, entrato in coda col primo: «partito» quando la lascia (got ${JSON.stringify(due.map((x) => (x.partito || 0) - x.ts))} ms dopo esserci entrato)`);
   lento = 0;
+}
+
+// ---- 2d bis. le etichette di un ordine col dialogo: la scadenza a metà foglio
+// Il dialogo prende i PDF delle etichette di un ordine (`presi`) entro una
+// scadenza: PRESA_SCHEDA_MAX + TIMEOUT_MS (38 s) da quando si apre — il
+// prossimo ordine non parte con una lettura di questa scheda in volo. Un
+// foglio chiesto dal dialogo prima e ancora in volo quando scade si ferma: non
+// è il medico che annulla, si richiede dal cancello del motore. Prima il
+// dialogo restava su «Carico il PDF…», senza stampa né errore.
+if (prova("le etichette di un ordine col dialogo: un foglio fermato dalla scadenza si richiede, mai un dialogo fermo")) {
+  await daCapo();
+  await sw.evaluate(() => chrome.storage.local.remove("stampa"));
+  await suPagina(doc, A.patientUrl);
+  await nienteSmart(doc);
+  const PDF = `${ORIGIN}/jasperserverSAN/jasperservlet?PROJECT=sa4rcs&RICHIESTA_ID=699999&REPORT=`;
+  const ETI = PDF + "RcsEtichetteLIS", LISTA = PDF + "RcsRichiesta&RICHIESTA_PROG=1";
+  let liste = 0;
+  // la Lista: la prima volta non arriva (il giro dei PDF va avanti); la seconda,
+  // chiesta dal dialogo a 22 s, ci mette 19 s — in volo quando la scadenza arriva
+  const piano = async (r) => {
+    if (!/REPORT=RcsRichiesta&/.test(r.request().url())) return r.fallback().catch(() => {});
+    const n = ++liste;
+    if (n === 1) return r.fulfill({ status: 500, headers: { "content-type": "text/html" }, body: "<html><body>errore</body></html>" }).catch(() => {});
+    if (n === 2) await sospendi(19000);
+    return r.fallback().catch(() => {});
+  };
+  await ctx.route(`${ORIGIN}/**`, piano);
+  const T0 = Date.now();
+  const r = await sw.evaluate(async ([eti, lista]) => {
+    const s = (await chrome.tabs.query({})).find((x) => /EPISODIO_ID=999001/.test(x.url || ""));
+    return chrome.tabs.sendMessage(s.id, { t: "psassistStampa", id: "scadenza1", ep: "999001", paziente: "ROSSI MARIO", forza: true, conferma: Date.now(),
+      stampa: { tag: "Confermata", jobs: [{ name: "Etichette provette", printer: "etichettatrice", url: eti }, { name: "Lista esami", printer: "stampante normale", url: lista }] } });
+  }, [ETI, LISTA]);
+  const scheda = () => doc.evaluate(() => { const w = document.getElementById("psassist-print"); return w ? [w.dataset.doc || "", w.dataset.stato || ""] : null; }).catch(() => null);
+  await sospendi(5000);
+  const a5 = await scheda();
+  await sospendi(Math.max(0, T0 + 22000 - Date.now()));
+  // il medico passa al foglio dopo, la Lista
+  await doc.evaluate(() => document.getElementById("psassist-print")?.shadowRoot?.querySelector("#pwnext")?.click());
+  await sospendi(Math.max(0, T0 + 43000 - Date.now()));   // la scadenza a 38 s, e il foglio richiesto
+  const w = await scheda();
+  check(!!(r && r.ok) && !!a5 && /Stampa 1 di 2/.test(a5[0]), `il dialogo, sulle etichette (got ${JSON.stringify(r)} · ${JSON.stringify(a5)})`);
+  check(!!w && /Stampa 2 di 2/.test(w[0]) && ["pronto", "stampo", "mano"].includes(w[1]) && liste === 3,
+    `la Lista fermata dalla scadenza: richiesta di nuovo, una volta, e pronta da stampare (got ${JSON.stringify(w)} · ${liste} richieste)`);
+  await doc.keyboard.press("Escape").catch(() => {});
+  await ctx.unroute(`${ORIGIN}/**`, piano);
 }
 
 // ---- 2e. dal telefono, una gamba senza risposta -----------------------------

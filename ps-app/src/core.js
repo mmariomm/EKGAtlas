@@ -339,6 +339,12 @@
   }
   // il momento in cui il medico ha premuto Conferma (il giro, la conferma dal pannello o dal gestionale), in questa scheda
   const PREMUTO = "premuto.v1";
+  // La Conferma dal pannello in questa pagina («Conferma per …», «Conferma e
+  // stampa»): una volta sola, finché la pagina non se ne va. La Conferma vera
+  // torna in 3–14 s, e intanto la pagina col bottone è ancora lì: un secondo
+  // tocco manderebbe la stessa richiesta due volte. Il testo che i due bottoni
+  // mostrano, spenti: «Confermo…», o perché non premono (confermaGiaPartita).
+  let confermaPannello = "";
   function osservaScrittura() {
     if (scrittura.attivo) return;
     scrittura.attivo = true;
@@ -8728,12 +8734,14 @@
       if (gia && gia.doc) {
         // La pagina del paziente la elenca: era confermata, niente si preme.
         // Le sue etichette le ha già prese una scheda, dopo la Conferma che il
-        // carrello aveva smentito (conferme.v1: chi l'ha confermata a mano):
-        // niente si stampa, la Ristampa resta in fondo alle sue Richieste. Se
-        // no — nessuno le ha stampate: tolta da «Ignora», da una pagina che la
-        // elencava — si stampano adesso, una volta.
-        if (confermaDopo(rid, "stampata", p.premuta)) {
-          this.log(`${now()}  la pagina del paziente la elenca, e le sue etichette sono già state prese: era già confermata — niente premuto, niente stampato`);
+        // carrello aveva smentito (conferme.v1: chi l'ha confermata a mano) —
+        // o le prenderà: un'altra Conferma premuta dopo quella, la sua scheda
+        // ha la stampa di quel tocco (forse ancora in volo): niente si stampa,
+        // la Ristampa resta in fondo alle sue Richieste. Se no — nessuno le ha
+        // stampate: tolta da «Ignora», da una pagina che la elencava — si
+        // stampano adesso, una volta.
+        if (confermaDopo(rid, "stampata", p.premuta) || confermaDopo(rid, "premuta", p.premuta)) {
+          this.log(`${now()}  la pagina del paziente la elenca, e le sue etichette le ${confermaDopo(rid, "stampata", p.premuta) ? "ha già prese" : "prende"} la scheda della Conferma: era già confermata — niente premuto, niente stampato`);
           ricordaStampe(ep, printModel(gia.doc, gia.url), { gesto: L.gesto || L.id, rid });
           return this.consegnaLavoro({ tag: "Confermata", testo: "era già confermata: Ristampa in fondo alle sue Richieste", tono: "ok" }, null, "avviso");
         }
@@ -9280,7 +9288,8 @@
     daConfAzioni() {
       const q = this.daConfQui();
       if (!q) return "";
-      const a = this._daconf && this._daconf.rid === q.rid && !this._daconf.vuoto ? this._daconf : null;
+      const a = confermaPannello ? { cosa: "conferma", testo: confermaPannello }
+        : this._daconf && this._daconf.rid === q.rid && !this._daconf.vuoto ? this._daconf : null;
       const titoli = {
         dcconferma: "Preme la Conferma del gestionale per questa richiesta, poi parte la stampa. Il primo tocco legge il carrello e dice che cosa conferma",
         dcsvuota: "Toglie dal carrello tutti gli esami di questa richiesta col «Svuota carrello» del gestionale, controlla che sia vuoto e la dimentica. Il primo tocco legge il carrello e dice che cosa toglie",
@@ -9291,11 +9300,13 @@
       return `<span class="dcaz">${lnk("dcconferma", "Conferma e stampa")}${lnk("dcsvuota", "Svuota")}</span>`;
     }
     async daConfTocco(cosa) {
+      if (confermaPannello) return;   // premuta, o già partita altrove: niente altro da questa pagina
       const a = this._daconf;
       if (a && a.cosa === cosa && a.ok) return cosa === "conferma" ? this.daConfConferma(a) : this.daConfSvuota(a);
       if (a && !a.vuoto) return;   // legge, o ha detto di no: si aspetta che torni a capo
       const q = this.daConfQui();
       if (!q) return;
+      if (cosa === "conferma" && this.confermaGiaPartita(q.rid)) return;
       const io = this._daconf = { rid: q.rid, cosa, testo: "Leggo il carrello…" };
       this.render();
       let fatto;
@@ -9319,16 +9330,31 @@
       this.render();
       setTimeout(() => { if (this._daconf === ora) { this._daconf = null; this.render(); } }, 8000);
     }
+    // Una Conferma per questa richiesta premuta nell'ultimo minuto, da
+    // qualunque scheda (conferme.v1), e ancora senza prova (fra quelle da
+    // confermare): forse in volo, e il carrello qui non lo dice ancora. I due
+    // bottoni non premono: lo dicono, finché la pagina non se ne va.
+    confermaGiaPartita(rid) {
+      if (!confermaDopo(rid, "premuta", Date.now() - 60e3) || !daConfermare().some((x) => x.rid === String(rid))) return false;
+      confermaPannello = "Una Conferma è già partita: guarda le sue richieste";
+      this._daconf = null;
+      this.log(`${now()}  Conferma dal pannello non premuta: un'altra per la richiesta ${rid} è partita nell'ultimo minuto`);
+      this.render();
+      return true;
+    }
     // «Confermo 1 esame: PCR?» — sì: il clic vero sulla Conferma della pagina,
     // come quello della ricevuta. La richiesta è di PS Assist (è fra quelle da
     // confermare), quindi il gancio sul bottone arma la stampa.
     daConfConferma(a) {
+      if (confermaPannello) return;
       const q = this.daConfQui();
       if (!q || q.rid !== a.rid) { this._daconf = null; this.render(); return; }
-      const ora = this._daconf = { rid: q.rid, cosa: "conferma", testo: "Confermo…" };
+      if (this.confermaGiaPartita(q.rid)) return;
+      // (la pagina se ne va col modulo; finché resta, la riga dice «Confermo…» e
+      // non torna a capo: la Conferma può essere ancora in volo)
+      confermaPannello = "Confermo…";
+      this._daconf = null;
       this.render();
-      // (la pagina se ne va col modulo; se restasse, la riga torna a capo)
-      setTimeout(() => { if (this._daconf === ora) { this._daconf = null; this.render(); } }, 8000);
       this.log(`${now()}  conferma della richiesta rimasta da confermare: ${a.nomi.length} ${a.nomi.length === 1 ? "esame" : "esami"} · ${a.nomi.join(" · ")} · click nativo su Conferma`);
       tabStore.set(PREMUTO, Date.now());   // (la Conferma è sua)
       q.live.confirmButton.click();
@@ -11523,7 +11549,7 @@
       // Il bottone che fa uscire gli esami dice per chi: «Conferma per ROSSI M. · 68 M · 6 esami»
       const perChi = this.idBreve();
       const confermaOra = receipt && live && live.confirmButton
-        ? `<div class="btnrow"><button class="btn primary" id="confirmnow" title="Preme la Conferma del gestionale per questa richiesta, poi parte la stampa">${esc(perChi ? `Conferma per ${perChi}` : "Conferma e stampa")}</button></div>` : "";
+        ? `<div class="btnrow"><button class="btn primary" id="confirmnow" title="Preme la Conferma del gestionale per questa richiesta, poi parte la stampa"${confermaPannello ? " disabled" : ""}>${esc(confermaPannello || (perChi ? `Conferma per ${perChi}` : "Conferma e stampa"))}</button></div>` : "";
 
       // La ricevuta mostra il carrello e un bottone solo. La griglia degli
       // esami resta dietro «+ aggiungi»: aggiungere ancora è l'eccezione.
@@ -15051,10 +15077,14 @@
       }));
       $("#goqueued")?.addEventListener("click", () => { if (this.pending) goToQueued(this.pending); });
       $("#confirmnow")?.addEventListener("click", () => {
-        // native click → server confirm → print handoff (armed at boot)
-        tabStore.set(PREMUTO, Date.now());   // (la Conferma è sua)
+        // native click → server confirm → print handoff (armed at boot); una volta sola per pagina
+        if (confermaPannello) return;
         const live = examModel(document, location.href);
-        live.confirmButton?.click();
+        if (!live.confirmButton || this.confermaGiaPartita(live.richiestaId)) return;
+        confermaPannello = "Confermo…";
+        tabStore.set(PREMUTO, Date.now());   // (la Conferma è sua)
+        live.confirmButton.click();
+        this.render();
       });
       // la ricevuta tiene la griglia chiusa: «+ aggiungi» la apre
       $("#aggiungi")?.addEventListener("click", () => { this.aggiungi = true; this.render(); });
@@ -16767,7 +16797,16 @@
         // un modulo di consenso è un file dell'estensione, non una pagina del
         // gestionale: si prende così com'è, senza la catena same-origin (prendi)
         // («→ Avanti» smette di aspettarlo: segnale)
-        const { blob, via } = await Promise.race([prendi(i), new Promise((_, no) => {
+        // (la scadenza delle etichette di un ordine, ctlPresa, ferma anche un
+        // foglio chiesto da qui e ancora in volo: non è il medico che annulla —
+        // lo si richiede, una volta, dal cancello del motore come ogni lettura
+        // dopo la scadenza)
+        const foglio = prendi(i).catch((e) => {
+          if (e?.name !== "AbortError" || !ctlPresa.signal.aborted || ctlPre.signal.aborted || segnale.aborted) throw e;
+          panel?.log(`${now()}  ${job.name}: fermato dalla scadenza delle etichette dell'ordine, lo richiedo`);
+          return prendi(i);
+        });
+        const { blob, via } = await Promise.race([foglio, new Promise((_, no) => {
           if (segnale.aborted) no(new DOMException("Aborted", "AbortError"));
           segnale.addEventListener("abort", () => no(new DOMException("Aborted", "AbortError")), { once: true });
         })]);
@@ -16883,6 +16922,15 @@
       if (Array.isArray(suo.prima)) prima = [...new Set([...(prima || []), ...suo.prima.map(String)])];
     }
     tabStore.set("print.v1", { ids: [...new Set([...(p.ids || []), rid])], episodeId: episodeId || "", ts: Date.now(), n, q, attesi, ...(prima ? { prima } : {}) });
+  }
+  // Prima del gancio (bootGestionale, dopo la risposta del service worker:
+  // fino a 3 s) la Conferma del gestionale premuta a mano si annota lo stesso,
+  // prima che il clic parta: dall'avvio, un ascolto su tutto il documento.
+  function confermaPresto(e) {
+    const b = e.isTrusted && e.target && e.target.closest ? e.target.closest('input[type="submit"]') : null;
+    if (!b || (b.name !== "Update" && b.name !== "Update1")) return;
+    const m = examModel(document, location.href);
+    if (m.form && m.richiestaId && b.form === m.form) segnaConferma(m.richiestaId, "premuta");
   }
   function armPrintOnConfirm(model, episodeId) {
     if (!model.form || !model.richiestaId) return;
@@ -18642,6 +18690,7 @@
       if (!SOLA_LETTURA && classify(document) !== "login" && !/login/i.test(location.pathname)) vistaQui();
       return;
     }
+    document.addEventListener("click", confermaPresto, true);   // (fino a bootGestionale)
     // Con l'estensione, per prima cosa: questa scheda è quella di un ordine
     // in sottofondo? Lo sa il service worker, dal numero della scheda. (Una
     // risposta che non arriva vale «no»: la scheda parte come sempre.)
@@ -18740,6 +18789,7 @@
   }
 
   function bootGestionale(chi) {
+    document.removeEventListener("click", confermaPresto, true);   // (da qui il gancio sul bottone: armPrintOnConfirm)
     if (document.getElementById("psassist-host")) return;
     // la scheda aperta dal service worker solo per dare i PDF di una stampa: niente pannello
     if (chi && chi.fogli) return;
