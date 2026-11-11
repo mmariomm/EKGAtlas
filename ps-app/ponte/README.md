@@ -410,7 +410,8 @@ rimanderebbe il modulo intero coi testi vecchi); poi la pagina si apre in una sc
 controlla ogni campo — ancora scrivibile, e uguale a `prima` (spazi e a capo normalizzati) —, scrive
 i testi e clicca il **«Conferma»** della pagina (`name="Update"`): il modulo lo manda il browser, mai
 un invio costruito a mano. Ricaricata, la scheda rilegge e verifica campo per campo, e si chiude.
-Poi le schede del medico con la pagina di quel paziente (`ponteCartellaAggiornata`): la pagina è di
+Dopo un «Conferma» premuto — provato, provato a metà o incerto: il gestionale può avere già i testi
+nuovi — le schede del medico con la pagina di quel paziente (`ponteCartellaAggiornata`): la pagina è di
 prima, e da subito il suo «Conferma» della cartella è fermo (`confermaFerma`: clic e invio fermati
 prima della pagina); senza niente scritto né un cursore in un campo (della pagina o del pannello: il
 fuoco rimasto su un suo tasto non conta) si ricarica da sola (una GET dell'indirizzo del paziente,

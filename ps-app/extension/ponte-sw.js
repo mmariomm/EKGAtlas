@@ -964,8 +964,7 @@ async function ponteCartellaSalva(d) {
     ponteNota(`Cartella di ${paz} dal telefono: salvati ${ponteCartellaNomi(nomi)}`);
     await ponteScriviStato();
     await ponteCartellaMemoScrivi(a.ep, e.letta);
-    // le schede di quel paziente aperte sul PC sono di prima: si ricaricano (pulite), o fermano il loro «Conferma» (core.js)
-    for (const t of await ponteSchede()) chrome.tabs.sendMessage(t.id, { t: "ponteCartellaAggiornata", ep: a.ep }).catch(() => {});
+    await ponteCartellaAvvisa(a.ep);
     return { ok: true, dati: { ...e.letta, salvati: nomi } };
   }
   const salvati = nomi.filter((n) => e.verificati && e.verificati[n]), mancano = nomi.filter((n) => !salvati.includes(n));
@@ -979,8 +978,15 @@ async function ponteCartellaSalva(d) {
   ponteNota(`Cartella di ${paz} dal telefono: ${errore}${e.incerto && e.testo ? ` (${e.testo})` : ""}`);
   await ponteScriviStato();
   if (e.letta) await ponteCartellaMemoScrivi(a.ep, e.letta);
+  if (e.inviato) await ponteCartellaAvvisa(a.ep);   // (il «Conferma» è partito: un campo salvato e uno no, o non si sa)
   return { ok: false, errore, ...(e.cambiati ? { cambiati: e.cambiati } : {}), ...(e.chiusi ? { chiusi: e.chiusi } : {}),
     ...(e.letta ? { dati: e.letta } : {}), ...(e.incerto ? { incerto: true } : {}) };
+}
+// Dopo un «Conferma» premuto dalla scheda di sottofondo — provato, provato a metà o
+// incerto: il gestionale può avere già i testi nuovi — le schede di quel paziente
+// aperte sul PC sono di prima: si ricaricano (pulite), o fermano il loro «Conferma» (core.js)
+async function ponteCartellaAvvisa(ep) {
+  for (const t of await ponteSchede()) chrome.tabs.sendMessage(t.id, { t: "ponteCartellaAggiornata", ep }).catch(() => {});
 }
 // Ogni scheda del gestionale (non quelle di sottofondo) dice se ha, per quel
 // paziente, uno di quei campi cambiato e non salvato. Chi non risponde in 3
@@ -1024,7 +1030,7 @@ async function ponteCartellaFine(id, esito) {
   if (!c && !w) return false;
   const t = await chrome.tabs.get(id).catch(() => null);
   if (t && !t.active) await chrome.tabs.remove(id).catch(() => {});
-  if (w) w.risolvi(esito);
+  if (w) w.risolvi({ ...esito, inviato: w.fase === "inviato" });   // (il «Conferma» annotato prima del clic)
   return true;
 }
 

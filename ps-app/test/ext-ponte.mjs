@@ -80,7 +80,8 @@ const riquadro = (nome, triage, ep, cf, nascita) => `<table><tr><td title="${tri
 // La cartella di ROSSI: il modulo AmbulatorioPSO com'è nella pagina vera (i
 // cinque campi, l'esame obiettivo di sola lettura se l'ha scritto un altro
 // medico, «Conferma»), e il gestionale che lo riceve. Accesa solo nella sua sezione.
-const CART = { on: false, lento: 0, eoRo: true, ignora: "", post: [], campi: {}, arrivati: 0 };
+// (`altrove`: dopo «Conferma» il gestionale salva, ma risponde con un'altra pagina invece di quella del paziente)
+const CART = { on: false, lento: 0, eoRo: true, ignora: "", altrove: false, post: [], campi: {}, arrivati: 0 };
 const CART_NOMI = ["ANAMNESI", "ALLERGIE", "MALATTIE_PREGRESSE", "FARMACI_ASSUNTI", "ESAME_OBIETTIVO"];
 const escH = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const formCartella = (ep) => `<form method="post" name="AmbulatorioPSO" action="menuPsoEpisodio.do?ccsForm=AmbulatorioPSO:Edit&amp;MVPG=PsoEpisodioClinicoAmbulatorio&amp;EPISODIO_ID=${ep}">
@@ -142,6 +143,10 @@ await ctx.route("https://smarthealth.multimedica.it/**", async (r) => {
     const f = decodificaModulo(req.postDataBuffer());
     CART.post.push(f);
     for (const n of CART_NOMI) if (n in f && n !== CART.ignora) CART.campi[n] = f[n].replace(/\r\n/g, "\n");
+    if (CART.altrove) {
+      try { await r.fulfill({ status: 200, headers: { "content-type": "text/html; charset=windows-1252" }, body: Buffer.from("<html><head><title>PRONTO SOCCORSO - LISTA</title></head><body><p>Lista</p></body></html>", "latin1") }); } catch { /* chiusa */ }
+      return;
+    }
     metodo = "GET";
   }
   const mock = quale(u);
@@ -1132,11 +1137,18 @@ sezione("la cartella dal telefono: leggere, scrivere col «Conferma» della pagi
 
   // il gestionale non salva un campo: la verifica lo dice, campo per campo
   CART.ignora = "FARMACI_ASSUNTI";
+  // (la pagina di ROSSI aperta sul PC, pulita: quella ricaricata dopo il salvataggio di prima)
+  await finche(async () => (await doc.locator('textarea[name="ESAME_OBIETTIVO"]').inputValue().catch(() => "")).includes("dispnoico"), 15000);
+  await finche(() => doc.evaluate(() => { window.__aMeta = true; return true; }).catch(() => false), 10000);
   await tel.locator("#cc-FARMACI_ASSUNTI").fill("Ramipril OMEGAFARM 10 mg");
   await tel.locator("#cc-MALATTIE_PREGRESSE").fill("Ipertensione SIGMAREMOTA, diabete");
   await salvaTel();
   check(/Salvato: Anamnesi remota · Non salvato sul PC: Farmaci/.test(await aspettaTel(tel, /Non salvato sul PC/, 60000)),
     "riletta la pagina dopo «Conferma»: «Salvato: Anamnesi remota · Non salvato sul PC: Farmaci»");
+  check(await finche(async () => !(await doc.evaluate(() => window.__aMeta === true).catch(() => true))
+    && (await doc.locator('textarea[name="MALATTIE_PREGRESSE"]').inputValue().catch(() => "")).includes("diabete"), 15000),
+    "salvato a metà, la pagina di ROSSI sul PC è di prima lo stesso (il gestionale ha già una parte dei testi nuovi): pulita, si ricarica");
+  await doc.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
   CART.ignora = "";
   const err = await errori();
   check(err.length >= 4 && err.every((x) => Array.isArray(x.dati.campi) && x.dati.campi.every((n) => CART_NOMI.includes(n))) && !/KAPPAZETA|NUOVAZETA|OMEGAFARM|BETALLERG|SIGMAREMOTA|TAUOBIETT|medico scrive/.test(JSON.stringify(err)),
@@ -1190,6 +1202,16 @@ sezione("la cartella dal telefono: leggere, scrivere col «Conferma» della pagi
   await segnaPagina();
   check(/#$/.test(conCancelletto) && await salvaAnamnesi("Dolore toracico CANCELLETTOZETA"), `(la pagina di ROSSI col «#» in fondo: ${conCancelletto.slice(-30)}; il telefono salva)`);
   check(await ricaricata("CANCELLETTOZETA"), `l'indirizzo col «#» in fondo: la pagina si ricarica davvero (${doc.url().slice(-30)})`);
+  await doc.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
+  // «Conferma» premuto, e dopo il gestionale non mostra la pagina del paziente: non si sa se è salvato — ma può
+  // esserlo, e la pagina di ROSSI sul PC (pulita) si ricarica lo stesso: il suo «Conferma» non rimanda i testi di prima
+  CART.altrove = true;
+  await segnaPagina();
+  await tel.locator("#cc-ANAMNESI").fill("Dolore toracico DUBBIOZETA");
+  await salvaTel();
+  check(!!(await aspettaTel(tel, /Non so se è salvato: guarda la cartella sul PC prima di rifarlo/, 90000)), "dopo «Conferma» un'altra pagina: «Non so se è salvato: guarda la cartella sul PC prima di rifarlo»");
+  CART.altrove = false;
+  check(await ricaricata("DUBBIOZETA"), "…e la pagina di ROSSI sul PC, pulita, si ricarica: il gestionale aveva salvato");
   await doc.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
   // via la cartella: le sezioni dopo hanno la pagina di sempre
   ctx.off("page", contaSchede);
