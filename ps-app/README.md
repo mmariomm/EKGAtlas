@@ -218,9 +218,9 @@ riga corta del tabellone; «(letto 11:02)» se la lettura è vecchia) e le cose 
 del browser da una cornice invisibile (niente scheda nuova), e solo al tocco: portano dei nomi.
 Usa quello che il tabellone sa già: niente da leggere, niente di salvato.
 
-Il pannello ha cinque schermate, in **una fila di schede** sempre in cima e nell'ordine in cui si
-lavora: **Richieste · Esiti · EO · Consensi · Dimissioni** (sulla lista del pronto soccorso, dove
-non c'è un paziente: **Pazienti · EO · Consensi · Dimissioni**). Il paziente + episodio stanno nell'intestazione (anche da minimizzato). Sulla pagina «Storico dati clinici»
+Il pannello ha quattro schermate, in **una fila di schede** sempre in cima e nell'ordine in cui si
+lavora: **Richieste · Esiti · EO · Dimissioni** (sulla lista del pronto soccorso, dove
+non c'è un paziente: **Pazienti · EO · Dimissioni**); i moduli di consenso stanno nelle Dimissioni. Il paziente + episodio stanno nell'intestazione (anche da minimizzato). Sulla pagina «Storico dati clinici»
 del portale clinico non c'è pannello: solo una striscia che dice cosa ha letto.
 
 **Due identificativi, su ogni scheda.** L'intestazione dice `ROSSI MARIO · 68 M · ep. 700001 · OBI 1`
@@ -463,7 +463,7 @@ prima voce senza ora, i **promemoria** voci con l'ora (la prima apertura dopo l'
 lì da soli). Si apre **lì dov'è**, senza un'altra scheda, dall'icona **Da fare** dell'intestazione
 (accanto agli identificativi) o della riga, o dal menu di chi sta nella stanza (**Da fare…**). E
 sulla scheda del paziente sono **sempre in vista in cima** — sotto le allergie, sopra le schede, su
-Richieste, Esiti, EO, Consensi e Dimissioni —, come la lista dei Pazienti ma **solo le sue**, con il
+Richieste, Esiti, EO e Dimissioni —, come la lista dei Pazienti ma **solo le sue**, con il
 campo «Aggiungi per ROSSI M…» (Invio aggiunge a lui); **Da fare** lo riduce a una barra (per conto
 suo, `paziente.dafare.v1`); senza voci non c'è, e basta l'icona. In
 fondo alla lista dell'icona, un campo su una riga: si scrive e **Invio** aggiunge, in fondo alla lista. Ogni voce è una
@@ -1103,13 +1103,14 @@ caso scelto. La tua versione resta su questo computer e si copia al posto dell'o
 **•** accanto al nome (anche nella tendina) dice che è riscritto da te, **⟳** che nel frattempo è
 cambiato l'originale. **↺ Originale** (due tocchi) torna al testo di partenza.
 
-### Consensi
-Sei moduli da firmare, dentro l'estensione: **Emocolture**, **HIV Dipendente**, **Lesioni
+### Moduli di consenso (nelle Dimissioni)
+Nella schermata **Dimissioni**, sotto i fogli (non c'è più una scheda Consensi), sei moduli da
+firmare, dentro l'estensione: **Emocolture**, **HIV Dipendente**, **Lesioni
 Animali**, **Antitetano**, **TAC cmdc**, **Emotrasfusione** (il pacchetto trasfusionale:
 consenso informato, richiesta emocomponenti, dichiarazione del medico in urgenza).
 Le **deleghe per il ritiro** — **Ritiro esami**, **Ritiro referto RX**, **Ritiro cartella e CD**
-— non sono consensi: si danno a chi va a casa, e stanno in fondo alla schermata **Dimissioni**, in una
-riga quieta («Moduli per il ritiro ▸») sotto i fogli.
+— non sono consensi: si danno a chi va a casa, e stanno in fondo, in una
+riga quieta («Moduli per il ritiro ▸») sotto i consensi.
 Un tocco apre direttamente il dialogo di stampa, come per la lista esami (con la stampa
 automatica va dritto all'A4, senza dialogo); un modulo di più pagine
 dice **quanta carta esce** prima che tu prema Stampa. (Che i moduli stanno dentro l'estensione e che non
@@ -1538,7 +1539,7 @@ quale stampante è l'**Etichettatrice** e quale l'**A4** (di partenza, la predef
 Windows), con **Stampa una pagina di prova** per ciascuna. Da lì:
 
 - **le etichette vanno all'etichettatrice, tutto il resto all'A4** — liste esami, prenotazioni
-  RX, i moduli dei Consensi —, da soli, **senza dialogo e senza niente davanti**: né la scheda
+  RX, i moduli di consenso —, da soli, **senza dialogo e senza niente davanti**: né la scheda
   della stampa né l'anteprima. Dopo una conferma, con «Ristampa», «Stampa l'ultima richiesta» o
   un consenso, la striscia dice «Stampo le etichette su Zebra ZD421… · foglio 1 di 2», poi
   com'è andata, con **Ristampa** accanto (un'etichetta inceppata si vede solo davanti alla
@@ -2355,7 +2356,7 @@ nella tendina del gestionale») — poi **Prepara nel gestionale** (o Ctrl+Invio
     `nativeMessaging`: parlare con **un** programma di questo PC, `it.psassist.stampa`, che
     l'utente ha installato lui (una chiave in HKCU, niente amministratore) e che accetta solo
     questa estensione. A lui va **solo** il PDF che una scheda del gestionale ha preso coi
-    controlli di sempre (o un modulo dei Consensi, dall'estensione), e il nome della stampante
+    controlli di sempre (o un modulo di consenso, dall'estensione), e il nome della stampante
     scelta per quel tipo di foglio; lo porta il service worker, mai la pagina. L'aiutante
     ripete i controlli (è un PDF? non è enorme? quella stampante esiste, ed è accesa?), stampa con
     SumatraPDF, guarda la coda di Windows, cancella il file temporaneo e risponde: non usa la

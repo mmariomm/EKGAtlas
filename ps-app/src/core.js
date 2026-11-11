@@ -7061,7 +7061,7 @@
   // in testa al posto delle schede. E il nome delle schede, per il ‹ che ci torna.
   const VISTE_MENU = { registrazioni: ["Registrazioni", "rec"],
     iphone: ["iPhone", "tel"], ricetta: ["Ricetta SISS", "ricetta"], terapia: ["Terapia", "terapia"], consegne: ["Consegne", "dafare"] };
-  const NOME_SCHEDA = { richieste: "Richieste", esiti: "Esiti", referto: "Esiti", eo: "EO", eotesto: "EO", consensi: "Consensi",
+  const NOME_SCHEDA = { richieste: "Richieste", esiti: "Esiti", referto: "Esiti", eo: "EO", eotesto: "EO",
     dimissioni: "Dimissioni", dimtesto: "Dimissioni", dimimport: "Dimissioni", home: "Pazienti" };
 
   // Il nome di una riga sotto la striscia, da NOMI_RIGA: l'html (icona +
@@ -9342,7 +9342,6 @@
       else if (this.view === "dimtesto") body = this.viewDimTesto();
       else if (this.view === "eotesto") body = this.viewEoTesto();
       else if (this.view === "dimimport") body = this.viewDimImport();
-      else if (this.view === "consensi") body = this.viewConsensi();
       else if (this.view === "eo") body = this.viewEo();
       else if (this.view === "registrazioni") body = this.viewRegistrazioni();
       else if (this.view === "ricetta" && this.ricettaPossibile()) body = this.viewRicetta();
@@ -9379,7 +9378,7 @@
       // whose data is on screen must be answerable at a glance, always:
       // patient in the title, episode always next to the section name.
       const inHome = (!this.runState || resoTab) && this.view === "home";
-      const section = this.runState && !resoTab ? "" : { richieste: "Richieste", esiti: "Esiti", referto: "Referto", dimissioni: "Dimissioni", dimtesto: "Dimissioni", dimimport: "Dimissioni", consensi: "Consensi", eo: "EO", eotesto: "EO", registrazioni: "Registrazioni", consegne: "Consegne", iphone: "iPhone", ricetta: "Ricetta", terapia: "Terapia" }[this.view] || "";
+      const section = this.runState && !resoTab ? "" : { richieste: "Richieste", esiti: "Esiti", referto: "Referto", dimissioni: "Dimissioni", dimtesto: "Dimissioni", dimimport: "Dimissioni", eo: "EO", eotesto: "EO", registrazioni: "Registrazioni", consegne: "Consegne", iphone: "iPhone", ricetta: "Ricetta", terapia: "Terapia" }[this.view] || "";
       // (i fogli di dimissione sono modelli, ma chi va a casa è questo paziente:
       // l'intestazione lo dice anche lì)
       const inDim = this.view === "dimissioni" || this.view === "dimtesto" || this.view === "dimimport";
@@ -9527,7 +9526,6 @@
                   <button class="${this.view === "esiti" || this.view === "referto" ? "on" : ""}" data-seg="esiti" data-t="Esiti">Esiti</button>`
                   : `<button class="${inHome || !section ? "on" : ""}" data-seg="home" data-t="Pazienti">Pazienti</button>`}
                   <button class="${this.view === "eo" || this.view === "eotesto" ? "on" : ""}" data-seg="eo" data-t="EO" title="Esame obiettivo da copiare">EO</button>
-                  <button class="${this.view === "consensi" ? "on" : ""}" data-seg="consensi" data-t="Consensi">Consensi</button>
                   <button class="${inDim ? "on" : ""}" data-seg="dimissioni" data-t="Dimissioni">Dimissioni</button>
                   ${(inHome || !section) && this.stanzaAzioni ? `<span class="segdx">${this.stanzaAzioni()}</span>` : ""}
                 </div>` : ""}
@@ -10064,7 +10062,7 @@
     }
     // la schermata dei Pazienti: quella che non è nessun'altra
     inPazienti() {
-      return !this.runState && !["esiti", "referto", "dimissioni", "dimtesto", "dimimport", "consensi", "eo", "eotesto", "registrazioni", "consegne", "iphone", "richieste", "stampa", "ricetta", "terapia"].includes(this.view);
+      return !this.runState && !["esiti", "referto", "dimissioni", "dimtesto", "dimimport", "eo", "eotesto", "registrazioni", "consegne", "iphone", "richieste", "stampa", "ricetta", "terapia"].includes(this.view);
     }
     // In fondo alla fila delle schede, solo in Modifica: + Letto, + Sedia,
     // + Area e Fine. Si entra in Modifica dal menu «⋯».
@@ -13018,8 +13016,9 @@
                   aria-label="Modifica il foglio ${esc(d.nome)}">✎</button>
         </div>`;
       }).join("");
-      // le deleghe per il ritiro si danno a chi va a casa: stanno qui, in cima
-      const ritiro = CONSENSI.filter((c) => c.gruppo === "ritiro");
+      // sotto i fogli i moduli di consenso (la stessa riga), e chiuse le deleghe
+      // per il ritiro, che si danno a chi va a casa
+      const consensi = CONSENSI.filter((c) => !c.gruppo), ritiro = CONSENSI.filter((c) => c.gruppo === "ritiro");
       return `
         ${this.apertiHtml()}
         ${this.ricettaPossibile() ? `
@@ -13033,6 +13032,10 @@
             <button type="button" class="dnuovo" id="dimnuovo" title="Scrivi un foglio tuo: resta in cima all'elenco, su questo computer"><span class="dplus" aria-hidden="true">+</span>Nuovo foglio di dimissione</button>
           </div>
           <div class="dfile"><button type="button" class="mini" id="dimexport" title="Salva i tuoi testi in un file JSON (e negli appunti): per un altro PC, o una copia">${icoIn("esporta", 13)}Esporta i fogli</button><button type="button" class="mini" id="dimimport" title="Rimetti i testi di un JSON esportato (o salvato da dimissioni.html)">${icoIn("importa", 13)}Importa i fogli…</button></div>
+        </div>
+        <div class="sec consensi">
+          <div class="lbl" title="${esc(this.notaModuli())}">Moduli di consenso (${consensi.length})</div>
+          <div class="mlist">${consensi.map((c) => this.rigaModulo(c)).join("")}</div>
         </div>
         ${ritiro.length ? `
         <details class="sec ritiro" id="ritiro"${this.ritiroAperto ? " open" : ""}>
@@ -13693,18 +13696,6 @@
       return hasExt()
         ? "I moduli sono dentro l'estensione: si aprono anche se il gestionale è lento o giù, e nessuna richiesta esce dal computer."
         : "Servono i moduli dell'estensione: con il preferito (bookmarklet) questa sezione non ha i PDF.";
-    }
-
-    // Solo i consensi da firmare. Le deleghe per il ritiro (esami, referto RX,
-    // cartella e CD) si danno al paziente quando va a casa: stanno nella
-    // schermata Dimissioni, dove servono.
-    viewConsensi() {
-      const consensi = CONSENSI.filter((c) => !c.gruppo);
-      return `
-        <div class="sec">
-          <div class="lbl" title="${esc(this.notaModuli())}">Moduli di consenso (${consensi.length})</div>
-          <div class="dlist">${consensi.map((c) => this.rigaModulo(c)).join("")}</div>
-        </div>`;
     }
 
     // Import is a paste screen, not a window.prompt: a 20 KB JSON in a

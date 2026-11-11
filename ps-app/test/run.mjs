@@ -6151,8 +6151,8 @@ async function scenarioEo(browser) {
   await page.waitForSelector("#psassist-host", { state: "attached" });
   // una fila di pillole, nell'ordine in cui si lavora
   const pillole = (await page.locator("#psassist-host .seg > button").allInnerTexts()).map((t) => t.replace(/\s*\d+$/, "").trim());
-  check(scen, pillole.join("|") === "Richieste|Esiti|EO|Consensi|Dimissioni",
-    `le schermate in una fila: Richieste, Esiti, EO, Consensi, Dimissioni (got ${pillole.join("|")})`);
+  check(scen, pillole.join("|") === "Richieste|Esiti|EO|Dimissioni",
+    `le schermate in una fila: Richieste, Esiti, EO, Dimissioni — i Consensi stanno nelle Dimissioni (got ${pillole.join("|")})`);
   await $panel(page, '[data-seg="eo"]').click();
   await page.waitForSelector("#psassist-host [data-eocopy=\"base\"]", { timeout: 10000 });
   check(scen, !(await $panel(page, "#eoricopia").isVisible()), "«Copia di nuovo» non si vede finché non si è scelto un caso");
@@ -6548,15 +6548,15 @@ async function scenarioNoPatientPage(browser) {
   // i modelli non appartengono a un paziente: la loro riga c'è anche qui,
   // dove un paziente non c'è
   const qui = (await page.locator("#psassist-host .seg > button").allInnerTexts()).map((t) => t.trim());
-  check(scen, qui.join("|") === "Pazienti|EO|Consensi|Dimissioni",
+  check(scen, qui.join("|") === "Pazienti|EO|Dimissioni",
     `i modelli ci sono anche senza paziente, accanto ai Pazienti (got ${qui.join("|")})`);
   check(scen, (await page.locator('#psassist-host [data-seg="richieste"], #psassist-host [data-seg="esiti"]').count()) === 0,
     "Richieste ed Esiti no: qui non c'è un paziente");
   // …e restano così aprendo EO: la scheda Pazienti non sparisce, e un tocco ci riporta
   await $panel(page, '[data-seg="eo"]').click();
   const daEo = (await page.locator("#psassist-host .seg > button").allInnerTexts()).map((t) => t.trim());
-  check(scen, daEo.join("|") === "Pazienti|EO|Consensi|Dimissioni" && (await $panel(page, '[data-seg="eo"].on').count()) === 1,
-    `sulla lista, da EO le schede sono ancora Pazienti|EO|Consensi|Dimissioni (got ${daEo.join("|")})`);
+  check(scen, daEo.join("|") === "Pazienti|EO|Dimissioni" && (await $panel(page, '[data-seg="eo"].on').count()) === 1,
+    `sulla lista, da EO le schede sono ancora Pazienti|EO|Dimissioni (got ${daEo.join("|")})`);
   await $panel(page, '[data-seg="home"]').click();
   check(scen, (await $panel(page, ".bd .pzrow").count()) >= 1 && (await $panel(page, '[data-seg="home"].on').count()) === 1, "e Pazienti riporta all'elenco");
   await context.close();
@@ -6785,12 +6785,12 @@ async function scenarioFinestraLarga(browser) {
   });
   const prima = await posti();
   const visti = [];
-  for (const v of ["esiti", "eo", "consensi", "dimissioni", "richieste"]) {
+  for (const v of ["esiti", "eo", "dimissioni", "richieste"]) {
     await $panel(page, `[data-seg="${v}"]`).click();
     await page.waitForTimeout(150);
     visti.push(JSON.stringify(await posti()));
   }
-  check(scen, new Set([JSON.stringify(prima), ...visti]).size === 1, `schede, ⋯ e — non si spostano di lato fra Richieste, Esiti, EO, Consensi, Dimissioni (${[...new Set(visti)].join(" / ")})`);
+  check(scen, new Set([JSON.stringify(prima), ...visti]).size === 1, `schede, ⋯ e — non si spostano di lato fra Richieste, Esiti, EO, Dimissioni (${[...new Set(visti)].join(" / ")})`);
 
   // «Affianca» resta una colonna; trascinata/ridimensionata dal medico resta com'è
   await affianca(page);
@@ -7254,12 +7254,11 @@ async function scenarioMenuAltro(browser) {
   check(scen, (await $panel(page, "#eoricopia").isVisible()) && (await $panel(page, "#eoedit").isVisible()), "scelto un caso, compaiono «Copia di nuovo» e ✎");
   await riapriDopoCopia(page);
 
-  // Consensi, Dimissioni: niente paragrafi in fondo; le informazioni restano in un tooltip
-  await $panel(page, '[data-seg="consensi"]').click();
-  await $panel(page, ".crow").first().waitFor();
-  check(scen, (await $panel(page, ".bd .hint").count()) === 0 && /dentro l'estensione|Servono i moduli/.test(await $panel(page, ".bd .lbl").first().getAttribute("title")),
-    "Consensi: niente paragrafo, la nota sta nel passaggio del mouse");
+  // Dimissioni (coi moduli di consenso dentro): niente paragrafi in fondo; le informazioni restano in un tooltip
   await $panel(page, '[data-seg="dimissioni"]').click();
+  await $panel(page, ".consensi .crow").first().waitFor();
+  check(scen, (await $panel(page, "[data-seg=\"consensi\"]").count()) === 0 && /dentro l'estensione|Servono i moduli/.test(await $panel(page, ".bd .consensi .lbl").getAttribute("title")),
+    "i Consensi stanno nelle Dimissioni (nessuna scheda a parte), la nota dei moduli nel passaggio del mouse");
   await $panel(page, ".drow").first().waitFor();
   check(scen, (await $panel(page, ".bd .hint").count()) === 0, "Dimissioni: niente paragrafo in fondo");
   // il file dei fogli (un altro PC, una copia, l'editor dimissioni.html): in fondo ai fogli, piccolo; non nel ⋯

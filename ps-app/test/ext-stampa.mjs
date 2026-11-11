@@ -495,13 +495,13 @@ if (await prova("stampa automatica: etichette all'etichettatrice, lista all'A4, 
   azzeraLavori();
   await nessunOrdine();
   await apriPannello(doc);
-  await $panel(doc, '[data-seg="consensi"]').click();
+  await $panel(doc, '[data-seg="dimissioni"]').click();   // (i Consensi stanno nelle Dimissioni)
   const altra = nuovaPagina(4000);
-  await $panel(doc, "[data-cons]").first().click();
+  await $panel(doc, ".consensi [data-cons]").first().click();
   const c = await finche(async () => (await ordini()).find((x) => x.stato === "avviso" && x.fogli), 20000);
   check(lavori().length === 1 && lavori()[0].tipo === "a4" && lavori()[0].stampante === "HP LaserJet A4" && lavori()[0].byte > 1000
     && !!c && c.pubblico.titolo === "Stampato su HP LaserJet A4",
-  `un consenso dai Consensi → A4, «Stampato su HP LaserJet A4» (got ${JSON.stringify(lavori())} · ${JSON.stringify(c && c.pubblico)})`);
+  `un consenso dalle Dimissioni → A4, «Stampato su HP LaserJet A4» (got ${JSON.stringify(lavori())} · ${JSON.stringify(c && c.pubblico)})`);
   check(!(await altra) && (await stampe(doc)).length === 0, "senza scheda dietro e senza anteprima");
 }
 
