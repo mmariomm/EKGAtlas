@@ -1380,7 +1380,9 @@ che non può leggere niente: cifrato da un capo all'altro, nessun dato su nessun
 - **Cartella dal telefono**: anamnesi, remota, farmaci, allergie ed esame obiettivo, scrivibili dove
   la pagina del paziente li lascia scrivere; «Salva» li scrive col «Conferma» della pagina, in una
   scheda di sottofondo, e rilegge. Mai sopra un testo cambiato sul PC o non ancora salvato in una
-  scheda; la pagina aperta di quel paziente dice «Aggiornato dal telefono · Ricarica».
+  scheda. La pagina di quel paziente aperta sul PC si ricarica da sola (era di prima: il suo «Conferma»
+  rimanderebbe i testi vecchi); se intanto ci hai scritto qualcosa, no — si perderebbe —: dice
+  «Aggiornato dal telefono · Ricarica», e il suo «Conferma» è fermo finché non la ricarichi.
   Sopra l'esame obiettivo (solo lì, e solo dove si può scrivere) una fila di chip: i tuoi EO di base per nome,
   poi **Altri…** (Casi e Frasi, in un foglio; la ricerca solo se sono più di 15). I testi sono quelli del PC, con
   le tue modifiche (comando `eo`, niente dal gestionale). Un tocco: campo vuoto, ci va il testo; altrimenti in

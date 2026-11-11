@@ -135,8 +135,10 @@ sessione. Vedi:
   basta). Scritto qualcosa, compare un **Salva** solo, in fondo: «Salvo sul PC…», poi «Salvato» o
   il perché. Se intanto il testo sul PC è cambiato: «Cambiato sul PC: ricarica», e non parte niente;
   se il medico ha un testo non salvato in quella pagina sul PC: «Sul PC c'è un testo non salvato in
-  questa pagina». Una pagina di quel paziente aperta sul PC dice «Aggiornato dal telefono ·
-  Ricarica» (non si ricarica da sola).
+  questa pagina». Una pagina di quel paziente aperta sul PC si ricarica da sola (era di prima: il suo
+  «Conferma» rimanderebbe i testi vecchi); se intanto qualcuno ci ha scritto, no — si perderebbe —: dice
+  «Aggiornato dal telefono · Ricarica», e il suo «Conferma» è fermo (niente inviato, e lo dice) finché
+  non la si ricarica.
 - **Nota e promemoria** — la nota del paziente (si salva uscendo dal campo) e i promemoria
   («11:30 tropo», «tra 2h ECG»): sul PC sono voci di **Da fare**, la lista del pannello. La nota è
   la prima voce aperta senza ora (scritta cambia quella, o ne fa una in cima; vuota la toglie), i
@@ -405,6 +407,10 @@ rimanderebbe il modulo intero coi testi vecchi); poi la pagina si apre in una sc
 controlla ogni campo — ancora scrivibile, e uguale a `prima` (spazi e a capo normalizzati) —, scrive
 i testi e clicca il **«Conferma»** della pagina (`name="Update"`): il modulo lo manda il browser, mai
 un invio costruito a mano. Ricaricata, la scheda rilegge e verifica campo per campo, e si chiude.
+Poi le schede del medico con la pagina di quel paziente (`ponteCartellaAggiornata`): la pagina è di
+prima, e da subito il suo «Conferma» della cartella è fermo (`confermaFerma`: clic e invio fermati
+prima della pagina); senza niente scritto né un cursore in un campo si ricarica da sola (una GET
+dell'indirizzo del paziente); se no la pill, e il «Conferma» resta fermo finché non la si ricarica.
 Rimandato dopo una risposta persa, lo stesso salvataggio trova `prima` cambiato e non parte due
 volte. Nel registro degli errori (`segnaErrore`) solo il perché e i nomi dei campi, mai un testo.
 
@@ -437,7 +443,8 @@ freccia dello stesso episodio — e chiede `ponteAccettaInvio`: il service worke
 basta: la pagina del paziente in ambulatorio, o — tornata sulla lista del triage senza di lui —
 la lista dell'ambulatorio aperta col suo link (`ponteAccettaVerifica`); se no «incerto». Il PC lo
 ricorda come se l'avesse aperto (la sua pagina) e lo toglie dal Triage del telefono; le pagine di
-quel paziente aperte sul PC dicono «Aggiornato dal telefono · Ricarica». Lo stesso `rq` non si
+quel paziente aperte sul PC si ricaricano da sole, o — con un testo scritto lì — dicono «Aggiornato dal
+telefono · Ricarica» e fermano il loro «Conferma», come dopo la cartella. Lo stesso `rq` non si
 rifà mai. Nel registro del ponte il nome e com'è andata, come per la Terapia; nel registro degli
 errori («accetta telefono») solo il perché.
 

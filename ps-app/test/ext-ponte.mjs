@@ -80,7 +80,7 @@ const riquadro = (nome, triage, ep, cf, nascita) => `<table><tr><td title="${tri
 // La cartella di ROSSI: il modulo AmbulatorioPSO com'è nella pagina vera (i
 // cinque campi, l'esame obiettivo di sola lettura se l'ha scritto un altro
 // medico, «Conferma»), e il gestionale che lo riceve. Accesa solo nella sua sezione.
-const CART = { on: false, lento: 0, eoRo: true, ignora: "", post: [], campi: {} };
+const CART = { on: false, lento: 0, eoRo: true, ignora: "", post: [], campi: {}, arrivati: 0 };
 const CART_NOMI = ["ANAMNESI", "ALLERGIE", "MALATTIE_PREGRESSE", "FARMACI_ASSUNTI", "ESAME_OBIETTIVO"];
 const escH = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const formCartella = (ep) => `<form method="post" name="AmbulatorioPSO" action="menuPsoEpisodio.do?ccsForm=AmbulatorioPSO:Edit&amp;MVPG=PsoEpisodioClinicoAmbulatorio&amp;EPISODIO_ID=${ep}">
@@ -137,6 +137,7 @@ await ctx.route("https://smarthealth.multimedica.it/**", async (r) => {
   // «Conferma» della cartella di ROSSI: il gestionale salva i campi (non quello che ignora) e risponde con la pagina del paziente
   let metodo = req.method();
   if (CART.on && metodo === "POST" && /ccsForm=AmbulatorioPSO(:|%3A)Edit/i.test(u) && quale(u) === A) {
+    CART.arrivati++;   // (arrivato: il gestionale comincia a salvare)
     if (CART.lento) await sospendi(CART.lento);
     const f = decodificaModulo(req.postDataBuffer());
     CART.post.push(f);
@@ -1052,15 +1053,36 @@ sezione("la cartella dal telefono: leggere, scrivere col «Conferma» della pagi
     `un invio solo, il modulo della pagina col suo «Conferma» (Update=Conferma), gli altri campi com'erano (${Object.keys(f).join(",")})`);
   check(await valoreTel("ANAMNESI") === "Dolore toracico NUOVAZETA dalle 6\ncon sudorazione" && await tel.locator(".cta").count() === 0, "sul telefono, il testo riletto dal PC; niente più da salvare");
   check(await finche(async () => schedeNuove.length === 2 && schedeNuove[1].isClosed(), 10000), "e la scheda di sottofondo si chiude da sola");
-  const pill = await finche(async () => /Aggiornato dal telefono/.test((await $panel(doc, ".pontespia").allInnerTexts().catch(() => [])).join(" ")), 10000);
-  check(pill && await $panel(doc, "#ponterica").count() === 1, "sul PC, la pagina di ROSSI aperta e ferma: «Aggiornato dal telefono · Ricarica», senza ricaricarsi da sola");
-  check(await doc.locator('textarea[name="ANAMNESI"]').inputValue() === "Dolore toracico KAPPAZETA da due ore", "(la pagina mostra ancora il testo di prima)");
+  // la pagina di ROSSI aperta sul PC, pulita, era di prima (il suo «Conferma» rimanderebbe i testi vecchi): si ricarica da sola
+  check(await finche(async () => (await doc.locator('textarea[name="ANAMNESI"]').inputValue().catch(() => "")).includes("NUOVAZETA"), 15000) && CART.post.length === 1,
+    "sul PC la pagina di ROSSI, aperta e pulita, si ricarica da sola: col testo del telefono (niente inviato)");
+  await doc.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
+  check(await $panel(doc, "#ponterica").count() === 0, "…e senza la pill «Ricarica»: non c'è niente da fare");
+  // la corsa: il medico scrive sul PC DOPO il controllo (mentre il gestionale salva) — la pagina non si ricarica
+  // (si perderebbe quello che ha scritto), e il suo «Conferma» è fermo finché non la ricarica
+  CART.lento = 3000;
+  const arr0 = CART.arrivati;
+  await tel.locator("#cc-ANAMNESI").fill("Dolore toracico NUOVAZETA dalle 6\ncon sudorazione, ORAZETA");
+  await salvaTel();
+  check(await finche(async () => CART.arrivati > arr0, 40000), "(il gestionale comincia a salvare quello del telefono)");
+  await doc.locator('textarea[name="MALATTIE_PREGRESSE"]').fill("Ipertensione SIGMAREMOTA, scritto sul PC intanto");
+  check(await salvato(), "il telefono: «Salvato»");
+  CART.lento = 0;
+  const pillCorsa = await finche(async () => /Aggiornato dal telefono/.test((await $panel(doc, ".pontespia").allInnerTexts().catch(() => [])).join(" ")), 10000);
+  check(pillCorsa && await $panel(doc, "#ponterica").count() === 1 && await doc.locator('textarea[name="MALATTIE_PREGRESSE"]').inputValue() === "Ipertensione SIGMAREMOTA, scritto sul PC intanto",
+    "scritto sul PC dopo il controllo: la pagina non si ricarica (il testo resta), «Aggiornato dal telefono · Ricarica»");
+  const post0 = CART.post.length;
+  await doc.locator('input[name="Update"]').click();
+  await sospendi(1500);
+  const fermo = await doc.locator("#psassist-terapia").evaluate((h) => h.shadowRoot.textContent).catch(() => "");
+  check(CART.post.length === post0 && /Cartella/.test(fermo) && /Niente inviato/.test(fermo) && /ricarica la pagina/.test(fermo),
+    `…e il suo «Conferma» è fermo: niente inviato (i testi di prima non vanno sopra quelli del telefono), e lo dice (${fermo.replace(/\s+/g, " ").slice(0, 160)})`);
   await shot(doc, "pc-6-cartella-aggiornata");
-  if (await $panel(doc, "#ponterica").count()) await $panel(doc, "#ponterica").click(); else await doc.reload();
+  await $panel(doc, "#ponterica").click();
   await doc.waitForLoadState("load");
   await doc.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
-  check(await finche(async () => (await doc.locator('textarea[name="ANAMNESI"]').inputValue().catch(() => "")).includes("NUOVAZETA"), 10000) && await $panel(doc, "#ponterica").count() === 0,
-    "«Ricarica»: la pagina col testo nuovo, e la pill se ne va");
+  check(await finche(async () => (await doc.locator('textarea[name="ANAMNESI"]').inputValue().catch(() => "")).includes("ORAZETA"), 10000) && await $panel(doc, "#ponterica").count() === 0 && CART.post.length === post0,
+    "«Ricarica»: la pagina col testo nuovo, e la pill se ne va"); 
   const regP = await registroPonte();
   check(/Cartella di ROSSI MARIO dal telefono: salvati Anamnesi, Farmaci/.test(regP) && !/NUOVAZETA|OMEGAFARM|KAPPAZETA/.test(regP), "nel registro del ponte: i campi salvati, mai i testi");
 
@@ -1068,11 +1090,11 @@ sezione("la cartella dal telefono: leggere, scrivere col «Conferma» della pagi
   await doc.locator('textarea[name="FARMACI_ASSUNTI"]').fill("il medico scrive qui");
   await tel.locator("#cc-ALLERGIE").fill("Penicillina BETALLERG");
   await salvaTel();
-  check(!!(await aspettaTel(tel, /Sul PC c'è un testo non salvato in questa pagina/, 30000)) && CART.post.length === 1 && schedeNuove.length === 2,
+  check(!!(await aspettaTel(tel, /Sul PC c'è un testo non salvato in questa pagina/, 30000)) && CART.post.length === 2 && schedeNuove.length === 3,
     "un testo non salvato nella pagina di ROSSI sul PC (anche in un altro campo: il suo «Conferma» rimanderebbe tutto il modulo): «Sul PC c'è un testo non salvato in questa pagina», niente scheda, niente inviato");
   await suPagina(doc, A.patientUrl);   // (il medico lascia stare: la pagina come il gestionale l'ha salvata)
   await salvaTel();
-  check(await salvato() && CART.campi.ALLERGIE === "Penicillina BETALLERG" && CART.post.length === 2, "pagina pulita: lo stesso «Salva» adesso passa");
+  check(await salvato() && CART.campi.ALLERGIE === "Penicillina BETALLERG" && CART.post.length === 3, "pagina pulita: lo stesso «Salva» adesso passa");
 
   // l'esame obiettivo scrivibile, quando la pagina lo dà scrivibile — e se intanto non lo è più, no
   CART.eoRo = false;
@@ -1082,7 +1104,7 @@ sezione("la cartella dal telefono: leggere, scrivere col «Conferma» della pagi
   await tel.locator("#cc-ESAME_OBIETTIVO").fill("Vigile TAUOBIETT, dispnoico");
   CART.eoRo = true;   // (un altro medico l'ha scritto intanto: adesso è di sola lettura)
   await salvaTel();
-  check(!!(await aspettaTel(tel, /Sul PC non è più modificabile: Esame obiettivo/, 40000)) && CART.post.length === 2,
+  check(!!(await aspettaTel(tel, /Sul PC non è più modificabile: Esame obiettivo/, 40000)) && CART.post.length === 3,
     "diventato di sola lettura sul PC: «Sul PC non è più modificabile», niente inviato");
   await tocca(tel, '[data-a="cricarica"]');
   check(await finche(async () => await roTel("ESAME_OBIETTIVO") && await valoreTel("ESAME_OBIETTIVO") === "Vigile TAUOBIETT, eupnoico", 20000), "«Ricarica»: di nuovo di sola lettura, col testo del PC");

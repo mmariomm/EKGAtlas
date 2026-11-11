@@ -17112,7 +17112,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
   let PONTE_CARTELLA = null; // questa scheda l'ha aperta il ponte per salvare la cartella: { ep, fase, campi }
   let PONTE_TERAPIA = null;  // …o per la pagina Terapia: { ep, nome, fase, cosa, q | voce, visti, prima }
   let PONTE_ACCETTA = null;  // …o per «Accetta in ambulatorio»: { ep?, k?, nome, area, fase }
-  let PONTE_AGG = "";        // l'episodio di questa pagina che il telefono ha appena salvato («Ricarica»)
+  let PONTE_AGG = "";        // l'episodio di questa pagina che il telefono ha appena salvato: il suo «Conferma» è fermo («Ricarica»)
   const ICO_TEL = ICO.tel;   // (sulla griglia delle altre: 16 px, tratto 1.6)
   const PONTE_CSS = `
     .pontespia { display: inline-flex; align-items: center; gap: 7px; margin-top: 6px; padding: 4px 4px 4px 11px; border-radius: 999px;
@@ -17129,8 +17129,9 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
   // scheda, a pannello aperto o ridotto. Chi passa davanti al PC lo vede.
   const ponteSpia = () => (PONTE_STATO && PONTE_STATO.sessione ? `<div class="pontespia" role="status" title="Il medico sta usando il pannello dall'iPhone: ogni comando finisce nel Registro">
       <span class="pdot"></span>${ICO_TEL}<span>iPhone collegato</span><button type="button" id="ponteoff" title="Chiude la sessione dell'iPhone">Scollega</button></div>` : "")
-    // la cartella di questa pagina è stata salvata dal telefono: questa pagina è vecchia (mai ricaricata da sola)
-    + (PONTE_AGG ? `<div class="pontespia" role="status" title="Anamnesi, farmaci o allergie salvati dall'iPhone: questa pagina mostra ancora i testi di prima">
+    // la cartella di questa pagina è stata salvata dal telefono mentre qui c'era un testo scritto: la pagina è vecchia
+    // (non si è ricaricata da sola per non perderlo), e il suo «Conferma» è fermo finché non la si ricarica
+    + (PONTE_AGG ? `<div class="pontespia" role="status" title="Anamnesi, farmaci o allergie salvati dall'iPhone: questa pagina mostra ancora i testi di prima, e il suo «Conferma» è fermo">
       ${ICO_TEL}<span>Aggiornato dal telefono</span><button type="button" id="ponterica">Ricarica</button></div>` : "");
 
   const pontePaziente = (ep) => tuttiPazienti().find((p) => p.ep === ep) || null;
@@ -17664,11 +17665,15 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
           reply({ ok: true });
           return;
         }
-        // salvato dal telefono: se questa è la sua pagina, lo dice (non si ricarica da sola)
+        // salvato dal telefono, e questa è la sua pagina: è di prima, e il suo «Conferma» rimanderebbe i testi
+        // vecchi sopra quelli del telefono. Da subito il «Conferma» è fermo (confermaFerma); pulita, la pagina si
+        // ricarica da sola (una GET); con qualcosa scritto qui intanto, no — si perderebbe —: la pill
+        // «Aggiornato dal telefono · Ricarica», e il «Conferma» resta fermo finché non la si ricarica
         if (m.t === "ponteCartellaAggiornata") {
-          if (!LAVORO && !PONTE_VALORI && !PONTE_CARTELLA && PANNELLO && typeof m.ep === "string" && formCartella(document, m.ep)) {
+          if (!LAVORO && !PONTE_VALORI && !PONTE_CARTELLA && !PONTE_TERAPIA && !PONTE_ACCETTA && PANNELLO && typeof m.ep === "string" && formCartella(document, m.ep)) {
             PONTE_AGG = m.ep;
-            if (!PANNELLO.root.activeElement) PANNELLO.render();
+            if (paginaToccata()) { if (!PANNELLO.root.activeElement) PANNELLO.render(); }
+            else ponteRicarica();
           }
           reply({ ok: true });
           return;
@@ -17684,6 +17689,8 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       };
       chrome.storage.session.get("ponte").then((o) => segui(o.ponte)).catch(() => {});
       chrome.storage.onChanged.addListener((ch, area) => { if (area === "session" && ch.ponte) segui(ch.ponte.newValue); });
+      window.addEventListener("click", confermaFerma, true);
+      window.addEventListener("submit", confermaFerma, true);
       setInterval(() => { if (PONTE_STATO && PONTE_STATO.accoppiato) ask({ t: "ponteSveglia" }); }, 30e3);
     } catch { /* niente estensione */ }
   }
@@ -17775,6 +17782,32 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       const ta = f.querySelector(`textarea[name="${n}"]`);
       return !!ta && normTesto(ta.value) !== normTesto(ta.defaultValue);
     });
+  }
+  // C'è qui qualcosa scritto e non salvato — un testo, una spunta, una scelta, in un modulo qualunque della
+  // pagina —, o il medico ha il cursore in un campo (anche del pannello)? Allora la pagina non si ricarica da
+  // sola: si perderebbe. Nel dubbio, «toccata» (resta ferma e lo dice).
+  function paginaToccata() {
+    if (PANNELLO && PANNELLO.root.activeElement) return true;
+    const a = document.activeElement;
+    if (a && (a.isContentEditable || a.tagName === "TEXTAREA" || a.tagName === "SELECT" || (a.tagName === "INPUT" && !/^(hidden|submit|button|image|reset)$/.test(a.type)))) return true;
+    return [...document.querySelectorAll("textarea, input, select")].some((el) =>
+      el.tagName === "SELECT" ? (el.multiple ? [...el.options].some((o) => o.selected !== o.defaultSelected) : el.options.length > 0 && el.selectedIndex !== Math.max(0, [...el.options].findIndex((o) => o.defaultSelected)))
+      : el.type === "checkbox" || el.type === "radio" ? el.checked !== el.defaultChecked
+      : !/^(hidden|submit|button|image|reset|file)$/.test(el.type) && normTesto(el.value) !== normTesto(el.defaultValue));
+  }
+  // Il «Conferma» della cartella di una pagina di prima (il telefono l'ha salvata dopo che si è aperta): fermo,
+  // anche cliccato da qualcun altro (un tasto, il pannello), finché la pagina non si ricarica — mai i testi
+  // vecchi sopra quelli del telefono. Lo dice, col perché e la strada.
+  function confermaFerma(e) {
+    if (!PONTE_AGG) return;
+    const f = formCartella(document, PONTE_AGG), t = e.target;
+    if (!f || !t) return;
+    const tasto = e.type === "click" && t.closest ? t.closest('input[type="submit"], input[type="image"], button[type="submit"], button:not([type])') : null;
+    if (e.type === "submit" ? t !== f : !tasto || tasto.form !== f) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    terapiaDice("err", "il telefono ha salvato la cartella dopo che questa pagina si è aperta: «Conferma» qui rimanderebbe i testi di prima. Niente inviato. Copia quello che hai scritto, poi ricarica la pagina.",
+      { testo: "Ricarica", fai: ponteRicarica }, "Cartella");
   }
   // «Ricarica» sulla pill: la pagina del paziente, con l'indirizzo che il
   // gestionale ha dato (una GET: mai il modulo inviato di nuovo)
@@ -18809,8 +18842,8 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     const a = !all ? "Allergie: non lette" : all.nega ? "Allergie: nega" : all.testo ? `Allergie: ${all.testo}` : "Allergie: non compilate";
     return `${nomeBreve(nome) || nome}${eta != null ? ` · ${eta}` : ""} · ${a}`;
   }
-  // (`azione`: un bottone in più, { testo, fai })
-  function terapiaDice(tono, testo, azione = null) {
+  // (`azione`: un bottone in più, { testo, fai }; `titolo`: di che cosa parla — la Terapia, o la cartella dal telefono)
+  function terapiaDice(tono, testo, azione = null, titolo = "Terapia") {
     let h = document.getElementById("psassist-terapia");
     if (!h) {
       h = document.createElement("div");
@@ -18822,7 +18855,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     h.shadowRoot.innerHTML = `<style>.b{position:fixed;left:12px;bottom:12px;z-index:2147483647;max-width:min(560px,92vw);background:${fondo};color:#fff;border-radius:10px;
       padding:10px 12px;font:13px/1.45 -apple-system,'Segoe UI',Roboto,Arial,sans-serif;box-shadow:0 6px 20px rgba(9,42,74,.35);display:flex;gap:10px;align-items:flex-start}
       button{border:1px solid rgba(255,255,255,.5);background:transparent;color:#fff;border-radius:7px;padding:2px 8px;font:inherit;cursor:pointer}</style>
-      <div class="b" role="status" data-tono="${esc(tono)}"><span><b>PS Assist · Terapia</b> — ${esc(testo)}</span>${azione ? `<button id="fai">${esc(azione.testo)}</button>` : ""}<button id="via" aria-label="Chiudi">✕</button></div>`;
+      <div class="b" role="status" data-tono="${esc(tono)}"><span><b>PS Assist · ${esc(titolo)}</b> — ${esc(testo)}</span>${azione ? `<button id="fai">${esc(azione.testo)}</button>` : ""}<button id="via" aria-label="Chiudi">✕</button></div>`;
     h.shadowRoot.getElementById("via").addEventListener("click", () => h.remove());
     if (azione) h.shadowRoot.getElementById("fai").addEventListener("click", () => { h.remove(); azione.fai(); });
   }

@@ -960,7 +960,7 @@ async function ponteCartellaSalva(d) {
     ponteNota(`Cartella di ${paz} dal telefono: salvati ${ponteCartellaNomi(nomi)}`);
     await ponteScriviStato();
     await ponteCartellaMemoScrivi(a.ep, e.letta);
-    // le schede di quel paziente aperte sul PC: «Aggiornato dal telefono · Ricarica»
+    // le schede di quel paziente aperte sul PC sono di prima: si ricaricano (pulite), o fermano il loro «Conferma» (core.js)
     for (const t of await ponteSchede()) chrome.tabs.sendMessage(t.id, { t: "ponteCartellaAggiornata", ep: a.ep }).catch(() => {});
     return { ok: true, dati: { ...e.letta, salvati: nomi } };
   }
@@ -1307,7 +1307,7 @@ async function ponteAccettaOra(chi, rq) {
   await ponteAccettaRqScrivi(rq, { fase: "corso" }).catch(() => {});
   const e = await ponteAccettaSotto(r.dati.url, { ep: r.dati.ep || "", k: r.dati.k || "", nome: r.dati.nome, area: r.dati.area || "", rq });
   if (e.ok) {
-    // le pagine di quel paziente aperte sul PC sono di prima: «Aggiornato dal telefono · Ricarica»
+    // le pagine di quel paziente aperte sul PC sono di prima: si ricaricano (pulite), o fermano il loro «Conferma» (core.js)
     for (const t of await ponteSchede()) chrome.tabs.sendMessage(t.id, { t: "ponteCartellaAggiornata", ep: e.ep }).catch(() => {});
     return fatto({ ok: true, dati: { ep: e.ep, nome: r.dati.nome, area: e.area } });
   }
