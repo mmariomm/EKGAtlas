@@ -16787,7 +16787,16 @@
         // un modulo di consenso è un file dell'estensione, non una pagina del
         // gestionale: si prende così com'è, senza la catena same-origin (prendi)
         // («→ Avanti» smette di aspettarlo: segnale)
-        const { blob, via } = await Promise.race([prendi(i), new Promise((_, no) => {
+        // (la scadenza delle etichette di un ordine, ctlPresa, ferma anche un
+        // foglio chiesto da qui e ancora in volo: non è il medico che annulla —
+        // lo si richiede, una volta, dal cancello del motore come ogni lettura
+        // dopo la scadenza)
+        const foglio = prendi(i).catch((e) => {
+          if (e?.name !== "AbortError" || !ctlPresa.signal.aborted || ctlPre.signal.aborted || segnale.aborted) throw e;
+          panel?.log(`${now()}  ${job.name}: fermato dalla scadenza delle etichette dell'ordine, lo richiedo`);
+          return prendi(i);
+        });
+        const { blob, via } = await Promise.race([foglio, new Promise((_, no) => {
           if (segnale.aborted) no(new DOMException("Aborted", "AbortError"));
           segnale.addEventListener("abort", () => no(new DOMException("Aborted", "AbortError")), { once: true });
         })]);

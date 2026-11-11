@@ -1057,6 +1057,52 @@ if (prova("prima le etichette: senza la stampa automatica, i PDF del primo ordin
   lento = 0;
 }
 
+// ---- 2d bis. le etichette di un ordine col dialogo: la scadenza a metà foglio
+// Il dialogo prende i PDF delle etichette di un ordine (`presi`) entro una
+// scadenza: PRESA_SCHEDA_MAX + TIMEOUT_MS (38 s) da quando si apre — il
+// prossimo ordine non parte con una lettura di questa scheda in volo. Un
+// foglio chiesto dal dialogo prima e ancora in volo quando scade si ferma: non
+// è il medico che annulla, si richiede dal cancello del motore. Prima il
+// dialogo restava su «Carico il PDF…», senza stampa né errore.
+if (prova("le etichette di un ordine col dialogo: un foglio fermato dalla scadenza si richiede, mai un dialogo fermo")) {
+  await daCapo();
+  await sw.evaluate(() => chrome.storage.local.remove("stampa"));
+  await suPagina(doc, A.patientUrl);
+  await nienteSmart(doc);
+  const PDF = `${ORIGIN}/jasperserverSAN/jasperservlet?PROJECT=sa4rcs&RICHIESTA_ID=699999&REPORT=`;
+  const ETI = PDF + "RcsEtichetteLIS", LISTA = PDF + "RcsRichiesta&RICHIESTA_PROG=1";
+  let liste = 0;
+  // la Lista: la prima volta non arriva (il giro dei PDF va avanti); la seconda,
+  // chiesta dal dialogo a 22 s, ci mette 19 s — in volo quando la scadenza arriva
+  const piano = async (r) => {
+    if (!/REPORT=RcsRichiesta&/.test(r.request().url())) return r.fallback().catch(() => {});
+    const n = ++liste;
+    if (n === 1) return r.fulfill({ status: 500, headers: { "content-type": "text/html" }, body: "<html><body>errore</body></html>" }).catch(() => {});
+    if (n === 2) await sospendi(19000);
+    return r.fallback().catch(() => {});
+  };
+  await ctx.route(`${ORIGIN}/**`, piano);
+  const T0 = Date.now();
+  const r = await sw.evaluate(async ([eti, lista]) => {
+    const s = (await chrome.tabs.query({})).find((x) => /EPISODIO_ID=999001/.test(x.url || ""));
+    return chrome.tabs.sendMessage(s.id, { t: "psassistStampa", id: "scadenza1", ep: "999001", paziente: "ROSSI MARIO", forza: true, conferma: Date.now(),
+      stampa: { tag: "Confermata", jobs: [{ name: "Etichette provette", printer: "etichettatrice", url: eti }, { name: "Lista esami", printer: "stampante normale", url: lista }] } });
+  }, [ETI, LISTA]);
+  const scheda = () => doc.evaluate(() => { const w = document.getElementById("psassist-print"); return w ? [w.dataset.doc || "", w.dataset.stato || ""] : null; }).catch(() => null);
+  await sospendi(5000);
+  const a5 = await scheda();
+  await sospendi(Math.max(0, T0 + 22000 - Date.now()));
+  // il medico passa al foglio dopo, la Lista
+  await doc.evaluate(() => document.getElementById("psassist-print")?.shadowRoot?.querySelector("#pwnext")?.click());
+  await sospendi(Math.max(0, T0 + 43000 - Date.now()));   // la scadenza a 38 s, e il foglio richiesto
+  const w = await scheda();
+  check(!!(r && r.ok) && !!a5 && /Stampa 1 di 2/.test(a5[0]), `il dialogo, sulle etichette (got ${JSON.stringify(r)} · ${JSON.stringify(a5)})`);
+  check(!!w && /Stampa 2 di 2/.test(w[0]) && ["pronto", "stampo", "mano"].includes(w[1]) && liste === 3,
+    `la Lista fermata dalla scadenza: richiesta di nuovo, una volta, e pronta da stampare (got ${JSON.stringify(w)} · ${liste} richieste)`);
+  await doc.keyboard.press("Escape").catch(() => {});
+  await ctx.unroute(`${ORIGIN}/**`, piano);
+}
+
 // ---- 2e. dal telefono, una gamba senza risposta -----------------------------
 // Il laboratorio è partito; la radiologia, dopo, il service worker non la
 // conferma (la risposta persa): anche lei può essere partita — «Da
