@@ -80,7 +80,7 @@ const riquadro = (nome, triage, ep, cf, nascita) => `<table><tr><td title="${tri
 // La cartella di ROSSI: il modulo AmbulatorioPSO com'è nella pagina vera (i
 // cinque campi, l'esame obiettivo di sola lettura se l'ha scritto un altro
 // medico, «Conferma»), e il gestionale che lo riceve. Accesa solo nella sua sezione.
-const CART = { on: false, lento: 0, eoRo: true, ignora: "", post: [], campi: {} };
+const CART = { on: false, lento: 0, eoRo: true, ignora: "", post: [], campi: {}, arrivati: 0 };
 const CART_NOMI = ["ANAMNESI", "ALLERGIE", "MALATTIE_PREGRESSE", "FARMACI_ASSUNTI", "ESAME_OBIETTIVO"];
 const escH = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const formCartella = (ep) => `<form method="post" name="AmbulatorioPSO" action="menuPsoEpisodio.do?ccsForm=AmbulatorioPSO:Edit&amp;MVPG=PsoEpisodioClinicoAmbulatorio&amp;EPISODIO_ID=${ep}">
@@ -137,6 +137,7 @@ await ctx.route("https://smarthealth.multimedica.it/**", async (r) => {
   // «Conferma» della cartella di ROSSI: il gestionale salva i campi (non quello che ignora) e risponde con la pagina del paziente
   let metodo = req.method();
   if (CART.on && metodo === "POST" && /ccsForm=AmbulatorioPSO(:|%3A)Edit/i.test(u) && quale(u) === A) {
+    CART.arrivati++;   // (arrivato: il gestionale comincia a salvare)
     if (CART.lento) await sospendi(CART.lento);
     const f = decodificaModulo(req.postDataBuffer());
     CART.post.push(f);
@@ -181,7 +182,8 @@ async function suPagina(p, url) {
 const registroPc = (p) => p.evaluate(() => Object.entries(sessionStorage).filter(([k]) => /^psassist:log\./.test(k)).map(([, v]) => (JSON.parse(v).lines || []).join("\n")).join("\n"));
 
 // ---- il telefono: un altro browser, in formato iPhone ---------------------
-const telBrowser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_PATH || chromiumPath() });
+// (gli stessi PSA_CHROMIUM_ARGS del PC: con /dev/shm piccolo, senza --disable-dev-shm-usage il telefono si schianta aprendo i PDF)
+const telBrowser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_PATH || chromiumPath(), args: (process.env.PSA_CHROMIUM_ARGS || "").split(/\s+/).filter(Boolean) });
 const IPHONE = {
   viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true, locale: "it-IT",
   userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1",
@@ -222,7 +224,17 @@ async function aspettaTel(t, re, timeout = 20000) {
   return ok ? testoTel(t) : "";
 }
 const tocca = (t, sel) => t.locator(sel).first().click();
+// tornati sull'app: l'elenco si rilegge da solo (nel ⋯ non c'è più «Aggiorna elenco»)
+const rileggiTel = (t) => t.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
 const qrUrl = () => sw.evaluate(() => ponteQr());
+// «Associa» sulla pagina iPhone del PC; con un telefono già entrato il bottone è «Nuovo QR», che butta fuori
+// l'iPhone di prima e chiede il secondo tocco («Butto fuori l'iPhone? Tocca di nuovo»)
+async function nuovoQr(pg) {
+  await pg.locator("#associa").click();
+  if (await finche(async () => /Tocca di nuovo/.test(await pg.locator("#associa").innerText()) || await pg.locator("#qr svg").isVisible(), 5000)
+    && /Tocca di nuovo/.test(await pg.locator("#associa").innerText())) await pg.locator("#associa").click();
+  await pg.waitForSelector("#qr svg", { timeout: 8000 });
+}
 // la chiave del telefono: ora la lista dei PC (pcs.v1) — l'associazione attiva
 const chiaveTel = (t) => t.evaluate(() => {
   try {
@@ -444,6 +456,9 @@ tel.on("pageerror", (e) => console.log("  PAGEERR " + String(e.stack).slice(0, 5
 await tel.goto(url1);
 const lista = await aspettaTel(tel, /ROSSI MARIO/, 20000);
 check(/ROSSI MARIO/.test(lista) && /BIANCHI ANNA/.test(lista), "inquadrato il QR: l'elenco dei pazienti del PC");
+const associato = await aspettaTel(tel, /Associato · codice/, 6000);
+check(new RegExp(`Associato · codice ${codice1}`).test(associato),
+  `appena associato, per un momento lo stesso codice del PC (${codice1}): il momento in cui lo si confronta con quello sotto il QR`);
 check(!(await tel.evaluate(() => location.hash)), "il frammento con la chiave non resta nell'indirizzo");
 const salvato = await tel.evaluate(() => Object.keys(localStorage).map((k) => [k, localStorage.getItem(k)]));
 const sv = salvato.length === 1 ? JSON.parse(salvato[0][1]) : {};
@@ -554,7 +569,11 @@ const nomi = await tel.locator(".paz .nome").evaluateAll((l) => l.map((x) => { c
 check(nomi.length >= 3 && nomi.every((x) => !x.taglia && x.pieno), `i nomi non si troncano mai (il posto e il promemoria vanno a capo) ${JSON.stringify(nomi)}`);
 check(!(await piccoli(tel)).length, `ogni bottone almeno 44 px (${JSON.stringify(await piccoli(tel))})`);
 await tocca(tel, '[data-a="menu"]');
-check(new RegExp(`codice ${codice1}`).test(await testoTel(tel)), "il telefono mostra lo stesso codice del PC (nel menu)");
+const vociMenu = (await tel.locator(".menu button").allInnerTexts()).map((t) => t.replace(/\s+/g, " ").trim());
+check(JSON.stringify(vociMenu) === JSON.stringify(["📄 Stampa PDF", "📷 Scansiona il QR", "● Registrazioni", "🗑️ Scollega il PC"])
+  && !/codice|Aggiorna elenco|Chiudi sessione|Stampa su|Dimentica|Associato/.test(await tel.locator(".menu").innerText()),
+  `il ⋯ del telefono: solo quello che non c'è altrove — niente «Aggiorna elenco», «Chiudi sessione», codice; per finire una parola sola, «Scollega» (${vociMenu.join(" | ")})`);
+await shot(tel, "tel-1-menu");
 await tocca(tel, '[data-a="menu"]');
 const st1 = await statoPonte();
 check(!!st1?.sessione, "sul PC la sessione è aperta");
@@ -583,11 +602,10 @@ const altroCtx = await telBrowser.newContext(IPHONE);
 const altro = await altroCtx.newPage();
 await altro.goto(url1);
 check(/associato a un altro telefono/.test(await aspettaTel(altro, /associato a un altro telefono/, 15000)), "un altro telefono con lo stesso QR: «Il PC è associato a un altro telefono»");
-check(await altro.evaluate(() => localStorage.length) === 1, "…e la sua chiave la tiene (serve a «Cancella e riassocia», più sotto)");
-check(await altro.locator('[data-a="cambia"]').innerText() === "Cancella e riassocia" && await altro.locator("#app input").count() === 1
-  && JSON.stringify(await altro.locator("#app button").allInnerTexts()) === '["Cancella e riassocia","Scansiona il QR"]' && await altro.locator(".grande.quiet[data-a=scansiona]").count() === 1
-  && !/Revoca/.test(await testoTel(altro)), "su quella schermata: «Cancella e riassocia» col campo per il codice, e sotto, più quieto, «Scansiona il QR»; nient'altro (niente spiegazioni)");
-await shot(altro, "tel-2-cancella-e-riassocia");
+check(await altro.evaluate(() => localStorage.length) === 1, "…e la sua chiave la tiene (serve a «Usa questo telefono», più sotto)");
+check(await altro.locator("#app input").count() === 0
+  && JSON.stringify(await altro.locator("#app button").allInnerTexts()) === '["Usa questo telefono","Scansiona il QR"]' && await altro.locator(".grande.quiet[data-a=scansiona]").count() === 1
+  && !/Revoca|[Cc]odice/.test(await testoTel(altro)), "su quella schermata: «Usa questo telefono», e sotto, più quieto, «Scansiona il QR»; nient'altro (niente codice, niente spiegazioni)");
 check(/Un altro telefono ha provato a entrare/.test(await registroPonte()), "il registro del ponte lo dice");
 await altroCtx.close();
 // il ripetitore gli aveva dato la presa del telefono: questo si è fermato, e non fa a gara
@@ -608,26 +626,26 @@ check(/ROSSI MARIO/.test(await aspettaTel(tel, /ROSSI MARIO/, 15000)) && /Aperto
 await tel2.close();
 
 // ===========================================================================
-sezione("«Cancella e riassocia»: un secondo telefono, col codice");
-// il codice è 93, e si controlla sul PC; la richiesta viaggia cifrata con la chiave del QR
+sezione("«Usa questo telefono»: un secondo telefono, due tocchi");
+// niente codice da ricordare: la protezione è la chiave del QR, con cui la richiesta viaggia cifrata
 const dev0 = (await chiaveTel(tel)).dev;
 const cp0 = await coppiaPc();
 const nuovoTel = async () => { const c = await telBrowser.newContext(IPHONE); return { c, p: await c.newPage() }; };
-// (prima la risposta di prima: arrivando, svuota il campo — e il codice nuovo andrebbe perso)
-const scrivi = async (t, codice) => {
+const bottoneCambio = (t) => t.locator('[data-a="cambia"]').innerText().catch(() => "");
+// i due tocchi: il primo arma, il secondo (dopo il secondo di un doppio tocco) lo fa
+const usaQuesto = async (t) => {
   await finche(() => t.locator('[data-a="cambia"]').isEnabled().catch(() => false), 10000);
-  await t.locator("#cambio").fill(codice); await tocca(t, '[data-a="cambia"]');
+  await tocca(t, '[data-a="cambia"]');
+  await sospendi(1000);
+  await tocca(t, '[data-a="cambia"]');
 };
-const sbagliati = async () => (await coppiaPc())?.errori || 0;
-const orologioPc = (ms) => sw.evaluate((x) => { self.__oraVera = self.__oraVera || Date.now; const v = self.__oraVera; Date.now = () => v() + x; }, ms);
-const orologioVero = () => sw.evaluate(() => { if (self.__oraVera) Date.now = self.__oraVera; });
 const registroSenza = async (re) => !re.test(await registroPonte());
 
 // 1. un telefono SENZA la chiave del QR non può nemmeno chiederlo: il messaggio non si apre, il PC non risponde e non cambia niente
 const estraneo = await nuovoTel();
 await estraneo.p.goto(relay.url + "/ponte/");
 const KF = P.casuale(32), CHF = await P.chiaviCoppia(KF);
-const richiesta = await P.sigilla(CHF.salutoTel, P.TIPO.SALUTO_TEL, 0, { v: 1, n: P.b64u(P.casuale(16)), dev: P.b64u(P.casuale(16)), cambio: "93" });
+const richiesta = await P.sigilla(CHF.salutoTel, P.TIPO.SALUTO_TEL, 0, { v: 1, n: P.b64u(P.casuale(16)), dev: P.b64u(P.casuale(16)), cambio: true });
 const risposte = await estraneo.p.evaluate(({ url, frame }) => new Promise((ok) => {
   const got = [], ws = new WebSocket(url);
   ws.binaryType = "arraybuffer";
@@ -636,11 +654,11 @@ const risposte = await estraneo.p.evaluate(({ url, frame }) => new Promise((ok) 
   setTimeout(() => { ws.close(); ok(got); }, 2500);
 }), { url: relay.url.replace(/^http/, "ws") + "/ponte/ws?r=" + CH1.stanza + "&ruolo=tel", frame: Array.from(richiesta) });
 const cpE = await coppiaPc();
-check(!risposte.includes("binario") && cpE.dev === dev0 && !cpE.cambiata && !(await statoPonte()).cambiato && await sbagliati() === 0 && await registroSenza(/Cancella e riassocia|cambiato/),
-  `un telefono senza la chiave, col codice giusto: nessuna risposta, niente cambia, nemmeno un tentativo sbagliato (risposte: ${risposte.join(",") || "nessuna"})`);
+check(!risposte.includes("binario") && cpE.dev === dev0 && !cpE.cambiata && !(await statoPonte()).cambiato && await registroSenza(/Usa questo telefono|cambiato/),
+  `un telefono senza la chiave che chiede il posto: nessuna risposta, niente cambia (risposte: ${risposte.join(",") || "nessuna"})`);
 await estraneo.c.close();
 
-// 2. il secondo telefono (la chiave ce l'ha: ha inquadrato il QR) vede il bottone; codice sbagliato: niente cambia
+// 2. il secondo telefono (la chiave ce l'ha: ha inquadrato il QR) vede «Usa questo telefono»; un tocco solo, o un doppio tocco: niente cambia
 const secondo = await nuovoTel();
 // (le richieste di questo telefono, catturate sulla strada: più sotto una viene rimandata)
 const uscite = [];
@@ -653,34 +671,25 @@ await secondo.c.routeWebSocket(/\/ponte\/ws/, (ws) => {
 });
 await secondo.p.goto(url1);
 await aspettaTel(secondo.p, /associato a un altro telefono/, 15000);
-check(await secondo.p.locator('[data-a="cambia"]').count() === 1, "il secondo telefono, sulla schermata «associato a un altro telefono», vede «Cancella e riassocia»");
-await scrivi(secondo.p, "12");
-check(/Codice sbagliato/.test(await aspettaTel(secondo.p, /Codice sbagliato/, 10000)), "codice sbagliato: «Codice sbagliato»");
+check(await bottoneCambio(secondo.p) === "Usa questo telefono" && await secondo.p.locator("#app input").count() === 0,
+  "il secondo telefono, sulla schermata «associato a un altro telefono»: «Usa questo telefono», nessun campo per un codice");
+await tocca(secondo.p, '[data-a="cambia"]');
+await tocca(secondo.p, '[data-a="cambia"]');   // il secondo tocco di un doppio tocco, subito dopo
+await sospendi(1500);
 const cpS = await coppiaPc();
-check(cpS.dev === dev0 && !cpS.cambiata && cpS.scade === cp0.scade && !(await statoPonte()).cambiato && !!(await statoPonte()).sessione && await sbagliati() === 1,
-  "…e sul PC non cambia niente: stesso telefono, stessa scadenza, la sessione di prima è ancora lì");
-await shot(secondo.p, "tel-3-codice-sbagliato");
+check(await bottoneCambio(secondo.p) === "Usa questo telefono? Tocca di nuovo" && cpS.dev === dev0 && !cpS.cambiata && !(await statoPonte()).cambiato && !!(await statoPonte()).sessione,
+  "il primo tocco arma («Usa questo telefono? Tocca di nuovo»), un doppio tocco non vale: sul PC non cambia niente, la sessione di prima è ancora lì");
+await shot(secondo.p, "tel-2-usa-questo-telefono");
+await sospendi(6000);
+check(await bottoneCambio(secondo.p) === "Usa questo telefono" && (await coppiaPc()).dev === dev0, "lasciato lì, dopo 6 secondi si disarma da solo");
 
-// 3. cinque sbagli: per 10 minuti niente cambi, nemmeno col codice giusto
-for (const [i, c] of ["7", "0", "94"].entries()) { await scrivi(secondo.p, c); await finche(async () => (await sbagliati()) === i + 2, 8000); }
-await scrivi(secondo.p, "931");
-const bloccato = await aspettaTel(secondo.p, /Troppi tentativi: riprova alle \d\d:\d\d/, 10000);
-check(/Troppi tentativi: riprova alle \d\d:\d\d/.test(bloccato), `il quinto: «Troppi tentativi», e fino a che ora (${bloccato.replace(/\s+/g, " ").slice(-50)})`);
-const cpB = await coppiaPc();
-check(cpB.blocco > Date.now() + 9 * 60e3 && cpB.blocco <= Date.now() + 10 * 60e3 + 5e3 && cpB.dev === dev0, "sul PC: il blocco dura 10 minuti, e niente è cambiato");
-await scrivi(secondo.p, "93");
-check(/Troppi tentativi/.test(await aspettaTel(secondo.p, /Troppi tentativi/, 10000)) && (await coppiaPc()).dev === dev0,
-  "durante il blocco anche il 93 è rifiutato");
-
-// 4. passati i 10 minuti, il 93 prende il posto
-await orologioPc(10 * 60e3 + 5e3);
-await scrivi(secondo.p, "93");
+// 3. due tocchi: questo telefono prende il posto
+await usaQuesto(secondo.p);
 const lista2 = await aspettaTel(secondo.p, /ROSSI MARIO/, 20000);
-await orologioVero();
-check(/ROSSI MARIO/.test(lista2) && /BIANCHI ANNA/.test(lista2), "col 93 (finito il blocco): questo telefono è quello associato, e compare l'elenco");
+check(/ROSSI MARIO/.test(lista2) && /BIANCHI ANNA/.test(lista2), "«Usa questo telefono», due tocchi: questo telefono è quello associato, e compare l'elenco");
 const cpC = await coppiaPc();
-check(cpC.dev === (await chiaveTel(secondo.p)).dev && cpC.dev !== dev0 && cpC.scade === cp0.scade && cpC.k === cp0.k && !cpC.errori && !cpC.blocco && Math.abs(cpC.cambiata - Date.now() - 10 * 60e3) < 60e3,
-  "sul PC: il telefono dell'associazione è il nuovo, stessa chiave e stessa scadenza (il cambio non la allunga), i conti dei codici sbagliati azzerati");
+check(cpC.dev === (await chiaveTel(secondo.p)).dev && cpC.dev !== dev0 && cpC.scade === cp0.scade && cpC.k === cp0.k && Math.abs(cpC.cambiata - Date.now()) < 60e3 && !("errori" in cpC) && !("blocco" in cpC),
+  "sul PC: il telefono dell'associazione è il nuovo, stessa chiave e stessa scadenza (il cambio non la allunga)");
 const stC = await statoPonte();
 check(!!stC.sessione && stC.cambiato === cpC.cambiata && /iPhone cambiato alle \d\d:\d\d/.test(await registroPonte()), "e il registro del ponte dice «iPhone cambiato alle HH:MM»");
 // (il pannello del PC è ridotto, sulla vista «iPhone»: riaperto, la cornice è lì)
@@ -691,20 +700,20 @@ check(await finche(async () => /iPhone cambiato alle \d\d:\d\d/.test(await ponte
 await shot(doc, "pc-5-iphone-cambiato");
 await $panel(doc, "#collapse").click();
 
-let richiesta93 = null;
-for (const f of uscite) { try { if ((await P.apri(CH1.salutoTel, new Uint8Array(f), P.TIPO.SALUTO_TEL)).dati.cambio === "93") richiesta93 = f; } catch { /* altro */ } }
-// 5. il telefono di prima: se rientra, «associato a un altro telefono» (con la sua chiave, come prima)
+let richiestaCambio = null;
+for (const f of uscite) { try { if ((await P.apri(CH1.salutoTel, new Uint8Array(f), P.TIPO.SALUTO_TEL)).dati.cambio === true) richiestaCambio = f; } catch { /* altro */ } }
+// 4. il telefono di prima: se rientra, «associato a un altro telefono» (con la sua chiave, come prima)
 await sospendi(500);
 await tocca(tel, '[data-a="riapri"]');
 const fuori = await aspettaTel(tel, /associato a un altro telefono/, 15000);
-check(/associato a un altro telefono/.test(fuori) && await tel.locator('[data-a="cambia"]').count() === 1 && (await chiaveTel(tel))?.dev === dev0,
-  "il telefono di prima, rientrando: «Il PC è associato a un altro telefono», col suo «Cancella e riassocia»");
+check(/associato a un altro telefono/.test(fuori) && await bottoneCambio(tel) === "Usa questo telefono" && (await chiaveTel(tel))?.dev === dev0,
+  "il telefono di prima, rientrando: «Il PC è associato a un altro telefono», col suo «Usa questo telefono»");
 // …e se lo riprende allo stesso modo
-await scrivi(tel, "93");
-check(/ROSSI MARIO/.test(await aspettaTel(tel, /ROSSI MARIO/, 20000)) && (await coppiaPc()).dev === dev0 && (await coppiaPc()).scade === cp0.scade, "col 93 si riprende il posto: di nuovo l'elenco, sul PC il telefono di prima");
+await usaQuesto(tel);
+check(/ROSSI MARIO/.test(await aspettaTel(tel, /ROSSI MARIO/, 20000)) && (await coppiaPc()).dev === dev0 && (await coppiaPc()).scade === cp0.scade, "due tocchi e si riprende il posto: di nuovo l'elenco, sul PC il telefono di prima");
 await secondo.p.reload();
 await secondo.c.close();
-// la richiesta del 93 di prima, catturata sulla strada e rimandata da chi sta in mezzo, non vale una seconda volta
+// la richiesta di prima, catturata sulla strada e rimandata da chi sta in mezzo, non vale una seconda volta
 const rimando = await nuovoTel();
 await rimando.p.goto(relay.url + "/ponte/");
 const rimandata = await rimando.p.evaluate(({ url, frame }) => new Promise((ok) => {
@@ -713,10 +722,10 @@ const rimandata = await rimando.p.evaluate(({ url, frame }) => new Promise((ok) 
   ws.onopen = () => ws.send(new Uint8Array(frame));
   ws.onmessage = (e) => { if (typeof e.data !== "string") got.push(Array.from(new Uint8Array(e.data))); };
   setTimeout(() => { ws.close(); ok(got); }, 2500);
-}), { url: relay.url.replace(/^http/, "ws") + "/ponte/ws?r=" + CH1.stanza + "&ruolo=tel", frame: Array.from(richiesta93) });
+}), { url: relay.url.replace(/^http/, "ws") + "/ponte/ws?r=" + CH1.stanza + "&ruolo=tel", frame: Array.from(richiestaCambio || []) });
 let rifiutata = false;
 for (const f of rimandata) { try { rifiutata = (await P.apri(CH1.salutoPc, new Uint8Array(f), P.TIPO.SALUTO_PC)).dati.no === "altro telefono"; } catch { /* altro */ } }
-check(!!richiesta93 && rifiutata && (await coppiaPc()).dev === dev0, "la richiesta del 93 di prima, rimandata più tardi dal ripetitore: rifiutata, il telefono associato resta quello");
+check(!!richiestaCambio && rifiutata && (await coppiaPc()).dev === dev0, "la richiesta di prima, rimandata più tardi dal ripetitore: rifiutata, il telefono associato resta quello");
 await rimando.c.close();
 await tel.reload();
 await aspettaTel(tel, /ROSSI MARIO/, 20000);
@@ -1019,6 +1028,9 @@ sezione("la cartella dal telefono: leggere, scrivere col «Conferma» della pagi
     `i cinque campi, e «Letto sul PC alle …» una volta (${c0.replace(/\s+/g, " ").slice(0, 160)})`);
   check(await valoreTel("ANAMNESI") === CART.campi.ANAMNESI && await valoreTel("FARMACI_ASSUNTI") === CART.campi.FARMACI_ASSUNTI && await valoreTel("ESAME_OBIETTIVO") === CART.campi.ESAME_OBIETTIVO,
     "con i testi della pagina del paziente sul PC");
+  // una verità sola per le allergie: con la cartella, la riga sotto il nome dice quello che dice il campo (l'elenco era di prima)
+  check(await finche(async () => await tel.locator(".alle").innerText().catch(() => "") === "Allergie: Nessuna BETALLERG nota", 8000) && await tel.locator(".alle.ros").count() === 1,
+    `aperta la cartella, sotto il nome le allergie del campo, non «non lette» (${await tel.locator(".alle").innerText().catch(() => "")})`);
   check(await roTel("ESAME_OBIETTIVO") && !(await roTel("ANAMNESI")) && !(await roTel("ALLERGIE")) && await tel.locator(".cc.ro").count() === 1,
     "l'esame obiettivo che la pagina dà di sola lettura (JPSOReadonly) si legge e basta, gli altri si scrivono");
   check(await tel.locator(".cta").count() === 0, "senza modifiche, niente «Salva»");
@@ -1053,15 +1065,36 @@ sezione("la cartella dal telefono: leggere, scrivere col «Conferma» della pagi
     `un invio solo, il modulo della pagina col suo «Conferma» (Update=Conferma), gli altri campi com'erano (${Object.keys(f).join(",")})`);
   check(await valoreTel("ANAMNESI") === "Dolore toracico NUOVAZETA dalle 6\ncon sudorazione" && await tel.locator(".cta").count() === 0, "sul telefono, il testo riletto dal PC; niente più da salvare");
   check(await finche(async () => schedeNuove.length === 2 && schedeNuove[1].isClosed(), 10000), "e la scheda di sottofondo si chiude da sola");
-  const pill = await finche(async () => /Aggiornato dal telefono/.test((await $panel(doc, ".pontespia").allInnerTexts().catch(() => [])).join(" ")), 10000);
-  check(pill && await $panel(doc, "#ponterica").count() === 1, "sul PC, la pagina di ROSSI aperta e ferma: «Aggiornato dal telefono · Ricarica», senza ricaricarsi da sola");
-  check(await doc.locator('textarea[name="ANAMNESI"]').inputValue() === "Dolore toracico KAPPAZETA da due ore", "(la pagina mostra ancora il testo di prima)");
+  // la pagina di ROSSI aperta sul PC, pulita, era di prima (il suo «Conferma» rimanderebbe i testi vecchi): si ricarica da sola
+  check(await finche(async () => (await doc.locator('textarea[name="ANAMNESI"]').inputValue().catch(() => "")).includes("NUOVAZETA"), 15000) && CART.post.length === 1,
+    "sul PC la pagina di ROSSI, aperta e pulita, si ricarica da sola: col testo del telefono (niente inviato)");
+  await doc.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
+  check(await $panel(doc, "#ponterica").count() === 0, "…e senza la pill «Ricarica»: non c'è niente da fare");
+  // la corsa: il medico scrive sul PC DOPO il controllo (mentre il gestionale salva) — la pagina non si ricarica
+  // (si perderebbe quello che ha scritto), e il suo «Conferma» è fermo finché non la ricarica
+  CART.lento = 3000;
+  const arr0 = CART.arrivati;
+  await tel.locator("#cc-ANAMNESI").fill("Dolore toracico NUOVAZETA dalle 6\ncon sudorazione, ORAZETA");
+  await salvaTel();
+  check(await finche(async () => CART.arrivati > arr0, 40000), "(il gestionale comincia a salvare quello del telefono)");
+  await doc.locator('textarea[name="MALATTIE_PREGRESSE"]').fill("Ipertensione SIGMAREMOTA, scritto sul PC intanto");
+  check(await salvato(), "il telefono: «Salvato»");
+  CART.lento = 0;
+  const pillCorsa = await finche(async () => /Aggiornato dal telefono/.test((await $panel(doc, ".pontespia").allInnerTexts().catch(() => [])).join(" ")), 10000);
+  check(pillCorsa && await $panel(doc, "#ponterica").count() === 1 && await doc.locator('textarea[name="MALATTIE_PREGRESSE"]').inputValue() === "Ipertensione SIGMAREMOTA, scritto sul PC intanto",
+    "scritto sul PC dopo il controllo: la pagina non si ricarica (il testo resta), «Aggiornato dal telefono · Ricarica»");
+  const post0 = CART.post.length;
+  await doc.locator('input[name="Update"]').click();
+  await sospendi(1500);
+  const fermo = await doc.locator("#psassist-terapia").evaluate((h) => h.shadowRoot.querySelector(".b").textContent).catch(() => "");
+  check(CART.post.length === post0 && /Cartella/.test(fermo) && /Niente inviato/.test(fermo) && /ricarica la pagina/.test(fermo),
+    `…e il suo «Conferma» è fermo: niente inviato (i testi di prima non vanno sopra quelli del telefono), e lo dice (${fermo.replace(/\s+/g, " ").slice(0, 160)})`);
   await shot(doc, "pc-6-cartella-aggiornata");
-  if (await $panel(doc, "#ponterica").count()) await $panel(doc, "#ponterica").click(); else await doc.reload();
+  await $panel(doc, "#ponterica").click();
   await doc.waitForLoadState("load");
   await doc.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
-  check(await finche(async () => (await doc.locator('textarea[name="ANAMNESI"]').inputValue().catch(() => "")).includes("NUOVAZETA"), 10000) && await $panel(doc, "#ponterica").count() === 0,
-    "«Ricarica»: la pagina col testo nuovo, e la pill se ne va");
+  check(await finche(async () => (await doc.locator('textarea[name="ANAMNESI"]').inputValue().catch(() => "")).includes("ORAZETA"), 10000) && await $panel(doc, "#ponterica").count() === 0 && CART.post.length === post0,
+    "«Ricarica»: la pagina col testo nuovo, e la pill se ne va"); 
   const regP = await registroPonte();
   check(/Cartella di ROSSI MARIO dal telefono: salvati Anamnesi, Farmaci/.test(regP) && !/NUOVAZETA|OMEGAFARM|KAPPAZETA/.test(regP), "nel registro del ponte: i campi salvati, mai i testi");
 
@@ -1069,11 +1102,14 @@ sezione("la cartella dal telefono: leggere, scrivere col «Conferma» della pagi
   await doc.locator('textarea[name="FARMACI_ASSUNTI"]').fill("il medico scrive qui");
   await tel.locator("#cc-ALLERGIE").fill("Penicillina BETALLERG");
   await salvaTel();
-  check(!!(await aspettaTel(tel, /Sul PC c'è un testo non salvato in questa pagina/, 30000)) && CART.post.length === 1 && schedeNuove.length === 2,
+  check(!!(await aspettaTel(tel, /Sul PC c'è un testo non salvato in questa pagina/, 30000)) && CART.post.length === 2 && schedeNuove.length === 3,
     "un testo non salvato nella pagina di ROSSI sul PC (anche in un altro campo: il suo «Conferma» rimanderebbe tutto il modulo): «Sul PC c'è un testo non salvato in questa pagina», niente scheda, niente inviato");
   await suPagina(doc, A.patientUrl);   // (il medico lascia stare: la pagina come il gestionale l'ha salvata)
   await salvaTel();
-  check(await salvato() && CART.campi.ALLERGIE === "Penicillina BETALLERG" && CART.post.length === 2, "pagina pulita: lo stesso «Salva» adesso passa");
+  check(await salvato() && CART.campi.ALLERGIE === "Penicillina BETALLERG" && CART.post.length === 3, "pagina pulita: lo stesso «Salva» adesso passa");
+  const anagPc = () => doc.evaluate(() => JSON.parse(localStorage.getItem("psassist:stato.v1") || "{}")["999001"]?.anag?.allergie?.testo || "").catch(() => "");
+  check(await finche(async () => await tel.locator(".alle").innerText().catch(() => "") === "Allergie: Penicillina BETALLERG" && await anagPc() === "Penicillina BETALLERG", 10000),
+    `salvate le allergie dal telefono: sotto il nome (e nel riepilogo della Terapia) il testo nuovo, e il PC sa lo stesso (${await tel.locator(".alle").innerText().catch(() => "")} · PC: ${await anagPc()})`);
 
   // l'esame obiettivo scrivibile, quando la pagina lo dà scrivibile — e se intanto non lo è più, no
   CART.eoRo = false;
@@ -1083,7 +1119,7 @@ sezione("la cartella dal telefono: leggere, scrivere col «Conferma» della pagi
   await tel.locator("#cc-ESAME_OBIETTIVO").fill("Vigile TAUOBIETT, dispnoico");
   CART.eoRo = true;   // (un altro medico l'ha scritto intanto: adesso è di sola lettura)
   await salvaTel();
-  check(!!(await aspettaTel(tel, /Sul PC non è più modificabile: Esame obiettivo/, 40000)) && CART.post.length === 2,
+  check(!!(await aspettaTel(tel, /Sul PC non è più modificabile: Esame obiettivo/, 40000)) && CART.post.length === 3,
     "diventato di sola lettura sul PC: «Sul PC non è più modificabile», niente inviato");
   await tocca(tel, '[data-a="cricarica"]');
   check(await finche(async () => await roTel("ESAME_OBIETTIVO") && await valoreTel("ESAME_OBIETTIVO") === "Vigile TAUOBIETT, eupnoico", 20000), "«Ricarica»: di nuovo di sola lettura, col testo del PC");
@@ -1267,7 +1303,7 @@ const compatte = await tel.evaluate(() => {
 check(compatte.alt <= 2 * compatte.vh, `le Richieste (${compatte.n} esami) stanno in due schermi: ${Math.round(compatte.alt)} px su ${compatte.vh} di altezza`);
 check(compatte.minAlt >= 37.9, `ogni tasto è alto almeno 38 px, più 6 di vuoto: 44 di passo (il più basso: ${compatte.minAlt})`);
 // «Febbre» ha imparato il suo pacchetto sul PC: sul telefono è un chip come gli altri
-const accesi = () => tel.locator("main .esame.on").allInnerTexts();
+const accesi = () => tel.locator("main .esame.on .nm").allInnerTexts();   // (il nome: accanto può esserci «✓ 22:10»)
 check(await tel.locator('[data-a="quesito"][data-q="Febbre"]').count() === 1, "il quesito che ha imparato il suo pacchetto sul PC è un chip anche sul telefono: «Febbre»");
 await tocca(tel, '[data-a="quesito"][data-q="Febbre"]');
 const conFebbre = (await accesi()).sort();
@@ -1277,6 +1313,11 @@ await tocca(tel, '[data-a="quesito"][data-q="Febbre"]');
 check((await accesi()).length === 0 && await tel.locator("#quesito").inputValue() === "", "toccato di nuovo li toglie");
 check(await tel.locator("#ordina").count() === 0 && await tel.locator(".cta").count() === 0 && !/Scegli gli esami/.test(await testoTel(tel)),
   "(5) senza un esame scelto niente barra, e niente bottone spento «Scegli gli esami»: la barra compare scegliendo");
+// accanto agli esami, come sul PC: niente se mai chiesto (TROPONINA US); «✓ 22:10» se già tornato (EMOCROMO POC, in verde)
+const ultTel = (nome) => tel.locator(`[data-a="esame"]:has-text("${nome}")`).first().locator(".ult").innerText({ timeout: 1000 }).catch(() => "");
+check(!(await ultTel("TROPONINA US")) && /^✓ \d\d:\d\d$/.test(await ultTel("EMOCROMO POC"))
+  && await tel.locator('[data-a="esame"]:has-text("EMOCROMO POC")').first().locator(".ult .uok").count() === 1,
+  `accanto al nome, come sul PC: TROPONINA US mai chiesta, niente; EMOCROMO POC già tornata, «${await ultTel("EMOCROMO POC")}» in verde`);
 await tocca(tel, '[data-a="esame"]:has-text("TROPONINA US")');
 await tocca(tel, '[data-a="esame"]:has-text("EMOCROMO POC")');
 check(await tel.locator("#ordina").count() === 1, "(5) scelto un esame, la barra c'è");
@@ -1284,8 +1325,7 @@ check(await tel.locator("#ordina").count() === 1, "(5) scelto un esame, la barra
 const alle0 = await tel.locator(".alle").innerText();
 check(/^Allergie: \S/.test(alle0), `(13) sotto il nome le allergie con le parole del PC (${alle0})`);
 await doc.evaluate(() => { const S = JSON.parse(localStorage.getItem("psassist:stato.v1") || "{}"); S["999001"] = { ...(S["999001"] || {}), anag: { allergie: { nega: false, testo: "Penicillina" }, attenzione: [], ts: Date.now() } }; localStorage.setItem("psassist:stato.v1", JSON.stringify(S)); });
-await tocca(tel, '[data-a="indietro"]'); await aspettaTel(tel, /BIANCHI ANNA/);
-await tocca(tel, '[data-a="menu"]'); await tocca(tel, '[data-a="aggiornaLista"]');
+await tocca(tel, '[data-a="indietro"]'); await aspettaTel(tel, /BIANCHI ANNA/);   // (tornati all'elenco: si rilegge)
 await tocca(tel, '.paz[data-ep="999001"]'); await aspettaTel(tel, /Richieste/, 10000);
 check(await finche(async () => (await tel.locator(".alle.ros").count()) === 1, 15000) && await tel.locator(".alle.ros").innerText() === "Allergie: Penicillina",
   "(13) con un testo: «Allergie: Penicillina», in rosso, sotto il nome");
@@ -1333,6 +1373,15 @@ check(await finche(async () => (await doc.evaluate(() => JSON.parse(localStorage
   "un tocco su «Stampa» nella striscia del PC: le etichette si stampano lì, come sempre");
 check(/Etichette prese in stampa sul PC/.test(await aspettaTel(tel, /Etichette prese in stampa sul PC/, 15000)),
   "e il telefono lo sa: «Etichette prese in stampa sul PC», una delle tre parole");
+// gli esami appena ordinati, accanto al nome come nelle Richieste del PC: «0′» in attesa (ambra), e il perché nel nome per la voce
+await tocca(tel, '[data-a="scheda"][data-s="esiti"]');
+await tocca(tel, '[data-a="scheda"][data-s="richieste"]');
+check(await finche(async () => /^\d+′$/.test(await ultTel("TROPONINA US")) && /^✓ \d\d:\d\d \d+′$/.test(await ultTel("EMOCROMO POC")), 15000)
+  && await tel.locator('[data-a="esame"]:has-text("TROPONINA US")').first().locator(".ult .uatt").count() === 1
+  && /^TROPONINA US · in attesa dalle \d\d:\d\d( · letto alle \d\d:\d\d)?$/.test(await tel.locator('[data-a="esame"]:has-text("TROPONINA US")').first().getAttribute("aria-label")),
+  `ordinati: accanto al nome «${await ultTel("TROPONINA US")}» in attesa, come sul PC — un doppione si vede prima di sceglierlo`);
+check(!(await ultTel("PCR")), "…e gli altri no");
+await shot(tel, "tel-richieste-gia-chieste");
 const carta = await tel.locator(".ord").first().innerText();
 check(!/Quesito: il tuo/.test(carta) && (carta.match(/2 esami/g) || []).length <= 1, `la carta dell'ordine: niente «Quesito: il tuo», niente «2 esami» ripetuto (${carta.replace(/\s+/g, " ")})`);
 check(await tel.locator(".ord").first().locator(".c b > span").innerText() === "Confermata" && /Etichette prese in stampa sul PC/.test(carta) && (carta.match(/\d\d:\d\d/g) || []).length === 1,
@@ -1617,9 +1666,7 @@ await doc.evaluate(() => {
   S[999003].vit = { p: { fr: 16, spo2: 97, fc: 80, pas: 120, t: 36.6 }, ts: Date.now() - 5 * h };
   localStorage.setItem("psassist:stato.v1", JSON.stringify(S));
 });
-await tocca(tel, '[data-a="indietro"]');
-await tocca(tel, '[data-a="menu"]');
-await tocca(tel, '[data-a="aggiornaLista"]');
+await tocca(tel, '[data-a="indietro"]');   // (tornati all'elenco: si rilegge)
 await aspettaTel(tel, /VERDI LUCA/, 15000);
 await tocca(tel, '.paz[data-ep="999003"]');
 await aspettaTel(tel, /Parametri di 5 ore fa/, 15000);
@@ -1652,8 +1699,7 @@ const omonimo = (si) => doc.evaluate((si) => {
   localStorage.setItem(K, JSON.stringify(l));
 }, si);
 await omonimo(true);
-await tocca(tel, '[data-a="menu"]');
-await tocca(tel, '[data-a="aggiornaLista"]');
+await rileggiTel(tel);
 const due = await aspettaTel(tel, /…9004/, 10000);
 check(/ROSSI MARIO · …9001/.test(due) && /ROSSI MARIO · …9004/.test(due), "(nell'elenco: «⚠ ROSSI MARIO · …9001» e «⚠ ROSSI MARIO · …9004»)");
 await tocca(tel, '.paz[data-ep="999001"]');
@@ -1711,8 +1757,7 @@ sezione("la mappa sul telefono: sola lettura, Lista · Mappa, Alta · Bassa");
     "e nient'altro: nessun nome di paziente nella risposta (il nome il telefono lo ha dalla riga di «pazienti»)");
 
   // il telefono: «Lista · Mappa»
-  await tocca(tel, '[data-a="menu"]');
-  await tocca(tel, '[data-a="aggiornaLista"]');
+  await rileggiTel(tel);
   await aspettaTel(tel, /NERI SARA/, 15000);
   const modoTel = () => tel.evaluate(() => ({ seg: [...document.querySelectorAll("main > .seg:not(.pic) button")].map((b) => b.textContent + (b.classList.contains("on") ? "*" : "")).join("|"),
     pic: [...document.querySelectorAll("main > .seg.pic button")].map((b) => b.textContent + (b.classList.contains("on") ? "*" : "")).join("|"), mappa: !!document.querySelector(".mappa"),
@@ -1826,7 +1871,7 @@ sezione("la mappa sul telefono: sola lettura, Lista · Mappa, Alta · Bassa");
     await doc.evaluate(() => localStorage.setItem("psassist:triage.lista.v1", JSON.stringify({ ts: Date.now(), righe: [
       { nome: "GRIGI TINA", breve: "GRIGI T.", eta: 30, triage: "VERDE", area: "", arrivo: Date.now() - 80 * 60e3 },
       { nome: "DE LUCA ANNA", breve: "DE LUCA A.", eta: 82, triage: "AZZURRO", area: "", arrivo: Date.now() - 30 * 60e3 }] })));
-    await tocca(tel, '[data-a="menu"]'); await tocca(tel, '[data-a="aggiornaLista"]');
+    await rileggiTel(tel);
     await tocca(tel, '[data-a="mappasel"][data-k="ps"]');
     await finche(async () => await tel.locator('.mappa .area .pa[data-a="ospite"]').count() === 1, 15000);
     const attesa = await tel.evaluate(() => [...document.querySelectorAll(".mappa .area")].map((a) => `${a.querySelector("h4").textContent}=${[...a.querySelectorAll(".pa")].map((p) => `${p.dataset.a}:${p.textContent}`).join(",")}`).join(" | "));
@@ -1855,7 +1900,7 @@ sezione("la mappa sul telefono: sola lettura, Lista · Mappa, Alta · Bassa");
       for (const k of Object.keys(p)) if (/^tr/.test(k)) delete p[k];
       localStorage.setItem("psassist:stanza.ps.posti.v1", JSON.stringify(p));
     });
-    await tocca(tel, '[data-a="menu"]'); await tocca(tel, '[data-a="aggiornaLista"]');
+    await rileggiTel(tel);
     await finche(async () => await tel.locator(".mappa").count() === 1 && await tel.locator('[data-a="ospite"]').count() === 0, 15000);
   }
 
@@ -2005,6 +2050,23 @@ const orologio = () => sw.evaluate(() => { if (self.__oraVera) Date.now = self._
 // (12) il telefono è su un paziente, scheda Esiti: dopo i 3 minuti si riapre lì
 await tocca(tel, '.paz[data-ep="999001"]'); await aspettaTel(tel, /Richieste/, 10000);
 await tocca(tel, '[data-a="scheda"][data-s="esiti"]');
+// il telefono in mano: un tocco o uno scorrere (anche su niente) è il medico che legge — conta come un comando, al più uno al minuto
+{
+  await sospendi(500);
+  const ultimoPc = () => sw.evaluate(() => pt.sessione && pt.sessione.ultimo);
+  const u0 = await ultimoPc();
+  await tel.evaluate(() => { document.querySelector("main").dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })); window.dispatchEvent(new Event("scroll")); });
+  await sospendi(1200);
+  check(await ultimoPc() === u0, "un tocco subito dopo un comando: niente al PC (al più uno al minuto)");
+  // un minuto dopo, sul telefono: scorrere i valori (lo scroll, non un bottone) conta
+  await tel.evaluate(() => { const v = Date.now; window.__oraVera = v; Date.now = () => v() + 70e3; document.querySelector("main").dispatchEvent(new Event("scroll")); });
+  check(await finche(async () => (await ultimoPc()) > u0, 6000), "passato un minuto, scorrere col telefono in mano conta come un comando: anche il PC sposta il suo orologio dei 3 minuti");
+  const u1 = await ultimoPc();
+  await tel.evaluate(() => document.querySelector("main").dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })));
+  await sospendi(1200);
+  check(await ultimoPc() === u1, "…e un altro tocco subito dopo no");
+  await tel.evaluate(() => { Date.now = window.__oraVera; });
+}
 await avanti(2 * 60e3);
 check(!!(await statoPonte())?.sessione, "a 2 minuti la sessione c'è ancora");
 await avanti(4 * 60e3);
@@ -2063,13 +2125,9 @@ await aspettaTel(tel, /ROSSI MARIO/, 15000);
 // ===========================================================================
 sezione("nessun gestionale aperto, sessione del gestionale scaduta");
 await doc.close();
-await tocca(tel, '[data-a="menu"]');
-await tocca(tel, '[data-a="aggiornaLista"]');
+await tocca(tel, '.paz[data-ep="999002"]');
 check(/Apri il gestionale sul PC/.test(await aspettaTel(tel, /Apri il gestionale sul PC/, 15000)), "senza schede del gestionale: «Apri il gestionale sul PC»");
-await tocca(tel, '[data-a="menu"]');
-await tocca(tel, '[data-a="esci"]');
-await aspettaTel(tel, /Sessione chiusa/, 10000);
-await tocca(tel, '[data-a="riapri"]');
+await tel.reload();   // (la sessione di nuovo da capo, senza gestionale)
 check(/Elenco non letto/.test(await aspettaTel(tel, /Elenco non letto/, 15000)) && await tel.locator('[data-a="aggiornaLista"]:has-text("Riprova")').count() === 1,
   "riaperta senza gestionale: «Elenco non letto» e «Riprova», non una rotella per sempre");
 await shot(tel, "tel-8-elenco-non-letto");
@@ -2086,6 +2144,10 @@ await tocca(tel, '[data-a="indietro"]').catch(() => {});
 // ===========================================================================
 sezione("il service worker si ferma e riparte");
 await aspettaTel(tel, /ROSSI MARIO/, 15000);
+await tocca(tel, '.paz[data-ep="999002"]');
+await aspettaTel(tel, /Richieste/, 10000);
+await tocca(tel, '[data-a="scheda"][data-s="cartella"]');
+await guardaChiusa();
 // (la pagina del ponte, aperta, lo sveglierebbe lei: devono farlo le schede del gestionale)
 check(!ctx.pages().some((p) => p.frames().some((f) => f.url().includes("/ponte.html"))), "(nessuna pagina del ponte aperta, né scheda né cornice)");
 await sw.evaluate(() => { self.__vecchio = true; });
@@ -2099,13 +2161,21 @@ const versioni = [];
 cdp.on("ServiceWorker.workerVersionUpdated", (e) => versioni.push(...e.versions));
 await cdp.send("ServiceWorker.enable");
 await finche(async () => versioni.some((v) => v.scriptURL.endsWith("bg.js") && v.runningStatus === "running"), 5000);
+const fermato = Date.now();
 const errStop = await cdp.send("ServiceWorker.stopWorker", { versionId: versioni.find((v) => v.scriptURL.endsWith("bg.js")).versionId }).then(() => "", (e) => e.message);
 await pag.close();
 check(!errStop && await finche(async () => relay.prese().pc === 0, 10000), `fermato il service worker, la sua presa sul ponte cade${errStop ? ` (${errStop})` : ""}`);
 check(await finche(async () => relay.prese().pc === 1, 45000), "le schede del gestionale lo svegliano, e si ricollega da solo al ponte (la chiave è rimasta)");
 sw = await swDi(ctx).catch(() => sw);
-check(!(await sw.evaluate(() => self.__vecchio).catch(() => true)) && !(await statoPonte())?.sessione, "è un service worker nuovo: la sessione di prima non c'è più, le sue chiavi stavano in memoria");
-check(/estensione sul PC si è riavviata/.test(await aspettaTel(tel, /Sessione chiusa/, 15000)), "il telefono lo scopre appena il PC torna sul ponte: «L'estensione sul PC si è riavviata»");
+// (il telefono si ricollega subito: una sessione, se c'è già, è una nuova)
+check(!(await sw.evaluate(() => self.__vecchio).catch(() => true)) && !((await statoPonte())?.sessione?.dal < fermato),
+  "è un service worker nuovo: la sessione di prima non c'è più, le sue chiavi stavano in memoria");
+// il telefono era su BIANCHI, scheda Cartella: se ne accorge appena il PC torna sul ponte, e si ricollega da solo lì —
+// «Sessione chiusa» non si vede nemmeno per un attimo (nessuno l'ha chiusa)
+check(await finche(async () => !!(await statoPonte())?.sessione && await tel.locator('.seg [data-s="cartella"].on').count() === 1 && /BIANCHI ANNA/.test(await tel.locator(".top").innerText().catch(() => "")), 20000)
+  && !(await tel.evaluate(() => window.__chiusa)) && await sw.evaluate(() => !self.__vecchio),
+  "l'estensione sul PC riavviata: il telefono si ricollega da solo, sullo stesso paziente e sulla stessa scheda, senza «Sessione chiusa»");
+await shot(tel, "tel-7-riavvio-ricollegato");
 // il «riparti» che l'ha chiusa, catturato per strada
 let riparti = null;
 for (const f of rete.dalPc.slice(dalPc0)) {
@@ -2113,11 +2183,13 @@ for (const f of rete.dalPc.slice(dalPc0)) {
   try { if ((await P.apri(CH1.salutoPc, new Uint8Array(f), P.TIPO.SALUTO_PC)).dati.riparti) riparti = f; } catch { /* altro */ }
 }
 check(!!riparti, "(il «riparti» del PC, catturato sulla strada)");
-await tocca(tel, '[data-a="riapri"]');
-check(/ROSSI MARIO/.test(await aspettaTel(tel, /ROSSI MARIO/, 15000)), "e riprende con un tocco");
+const dal1 = await sw.evaluate(() => pt.sessione && pt.sessione.dal);
 if (riparti) rete.prese.get(rete.ultima).ws.send(riparti);
 await sospendi(1500);
-check(!/Sessione chiusa/.test(await testoTel(tel)) && /ROSSI MARIO/.test(await testoTel(tel)), "quel «riparti» rimandato più tardi non chiude la sessione nuova");
+check(!(await tel.evaluate(() => window.__chiusa)) && /BIANCHI ANNA/.test(await testoTel(tel)) && await sw.evaluate(() => pt.sessione && pt.sessione.dal) === dal1,
+  "quel «riparti» rimandato più tardi non chiude la sessione nuova");
+await tocca(tel, '[data-a="indietro"]');
+await aspettaTel(tel, /ROSSI MARIO/, 15000);
 
 // ===========================================================================
 sezione("revoca, link che sostituiscono, scadenza, la pagina d'accesso");
@@ -2125,7 +2197,7 @@ const ponte2 = await ctx.newPage();
 await ponte2.goto(EXTURL("ponte.html"));
 await ponte2.waitForSelector("#revoca:not([hidden])");
 await ponte2.locator("#revoca").click();
-check(/Revoco\?/.test(await ponte2.locator("#revoca").innerText()), "«Revoca» chiede conferma");
+check(await finche(async () => /Revoco\?/.test(await ponte2.locator("#revoca").innerText()), 5000), "«Revoca» chiede conferma");
 await ponte2.locator("#revoca").click();
 check(/revocat/.test(await aspettaTel(tel, /revocat/, 10000)), "revocata: il telefono lo dice");
 check(await tel.evaluate(() => localStorage.length) === 0, "e dimentica la chiave");
@@ -2174,8 +2246,7 @@ await orologio();
 // il link del QR, invece, vale solo per il primo scambio, e poco: un QR nuovo, e passati 7 minuti non apre più
 await ponte2.reload();
 await ponte2.waitForSelector("#stato b");
-await ponte2.locator("#associa").click();
-await ponte2.waitForSelector("#qr svg", { timeout: 8000 });
+await nuovoQr(ponte2);   // (un telefono è già entrato: «Nuovo QR», due tocchi)
 const urlE = await qrUrl();
 await avanti(7 * 60e3);
 {
@@ -2218,15 +2289,20 @@ check(/ROSSI MARIO/.test(await aspettaTel(tel, /ROSSI MARIO/, 15000)) && (await 
 
 // ===========================================================================
 sezione("il browser del PC si chiude e si riapre");
+await guardaChiusa();
+const chiuso = Date.now();
 await ctx.close();
 ctx = await apriBrowser();
 sw = await swDi(ctx);
 check((await coppiaPc())?.k === K3, "riaperto il browser, l'associazione c'è ancora: sta su disco (storage.local) fino alla revoca");
-check(/estensione sul PC si è riavviata/.test(await aspettaTel(tel, /Sessione chiusa/, 30000)), "il telefono sa che la sessione di prima è finita: «L'estensione sul PC si è riavviata»");
+// la sessione di prima è finita (le sue chiavi stavano in memoria): il telefono se ne accorge e se ne apre una nuova da solo, senza «Sessione chiusa»
+check(await finche(async () => (await statoPonte())?.sessione?.dal > chiuso, 30000) && !(await tel.evaluate(() => window.__chiusa)),
+  "il telefono sa che la sessione di prima è finita, e si ricollega da solo (nessuno l'ha chiusa): niente «Sessione chiusa»");
 const doc3 = await ctx.newPage();
 await suPagina(doc3, A.worklistUrl);
-await tocca(tel, '[data-a="riapri"]');
-check(/ROSSI MARIO/.test(await aspettaTel(tel, /ROSSI MARIO/, 20000)), "«Riapri»: di nuovo l'elenco, senza QR nuovo");
+// (senza una scheda del gestionale l'elenco non si legge: «Riprova», o tornando sull'app)
+if (await tel.locator('[data-a="aggiornaLista"]').count()) await tocca(tel, '[data-a="aggiornaLista"]'); else await rileggiTel(tel);
+check(/ROSSI MARIO/.test(await aspettaTel(tel, /ROSSI MARIO/, 20000)), "aperto il gestionale: di nuovo l'elenco, senza QR nuovo");
 
 // ===========================================================================
 sezione("«Stampa un PDF» dal telefono, sull'A4 del PC");
@@ -2737,8 +2813,7 @@ sezione("«Scansiona il QR» dentro l'app");
   const pqr = await ctx.newPage();
   await pqr.goto(EXTURL("ponte.html"));
   await pqr.waitForSelector("#stato b");
-  await pqr.locator("#associa").click();
-  await pqr.waitForSelector("#qr svg", { timeout: 8000 });
+  await nuovoQr(pqr);   // (un telefono è già entrato: «Nuovo QR», due tocchi)
   const url4 = await qrUrl();
   const K4 = P.b64u(P.leggiFrammento(new URL(url4).hash).k);
 
@@ -2767,6 +2842,17 @@ sezione("«Scansiona il QR» dentro l'app");
     "inquadrato dentro l'app il QR nuovo del PC: la chiave nuova, e l'elenco (il frammento non resta nell'indirizzo)");
   check(Number(await dentro.p.evaluate(() => sessionStorage.getItem("__spenta"))) >= 1, "letto il codice, la fotocamera si spegne");
   await shot(dentro.p, "tel-qr-4-elenco");
+  // 4. associato: nel ⋯ «📷 Scansiona il QR», sempre — un lettore solo per un PC, un PC di sola lettura, una stazione
+  await tocca(dentro.p, '[data-a="menu"]');
+  check(await dentro.p.locator('.menu [data-a="scansiona"]').innerText() === "📷 Scansiona il QR" && !/Collega stampante/.test(await dentro.p.locator(".menu").innerText()),
+    "associato, nel ⋯: «📷 Scansiona il QR» (non più «Collega stampante»)");
+  await shot(dentro.p, "tel-qr-5-menu");
+  await tocca(dentro.p, '.menu [data-a="scansiona"]');
+  check(await finche(() => dentro.p.evaluate(() => !!document.querySelector(".scan video")), 10000), "…apre la stessa fotocamera");
+  // (letto il QR la pagina riparte: prima la vista della fotocamera se ne va, poi l'elenco di nuovo)
+  const riletto = await finche(async () => await dentro.p.locator(".scan").count() === 0 && /ROSSI MARIO/.test(await testoTel(dentro.p)), 30000);
+  check(riletto && (await chiaveTel(dentro.p))?.k === K4,
+    `e lo stesso QR del PC, inquadrato di nuovo: lo stesso PC, la stessa chiave, l'elenco (${(await testoTel(dentro.p)).replace(/\s+/g, " ").slice(0, 80)})`);
   await dentro.b.close();
   await pqr.close();
   rmSync(VID, { force: true });

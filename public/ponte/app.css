@@ -61,22 +61,16 @@ button { cursor: pointer; touch-action: manipulation; }
 .menu button:active { background: var(--fondo); }
 .menu .via { color: var(--rosso); }
 .menu .info { padding: 8px 12px 6px; font-size: 12.5px; color: var(--grigio); }
-/* la lista dei PC (completo / sola lettura): riga con «passa a» e «dimentica» */
+/* la lista dei PC (completo / sola lettura): riga con «passa a» e «scollega» */
 .menu .pcrow { display: flex; align-items: stretch; gap: 2px; }
 .menu .pcrow button { width: auto; white-space: normal; }
 .menu .pcrow .pcbtn { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
 .menu .pcrow.qui .pcbtn { color: var(--blu); }
 .menu .pcrow .pcbtn small { color: var(--grigio); font-weight: 600; }
 .menu .pcvia { flex: none; width: 42px; text-align: center; color: var(--grigio); }
-.menu .stdove { display: flex; align-items: center; gap: 4px; padding: 4px; margin: 2px 0 4px; background: var(--seg); border-radius: 12px; }
-.menu .stdove span { font-size: 13px; color: var(--grigio); font-weight: 650; padding: 0 6px; white-space: nowrap; }
-.menu .stdove button { flex: 1; width: auto; min-height: 44px; text-align: center; color: var(--grigio); font-weight: 650; padding: 8px 8px; }
-.menu .stdove button.on { background: var(--azione); color: #fff; }
 .menu .sep { height: 1px; background: var(--linea); margin: 6px 6px; }
-/* la testata di sola lettura (informativa): niente scrittura da questo PC */
-.solabar { display: flex; align-items: center; gap: 6px; padding: 5px var(--dx) 5px var(--sx); font-size: 12.5px;
-           color: var(--grigio); background: var(--blu-chiaro); border-bottom: 1px solid var(--bordo); }
-.solabar b { color: var(--testo2); font-weight: 700; }
+/* un PC di sola lettura: un segno piccolo e quieto nella testata, accanto a ⋯ (la scritta nel suo nome e nel ⋯) */
+.top .sola { flex: none; font-size: 12px; line-height: 1; opacity: .5; filter: grayscale(1); }
 .sola-nota { font-size: 12px; color: var(--grigio); padding: 6px 2px 0; }
 
 main { padding: 12px var(--dx) calc(112px + env(safe-area-inset-bottom)) var(--sx); max-width: 760px; margin: 0 auto; }
@@ -98,14 +92,11 @@ main { padding: 12px var(--dx) calc(112px + env(safe-area-inset-bottom)) var(--s
           box-shadow: 0 6px 18px rgba(11,92,173,.28); }
 .grande:active { background: var(--azione2); }
 .grande.quiet { background: var(--carta); color: var(--testo); border: 1px solid var(--campo); box-shadow: none; margin-top: 10px; }
-.piccolo { margin-top: 14px; font-size: 13px; color: var(--grigio); }
 .grande:disabled { opacity: .5; }
-/* «Cancella e riassocia»: un campo piccolo e un bottone */
+/* «Usa questo telefono»: un bottone, a due tocchi (armato, l'ambra dell'ordine) */
 .cambio { display: flex; flex-direction: column; align-items: center; margin-top: 10px; }
-.cambio input { width: 150px; min-height: 48px; border: 1px solid var(--campo); border-radius: 12px; padding: 10px 14px; font-size: 20px; text-align: center;
-                letter-spacing: .12em; background: var(--carta); font-variant-numeric: tabular-nums; }
-.cambio input:focus { outline: 2px solid var(--blu); outline-offset: -1px; border-color: transparent; }
 .cambio .grande { margin-top: 12px; }
+.cambio .grande.arma { background: var(--armato); color: var(--armato-t); }
 .cambio .errcod { margin: 12px 0 0; color: var(--rosso); font-weight: 650; }
 
 /* --- la lista dei pazienti --------------------------------------------- */
@@ -277,6 +268,10 @@ main { padding: 12px var(--dx) calc(112px + env(safe-area-inset-bottom)) var(--s
 .q-w .chip, .gruppo .chip, .esame { position: relative; }
 .q-w .chip::before, .gruppo .chip::before, .esame::before { content: ""; position: absolute; left: 0; right: 0; top: -3px; bottom: -3px; }
 .esame.on { background: var(--azione); border-color: var(--azione); color: #fff; }
+/* accanto al nome, come sul PC: «✓ 11:40» fatto, «40′» in attesa (rosso oltre la seconda soglia); vecchio, grigio */
+.esame .ult { font-size: 11.5px; font-weight: 650; white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--grigio); }
+.ult .uok { color: var(--verde); } .ult .uatt { color: var(--ambra); } .ult .uros { color: var(--rosso); font-weight: 750; }
+.esame.on .ult, .esame.on .ult span { color: #fff; }
 
 .cta { position: fixed; left: 0; right: 0; bottom: 0; z-index: 15; padding: 8px var(--dx) calc(8px + env(safe-area-inset-bottom)) var(--sx);
        background: var(--vetro); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); border-top: 1px solid var(--bordo); }

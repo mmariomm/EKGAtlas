@@ -49,22 +49,29 @@ l'intera pagina — nessuna estensione può impedirlo. Il pannello però **si ri
 quesito, esami selezionati, sezioni aperte e posizione tornano come li hai lasciati (per lo
 stesso paziente, nella stessa scheda), quindi in pratica non te ne accorgi.
 
-**Aggiornare a una nuova versione: ⋯ → «Aggiorna app».** Con la stampa automatica installata
+**Si aggiorna da sola, senza che tu tocchi niente.** Con la stampa automatica installata
 (`stampa\installa.cmd`, qui sotto) l'estensione si carica **una volta** da
-`%LOCALAPPDATA%\PSAssist\estensione` (ce la copia `installa.cmd`, e lo dice). Da lì: quando su
-GitHub c'è una versione più nuova, un puntino sul **⋯** e la voce **Aggiorna app** (la versione nel
-suggerimento). Un tocco: Chrome scarica lo zip, l'aiutante di Windows mette la cartella nuova al
-posto della vecchia (che resta in `estensione.prima`) e l'estensione si ricarica, senza riavviare
-Chrome e senza amministratore. Non mentre un ordine, una stampa o un ordine dal telefono è in corso
-(«Dopo l'ordine in corso»). Le schede già aperte mostrano **«Ricarica la pagina»**: un tocco, quando
-vuoi (la pagina non si ricarica mai da sola: lì può esserci un testo non mandato). Se la versione
-nuova non parte, doppio clic su `ripristina.cmd` in `%LOCALAPPDATA%\PSAssist\stampa` e ⟳ in
-`chrome://extensions`. Senza aiutante, o caricata da un'altra cartella, il ⋯ dice come fare; a mano
-resta il modo di sempre: sostituisci i file nella STESSA cartella e **Ricarica** (in fondo al ⋯,
-accanto alla versione), che non c'è mentre un giro di esami sta mandando.
-Per sapere se c'è una versione nuova PS Assist legge, una volta al giorno e aprendo il ⋯,
-`VERSION.txt` da `raw.githubusercontent.com` (e lo zip, solo al tocco): richieste senza cookie e
-senza dati, l'eccezione dichiarata nella regola 9.
+`%LOCALAPPDATA%\PSAssist\estensione` (ce la copia `installa.cmd`, e lo dice). Da lì il service
+worker guarda GitHub all'avvio e ogni sei ore; se c'è una versione più nuova, Chrome scarica lo zip,
+l'aiutante di Windows mette la cartella nuova al posto della vecchia (che resta in
+`estensione.prima`) e l'estensione si ricarica, senza riavviare Chrome e senza amministratore. Lo fa
+**solo quando è sicuro**, e se no riprova ogni quarto d'ora: mai con un ordine in corso o in coda
+(anche dal telefono), una stampa o un foglio che arriva sulla stazione di stampa, una registrazione,
+o un **testo non salvato** in una scheda del gestionale (una cartella, una dimissione riscritta, la
+terapia a metà, il pannello). Nel dubbio (una scheda non risponde) aspetta. Sulla build completa lo
+**scambio** avviene solo **senza schede del gestionale aperte** (se no ogni pannello resterebbe
+orfano a metà turno, con «Ricarica la pagina»): lo zip si scarica e si controlla comunque in silenzio,
+una volta, e lo scambio parte al primo giro (ogni quarto d'ora) a gestionale chiuso — o all'avvio di
+Chrome, subito (le schede ripristinate mostrano al massimo la pillola). La mini applica come prima. Non c'è né un puntino né
+«Aggiorna app» né «Ricarica»: niente da toccare. Le schede già aperte mostrano **«Ricarica la
+pagina»**: un tocco, quando vuoi (la pagina non si ricarica mai da sola: lì può esserci un testo non
+mandato). Se la versione nuova non parte, doppio clic su `ripristina.cmd` in
+`%LOCALAPPDATA%\PSAssist\stampa` e ⟳ in `chrome://extensions`. Senza aiutante, o caricata da
+un'altra cartella, non si aggiorna da sé: il ⋯ lo dice, in fondo, e come rimediare (sostituire i file
+nella STESSA cartella e ⟳ in `chrome://extensions`).
+Per sapere se c'è una versione nuova PS Assist legge, ogni sei ore, `VERSION.txt` da
+`raw.githubusercontent.com` (e lo zip, solo quando lo applica): richieste senza cookie e senza dati,
+l'eccezione dichiarata nella regola 9.
 
 **Stampa automatica** (facoltativa, Windows, niente admin): etichette all'etichettatrice e il resto
 all'A4, senza dialogo. Prima si avvisa l'IT, poi si installa una volta dalla cartella `stampa`
@@ -139,10 +146,9 @@ ma con lo zip **`ps-assist-lettura.zip`**:
 4. Per farlo anche stazione di stampa dell'infermeria, la sua pagina «Stazione di stampa»
    (`stazione.html`): come per la build completa (vedi «Stazione di stampa»).
 
-**Si aggiorna da sola.** Non avendo un pannello, la build mini controlla GitHub all'avvio e ogni sei
-ore e applica da sé la versione nuova quando il PC è libero — scaricando il **suo** zip e con tutti i
-controlli di sicurezza (versione, **stessa chiave**, cartella installata, host fisso, mai a metà di
-una stampa). La sua pagina mostra «Aggiornato alla versione X · data».
+**Si aggiorna da sola**, come la build completa (vedi «Si aggiorna da sola»): scarica il **suo** zip, con
+tutti i controlli di sicurezza (versione, **stessa chiave**, cartella installata, host fisso) e mai
+a metà di una stampa o di un foglio per la stazione. La sua pagina mostra «Aggiornato alla versione X · data».
 
 ---
 
@@ -201,8 +207,8 @@ pagina non ha voci non c'è. In cima **Forma** (vedi sopra), con **Al centro**. 
   (Segue il gestionale, Stampa automatica) si spuntano: al posto dell'icona il loro stato (il
   pallino blu con la spunta, acceso);
 
-e in fondo la versione, con accanto **Ricarica** (l'estensione) e sopra, quando c'è una versione
-nuova, **Aggiorna app**. Le schermate che si aprono dal ⋯ (Riferimenti, Cronometro, Registrazioni,
+e in fondo la versione (e, solo se la versione nuova da qui non si può applicare, una riga che dice
+come rimediare). Le schermate che si aprono dal ⋯ (Riferimenti, Cronometro, Registrazioni,
 iPhone, Ricetta SISS, Terapia) dicono dove sei: al posto delle schede **«‹ [icona] Nome»**, e ‹ (o
 Esc) torna alla scheda da cui eri venuto. Il cronometro compare in intestazione **solo mentre corre**
 (un tocco sul tempo apre la scheda, ⏹ lo ferma).
@@ -630,6 +636,13 @@ lette stanno in `sessionStorage` (`smart.giro.v1`) e muoiono con lei.
    ferma tutto. **Esc** non ferma mai il giro, nemmeno col pannello aperto (lascerebbe un
    carrello a metà): riduce il pannello, come ovunque; si ferma col **⏹**. Se intanto sei sulla scheda di un altro paziente la striscia diventa **ambra** e
    lo scrive: gli esami restano quelli di chi li hai ordinati.
+   **Un ordine finito di un altro paziente non prende il posto della tua pill.** Sulla pagina di
+   BIANCHI, l'ordine finito di ROSSI resta un **segno piccolo dentro la pill** — «✓ ROSSI M.»
+   (fatto), «⚠» (da guardare), «✕» (non partito), scelto dal tono dell'esito, non dalle parole —;
+   un tocco lo apre come striscia intera, col suo ⏹/✕/«Ristampa». Il mouse sulla pill la apre come
+   sempre (a finestra aperta il segno è un chip in intestazione). Sulla pagina dello stesso
+   paziente, e per un ordine che gira, è in coda o aspetta un tocco per le etichette, la striscia
+   resta intera.
    **Con l'estensione il giro va in una scheda di sottofondo.** «Conferma e stampa» (e «solo
    carrello») non mandano gli esami dalla tua scheda: l'estensione apre **una seconda scheda,
    accanto e dietro**, sulla pagina vera del paziente — lo stesso indirizzo da cui il giro
@@ -866,6 +879,12 @@ col suo colore sul bordo e nel titolo (il rosso resta **solo** dei valori fuori 
 ciò che aspetta; il blu dei comandi e di «nuovo»). Il Lab per primo, a tutta larghezza; sotto ECG
 e Imaging, affiancati se c'è posto.
 
+**La pill dice cosa c'è di nuovo**, senza un gesto: sulla pagina di un paziente, ridotta, accanto al
+nome una scritta corta — il primo valore nuovo fuori range (i più gravi per primi) o, senza, il
+referto nuovo (ECG e immagini prima), e quanti sono: «Hb 8,0↓ · 1 nuovo», «RX TORACE · nuovo». Gli
+stessi conti della riga in cima agli Esiti; niente di nuovo, niente scritta. Legge solo quello che
+il pannello ha già: dalla pill non parte nessuna lettura.
+
 **Aprire un paziente** porta sugli **Esiti se ha qualcosa da guardare** — valori, referti in
 pagina o già letti — e sulle **Richieste se non ha ancora niente** (gli Esiti vuoti non servono).
 Vale per la pagina appena aperta e per «apri» dalla lista, dalla mappa o da un promemoria.
@@ -893,8 +912,9 @@ da solo al più **due volte**, dopo 2 e dopo 10 minuti (i valori anche quando la
 pagina cambia); un tocco o un bottone ci provano sempre; un PDF che si è rivelato di un altro
 paziente da solo non si riprende più (↺ fa ripartire i referti da capo). Il laboratorio a metà,
 con la pagina aperta, si ricontrolla ogni 10 minuti **solo mentre la guardi** (tornandoci, se ne
-sono passati 10), e dopo due ricontrolli senza niente di nuovo smette: lo rifà aprire gli Esiti. Mentre lavora, accanto a **↻** c'è solo un discreto **«↓ 2»** — quanti ne restano —
-e nient'altro. Non parte mai nella scheda di un ordine, del Ponte, di un giro ripreso o con una
+sono passati 10), e dopo due ricontrolli senza niente di nuovo smette: lo rifà aprire gli Esiti. Mentre lavora, accanto a **↻** c'è un discreto **«↓ 2»** — quanti ne restano —, e se il Lab
+non ha ancora una tabella dice **«Leggo i valori…»**; se non c'è proprio niente da leggere (né
+prelievi né referti di laboratorio), **«Nessun esame di laboratorio»**. Non parte mai nella scheda di un ordine, del Ponte, di un giro ripreso o con una
 richiesta da confermare.
 
 - **In cima, una riga**: i valori **fuori range** dell'ultimo prelievo di ciascun esame, i più
@@ -909,8 +929,8 @@ richiesta da confermare.
   richiesto 13:10`). Un esame di laboratorio i cui valori **hanno cominciato ad arrivare** (la
   finestra Risultati c'è) non aspetta più: **«parziale 15:11»**, in grigio, **senza orologio** —
   i valori sono già in tabella. Gli orologi di ECG e immagini restano.
-- **Refertati**: una riga per referto, con data e ora, la prima frase che dice qualcosa
-  (le conclusioni, se ci sono) e «nuovo» finché non l'hai aperto. Il più recente **non ancora
+- **Refertati**: una riga per referto, con data e ora, **una riga** di testo — le conclusioni se
+  ci sono, se no la prima frase del referto (mai il titolo o la riga dell'esame, né «Quesito: …») e «nuovo» finché non l'hai aperto. Il più recente **non ancora
   letto** che ha un testo (ECG, radiografia) è già **aperto**, finché non ne apri o chiudi uno
   tu. Un tocco apre il **testo lì
   sotto** (un secondo tocco lo richiude), con **⧉ Copia** (ora, esame e paziente in testa, per il
@@ -924,7 +944,11 @@ richiesta da confermare.
   «Solo il tracciato della macchina». Di una **radiografia** si mostrano la riga dell'esame (titolo,
   data e ora) e il referto fra le due righe di trattini, mai l'anagrafica in testa, la modalità,
   l'operatore o il piè di pagina (stesso taglio sul PC, sul telefono e nella copia); se la struttura
-  del PDF non è riconosciuta si mostra tutto, com'era. Gli altri documenti (consulenze…) stanno in **Altri
+  del PDF non è riconosciuta non si taglia a corpo, ma se ne vanno le righe che sono **certamente**
+  cornice — nome e dati anagrafici del paziente (nato il, codice fiscale, sesso, età, episodio),
+  intestazione di ospedale e reparto in testa, «Il Medico … / Dott. …» e il piè di pagina in coda,
+  i trattini — e **mai una riga di cui non si è sicuri** (il quesito, il titolo e ogni riga
+  clinica restano; se tutto sembrasse cornice, resta tutto). Gli altri documenti (consulenze…) stanno in **Altri
   documenti**, e si aprono nella loro scheda.
 - **Di chi è il referto**: prima di mostrare un testo, il codice fiscale scritto nel PDF (o nome e
   data di nascita) si confronta col paziente. Fra i PDF che il portale mostra, quello rimasto
@@ -1162,12 +1186,13 @@ si legge l'analita sbagliato. Quindi:
   ma ogni altro campione resta scritto nella sigla (`U-Emoglobina` → **`U·Hb`**, `Lcr-Glucosio` →
   `LCR·Glu`). L'emoglobina delle urine non diventerà mai `Hb`;
 - un nome fuori elenco è **scritto per esteso** e **sottolineato a puntini**, mai abbreviato a caso;
-- in cima compare una riga ambra: *«2 nomi non in elenco: scritti per esteso · 1 riga non letta»*,
-  e **quali** apre l'elenco esatto, con nome e valore di quello che non è stato letto;
+- niente riga ambra sullo schermo: il dettaglio — **quali** nomi non sono in elenco e **quali righe
+  non sono state lette**, con nome e valore — sta nel **Registro**, una volta per ogni
+  cambiamento;
 - una riga che il lettore rifiuta (niente data, niente range, niente stato: di solito è
-  un'intestazione) **non sparisce**: viene contata e mostrata lì dentro. Se è un esame vero lo vedi
-  e apri la finestra nativa. Lo stesso vale nello Storico per una riga che non sta in colonna
-  (meno celle dell'intestazione): non viene indovinata, viene dichiarata.
+  un'intestazione) **non sparisce**: finisce nel Registro, col suo valore. Se è un esame vero lo
+  trovi lì e apri la finestra nativa. Lo stesso vale nello Storico per una riga che non sta in
+  colonna (meno celle dell'intestazione): non viene indovinata, viene dichiarata.
 
 Vale sia per i valori di un prelievo sia per la tabella dello Storico.
 
@@ -1363,7 +1388,7 @@ che non può leggere niente: cifrato da un capo all'altro, nessun dato su nessun
 
 - **Una volta**: ⋯ → **iPhone** → **Associa l'iPhone**, e si inquadra il QR con la
   fotocamera (accanto, un codice di sei cifre: lo stesso compare sul telefono). **Non scade**: dura
-  finché non la togli (**Revoca l'iPhone** sul PC, «Dimentica PC» sul telefono); vale per un
+  finché non la togli (**Revoca l'iPhone** sul PC, «Scollega» nel ⋯ del telefono); vale per un
   telefono solo, il primo che entra; il QR si rivede solo nei primi due minuti e il suo link vale
   pochi minuti, una volta sola. Regge il browser chiuso e riaperto, il logout e il rientro; una scheda del gestionale alla pagina d'accesso chiude la sessione, non
   l'associazione. Telefono perso sbloccato: **Revoca l'iPhone** sul PC.
@@ -1387,23 +1412,26 @@ che non può leggere niente: cifrato da un capo all'altro, nessun dato su nessun
   o su un'area, o fuori dalla mappa per tornare fra «Senza posto»; lo fa il PC (`posto`, lo stesso gesto del
   trascinamento sulla sua mappa: un posto per paziente, un letto uno solo, le aree molti) e il telefono
   ridisegna dalla sua risposta. Un PC che non lo conosce: mappa in sola lettura, o niente scelta, senza errori.
-- **Ordinare dal telefono**: la conferma porta nome intero, età e posto (due righe: «Ordino 2 esami · tocca di nuovo» e, sotto,
+- **Ordinare dal telefono**: accanto a ogni esame, come sul PC, «✓ 11:40» se è già tornato e «40′» se è
+  in attesa (un doppione si vede prima di sceglierlo); la conferma porta nome intero, età e posto (due righe: «Ordino 2 esami · tocca di nuovo» e, sotto,
   «ROSSI MARIO · 77 anni · OBI 2»; due pazienti con lo stesso nome: «⚠ ROSSI MARIO · …9001 · …», col segno dell'elenco); un doppio tocco non conferma; se la rete perde
   la risposta il telefono dice «Non so se l'ordine è partito» e non lo rifà alla cieca (lo stesso
   ordine rimandato parte una volta sola), a meno che non lo veda già nato sul PC. Niente ordini su un episodio precedente o per un paziente
   dimesso sul PC. Un ordine finito male si vede da ogni pagina del telefono, finché non lo chiudi.
   Sul PC la striscia dice «dall'iPhone». Con una [stazione di stampa](#stazione-di-stampa-le-stampanti-dellinfermeria)
-  collegata, sopra il bottone «Stampa: PC · Infermeria» (quella del PC, cambiabile per l'ordine); la
-  stazione si collega da qui, **⋯ → Collega stampante**, inquadrando il suo QR.
-  **Stampante predefinita del telefono**: **⋯ → «Stampa su» [💻 PC] [🖨️ Infermeria]** (si ricorda sul
-  telefono, per PC; non scelta, segue il PC) per «Stampa PDF» e per il **🖨️ accanto a un referto
-  PDF** negli Esiti (stampa la copia salvata sul PC, una volta sola per tocco; comando
-  `stampaReferto`, solo stampa). Nelle «Richieste fatte», **Ristampa** su una richiesta con etichette
+  collegata, sopra il bottone «Stampa: PC · Infermeria»: parte da quella del PC, e **si ricorda** (sul
+  telefono, per PC) — l'ultima toccata vale anche per le ristampe, «Stampa PDF» e il **🖨️ accanto a un
+  referto PDF** negli Esiti (stampa la copia salvata sul PC, una volta sola per tocco; comando
+  `stampaReferto`, solo stampa); la stazione si collega da qui, **⋯ → Scansiona il QR**, inquadrando il suo QR.
+  Il ⋯ del telefono tiene solo quello che non c'è altrove: i PC (con due o più), Stampa PDF, Scansiona il
+  QR, Registrazioni, **Scollega** (l'elenco si rilegge da solo, la sessione finisce da sola). Nelle «Richieste fatte», **Ristampa** su una richiesta con etichette
   e foglio apre **🏷️ Etichette · 📄 Foglio · Entrambi**.
 - **Cartella dal telefono**: anamnesi, remota, farmaci, allergie ed esame obiettivo, scrivibili dove
   la pagina del paziente li lascia scrivere; «Salva» li scrive col «Conferma» della pagina, in una
   scheda di sottofondo, e rilegge. Mai sopra un testo cambiato sul PC o non ancora salvato in una
-  scheda; la pagina aperta di quel paziente dice «Aggiornato dal telefono · Ricarica».
+  scheda. La pagina di quel paziente aperta sul PC si ricarica da sola (era di prima: il suo «Conferma»
+  rimanderebbe i testi vecchi); se intanto ci hai scritto qualcosa, no — si perderebbe —: dice
+  «Aggiornato dal telefono · Ricarica», e il suo «Conferma» è fermo finché non la ricarichi.
   Sopra l'esame obiettivo (solo lì, e solo dove si può scrivere) una fila di chip: i tuoi EO di base per nome,
   poi **Altri…** (Casi e Frasi, in un foglio; la ricerca solo se sono più di 15). I testi sono quelli del PC, con
   le tue modifiche (comando `eo`, niente dal gestionale). Un tocco: campo vuoto, ci va il testo; altrimenti in
@@ -1431,8 +1459,10 @@ che non può leggere niente: cifrato da un capo all'altro, nessun dato su nessun
   non si ripreme. Le regole: [Perché è robusto](#perché-è-robusto-regole-di-sicurezza-nel-codice), 22.
 - **Si vede sul PC**: finché il telefono è collegato, ogni scheda mostra **«iPhone collegato ·
   Scollega»** (la spia è ferma), e ogni comando va nel **Registro**. Dopo **3 minuti senza comandi** del medico la
-  sessione si chiude da sola; tornando sull'app si riapre da sola, sul paziente e sulla scheda dov'eri
-  (in memoria, mai su disco, dopo che il PC ha risposto).
+  sessione si chiude da sola — un tocco o uno scorrere col telefono in mano conta come un comando (al più
+  uno al minuto, `tocco`): mentre leggi non si chiude —; tornando sull'app si riapre da sola, sul paziente e sulla scheda dov'eri
+  (in memoria, mai su disco, dopo che il PC ha risposto). Così anche se l'estensione sul PC si riavvia: il
+  telefono si ricollega da solo, senza «Sessione chiusa».
 - **Registrazioni** (⋯ sul telefono): gli zip salvati sul PC (⋯ → Registrazioni), con quando, quanto, a mano o
   automatica e perché, il controllo — niente pazienti. **Scarica** lo porta sul telefono a pezzi, cifrato come
   tutto il resto (al più 100 MB), e lo tiene in memoria; poi **Condividi…** lo passa a iOS (all'app di Claude, a
@@ -1668,7 +1698,7 @@ Windows), con **Stampa una pagina di prova** per ciascuna. Da lì:
   invece di tre. L'esito è uno, e vale per tutte: «Etichetta stampata», «Mandata a…», non uscita
   (al dialogo una volta, «3 copie»), sconosciuto. La striscia dice «3 copie», il giornale
   dell'ordine `copie: 3` su ogni copia, il registro dell'aiutante le opzioni («…,3x»). Serve
-  l'aiutante dalla **versione 4** (arriva con «Aggiorna app»; l'estensione glielo chiede col
+  l'aiutante dalla **versione 4** (arriva con l'aggiornamento da sé; l'estensione glielo chiede col
   «ci sei?», e se lo ricorda): con quello di prima, le copie partono una a una come sempre; e un
   aiutante che non ridice «copie: 3» ne ha stampata una: le altre partono dopo, una a una — mai
   «tre» detto per una. La prima volta, tre tocchi e conta che ne escano tre: le copie le fa il
@@ -1727,7 +1757,7 @@ telefono), li stampa sulle sue stampanti e dice com'è andata.
   («Infermeria»: lo vede il medico). Il gestionale lì non serve; basta Chrome aperto (la pagina può
   restare chiusa).
 - **Collegarla, col telefono.** La pagina mostra un **QR** e sotto un codice di sei cifre.
-  Sull'iPhone, nell'app: **⋯ → Collega stampante**, e si inquadra il QR: una carta «Stazione di
+  Sull'iPhone, nell'app: **⋯ → Scansiona il QR**, e si inquadra il QR: una carta «Stazione di
   stampa · Infermeria», con lo stesso codice, e **Collega**. Il telefono passa l'offerta al PC,
   dentro il ponte; il PC e la stazione fanno la loro chiave fra loro. Poi lo dicono tutti e tre: il
   telefono «Collegata al PC», la stazione «Collegata al PC del medico», il PC in **⋯ → Impostazioni**
@@ -1741,9 +1771,9 @@ telefono), li stampa sulle sue stampanti e dice com'è andata.
   stampa · 2 esami → Infermeria») e la stampantina in intestazione è «→ Infermeria» (rossa quando
   non risponde). Vale per le etichette e i fogli A4 di un ordine (e per la loro **Ristampa**) e per
   l'etichetta anagrafica; il resto (consensi, «Stampa le richieste») resta qui. Un PDF dal telefono e un
-  referto stampato dal telefono vanno dove dice il suo «Stampa su».
+  referto stampato dal telefono vanno dove dice il telefono.
   Sul telefono, sopra «Conferma e stampa», la stessa scelta, **«Stampa: PC · Infermeria»**: parte
-  da quella del PC, e si cambia per quell'ordine.
+  da quella del PC, e il telefono si ricorda l'ultima toccata (per PC).
 - **Com'è andata, per quello che è.** «Stampo le etichette in Infermeria…», poi **«Stampato in
   Infermeria»** solo quando la stazione l'ha detto («Mandato in Infermeria» in ambra, o il suo
   errore). **Prima, non dopo**: quando l'ordine nasce (dal PC o dal telefono) il PC chiede alla
@@ -1762,6 +1792,13 @@ telefono), li stampa sulle sue stampanti e dice com'è andata.
 - **La stazione riceve fogli e risponde, nient'altro**: non può mandare un comando al PC del medico
   né leggerci niente, e dopo la stampa non tiene niente del foglio. Nella sua pagina, «Ultimi
   fogli»: l'ora, etichette o A4, le pagine, com'è andata — mai un nome.
+- **Un puntino rosso sull'icona**, quasi invisibile (il badge più piccolo di Chrome: uno spazio),
+  solo quando serve: l'ultimo foglio non è stampato (fallito o esito sconosciuto) o l'aiutante di
+  stampa non risponde (lo guarda ogni mezz'ora). I fogli stampati bene non dicono niente: la carta
+  si vede. Si spegne aprendo la pagina della stazione o il popup. Nessuna notifica di Windows,
+  nessun permesso in più. La build intera ha ora la sua icona (senza popup: un clic apre la
+  stazione); l'icona va **fissata** nella barra (il puzzle) perché il puntino si veda. Nel popup
+  della build mini la voce della stazione ha una stampante 🖨️, non un ● rosso (che dice «registra»).
 
 I fogli viaggiano cifrati da un capo all'altro, come i messaggi del ponte, attraverso lo stesso
 ripetitore (fuori dall'ospedale e ritorno: lo dice la regola 9). Come è fatto, la chiave, che cosa
@@ -1905,7 +1942,7 @@ Per ricostruire le pagine di esempio, imparare il flusso e i tempi veri e costru
   icone usate; per uno automatico, dopo che cosa), e `eviewer.json` se c'è il visualizzatore.
 - **Il visualizzatore di immagini (eViewer)**, quello che apre la fotocamera «IMMAGINE» del paziente
   (`http://mmeviewer.multimedica.root.lan:18188`, un host, ogni porta, http e https: in `host_permissions`
-  e nei content script; con «Aggiorna app» Chrome **non chiede niente** — l'estensione non
+  e nei content script; con l'aggiornamento da sé Chrome **non chiede niente** — l'estensione non
   pacchettizzata ricaricata ha subito il permesso —, ma una finestra dell'eViewer già aperta va
   riaperta). Si registra come il gestionale — istantanee del DOM (a ogni cambiamento, al più 15 al
   minuto, come sul SISS), il flusso, e in più i **clic** — ma **senza immagini**: le miniature `data:`
@@ -2079,9 +2116,12 @@ nella tendina del gestionale») — poi **Prepara nel gestionale** (o Ctrl+Invio
   riporta solo le scritte delle voci; due voci uguali dal telefono non si scelgono). Dose, unità e
   via in vista; diluizione, frequenza, durata, continua e al bisogno dietro «Altro»; mai le note,
   mai l'ora. Un riepilogo col nome, e **«Conferma per ROSSI M.»**: un farmaco per Conferma.
-  Il PC fa il giro di sempre in una **scheda di sottofondo** (comandi `terapie`, `terapiaCerca`,
-  `terapiaAggiungi`): la pagina del paziente, il **suo** pulsante «Terapia» (mai un indirizzo fatto
-  da noi), gli stessi controlli (un altro paziente: «Errore grave», niente scritto), la voce con la
+  Il PC fa il giro di sempre in **una scheda di sottofondo**, la stessa per leggere, cercare e
+  aggiungere (comandi `terapie`, `terapiaCerca`, `terapiaAggiungi`): la pagina del paziente, il **suo**
+  pulsante «Terapia» (mai un indirizzo fatto da noi), e lì resta, ferma, finché serve — le ricerche nella
+  sua tendina, senza ricaricare; prima di aggiungere la pagina si rilegge col suo pulsante
+  «Prescrizione», e il controllo di quello che il telefono ha visto si fa su quella. Si chiude dopo
+  l'aggiunta, a ogni dubbio, col foglio chiuso sul telefono, o dopo 2 minuti senza lavoro. Gli stessi controlli (un altro paziente: «Errore grave», niente scritto), la voce con la
   stessa scritta (una sola, se no si ferma), ogni campo scritto e **riletto** — qualunque cosa non
   torni: si ferma, niente confermato. Poi **preme il «Conferma» della pagina**
   (`TERAPIA_SERIALIZED` lo compone lei; i nascosti non si toccano) e guarda la pagina che torna:
@@ -2314,12 +2354,12 @@ nella tendina del gestionale») — poi **Prepara nel gestionale** (o Ctrl+Invio
    pazienti, vanno dal PC del medico a quello dell'infermeria passando dal ripetitore — escono
    dall'ospedale e ci tornano, cifrati da un capo all'altro; il ripetitore non li legge né li
    tiene. Solo con una stazione collegata e scelta («Stampa: Infermeria»).
-   **E una seconda, per gli aggiornamenti (⋯ → «Aggiorna app»):** il service worker legge
-   `ps-app/dist/VERSION.txt` da `raw.githubusercontent.com` (una volta al giorno e aprendo il ⋯) e,
-   solo al tocco del medico, `ps-assist-latest.zip` — due GET senza cookie, senza referrer e senza
-   niente dell'ospedale (`aggiorna.js`). Lo zip va all'aiutante su questo PC, che controlla
-   chiave e versione del manifest e scambia la cartella dell'estensione; mai con un ordine, una
-   stampa o un giro in corso.
+   **E una seconda, per gli aggiornamenti (da sé):** il service worker legge
+   `ps-app/dist/VERSION.txt` da `raw.githubusercontent.com` (all'avvio e ogni sei ore) e,
+   solo quando è il momento di applicarlo, `ps-assist-latest.zip` — due GET senza cookie, senza
+   referrer e senza niente dell'ospedale (`aggiorna.js`). Lo zip va all'aiutante su questo PC, che
+   controlla chiave e versione del manifest e scambia la cartella dell'estensione; mai con un
+   ordine, una stampa, una registrazione o un testo non salvato in corso.
 10. **Due schede, due pazienti, zero interferenze**: i passaggi di consegna tra pagina e pagina
    (ricevuta e conferma automatica) vivono nella singola scheda (sessionStorage).
    **La scheda dell'ordine.** Con l'estensione il giro lo fa una scheda di sottofondo, e tutti
@@ -2494,7 +2534,8 @@ nella tendina del gestionale») — poi **Prepara nel gestionale** (o Ctrl+Invio
 20. **Una terapia dal telefono: un «Conferma», una volta, e visto.** È l'unica Conferma che il
     programma preme nella pagina Terapia, perché il medico l'ha scelto: il suo tocco su
     «Conferma per …» dopo il riepilogo. Prima del clic: la pagina aperta col pulsante del
-    paziente, l'episodio (indirizzo e modulo), il nome e la tabella — se no «Errore grave» —; la
+    paziente (o, nella scheda tenuta dalla ricerca, riletta col suo pulsante «Prescrizione» subito
+    prima: mai una pagina di prima), l'episodio (indirizzo e modulo), il nome e la tabella — se no «Errore grave» —; la
     voce della tendina con la stessa scritta, una sola; ogni campo riletto (quello non scritto
     com'era, le note e l'ora sempre vuote); nessuna terapia con quel farmaco confermata dopo la
     lettura del telefono; nessun ordine al lavoro; la Terapia di quel paziente non toccata in una
@@ -2631,7 +2672,7 @@ ps-app/
 ├── stampa/              ← la stampa automatica per Windows: installa.cmd, l'aiutante host.ps1 e SumatraPDF.exe (ufficiale 3.6.1, GPLv3, nello zip: installa.cmd non scarica più niente); ripristina.cmd
 ├── extension/ricetta-*  ← ⋯ → Ricetta SISS: ricetta-sw.js (service worker: la ricetta, la scheda, i preferiti),
 │                          ricetta-siss.js (nella scheda del Prescrittivo: compila e si ferma sull'Anteprima)
-├── extension/aggiorna*  ← ⋯ → «Aggiorna app»: aggiorna.js (service worker: VERSION.txt, lo zip, l'aiutante, la ricarica),
+├── extension/aggiorna*  ← l'aggiornamento da sé: aggiorna.js (service worker: VERSION.txt, lo zip, l'aiutante, la ricarica),
 │                          aggiornata.js (la pillola «Ricarica la pagina» nelle schede rimaste col pannello vecchio)
 ├── tools/verifica-build.mjs ← al rilascio: la build, lo zip e la versione committati sono quelli di adesso
 ├── esempi-gestionale/   ← pagine vere del gestionale, contenuti inventati (+ come)

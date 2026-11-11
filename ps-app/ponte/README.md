@@ -20,19 +20,24 @@ cifrato.
 **Una volta sola.** Sul PC, nel pannello: **⋯ → iPhone → Associa l'iPhone**. Compare un QR,
 con accanto un **codice di sei cifre** («482 913»): lo inquadri dall'app PS Assist (**⋯ → Scansiona il QR**; con la Fotocamera
 solo se l'app non è sulla Home) e
-si apre il pannello, già collegato; lo stesso codice è nel suo menu ⋯. L'associazione
-**non scade**: dura finché non la togli (**Revoca** sul PC, **«Dimentica PC»** sul telefono, o un QR nuovo), e vale per **quel telefono solo**: il
+si apre il pannello, già collegato, e per un momento lo stesso codice («Associato · codice 482 913»: dopo
+non serve, e non si vede più). L'associazione
+**non scade**: dura finché non la togli (**Revoca** sul PC, **«Scollega»** nel ⋯ del telefono, o un QR nuovo), e vale per **quel telefono solo**: il
 primo che entra. Un altro telefono che inquadra lo stesso QR si sente dire «Il PC è associato a un
-altro telefono», con **«Cancella e riassocia»**: scrive il codice **93** e quel telefono diventa
-l'associato (il primo esce, come con «Revoca» e un'associazione nuova; resta senza scadenza). Il
-codice sbagliato dice «Codice sbagliato» e non cambia niente. Sul PC la pagina ⋯ → iPhone dice
+altro telefono», con **«Usa questo telefono»**: due tocchi (il primo arma, «Usa questo telefono? Tocca
+di nuovo»; un doppio tocco per sbaglio non vale) e quel telefono diventa l'associato (il primo esce,
+come con «Revoca» e un'associazione nuova; resta senza scadenza). Niente codice da ricordare: lo può
+chiedere solo un telefono che ha la chiave del QR. Capita soprattutto col proprio telefono: il QR
+aperto con la Fotocamera (Safari) e poi l'icona della Home, che ha una memoria sua. Sul PC la pagina ⋯ → iPhone dice
 «iPhone cambiato alle 14:32». Il QR si rivede con «Mostra il QR» solo nei primi due minuti e solo finché nessun
 telefono è entrato; dopo, «Associa» ne fa uno nuovo (e il telefono di prima esce). Conviene
 aggiungerlo alla schermata Home (Condividi → Aggiungi alla schermata Home): l'icona riapre il pannello.
 
-Il QR si inquadra anche **dall'app**: senza un'associazione buona (nessuna, QR scaduto, chiusa, revocata,
-o un altro telefono al suo posto, e accanto a «Riprova» quando il PC non risponde) c'è **«Scansiona il
-QR»**, che apre la fotocamera nella pagina. Serve
+Il QR si inquadra anche **dall'app**: **⋯ → 📷 Scansiona il QR**, sempre (anche su un PC di sola lettura),
+e senza un'associazione buona (nessuna, QR scaduto, chiusa, revocata, o un altro telefono al suo posto,
+e accanto a «Riprova» quando il PC non risponde) un bottone **«Scansiona il QR»**: apre la fotocamera
+nella pagina. Un QR solo per tutto: il QR dice che cos'è — un PC completo, un PC di sola lettura, una
+stazione di stampa. Serve
 all'app della schermata Home, che ha una memoria sua: il QR letto con la Fotocamera si apre in Safari,
 e lì la chiave non arriva. Senza fotocamera: «Fotocamera non disponibile: inquadra il QR con la
 Fotocamera dell'iPhone».
@@ -47,9 +52,10 @@ chiave**: una non apre gli altri, e un PC in mano a un altro non espone i tuoi. 
 **una volta sola**: il suo QR **aggiunge** quel PC alla lista (lo stesso PC riscansionato, o un altro
 dello stesso nome, lo sostituisce; il QR del PC completo sostituisce il completo). Da lì si passa
 dall'uno all'altro da un **menu** (⋯ sul telefono: l'attivo in cima, gli altri sotto col loro nome e
-tipo, «attivo adesso» quando la sessione è viva; un tocco cambia, «Dimentica» per riga). Con un PC
-solo il menu non c'è: meno è meglio. Su un PC di sola lettura la testata lo dice in una riga quieta
-(«Sola lettura · gestionale di …», il collega loggato lì, solo per saperlo) e i controlli di scrittura
+tipo, «attivo adesso» quando la sessione è viva; un tocco cambia, 🗑️ «Scollega» per riga). Con un PC
+solo il menu non c'è: meno è meglio. Su un PC di sola lettura la testata ha un 👁️ piccolo e quieto, accanto
+a ⋯ — niente che distragga —; la scritta («Sola lettura · gestionale di …», il collega loggato lì, solo per
+saperlo) sta nel suo nome e in fondo al ⋯, e i controlli di scrittura
 non ci sono: si legge, si ristampa, si stampa un PDF.
 
 **Poi.** Apri il pannello dall'iPhone: si collega da solo, niente QR. L'elenco si rilegge
@@ -65,7 +71,8 @@ sessione. Vedi:
 - **Il paziente** — in testa il nome intero, l'età e il posto: «ROSSI MARIO · 77 anni · OBI 2» (su
   un episodio precedente lo dice sotto; due pazienti con lo stesso nome hanno il ⚠ e il segno che li
   distingue, come nell'elenco: «⚠ ROSSI MARIO · …9001 · 77 anni · OBI 2»). Sotto il nome, su ogni scheda, le **allergie** con le parole del PC («Allergie: nega», «non compilate»,
-  «non lette», o il testo, in rosso; anche nel riepilogo della Terapia) e il **Da fare** in una riga —
+  «non lette», o il testo, in rosso; anche nel riepilogo della Terapia — e rilette con la cartella: aperta,
+  riletta o salvata dal telefono, la riga dice quello che dice il campo Allergie) e il **Da fare** in una riga —
   «○ 11:30 ecg di controllo · +2» (senza voci, «○ + nota»): un tocco apre la lista del paziente con
   il campo «+ nota». Poi le schede **Richieste · Esiti · Cartella**, nell'ordine del PC (resta
   quella che hai scelto l'ultima volta; la prima volta gli Esiti), ognuna col suo colore: Richieste blu,
@@ -87,7 +94,11 @@ sessione. Vedi:
   come di un altro paziente (è leggendole che lo si scopre, e la copia si toglie) — anche di una TC o di una visita, il cui testo non si legge —, e dà solo
   quelle offerte nella sessione. Oltre 15 MB: «PDF troppo grande: aprilo sul PC».
 - **Richieste** — il quesito (i tre pacchetti in testa, e i quesiti che sul PC hanno imparato il loro pacchetto), i profili e gli esami, in pillole che vanno
-  a capo (alte almeno 44 pt; scelto = pieno). Con quesito mancante il bottone resta spento, ma un
+  a capo (alte almeno 44 pt; scelto = pieno). Accanto al nome di un esame, come nelle Richieste del PC e con
+  le stesse parole: **«✓ 11:40»** le richieste già tornate (verde), **«40′»** quella in attesa (ambra, rosso
+  oltre la seconda soglia), grigio con «letto 11:02» se la lettura è vecchia — un doppione si vede prima di
+  sceglierlo. Il PC lo manda col catalogo (`ultimi`, per paziente), riletto aprendo le Richieste e quando
+  un ordine del telefono finisce; i minuti li conta il telefono. Con quesito mancante il bottone resta spento, ma un
   tocco porta il cursore sul quesito. Il
   bottone chiede conferma **col nome intero, l'età e il posto** («Ordino 2 esami per ROSSI MARIO ·
   77 anni · OBI 2? Tocca di nuovo»; per un omonimo «⚠ Ordino …», col segno); un secondo tocco entro
@@ -131,28 +142,29 @@ sessione. Vedi:
   basta). Scritto qualcosa, compare un **Salva** solo, in fondo: «Salvo sul PC…», poi «Salvato» o
   il perché. Se intanto il testo sul PC è cambiato: «Cambiato sul PC: ricarica», e non parte niente;
   se il medico ha un testo non salvato in quella pagina sul PC: «Sul PC c'è un testo non salvato in
-  questa pagina». Una pagina di quel paziente aperta sul PC dice «Aggiornato dal telefono ·
-  Ricarica» (non si ricarica da sola).
+  questa pagina». Una pagina di quel paziente aperta sul PC si ricarica da sola (era di prima: il suo
+  «Conferma» rimanderebbe i testi vecchi); se intanto qualcuno ci ha scritto, no — si perderebbe —: dice
+  «Aggiornato dal telefono · Ricarica», e il suo «Conferma» è fermo (niente inviato, e lo dice) finché
+  non la si ricarica.
 - **Nota e promemoria** — la nota del paziente (si salva uscendo dal campo) e i promemoria
   («11:30 tropo», «tra 2h ECG»): sul PC sono voci di **Da fare**, la lista del pannello. La nota è
   la prima voce aperta senza ora (scritta cambia quella, o ne fa una in cima; vuota la toglie), i
   promemoria le voci aperte con l'ora. **✓ Fatto** aspetta 5 secondi, con **Annulla**, prima di
   spuntarlo sul PC.
-- **Collega stampante** (⋯) — inquadra il QR di una [stazione di stampa](#la-stazione-di-stampa):
-  una carta con il suo nome e il codice, **Collega**, «Collegata al PC». Sopra «Conferma e stampa»,
-  poi, «Stampa: PC · Infermeria» (la scelta del PC, cambiabile per un ordine).
+- **Scansiona il QR** (⋯) — il QR di una [stazione di stampa](#la-stazione-di-stampa):
+  una carta con il suo nome e il codice, **Collega**, «Collegata al PC» (con un PC di sola lettura
+  attivo, la carta dice di passare al PC completo: è lui che stampa). Sopra «Conferma e stampa»,
+  poi, «Stampa: PC · Infermeria»: parte dalla scelta del PC e **si ricorda**, per ogni PC associato (sul
+  telefono, `psassist.ponte.dove.v1`) — l'ultima toccata vale per ordini, ristampe, «Stampa PDF» e il
+  🖨️ dei referti. Senza stazione la scelta non c'è.
 - **Richieste fatte** (in fondo alle Richieste) — tutte le richieste che la pagina del paziente sa
   stampare, anche quelle non fatte da PS Assist, ognuna con **Ristampa**: etichette e foglio, dove
   dice «Stampa: PC · Infermeria», con le parole di un ordine («Stampato su …», «Infermeria non
   risponde»). Se la richiesta ha etichette **e** foglio, il tocco apre la scelta **🏷️ Etichette ·
   📄 Foglio · Entrambi** (`quali`); con un genere solo stampa subito. Un doppio tocco è una ristampa
   sola. Solo stampa: niente Conferma, niente Registra.
-- **Stampa su** (⋯, con una stazione collegata) — la stampante predefinita **del telefono**,
-  **[💻 PC] [🖨️ Infermeria]**, per ogni PC associato (sul telefono, `psassist.ponte.dove.v1`); non
-  scelta, segue quella del PC. Vale per «Stampa PDF» e per il 🖨️ dei referti; un ordine o una
-  ristampa la prendono come partenza (si cambia per quello). Senza stazione la riga non c'è.
 - **🖨️ su un referto PDF** (Esiti) — stampa quel referto, dalla copia salvata sul PC, dove dice
-  «Stampa su» (comando `stampaReferto`). Una stampa alla volta, nella stessa carta di «Stampa PDF».
+  «Stampa: PC · Infermeria» (comando `stampaReferto`). Una stampa alla volta, nella stessa carta di «Stampa PDF».
 - **Stampa PDF** (⋯) — un PDF del telefono esce dalla stampante A4 del PC, con la stampa
   automatica (mai un dialogo: davanti al PC può non esserci nessuno; senza, «Sul PC la stampa
   automatica non è impostata»). Mentre va, «Invio… 40%»; poi le parole del PC: «Stampato su HP
@@ -170,6 +182,11 @@ sessione. Vedi:
   cancella solo quelle elencate nella sessione; il registro del ponte annota elenco, scarico e
   cancellazione.
 
+Il **⋯** tiene solo quello che non c'è altrove: i PC (con due o più), **Stampa PDF**, **Scansiona il
+QR**, **Registrazioni** e **Scollega** (la chiave di questo PC via dal telefono: servirà un QR nuovo).
+L'elenco si rilegge da solo a ogni ritorno sull'app, e la sessione finisce da sola: niente «Aggiorna»,
+niente «Chiudi sessione».
+
 Di notte l'app è scura, come il telefono. Ogni bottone è grande almeno 44 punti. Sul telefono c'è
 solo quello che serve: niente etichette di sezione, conteggi o testi di contorno (vedi «L'app del
 telefono», più sotto).
@@ -181,13 +198,17 @@ esami per ROSSI MARIO…»), e la pagina ⋯ → iPhone ha il registro del ponte
 chiuse, comandi, un altro telefono rifiutato).
 
 **La sessione finisce** dopo **3 minuti senza comandi del medico** (quello che l'app chiede da sé —
-rileggere l'elenco, gli ordini — non conta), con «Scollega» sul PC,
+rileggere l'elenco, gli ordini — non conta; un tocco o uno scorrere con l'app davanti sì, al più uno al
+minuto: `tocco`, che sul PC sposta l'orologio dei 3 minuti e basta — il telefono in mano non si chiude, uno
+lasciato lì sì), con «Scollega» sul PC,
 con la revoca, se l'estensione o il browser si riavviano, o se **una scheda del gestionale torna
 alla pagina d'accesso** (senza il gestionale il ponte non fa niente). Il telefono lo dice («Sessione
 chiusa · 3 minuti senza comandi», «Il gestionale sul PC è tornato alla pagina d'accesso») e cancella
 dalla sua memoria tutto quello che sapeva dei pazienti, avvisi compresi; **Riapri** ne apre un'altra
 con un tocco, senza QR. Chiusa per i 3 minuti, tornando sull'app (o se lo era già in sottofondo) se ne
-apre un'altra da sola, senza passare da «Sessione chiusa»: ricollegarsi è questione di un attimo. Se eri su un
+apre un'altra da sola, senza passare da «Sessione chiusa»: ricollegarsi è questione di un attimo. L'estensione
+del PC riavviata (Chrome, il PC che dorme, un aggiornamento) non la chiude nessuno: il telefono se ne accorge al
+primo messaggio e si ricollega da solo, senza «Sessione chiusa». In tutti e due i casi, se eri su un
 paziente, si riapre lì, sulla stessa scheda: del paziente resta in memoria (mai su disco) solo quale era e la
 scheda, e si riapre solo dopo che il PC ha risposto e se è ancora nel suo elenco. L'associazione resta: rientrato nel gestionale, o riaperto il browser del PC,
 il telefono riprende con la stessa chiave. **Revoca l'iPhone** (sulla pagina ⋯ → iPhone, due tocchi)
@@ -278,14 +299,14 @@ l'associazione. Il QR si rivede solo nei primi due minuti e prima che
 un telefono entri; il primo che entra lega l'associazione al suo `dev` (`ponte.coppia.dev`), e il PC
 risponde «no» al saluto di ogni altro — salvo `cambio`, qui sotto.
 
-**«Cancella e riassocia».** Il telefono rifiutato tiene la chiave del QR e può rimandare il saluto con
-un campo in più, `cambio`: il codice scritto dal medico (stesso messaggio cifrato di ogni saluto, con
-`salutoTel`: senza la chiave non si apre e il PC non risponde nemmeno). Il codice si controlla **sul PC**
-(`PONTE_CODICE_CAMBIO` in `ponte-sw.js`, l'unico posto). Giusto: la sessione di prima finisce
-(«Un altro iPhone ha preso il posto di questo»), `ponte.coppia.dev` passa al nuovo telefono, e la risposta è quella di ogni saluto. Sbagliato: `{no: "codice"}`, niente cambia.
-Cinque sbagli di fila: `{no: "bloccato", fino}` per 10 minuti, anche col codice giusto. Un saluto di
-cambio già visto non vale due volte. Il vecchio telefono, se rientra, trova «associato a un altro
-telefono» e può riprendersi il posto allo stesso modo.
+**«Usa questo telefono».** Il telefono rifiutato tiene la chiave del QR e può rimandare il saluto con
+un campo in più, `cambio: true` (stesso messaggio cifrato di ogni saluto, con `salutoTel`: senza la
+chiave non si apre e il PC non risponde nemmeno). La sessione di prima finisce («Un altro iPhone ha
+preso il posto di questo»), `ponte.coppia.dev` passa al nuovo telefono, e la risposta è quella di ogni
+saluto. Un saluto di cambio già visto (rimandato da chi sta in mezzo) non vale due volte. Il vecchio
+telefono, se rientra, trova «associato a un altro telefono» e può riprendersi il posto allo stesso
+modo. (Un PC con l'estensione di prima voleva un codice: il telefono dice «Non cambiato: sul PC ⋯ →
+iPhone → Associa l'iPhone, e inquadra il QR nuovo».)
 
 **Da K, con HKDF-SHA256** (sale `ps-ponte/1`, WebCrypto, nessuna libreria — `public/ponte/cripto.js`,
 copiato tale e quale in `extension/ponte-cripto.js` da `npm run build`, e un test controlla che
@@ -317,7 +338,8 @@ sul PC. Un saluto da solo non chiude la sessione che c'è: la sostituisce solo u
 ha parlato. Se il PC riceve dati per una sessione che non conosce (il service worker si è riavviato e
 le chiavi di sessione, che stavano solo in memoria, non ci sono più) risponde con un saluto «riparti»
 che porta il `nTel` dell'ultima sessione e la frase del perché: il telefono lo accetta solo se parla
-della *sua* sessione (ripetuto più tardi non chiude niente), chiude e offre «Riapri». La fine di una
+della *sua* sessione (ripetuto più tardi non chiude niente) e chiude; se il perché è il riavvio
+(`riavvio`), si ricollega da solo — nessuno l'ha chiusa —, se no offre «Riapri». La fine di una
 sessione porta la sua frase («Chiusa dal PC con «Scollega»»): il telefono la mostra così com'è.
 
 **Vivi o morti.** Tutte e due le parti battono: il PC ogni 20 secondi, il telefono ogni 20 secondi
@@ -359,10 +381,10 @@ un ordine la risposta è «non si sa», mai un no, e l'ordine che nasce lo stess
 ordine o un promemoria non passa poi alla scheda dopo (sarebbero due). Mai un silenzio.
 
 **I comandi** (e solo questi, con argomenti controllati uno per uno): `pazienti`, `esiti(ep)`,
-`aggiornaValori(ep)`, `richieste` (il catalogo; con una stazione di stampa collegata, `stampa: {stazione, dove}`), `ordina(ep, oid, esami, quesito, mio, nato, dest?)`, `nota(ep,
+`aggiornaValori(ep)`, `richieste` (il catalogo, con `ultimi`: per paziente ed esame quello che il PC scrive accanto al nome — ore tornate, in attesa da quando, rosso da quando; con una stazione di stampa collegata, `stampa: {stazione, dove}`), `ordina(ep, oid, esami, quesito, mio, nato, dest?)`, `nota(ep,
 testo)`, `promemoria(ep, testo)`, `fatto(ep, id)`, `cartella(ep, rileggi?)`, `cartellaSalva(ep, campi: {NOME:
-{prima, dopo}})`, `terapie(ep, rileggi?)`, `terapiaCerca(ep, q)`, `terapiaAggiungi(ep, rq, voce, visti)`, `accetta(k | ep, rq)`, `ristampe(ep)` (per richiesta anche `et` e `fo`: quante etichette e quanti fogli), `ristampa(ep, rid, oid, dest?, quali?)` (`quali`: `etichette` | `foglio` | `tutto`), `pdf(ep, ref, i)`, `stampa(rid, i, n, size, b)`, `stampaReferto(ep, ref, rid, dest?)`, `stazioneCollega(sta, nome)`,
-più `ciao`/`esci`/`ordini` per la sessione e lo stato degli ordini. Niente navigazione libera, niente script, niente appunti. L'ordine passa per
+{prima, dopo}})`, `terapie(ep, rileggi?)`, `terapiaCerca(ep, q)`, `terapiaAggiungi(ep, rq, voce, visti)`, `terapiaFine` (il foglio «＋ Farmaco» chiuso), `accetta(k | ep, rq)`, `ristampe(ep)` (per richiesta anche `et` e `fo`: quante etichette e quanti fogli), `ristampa(ep, rid, oid, dest?, quali?)` (`quali`: `etichette` | `foglio` | `tutto`), `pdf(ep, ref, i)`, `stampa(rid, i, n, size, b)`, `stampaReferto(ep, ref, rid, dest?)`, `stazioneCollega(sta, nome)`,
+più `ciao`/`esci`/`tocco`/`ordini` per la sessione e lo stato degli ordini. Niente navigazione libera, niente script, niente appunti. L'ordine passa per
 `ordineNuovo` come «Conferma e stampa», col numero `"tel" + oid` (l'`oid` lo fa il telefono quando
 arma «Conferma», `^[\w-]{8,24}$`: chiesto due volte, è un ordine solo — `ordiniVisti` in `bg.js`),
 con tutti i controlli del motore — episodio, richiesta, presidio, carrello identico alla ricevuta,
@@ -385,19 +407,31 @@ telefono aspetta 200 secondi, più del caso peggiore del PC.
 apre la pagina, con un iPhone associato, la scheda manda i cinque testi (come la pagina li ha
 caricati) al service worker, che li tiene in `storage.session` (`ponte.cartella`: in memoria, al
 massimo 40 pazienti, via a fine sessione); `cartella` dà quella lettura, o con `rileggi` la pagina
-riletta (una GET, come gli esiti). `cartellaSalva`, tutti o nessuno: prima ogni scheda del gestionale
+riletta (una GET, come gli esiti), sempre con `allergie` (le parole del PC: la riga sotto il nome). Ogni
+pagina letta — riletta, o ricaricata dopo un salvataggio — rinfresca anche le allergie che il PC sa del
+paziente (`anag`): una verità sola per il campo, la riga sotto il nome e il riepilogo della Terapia. `cartellaSalva`, tutti o nessuno: prima ogni scheda del gestionale
 dice se ha un testo non salvato nella cartella di quel paziente (se sì, no: il suo «Conferma»
 rimanderebbe il modulo intero coi testi vecchi); poi la pagina si apre in una scheda di sottofondo
 (`ponte.cartelle`, come «Aggiorna i valori», i testi solo nella memoria del service worker), che
 controlla ogni campo — ancora scrivibile, e uguale a `prima` (spazi e a capo normalizzati) —, scrive
 i testi e clicca il **«Conferma»** della pagina (`name="Update"`): il modulo lo manda il browser, mai
 un invio costruito a mano. Ricaricata, la scheda rilegge e verifica campo per campo, e si chiude.
+Poi le schede del medico con la pagina di quel paziente (`ponteCartellaAggiornata`): la pagina è di
+prima, e da subito il suo «Conferma» della cartella è fermo (`confermaFerma`: clic e invio fermati
+prima della pagina); senza niente scritto né un cursore in un campo si ricarica da sola (una GET
+dell'indirizzo del paziente); se no la pill, e il «Conferma» resta fermo finché non la si ricarica.
 Rimandato dopo una risposta persa, lo stesso salvataggio trova `prima` cambiato e non parte due
 volte. Nel registro degli errori (`segnaErrore`) solo il perché e i nomi dei campi, mai un testo.
 
 **La Terapia.** La pagina Terapia del gestionale (`PsoEpisodioTerapieImposta`), sempre da una scheda
-di sottofondo (`ponte.terapie`, una alla volta) aperta sulla pagina del paziente, che preme il suo
-pulsante «Terapia» e fa una cosa sola (`ponteTerapiaQui` in `core.js`). `terapie` dà l'ultima
+di sottofondo (`ponte.terapie`, una sola) aperta sulla pagina del paziente, che preme il suo
+pulsante «Terapia» e fa il lavoro chiesto (`ponteTerapiaQui` in `core.js`). Finita bene una lettura o
+una ricerca, la scheda resta ferma sulla pagina Terapia (`fermo`) e il lavoro dopo la riusa
+(`ponteTerapiaLavoro`): una ricerca lì dov'è, nella tendina della pagina; una lettura o un'aggiunta
+prima rileggono la pagina col suo pulsante «Prescrizione» (una GET: lo stato di adesso, subito prima
+di scrivere). Si chiude dopo un'aggiunta, a ogni dubbio, quando il foglio «＋ Farmaco» si chiude sul
+telefono (`terapiaFine`), a fine sessione, per un altro paziente, dopo 2 minuti senza lavoro; una
+scheda in cui il medico è entrato non si riusa. `terapie` dà l'ultima
 lettura (`ponte.terapia`: le righe confermate e le voci delle tendine, niente note né nascosti; dalla
 pagina aperta dal medico o da una scheda così, con un iPhone associato, via a fine sessione) o, con
 `rileggi`, la pagina riletta, più i preferiti del PC; senza `ep` dice solo che il comando c'è (un PC
@@ -424,7 +458,8 @@ freccia dello stesso episodio — e chiede `ponteAccettaInvio`: il service worke
 basta: la pagina del paziente in ambulatorio, o — tornata sulla lista del triage senza di lui —
 la lista dell'ambulatorio aperta col suo link (`ponteAccettaVerifica`); se no «incerto». Il PC lo
 ricorda come se l'avesse aperto (la sua pagina) e lo toglie dal Triage del telefono; le pagine di
-quel paziente aperte sul PC dicono «Aggiornato dal telefono · Ricarica». Lo stesso `rq` non si
+quel paziente aperte sul PC si ricaricano da sole, o — con un testo scritto lì — dicono «Aggiornato dal
+telefono · Ricarica» e fermano il loro «Conferma», come dopo la cartella. Lo stesso `rq` non si
 rifà mai. Nel registro del ponte il nome e com'è andata, come per la Terapia; nel registro degli
 errori («accetta telefono») solo il perché.
 
@@ -554,9 +589,9 @@ suo aiutante non l'ha stampato (e il suo file temporaneo, come per ogni foglio).
   cornice: la pagina del gestionale vede la cornice ma non ci legge dentro (un'altra origine); si apre
   solo dalle origini del gestionale (`web_accessible_resources`, solo `ponte.html`) e da un indirizzo
   che cambia a ogni avvio del browser (`use_dynamic_url`).
-- **«Cancella e riassocia»**: la vera protezione è la chiave del QR, che ha solo chi l'ha inquadrato;
-  il 93 evita soltanto un cambio per sbaglio (sono due cifre) e non va preso per una password. Un cambio
-  si vede sul PC («iPhone cambiato alle …», nel Registro) e il primo telefono ne esce.
+- **«Usa questo telefono»**: la protezione è la chiave del QR, che ha solo chi l'ha inquadrato; i due
+  tocchi evitano soltanto un cambio per sbaglio. Un cambio si vede sul PC («iPhone cambiato alle …»,
+  nel Registro) e il primo telefono ne esce.
 - **PC sbloccato e incustodito**: dà già tutto il gestionale a chi si siede. Il ponte aggiunge che una
   sessione aperta si vede e si chiude con un tocco; il QR di prima non si rivede. La chiave vale
   finché non la si revoca, anche col browser chiuso e riaperto: se nel gestionale rientra un altro medico, il

@@ -41,7 +41,7 @@
   const uguale = (a, b) => String(a ?? "").replace(/\s+/g, " ").trim() === String(b ?? "").replace(/\s+/g, " ").trim();
   const TRIAGE = { ROSSO: "rosso", ARANCIONE: "arancione", AZZURRO: "azzurro", VERDE: "verde", BIANCO: "bianco" };
   // Le chiusure decise qui; quelle del PC portano la loro frase.
-  const PERCHE = { inattivo: "3 minuti senza comandi", "chiusa dall'iPhone": "Chiusa da questo telefono", riavvio: "L'estensione sul PC si è riavviata" };
+  const PERCHE = { inattivo: "3 minuti senza comandi" };
   // dopo queste la chiave di questo telefono non apre più niente
   const FINITE = new Set(["nuova associazione", "revocata", "scaduta"]);
 
@@ -82,13 +82,13 @@
     pazienti: null, triage: null, aggiornato: 0, erroreLista: "", rinfresca: false, catalogo: null, esiti: new Map(), ristampe: new Map(), ristApri: null, ordini: new Map(), nascosti: new Set(),
     vista: { nome: "lista", ep: "" }, scheda: "esiti", dfFoglio: false, precAperti: false,
     sel: new Map(), bloccati: new Map(), aperti: new Set(),
-    riprendi: null,      // dopo i 3 minuti: { ep, scheda } dell'ultimo paziente — solo in memoria, mai su disco, e solo finché il PC non risponde
+    riprendi: null,      // dopo i 3 minuti (o il riavvio del PC): { ep, scheda } dell'ultimo paziente — solo in memoria, mai su disco, e solo finché il PC non risponde
     occupato: new Set(), vitAperti: "", promTesto: "", menu: false, arma: null, avviso: null,
     inviati: new Map(),  // ep → oid dell'ordine che sta andando al PC (il bottone aspetta)
     cartelle: new Map(), // ep → la cartella letta sul PC: { ep, letto, campi: [{ nome, v, ro }] }
     cbozze: new Map(),   // ep → Map(nome → { base, testo }): quello che il medico ha scritto, e su che cosa
     cstato: new Map(),   // ep → { testo, ricarica }: com'è andato «Salva», se è andato male
-    cambio: null,        // «Cancella e riassocia», sulla schermata «associato a un altro telefono»
+    cambio: null,        // «Usa questo telefono», sulla schermata «associato a un altro telefono»: { arma, occupato, errore }
     camera: "",          // «Scansiona il QR»: perché la fotocamera non c'è
     stampa: null,        // «Stampa un PDF»: { tono, titolo, testo, fine, ts }
     stazione: null,      // il QR di una stazione di stampa, inquadrato: { sta, nome, codice, scade, fase, testo }
@@ -129,7 +129,7 @@
   const nuovoDev = () => P.b64u(P.casuale(16));
   // Il PC attivo è di sola lettura? (la build mini: si vede ma non si scrive)
   const solaLettura = () => !!(S.coppia && S.coppia.kind === "lettura");
-  // da un link: la chiave (l'associazione non scade: finisce con «Dimentica PC» o con la revoca sul PC),
+  // da un link: la chiave (l'associazione non scade: finisce con «Scollega» qui o con la revoca sul PC),
   // fin quando il link vale per il primo scambio, e un numero nuovo per questo telefono
   function dalLink(hash) {
     const c = P.leggiFrammento(hash);
@@ -213,7 +213,7 @@
     S.attivo = id; S.menu = false; S.classifica = false; salvaPcs();
     await parti(p);
   }
-  // «Dimentica» un PC della lista. L'attivo: via quello e si passa a un altro
+  // «Scollega» un PC della lista (la sua chiave via da qui). L'attivo: via quello e si passa a un altro
   // (o, se era l'ultimo, si resta senza associazione).
   function dimenticaPcId(id) {
     if (!S.coppia || id === S.coppia.id) return dimentica("senza");
@@ -349,7 +349,7 @@
       if (!S.saluto || m.eco !== S.saluto.n) return;   // un saluto vecchio, o non nostro
       const mio = S.saluto;
       S.saluto = null;
-      if (m.no) return mio.cambio ? cambioNo(m) : rifiuta();   // il PC è di un altro telefono
+      if (m.no) return mio.cambio ? cambioNo() : rifiuta();   // il PC è di un altro telefono
       S.canale = P.canaleTel(await P.chiaviSessione(S.coppia.k, mio.byte, P.daB64u(m.n)));
       S.cambio = null;
       S.nSessione = mio.n;
@@ -359,8 +359,11 @@
       if (Number.isFinite(m.ora)) S.scarto = Math.round(m.ora - (mio.t0 + Date.now()) / 2);
       // (senza aspettare qui: la risposta passa da questa stessa fila)
       chiedi("ciao", {}, TEMPO, true).then((d) => {
+        const nuova = S.classifica;   // un QR appena inquadrato
         classificaCiao(d);   // il PC ha detto chi è: tipo, nome, operatore (per il menu e la testata)
-        S.fase = "pronta"; render(); carica();
+        S.fase = "pronta"; render();
+        // il codice dell'associazione si guarda solo adesso, accanto a quello sotto il QR del PC: poi non serve
+        carica().then(() => { if (nuova && S.fase === "pronta") avviso(`Associato · codice ${S.codice}`); });
       }, (e) => avviso(e.message, "err"));
       return;
     }
@@ -466,9 +469,9 @@
     S.canale = null; S.saluto = null; S.nSessione = "";
     for (const a of S.attese.values()) { clearTimeout(a.t); a.no(new Error("Sessione chiusa")); }
     S.attese.clear();
-    // i 3 minuti senza comandi: del paziente dov'eri resta solo quale era e su che scheda (in memoria); lo si riapre
-    // quando il PC risponde, se è ancora nel suo elenco — dei suoi dati non resta niente
-    const rip = perche === "inattivo" && S.vista.nome === "paziente" ? { ep: S.vista.ep, scheda: S.scheda } : null;
+    // i 3 minuti senza comandi, o l'estensione del PC riavviata: del paziente dov'eri resta solo quale era e su che
+    // scheda (in memoria); lo si riapre quando il PC risponde, se è ancora nel suo elenco — dei suoi dati non resta niente
+    const rip = (perche === "inattivo" || perche === "riavvio") && S.vista.nome === "paziente" ? { ep: S.vista.ep, scheda: S.scheda } : null;
     svuota();
     S.riprendi = rip;
     S.perche = perche || "";
@@ -476,43 +479,51 @@
     if (FINITE.has(perche)) return dimentica("finita");   // la chiave non vale più
     zitto();
     S.fase = "chiusa"; S.menu = false;
+    // l'estensione sul PC si è riavviata (Chrome, il PC che dorme, un aggiornamento): nessuno l'ha chiusa, e il
+    // medico non deve saperlo — ci si ricollega da soli, sul paziente dov'eri
+    if (perche === "riavvio") return riapri();
     render();
   }
-  // Il PC è di un altro telefono. La chiave del QR resta (serve a «Cancella e
-  // riassocia»); non si prova da sé, e dati non ce ne sono.
+  // Il PC è di un altro telefono. La chiave del QR resta (serve a «Usa questo
+  // telefono»); non si prova da sé, e dati non ce ne sono.
   function rifiuta() {
     S.canale = null; S.saluto = null; S.nSessione = "";
-    S.cambio = { testo: "", errore: "", occupato: false };
+    S.cambio = { arma: 0, errore: "", occupato: false };
     S.fase = "rifiutato"; S.menu = false;
     render();
   }
-  // «Cancella e riassocia»: un saluto col codice che il medico ha scritto. Il
-  // PC lo controlla (il codice non è qui) e, se è giusto, risponde come a
-  // ogni saluto: da lì la sessione parte da sola, e arriva l'elenco.
+  // «Usa questo telefono»: due tocchi, come un ordine (il primo arma, il secondo entro 6 secondi; un doppio
+  // tocco per sbaglio non vale), poi un saluto che chiede il posto. La protezione è la chiave del QR, che questo
+  // telefono ha: il PC risponde come a ogni saluto, il telefono di prima esce, e la sessione parte da sola.
   async function cambia() {
-    const c = S.cambio;
+    const c = S.cambio, ora = Date.now();
     if (!c || c.occupato || !S.chiavi) return;
-    if (!c.testo.trim()) { fuocoSu("cambio"); return; }
+    if (!c.arma || ora - c.arma > 6000) {
+      c.arma = ora; c.errore = ""; render();
+      setTimeout(() => { if (S.cambio === c && c.arma && Date.now() - c.arma >= 6000) { c.arma = 0; render(); } }, 6100);
+      return;
+    }
+    if (ora - c.arma < 800) return;   // un doppio tocco per sbaglio è un tocco solo
+    c.arma = 0;
     if (!S.ws || S.ws.readyState !== 1) { c.errore = "Non collegato: riprova"; collega(); render(); return; }
     c.occupato = true; c.errore = ""; render();
     const n = P.casuale(16);
     const mio = { n: P.b64u(n), byte: n, cambio: true, t0: Date.now() };
     S.saluto = mio;
-    manda(await P.sigilla(S.chiavi.salutoTel, P.TIPO.SALUTO_TEL, 0, { v: 1, n: mio.n, dev: S.coppia.dev, cambio: c.testo.trim().slice(0, 12) }));
+    manda(await P.sigilla(S.chiavi.salutoTel, P.TIPO.SALUTO_TEL, 0, { v: 1, n: mio.n, dev: S.coppia.dev, cambio: true }));
     setTimeout(() => {
       if (S.cambio !== c || !c.occupato) return;
       if (S.saluto === mio) S.saluto = null;
       c.occupato = false; c.errore = "Il PC non risponde"; render();
     }, 8000);
   }
-  function cambioNo(m) {
+  // il PC non lo fa (un PC con l'estensione di prima, che voleva un codice): la strada che vale sempre, un QR nuovo
+  function cambioNo() {
     const c = S.cambio;
     if (!c) return;
-    c.occupato = false; c.testo = "";
-    c.errore = m.no === "codice" ? "Codice sbagliato"
-      : m.no === "bloccato" && Number.isFinite(m.fino) ? `Troppi tentativi: riprova alle ${hhmm(m.fino)}` : "Il PC è associato a un altro telefono";
+    c.occupato = false; c.arma = 0;
+    c.errore = "Non cambiato: sul PC ⋯ → iPhone → Associa l'iPhone, e inquadra il QR nuovo";
     render();
-    fuocoSu("cambio");
   }
   // Aperto su un altro telefono, o in un'altra scheda: questo si ferma, e
   // riprende solo se il medico lo chiede.
@@ -598,6 +609,7 @@
     for (const [ep, oid] of S.inviati) if (nato(o, oid)) S.inviati.delete(ep);
     // un ordine appena finito: la sua richiesta è nuova, fra le «Richieste fatte»
     if (o.fine && !(prima && prima.fine) && o.id.startsWith("tel") && S.vista.nome === "paziente" && S.vista.ep === o.ep && S.scheda === "richieste") caricaRistampe(o.ep);
+    if (o.fine && !(prima && prima.fine) && o.id.startsWith("tel") && S.vista.nome === "paziente" && S.vista.ep === o.ep && S.scheda === "richieste") caricaCatalogo();
   }
   const paziente = (ep) => (S.pazienti || []).find((p) => p.ep === ep) || null;
   function aggiornaRiga(riga) {
@@ -615,6 +627,15 @@
     if (S.scheda === "cartella") caricaCartella(ep);
     if (S.scheda === "terapia") caricaTerapie(ep);
     if (S.scheda === "richieste") caricaRistampe(ep);
+    if (S.scheda === "richieste") caricaCatalogo();
+  }
+  // Il catalogo, con quello che il PC sa già chiesto per ogni paziente (`ultimi`: «✓ 11:40», «40′» accanto agli
+  // esami, come sul PC): riletto aprendo le Richieste, e quando un ordine del telefono finisce. Lo chiede l'app da sé.
+  async function caricaCatalogo() {
+    if (S.occupato.has("catalogo")) return;
+    S.occupato.add("catalogo");
+    try { const c = await chiedi("richieste", {}, TEMPO, true); if (c && Array.isArray(c.gruppi)) { S.catalogo = c; render(); } } catch { /* resta quello di prima */ }
+    S.occupato.delete("catalogo");
   }
   // La cartella: l'ultima lettura del PC (o, con «↻ Rileggi», la pagina riletta)
   async function caricaCartella(ep, auto = false, rileggi = false) {
@@ -672,6 +693,10 @@
   function cartellaDalPc(ep, c) {
     if (!c || !Array.isArray(c.campi)) return;
     S.cartelle.set(ep, c);
+    // le allergie della stessa lettura, con le parole del PC: sotto il nome e nel riepilogo della Terapia la
+    // stessa verità del campo Allergie qui sotto (un PC più vecchio non le manda: resta la riga dell'elenco)
+    const p = paziente(ep);
+    if (p && c.allergie && typeof c.allergie.t === "string" && c.allergie.t) p.allergie = { k: String(c.allergie.k || ""), t: c.allergie.t };
     const b = S.cbozze.get(ep);
     if (b) for (const [n, x] of b) { const v = c.campi.find((y) => y.nome === n); if (v && uguale(v.v, x.testo)) b.delete(n); }
   }
@@ -940,7 +965,7 @@
   const b64 = (u) => { let s = ""; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(s); };
   async function stampaPdf(file) {
     if (!file || (S.stampa && !S.stampa.fine) || !S.canale) return;
-    // dove: la stampante predefinita del telefono (⋯ → «Stampa su»): il PC, o la stazione di stampa collegata
+    // dove: la stampante del telefono (l'ultima scelta in «Stampa: PC · Infermeria»): il PC, o la stazione di stampa collegata
     const dove = doveTel(), sta = staDi() || "Infermeria";
     const fine = (tono, titolo, testo = "") => { S.stampa = { tono, titolo, testo, fine: true, ts: Date.now() }; render(); };
     if (file.size > PDF_MAX) return fine("err", "PDF troppo grande: oltre 15 MB");
@@ -1098,6 +1123,9 @@
   }
 
   // ------------------------------------------------- il QR, inquadrato qui
+  // «📷 Scansiona il QR», sempre nel ⋯ (anche su un PC di sola lettura) e sulle
+  // schermate senza un'associazione buona: un QR solo per tutto — il QR dice
+  // che cos'è (un PC completo, un PC di sola lettura, una stazione di stampa).
   // L'app della schermata Home dell'iPhone ha una memoria sua, separata da
   // Safari: il QR inquadrato con la Fotocamera si apre in Safari, e la chiave
   // qui non arriva. Così si inquadra anche da qui: la fotocamera nella pagina,
@@ -1133,8 +1161,11 @@
     k.set(st.s); k.set(st.pub, st.s.length);
     // (l'orologio della stazione non è questo: un minuto di margine; lo decide il PC)
     const scaduta = st.scade + 60e3 < Date.now();
-    S.stazione = { sta: st.sta, nome: st.nome, codice: await P.codice(k), fase: !S.coppia ? "senza" : scaduta ? "errore" : "chiedi",
-      testo: scaduta ? "QR scaduto: sulla stazione ne compare uno nuovo, inquadra quello" : "" };
+    // (un PC di sola lettura non collega stampanti: lo fa il PC completo — il PC rifiuterebbe comunque)
+    const lettura = !!S.coppia && solaLettura();
+    S.stazione = { sta: st.sta, nome: st.nome, codice: await P.codice(k), fase: !S.coppia ? "senza" : scaduta || lettura ? "errore" : "chiedi",
+      testo: scaduta ? "QR scaduto: sulla stazione ne compare uno nuovo, inquadra quello"
+        : lettura ? "Questo PC è di sola lettura: la stampante si collega al PC completo. Passa a quello nel ⋯ e inquadra di nuovo il QR" : "" };
     S.menu = false;
     render();
   }
@@ -1416,28 +1447,25 @@
       const att = p.id === (S.coppia && S.coppia.id);
       const vivo = att && S.fase === "pronta" && !!S.canale;
       const etich = p.kind === "lettura" ? "sola lettura" : "completo";
-      return `<div class="pcrow${att ? " qui" : ""}"><button class="pcbtn" data-a="pc" data-id="${esc(p.id)}">${p.kind === "lettura" ? em("👁️") : em("💻")}${esc(p.nome || (p.kind === "lettura" ? "Sola lettura" : "PC"))} <small>${etich}${vivo ? " · attivo adesso" : att ? " · attivo" : ""}</small></button><button class="pcvia" data-a="pcvia" data-id="${esc(p.id)}" aria-label="Dimentica questo PC">${em("🗑️")}</button></div>`;
+      return `<div class="pcrow${att ? " qui" : ""}"><button class="pcbtn" data-a="pc" data-id="${esc(p.id)}">${p.kind === "lettura" ? em("👁️") : em("💻")}${esc(p.nome || (p.kind === "lettura" ? "Sola lettura" : "PC"))} <small>${etich}${vivo ? " · attivo adesso" : att ? " · attivo" : ""}</small></button><button class="pcvia" data-a="pcvia" data-id="${esc(p.id)}" aria-label="Scollega questo PC">${em("🗑️")}</button></div>`;
     }).join("")}<div class="sep"></div>` : "";
-    return `<header class="top">${sx}${nome}${statoPc()}<button class="ico" data-a="menu" aria-label="Altro" aria-expanded="${S.menu}">${ICO.altro}</button>
+    // (l'elenco si rilegge da solo a ogni ritorno; la sessione finisce da sola; la stampante è quella toccata
+    // l'ultima volta in «Stampa: PC · Infermeria»: nel ⋯ resta quello che non c'è altrove)
+    return `<header class="top">${sx}${nome}${statoPc()}${solaLettura() ? segnoSola() : ""}<button class="ico" data-a="menu" aria-label="Altro" aria-expanded="${S.menu}">${ICO.altro}</button>
       ${S.menu ? `<div class="menu" role="menu">
         ${listaPc}
-        ${suPaz || suZip ? "" : `<button data-a="aggiornaLista">${em("🔄")}Aggiorna elenco</button>`}
-        ${staDi() ? `<div class="stdove" role="group" aria-label="Stampa su"><span>Stampa su</span>${[["qui", "💻 PC"], ["stazione", "🖨️ " + staDi()]].map(([k, t]) =>
-          `<button type="button" data-a="doveTel" data-d="${k}" class="${doveTel() === k ? "on" : ""}" aria-pressed="${doveTel() === k}">${esc(t)}</button>`).join("")}</div>` : ""}
         <button data-a="stampaPdf" ${stampaNo() ? "disabled" : ""}>${em("📄")}Stampa PDF${staDi() ? ` · ${esc(doveTel() === "stazione" ? staDi() : "PC")}` : ""}${stampaNo() ? ` <small>${esc(stampaNo())}</small>` : ""}</button>
-        ${solaLettura() ? "" : `<button data-a="scansiona">${em("🖨️")}Collega stampante</button>`}
+        <button data-a="scansiona">${em("📷")}Scansiona il QR</button>
         ${solaLettura() ? "" : `<button data-a="registrazioni"><span class="em rec" aria-hidden="true">●</span> Registrazioni</button>`}
-        <button data-a="esci">${em("🚪")}Chiudi sessione</button>
-        <button class="via" data-a="dimentica">${em("🗑️")}Dimentica ${S.pcs.length >= 2 ? "questo PC" : "PC"}</button>
-        <div class="info">${solaLettura() ? "Sola lettura · " : ""}Associato · finché non lo scolleghi · codice ${esc(S.codice)}</div>
-      </div>` : ""}</header>${solaLettura() ? solaBar() : ""}`;
+        <button class="via" data-a="dimentica">${em("🗑️")}Scollega ${S.pcs.length >= 2 ? "questo PC" : "il PC"}</button>
+        ${solaLettura() ? `<div class="info">${esc(testoSola())}</div>` : ""}
+      </div>` : ""}</header>`;
   }
-  // La testata quieta di un PC di sola lettura: informazione, mai un blocco. Se
-  // il gestionale mostra chi è loggato, lo dice; se no, solo «Sola lettura».
-  function solaBar() {
-    const op = S.pcOperatore ? ` · gestionale di <b>${esc(S.pcOperatore)}</b>` : "";
-    return `<div class="solabar" role="status">👁️ <span>Sola lettura${op}</span></div>`;
-  }
+  // Un PC di sola lettura: un 👁️ piccolo e quieto nella testata, accanto a ⋯ — informazione, mai un blocco,
+  // e niente che distragga. La scritta («Sola lettura · gestionale di …», chi è loggato lì, se il gestionale
+  // lo mostra) sta nel suo nome e in fondo al ⋯.
+  const testoSola = () => `Sola lettura${S.pcOperatore ? ` · gestionale di ${S.pcOperatore}` : ""}`;
+  const segnoSola = () => `<span class="sola" role="img" title="${esc(testoSola())}" aria-label="${esc(testoSola())}">👁️</span>`;
   function piena(icona, titolo, testo, extra = "", amb = false) {
     return `<main><div class="piena"><div class="tondo${amb ? " amb" : ""}">${icona}</div><h1>${esc(titolo)}</h1>${testo}${extra}</div></main>`;
   }
@@ -1448,7 +1476,6 @@
   const scansiona = (quiet = false) => `<button class="grande${quiet ? " quiet" : ""}" data-a="scansiona">Scansiona il QR</button>${
     S.camera ? `<p class="errcod" role="alert">${esc(S.camera)}</p>` : ""}`;
   function schermata() {
-    const scade = S.coppia ? `<div class="piccolo">Associato · finché non lo scolleghi · codice ${esc(S.codice)}</div>` : "";
     switch (S.fase) {
       case "senza":
         return piena(ICO.croce, "PS Assist sull'iPhone", PASSI, scansiona());
@@ -1459,10 +1486,9 @@
            <p>Per rientrare serve un QR nuovo: sul PC <b>⋯ → iPhone → Associa l'iPhone</b>.</p>`, scansiona(), true);
       }
       case "rifiutato": {
-        const c = S.cambio || { testo: "", errore: "", occupato: false };
+        const c = S.cambio || { arma: 0, errore: "", occupato: false };
         return piena(ICO.lucchetto, "Il PC è associato a un altro telefono", "",
-          `<div class="cambio"><input id="cambio" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="12" autocomplete="off" enterkeyhint="go" placeholder="Codice" aria-label="Codice" value="${esc(c.testo)}">
-           <button class="grande" data-a="cambia"${c.occupato ? " disabled" : ""}>Cancella e riassocia</button>
+          `<div class="cambio"><button class="grande${c.arma ? " arma" : ""}" data-a="cambia"${c.occupato ? " disabled" : ""}>${c.occupato ? "Cambio telefono…" : c.arma ? "Usa questo telefono? Tocca di nuovo" : "Usa questo telefono"}</button>
            ${c.errore ? `<p class="errcod" role="alert">${esc(c.errore)}</p>` : ""}</div>${scansiona(true)}`, true);
       }
       case "avvio":
@@ -1471,20 +1497,20 @@
       case "pc":
         if (S.pari === null && !(S.ws && S.ws.readyState === 1)) {
           return piena(ICO.pc, "Non raggiungo il ponte", "<p>Controlla la connessione del telefono: riprovo da solo.</p>",
-            `<button class="grande" data-a="riapri">Riprova</button>${scansiona()}${scade}`, true);
+            `<button class="grande" data-a="riapri">Riprova</button>${scansiona()}`, true);
         }
         return piena(ICO.pc, "Il PC non risponde", `<p>${S.pari ? "Il PC è sul ponte ma non risponde: riprovo da solo." : "Sul PC dell'ospedale deve essere aperto Chrome col pannello: lo aspetto, e riprovo da solo."}</p>
           <p>Se sul PC c'è un QR nuovo, inquadra quello.</p>`,
-          `<button class="grande" data-a="riapri">Riprova</button>${scansiona()}${scade}`, true);
+          `<button class="grande" data-a="riapri">Riprova</button>${scansiona()}`, true);
       case "altrove":
         return piena(ICO.pc, "Aperto su un altro dispositivo", "<p>Il pannello è aperto su un altro telefono o in un'altra scheda: qui si è fermato.</p>",
-          `<button class="grande" data-a="riapri">Riprendi qui</button>${scansiona(true)}${scade}`);
+          `<button class="grande" data-a="riapri">Riprendi qui</button>${scansiona(true)}`);
       case "chiusa":
         // (chiusa per i 3 minuti, con l'app in sottofondo: al ritorno si riapre da sola, e
         // questa schermata non si vede nemmeno per un attimo)
         if (S.perche === "inattivo" && document.visibilityState !== "visible") return `<main><div class="piena"><div class="giro"></div></div></main>`;
         return piena(ICO.lucchetto, "Sessione chiusa", `<p>${esc(S.testoFine)}.</p>`,
-          `<button class="grande" data-a="riapri">Riapri</button>${scade}`);
+          `<button class="grande" data-a="riapri">Riapri</button>`);
       default: return "";
     }
   }
@@ -1812,6 +1838,26 @@
     }).join("")}</div>` : "");
     return `${valori}${carta(altri)}${lab.length ? `<div class="lbl">Laboratorio</div>${carta(lab)}` : ""}${e.nota ? `<p class="piede">${esc(e.nota)}</p>` : ""}`;
   }
+  // Accanto al nome di un esame, come nelle Richieste del PC (le stesse parole): «✓ 11:40» le richieste già tornate,
+  // in verde; «40′» quella in attesa, in ambra (rosso oltre la seconda soglia del suo tipo), «in attesa» senza l'ora;
+  // letto da più di mezz'ora, tutto in grigio e «letto 11:02». Un doppione si vede prima di sceglierlo.
+  function suffissoEsame(ep, k) {
+    const u = S.catalogo && S.catalogo.ultimi && S.catalogo.ultimi[ep], x = u && u.e && u.e[k];
+    if (!x) return null;
+    const ora = Date.now() + (S.scarto || 0), pezzi = [], f = Array.isArray(x.f) ? x.f.filter(Number.isFinite) : [];
+    const tinta = (cls, t) => `<span class="${u.v ? "" : cls}">${esc(t)}</span>`;
+    if (f.length) pezzi.push(tinta("uok", `✓ ${f.map(hhmm).join(", ")}`));
+    else if (x.ok) pezzi.push(tinta("uok", "✓"));
+    if (x.w) {
+      const min = Number.isFinite(x.a) && x.a > 0 && !u.v ? Math.max(0, Math.floor((ora - x.a) / 60e3)) : null;
+      pezzi.push(tinta(min != null && Number.isFinite(x.r) && ora >= x.r ? "uros" : "uatt", min != null ? durata(min) : "in attesa"));
+    }
+    if (u.v && Number.isFinite(u.l)) pezzi.push(`<span>letto ${esc(hhmm(u.l))}</span>`);
+    if (!pezzi.length) return null;
+    const titolo = `${f.length ? `Già fatto: richieste delle ${f.map(hhmm).join(", ")}` : x.ok ? "Già fatto" : ""}${
+      x.w ? `${f.length || x.ok ? " · " : ""}in attesa${Number.isFinite(x.a) && x.a > 0 ? ` dalle ${hhmm(x.a)}` : ""}` : ""}${Number.isFinite(u.l) ? ` · letto alle ${hhmm(u.l)}` : ""}`;
+    return { html: ` <span class="ult${u.v ? " vecchio" : ""}">${pezzi.join(" ")}</span>`, titolo };
+  }
   function vistaRichieste(p) {
     const c = S.catalogo;
     if (!c) return `<div class="carica"><div class="giro"></div></div>`;
@@ -1827,12 +1873,13 @@
     const gruppi = c.gruppi.map((g) => `<div class="gruppo"><h3>${esc(g.nome)}</h3>${g.profili.length ? `<div class="chips">${g.profili.map((pr, i) => {
       const on = pr.esami.every((k) => s.esami.has(k));
       return `<button class="chip prof${on ? " on" : ""}" data-a="profilo" data-g="${esc(g.nome)}" data-i="${i}">${ICO_PROFILO}${esc(pr.nome)}</button>`;
-    }).join("")}</div>` : ""}<div class="griglia">${g.esami.map((k) => `<button class="esame${s.esami.has(k) ? " on" : ""}" data-a="esame" data-k="${esc(k)}">${esc(c.nomi[k] || k)}</button>`).join("")}</div></div>`).join("");
+    }).join("")}</div>` : ""}<div class="griglia">${g.esami.map((k) => { const u = suffissoEsame(p.ep, k); return `<button class="esame${s.esami.has(k) ? " on" : ""}" data-a="esame" data-k="${esc(k)}"${
+      u ? ` aria-label="${esc(`${c.nomi[k] || k} · ${u.titolo}`)}"` : ""}><span class="nm">${esc(c.nomi[k] || k)}</span>${u ? u.html : ""}</button>`; }).join("")}</div></div>`).join("");
     return `<div class="carta q-w"><input id="quesito" type="text" enterkeyhint="done" autocomplete="off" placeholder="Quesito diagnostico" value="${esc(s.q)}"><div class="chips">${quesiti}</div></div>
       <div class="carta">${gruppi}</div>${ristampeHtml(p)}`;
   }
   // La stazione di stampa collegata al PC (il suo nome) e dove vanno i fogli:
-  // la scelta del PC, o quella toccata qui per questo ordine.
+  // la scelta del PC, o l'ultima toccata qui.
   const staDi = () => (S.catalogo && S.catalogo.stampa && S.catalogo.stampa.stazione) || "";
   // Il PC stampa da solo (l'aiutante)? Se no, quello che il telefono manda a
   // stampare sul PC aspetterebbe un tocco là: i bottoni si spengono, col perché,
@@ -1840,8 +1887,10 @@
   // non lo dice (`auto` assente): come prima.
   const STAMPA_NO = "Sul PC la stampa automatica non è impostata";
   const stampaNo = (dove = doveTel()) => (S.catalogo && S.catalogo.stampa && S.catalogo.stampa.auto === false && dove !== "stazione" ? STAMPA_NO : "");
-  // La stampante predefinita DEL TELEFONO (⋯ → «Stampa su»), per PC associato: il PC o la
-  // stazione. Non scelta: quella del PC (il catalogo). Senza stazione: sempre il PC.
+  // La stampante DEL TELEFONO, per PC associato: il PC o la stazione — l'ultima toccata in
+  // «Stampa: PC · Infermeria» (sopra un ordine, sopra «Richieste fatte»), e da lì vale per tutto:
+  // ordini, ristampe, «Stampa PDF», 🖨️ dei referti. Non scelta: quella del PC (il catalogo).
+  // Senza stazione: sempre il PC.
   const DOVE = "psassist.ponte.dove.v1", doveMem = {};   // (doveMem: se la memoria del telefono non c'è, vale finché l'app è aperta)
   function doveTel() {
     if (!staDi()) return "qui";
@@ -1857,7 +1906,7 @@
     try { const o = JSON.parse(localStorage.getItem(DOVE) || "null") || {}; o[id] = v; localStorage.setItem(DOVE, JSON.stringify(o)); } catch { /* solo in memoria */ }
     render();
   }
-  const doveDi = (ep) => selDi(ep).dove || doveTel();
+  const doveDi = () => doveTel();   // (una per tutti: si ricorda)
   function doveHtml(p) {
     const nome = staDi();
     if (!nome) return "";
@@ -2235,17 +2284,17 @@
     // (aria-disabled e non disabled: un bottone disabled non riceve il tocco)
     if (b.getAttribute("aria-disabled") === "true") { if (b.id === "ordina" && selDi(S.vista.ep).esami.size && !selDi(S.vista.ep).q.trim()) fuocoSu("quesito"); return; }
     const a = b.dataset.a, ep = S.vista.ep;
-    if (a !== "menu" && a !== "doveTel" && S.menu) S.menu = false;   // («Stampa su»: il menu resta aperto)
+    if (a !== "menu" && S.menu) S.menu = false;
     if (a === "menu") { S.menu = !S.menu; render(); }
     else if (a === "riapri") riapri();
     else if (a === "pc") attivaPc(b.dataset.id);                 // passa a un altro PC della lista
-    else if (a === "pcvia") dimenticaPcId(b.dataset.id);          // «Dimentica» un PC della lista
+    else if (a === "pcvia") dimenticaPcId(b.dataset.id);          // «Scollega» un PC della lista
     else if (a === "cambia") cambia();
     else if (a === "scansiona") apriScan();
     else if (a === "stacollega") collegaStazione();
     else if (a === "stachiudi") { S.stazione = null; render(); }
-    else if (a === "dove") { const x = selDi(ep); x.dove = b.dataset.d === "stazione" ? "stazione" : "qui"; x.oid = ""; S.arma = null; render(); }
-    else if (a === "doveTel") scegliDoveTel(b.dataset.d);
+    // (un'altra stampante è un altro ordine: il numero si rifà, e la conferma si riarma)
+    else if (a === "dove") { for (const x of S.sel.values()) x.oid = ""; S.arma = null; scegliDoveTel(b.dataset.d); }
     else if (a === "stampaPdf") { render(); $pdf.click(); }
     else if (a === "stampaRef") stampaReferto(ep, b.dataset.id);
     else if (a === "stampaVia") { S.stampa = null; render(); }
@@ -2265,9 +2314,8 @@
     else if (a === "mappasel") { S.mappaSel = b.dataset.k; render(); }
     else if (a === "indietro") { S.vista = { nome: "lista", ep: "" }; S.arma = null; render(); aggiornaLista(); }
     else if (a === "aggiornaLista") aggiornaLista(false, true);
-    else if (a === "esci") { chiedi("esci").catch(() => {}); chiusa("chiusa dall'iPhone"); }
     else if (a === "dimentica") {
-      if (b.dataset.sicuro !== "1") { b.dataset.sicuro = "1"; b.textContent = "Dimentico? Servirà un QR nuovo"; return; }
+      if (b.dataset.sicuro !== "1") { b.dataset.sicuro = "1"; b.textContent = "Scollego? Servirà un QR nuovo"; return; }
       if (S.canale) chiedi("esci").catch(() => {});
       dimentica("senza");
     }
@@ -2277,6 +2325,7 @@
       if (S.scheda === "cartella") caricaCartella(ep, !!S.cartelle.get(ep));
       if (S.scheda === "terapia") caricaTerapie(ep, !!S.terapie.get(ep));
       if (S.scheda === "richieste") caricaRistampe(ep);
+      if (S.scheda === "richieste") caricaCatalogo();
     }
     else if (a === "ristampa") {
       const l = S.ristampe.get(ep), r = Array.isArray(l) ? l.find((x) => x.id === b.dataset.id) : null;
@@ -2287,7 +2336,8 @@
     else if (a === "ordQui") ordQui(b.dataset.id);
     else if (a === "trileggi") { if (S.tf && !S.tf.stato) S.tf = null; caricaTerapie(ep, false, true); }
     else if (a === "tnuovo") apriFarmaco(ep);
-    else if (a === "tchiudi") { S.tf = null; render(); }
+    // (chiuso il foglio: la scheda della Terapia che il PC teneva aperta per la ricerca non serve più)
+    else if (a === "tchiudi") { S.tf = null; render(); chiedi("terapiaFine", {}, TEMPO, true).catch(() => {}); }
     else if (a === "tpref") scegliFarmaco((S.terapie.get(ep)?.pref || [])[Number(b.dataset.i)]);
     else if (a === "tvoce") scegliFarmaco({ descr: b.dataset.t });
     else if (a === "tscegli") { if (S.tf && !S.tf.stato) { S.tf.passo = "scegli"; S.tf.esito = null; render(); } }
@@ -2353,13 +2403,11 @@
       ritoccaRiep();
     }
     else if (t.id === "promin") S.promTesto = t.value;
-    else if (t.id === "cambio" && S.cambio) S.cambio.testo = t.value;
   });
   $app.addEventListener("keydown", (e) => {
     if (e.key !== "Enter") return;
     if (e.target.id === "promin") { e.preventDefault(); aggiungiProm(S.vista.ep); }
     else if (e.target.id === "quesito") { e.preventDefault(); e.target.blur(); }
-    else if (e.target.id === "cambio") { e.preventDefault(); cambia(); }
     else if (e.target.id === "tq") { e.preventDefault(); e.target.blur(); cercaFarmaco(); }
   });
   // Tornati sull'app (iOS chiude le prese delle pagine in sottofondo): ci si
@@ -2400,6 +2448,15 @@
   setInterval(() => {
     if (!scadenze() && S.fase === "pronta" && !document.activeElement?.id) render();   // i tempi dei promemoria
   }, 30e3);
+  // Il telefono in mano conta: un tocco o uno scorrere, con l'app davanti, è il medico che legge — un referto, i
+  // valori, la mappa — come un comando, al più uno al minuto (`tocco`: il PC sposta il suo orologio dei 3 minuti
+  // come per ogni comando, e non fa altro). Un telefono che nessuno tocca si chiude ai 3 minuti, come prima.
+  const TOCCO_OGNI = 60e3;
+  function tocco() {
+    if (document.visibilityState !== "visible" || S.fase !== "pronta" || !pronto() || Date.now() - S.ultimo < TOCCO_OGNI) return;
+    chiedi("tocco").catch(() => {});
+  }
+  for (const t of ["pointerdown", "touchstart", "keydown", "input", "scroll"]) document.addEventListener(t, tocco, { capture: true, passive: true });
 
   // Un QR nuovo inquadrato con l'app già aperta cambia solo il frammento: si
   // riparte da capo, e la partenza decide (anche se chiedere prima).
