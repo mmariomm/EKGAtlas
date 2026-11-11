@@ -1822,7 +1822,8 @@ e i tempi veri e costruire una «palestra» che si comporti come il gestionale. 
 menu, **⋯ → Registrazioni**: in cima **● Registra / Ferma e salva**, poi le registrazioni salvate
 (**Scarica** c'è sempre, anche con «restano N dati da controllare»), e in fondo, chiuso, il
 **Registro** delle operazioni con **⧉ Copia**. Ogni zip porta da sé il Registro dei pannelli di quei
-minuti (`testi/registro.txt`, senza il quesito) e la **diagnosi** di ogni documento che non si è
+minuti (`testi/registro.txt`, senza il quesito, col testo dei promemoria inventato e ogni numero di 5
+cifre o più rimappato come un identificativo) e la **diagnosi** di ogni documento che non si è
 lasciato leggere (`testi/diagnosi-N.txt`: la struttura, senza numeri né valori, codici fiscali e date come `[CF]` e `[data]`), anonimizzati come
 le pagine e ricontrollati dal cancello. Col preferito (bookmarklet) la voce mostra solo il Registro.
 

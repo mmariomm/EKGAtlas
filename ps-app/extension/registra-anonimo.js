@@ -1531,11 +1531,21 @@
       return w.length >= 2 && !w.some((x) => x.length >= 3 && !PARTICELLE.has(x) && (PAROLE_STATICHE.has(x) || SISS_PAROLE.has(x) || VIEWER_PAROLE.has(x)));
     };
     const nomiTesti = new Map();          // NORMA → { cat, orig }: le persone trovate solo nei testi
+    // Un numero di 5 o più cifre in un testo («la richiesta 880777», «(referto 4567890)») è un
+    // identificativo anche se nessuna pagina registrata lo mostra: rimappato come lo stesso altrove.
+    // Non un decimale, una misura in byte, un numero del vocabolario (i codici negli esami del catalogo).
+    const ID_TESTO_RE = /(?<![\dA-Za-z]|\d[.,])\d{5,}(?![\dA-Za-z]|[.,]\d|\s?(?:B|byte|bytes|KB|kB|MB)\b)/g;
+    const numeriVoc = new Set();
+    if (testiLiberi.length) {
+      for (const s of STATICO) for (const m of s.matchAll(/\d{5,}/g)) numeriVoc.add(m[0]);
+      for (const [s, u] of testi) if (u.size >= 2) for (const m of s.matchAll(/\d{5,}/g)) numeriVoc.add(m[0]);
+    }
     for (const x of testiLiberi) {
       for (const riga of String(x.testo).split(/\r?\n/)) {
         const r = pulisci(decodifica(riga));
         scopriValori(r); scopriValori(pulisci(decURI(r)));
         for (const u of r.match(URL_IN_TESTO) || []) idDaUrl(u);
+        for (const m of r.replace(URL_IN_TESTO, " ").matchAll(ID_TESTO_RE)) if (!numeriVoc.has(m[0])) registraId(m[0]);
       }
       nomiLocali = nomiTesti;
       try {
@@ -1709,11 +1719,24 @@
     const errori = (Array.isArray(raccolta.errori) ? raccolta.errori : []).map(({ ts, ...x }) => ({ t: Math.round(((ts || 0) - (raccolta.inizio || 0)) / 1000), ...x }));
     files["errori.json"] = JSON.stringify({ unita: "secondi dall'inizio della registrazione", errori }, null, 1);
     // i testi liberi: riga per riga indirizzi, codici fiscali, email, telefoni, numeri e date
-    // come per il resto; i nomi li sostituisce la ripulitura qui sotto, come per ogni file
+    // come per il resto; i nomi li sostituisce la ripulitura qui sotto, come per ogni file.
+    // In più: il testo che il medico ha scritto e che il programma riporta nel Registro (un
+    // promemoria dal telefono: «promemoria per X: 10:30 · <testo> · tra 25 min») diventa
+    // testo inventato della stessa lunghezza — l'ora e il «tra …» restano; e l'ospedale e il
+    // fornitore (una pagina inattesa citata per intero) diventano quelli d'esempio.
+    const PROMEMORIA_RE = /(\bpromemoria(?: fatto)? per [^:\n]{1,80}: )(.+)$/;
+    const promemoriaFinto = (riga) => riga.replace(PROMEMORIA_RE, (all, testa, resto) => testa + resto.split(" · ").map((p) => {
+      const q = p.trim();
+      if (!q || /^(?:(?:domani|ieri) )?\d{1,2}:\d{2}$|^(?:tra|in ritardo di) \d+ (?:h|min)\b|^adesso$/.test(q)) return p;
+      conta.liberi++; contaDentro(q);
+      return p.replace(q, sintetico(q));
+    }).join(" · "));
+    const MARCHI_TESTI = MARCHI.filter((re) => !/PS Assist|connesso/i.test(re.source)).map((re) => new RegExp(re.source, "gi"));
+    const marchiFinti = (riga) => MARCHI_TESTI.reduce((t, re) => t.replace(re, (m) => (conta.testo++, /diritti|AFC|java/i.test(m) ? "software di esempio" : "OSPEDALE ESEMPIO")), riga);
     testiLiberi.forEach((x, i) => {
       const base = String(x.nome || "testo.txt").replace(/[^\w.-]/g, "_").replace(/\.{2,}/g, ".").replace(/^\./, "_").slice(0, 60) || "testo.txt";
       const nome = files[`testi/${base}`] != null ? `testi/${i + 1}-${base}` : `testi/${base}`;
-      files[nome] = String(x.testo).split(/\r?\n/).map((riga) => motivi(riga.replace(URL_IN_TESTO, (u) => anonUrl(u, "flusso")))).join("\n");
+      files[nome] = String(x.testo).split(/\r?\n/).map((riga) => marchiFinti(motivi(promemoriaFinto(riga).replace(URL_IN_TESTO, (u) => anonUrl(u, "flusso"))))).join("\n");
     });
 
     // ------------------------------------------ terza passata: ripulire
