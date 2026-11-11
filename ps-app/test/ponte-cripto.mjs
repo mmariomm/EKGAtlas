@@ -660,6 +660,16 @@ await blocco(async () => {
     stampa: { jobs: f.map((x) => ({ name: x.name })), riassunto: "2 esami confermati", quesito: "Quesito: il tuo" }, ...extra });
   const pub = (r) => vm.runInContext(`ordPubblico(${JSON.stringify(r)})`, ctx);
   const tutto = (p) => [p.titolo, p.testo, p.dettaglio].join(" | ");
+  // etichette che nessuno prende: «Confermata» solo per un ordine; una ristampa, un consenso, l'etichetta anagrafica dicono com'è andata
+  const ns = (r) => vm.runInContext(`(() => { const r = ${JSON.stringify(r)}; nonStampate(r, "nessuno le ha prese"); return r.vista; })()`, ctx);
+  const nsOrd = ns({ id: "pc1", confermata: ora, stato: "stampa", stampa: { tag: "Confermata", jobs: [] } });
+  const nsRis = ns({ id: "rist1", stato: "stampa", stampa: { tag: "Stampa", jobs: [] } });
+  check(nsOrd.tag === "Confermata" && nsOrd.testo === "Etichette NON stampate" && nsRis.tag === "Etichette NON stampate" && nsRis.testo === "nessuno le ha prese",
+    `etichette non prese: «Confermata · Etichette NON stampate» per un ordine, «Etichette NON stampate» e basta per una ristampa (${JSON.stringify([nsOrd, nsRis])})`);
+  // la scheda di «Conferma di nuovo» che non parte: la richiesta c'è, coi suoi esami — «apri il carrello e premi Conferma», mai «niente inviato»
+  const np = (r) => vm.runInContext(`nonPartito(${JSON.stringify(r)}, "la scheda dell'ordine non ha risposto")`, ctx);
+  check(np({ riconfermata: true }).testo === "apri il carrello e premi Conferma" && /niente premuto/.test(np({ riconfermata: true }).quesito) && np({}).testo === "niente inviato: riprova",
+    `«Conferma di nuovo» che non parte: «Non partita · apri il carrello e premi Conferma»; un ordine nuovo: «niente inviato: riprova» (${JSON.stringify([np({ riconfermata: true }), np({})])})`);
   const ok = pub(rec("pc1", "avviso", fogli(["etichette", "stampato", "Zebra ZD421"], ["a4", "stampato", "HP LaserJet A4"])));
   check(ok.tono === "ok" && ok.titolo === "Stampato su Zebra ZD421 e HP LaserJet A4" && ok.testo === "2 esami confermati alle 14:32" && (tutto(ok).match(/14:32/g) || []).length === 1 && !ok.tel,
     `stampato: il titolo è com'è andata («Stampato su Zebra ZD421 e HP LaserJet A4»), l'ora una volta (${tutto(ok)})`);

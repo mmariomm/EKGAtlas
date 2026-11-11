@@ -1571,7 +1571,7 @@ gestionale resta quello di sempre: un tuo tocco.
 **Prima le etichette.** Senza la stampa automatica le etichette le stampa la tua scheda, col
 dialogo. Il secondo ordine dello stesso tocco (le Urgenze dopo il POC, l'RX) non parte finché la tua
 scheda non ha preso tutti i PDF del primo — li scarica tutti subito, uno dopo l'altro, e lo dice al
-service worker (al più 20 secondi; se nessuna scheda può prenderli adesso, o quella che li ha presi
+service worker (dopo 18 secondi non ne comincia altri, e la coda aspetta al più 40 secondi — l'ultimo PDF in volo compreso; se nessuna scheda può prenderli adesso, o quella che li ha presi
 si chiude o cambia pagina, la coda non li aspetta).
 Sempre un motore alla volta: le pagine del gestionale sono di una sessione sola, e i PDF del primo
 ordine aspettavano dietro gli esami del secondo (3,5–8,6 secondi di «Aspetto le etichette…»).

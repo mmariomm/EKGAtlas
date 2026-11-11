@@ -85,6 +85,7 @@
   ]);
 
   const TIMEOUT_MS = 20000;      // per-request timeout
+  const PRESA_SCHEDA_MAX = 18e3;  // le etichette di un ordine prese col dialogo: oltre, i PDF si prendono quando servono (bg.js: PRESA_PDF_MAX = questo + TIMEOUT_MS)
   const PACE_MS = 250;           // gentle pause between consecutive requests
   // Le riletture dell'elenco prima di dire che un esame non è entrato, e la
   // pausa prima di ciascuna: un gestionale carico mette l'esame in carrello
@@ -16326,8 +16327,16 @@
       }
       return pre.get(k);
     };
+    // (passati PRESA_SCHEDA_MAX non se ne comincia un altro: quello in volo
+    // finisce entro il suo TIMEOUT_MS, e il service worker aspetta al più la
+    // somma — PRESA_PDF_MAX —, così il prossimo ordine non parte mai mentre una
+    // lettura di questa scheda sposta la richiesta corrente della sessione)
     (async () => {
-      for (let k = 0; k < jobs.length && !chiuso; k++) await prendi(k).catch(() => {});
+      const t0 = Date.now();
+      for (let k = 0; k < jobs.length && !chiuso; k++) {
+        if (opzioni.presi && Date.now() - t0 > PRESA_SCHEDA_MAX) break;
+        await prendi(k).catch(() => {});
+      }
       if (opzioni.presi && hasExt()) ask({ t: "ordinePresi", id: opzioni.presi }).catch(() => {});
     })();
 
@@ -17454,7 +17463,8 @@
       for (let k = 0; k < 3 && !r.ok && !r.no; k++) r = await ask({ t: "ordineNuovo", job });
       if (!r.ok) {
         const perche = r.no ? r.why || "rifiutato" : "il service worker non risponde: guarda il carrello prima di rifarlo";
-        if (!ordini.length) return { ok: false, errore: `Ordine non partito: ${perche}` };
+        // (senza risposta non si sa se è partito: «Da controllare» sul telefono, come sul PC — mai «niente inviato»)
+        if (!ordini.length) return { ok: false, ...(r.no ? {} : { incerto: true }), errore: r.no ? `Ordine non partito: ${perche}` : `Non so se l'ordine è partito: ${perche}` };
         const fuori = gambe.slice(g).map(([, , nome]) => nome).join(", ");
         return { ok: true, dati: { ordini, avviso: `Non partiti: ${fuori} (${perche})` }, registro: `ordine per ${p.name}: non partiti ${fuori}` };
       }

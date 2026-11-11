@@ -2001,8 +2001,8 @@ if (await prova("doppio clic sulle icone di stampa del gestionale: uno apre il P
   check(s.link.length === 2 && s.link.every((x) => x.vero && !x.prev) && lavori().length === 0,
     `«Stampa Etichette» di un altro sito: i due clic arrivano al link com'è, niente stampa (got ${JSON.stringify(s.link)})`);
 
-  // la stampa automatica spenta: nessuna attesa, il doppio clic è quello della pagina
-  await scelte({ ...ATTIVA, attiva: false });
+  // senza la stampa automatica (nessuna stampante scelta: dalla 3.86 l'unico «spento»): nessuna attesa, il doppio clic è quello della pagina
+  await scelte(null);
   await finche(async () => !(await stampantina(doc)), 3000);
   await sospendi(500);
   await daCapo();
@@ -2020,6 +2020,7 @@ if (await prova("doppio clic sulle icone di stampa del gestionale: uno apre il P
   ctx.off("page", segna);
   await chiudiAperte();
   ritocca = null;
+  await scelte(ATTIVA);   // (le stampanti di prima: com'era)
 }
 
 await ctx.close();
