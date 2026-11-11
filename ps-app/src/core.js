@@ -15866,10 +15866,13 @@
     const CF = /\b[A-Z]{6}[0-9LMNPQRSTUV]{2}[A-Z][0-9LMNPQRSTUV]{2}[A-Z][0-9LMNPQRSTUV]{3}[A-Z]\b/;
     const DATA = /\b\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}\b/;
     const PARTICELLE = new Set(["a", "il", "di", "de", "del", "della", "dal", "da", "la", "lo", "in", "van", "von", "dei", "degli", "e"]);
-    // un nome di persona: poche parole, ognuna con l'iniziale maiuscola (o una particella)
+    // il nome dopo un titolo di firma («Dott.», «Il Medico»): poche parole, ognuna con
+    // l'iniziale maiuscola (o una particella) — mai le parole di una comunicazione
+    // («DOTT. ROSSI INFORMATO TELEFONICAMENTE», «MEDICO CURANTE AVVISATO» sono referto)
     const nomeDi = (t) => {
       const w = String(t).replace(/[.,]/g, " ").split(/\s+/).filter(Boolean);
-      return w.length >= 1 && w.length <= 6 && w.every((x) => /^[A-ZÀ-Ü][A-Za-zÀ-ÿ'’-]*$/.test(x) || PARTICELLE.has(x.toLowerCase())) && w.some((x) => /^[A-ZÀ-Ü]/.test(x));
+      return w.length >= 1 && w.length <= 6 && w.every((x) => /^[A-ZÀ-Ü][A-Za-zÀ-ÿ'’-]*$/.test(x) || PARTICELLE.has(x.toLowerCase())) && w.some((x) => /^[A-ZÀ-Ü]/.test(x))
+        && !w.some((x) => /^(?:informat|avvisat|avvertit|contattat|comunicat|chiamat|allertat|sentit|curant)|mente$/i.test(x));
     };
     const norm = (t) => String(t || "").toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^A-Z0-9 ]+/g, " ").trim().replace(/\s+/g, " ");
     const mie = norm(paz && paz.nome).split(" ").filter((x) => x.length >= 2);
@@ -15878,27 +15881,27 @@
       const w = norm(r).split(" ").filter(Boolean);
       return mie.length >= 2 && w.length >= 2 && w.length <= mie.length + 1 && w.every((x) => mie.includes(x)) && mie.every((x) => w.includes(x));
     };
-    // l'identità, dove sta scritta: «Paziente: ROSSI MARIO», «Nato il 01/01/1980», «Codice fiscale …», «Sesso: M»
+    // l'identità, dove sta scritta: «Paziente: ROSSI MARIO», «Nato il 01/01/1980», «Codice fiscale …», «Sesso: M».
+    // Dopo l'etichetta conta solo un valore che è certamente un dato: un codice fiscale, una
+    // data, un numero, M/F, o il SUO nome intero — mai parole maiuscole qualsiasi
+    // («PAZIENTE: NON COLLABORANTE», «ETÀ OSSEA CORRISPONDENTE A 12 ANNI» sono referto)
+    const dato = (v) => !v || CF.test(v.toUpperCase()) || DATA.test(v) || /^\d[\d/.-]*(?:\s*anni)?$/i.test(v)
+      || /^(?:[MF]|maschi(?:o|le)|femmin(?:a|ile))$/i.test(v) || ilSuoNome(v);
     const identita = (r) => {
       if (CF.test(r.toUpperCase()) && !r.toUpperCase().replace(CF, "").replace(/\b(?:CODICE FISCALE|COD(?:\.|ICE)?\s*FISC(?:ALE|\.)?|C\.?\s?F\.?)\s*[:.]?/, "").replace(/[\s:.-]/g, "")) return true;
       if (ilSuoNome(r)) return true;
-      let m = /^(?:paziente|cognome\s+e\s+nome|cognome|nominativo|assistito|sig\.?(?:ra)?)\s*:\s*(.+)$/i.exec(r);
-      if (m) return CF.test(m[1].toUpperCase()) || DATA.test(m[1]) || (nomeDi(m[1]) && m[1].trim().split(/\s+/).length >= 2) || ilSuoNome(m[1]);
-      m = /^(?:nat[oa](?:\s+(?:il|a))?|data\s+di\s+nascita|d\.?\s?n\.?|luogo\s+di\s+nascita|codice\s+fiscale|cod(?:\.|ice)?\s*fisc(?:ale|\.)?|c\.?\s?f\.?|sesso|et[àa]|residen\w+|tessera\s+sanitaria|n\.?\s*episodio|episodio|nosologico|id\s+paziente)(?![A-Za-zÀ-ÿ])\s*[:.]?\s*(.*)$/i.exec(r);
-      if (m) {
-        const v = m[1].trim();
-        return !v || CF.test(v.toUpperCase()) || DATA.test(v) || /^\d+(?:\s*anni)?$/i.test(v) || /^[MF]$/i.test(v) || /^(?:maschio|femmina)$/i.test(v)
-          || (v.split(/\s+/).length <= 5 && v.split(/\s+/).every((x) => /^[A-ZÀ-Ü0-9][A-Za-zÀ-ÿ0-9'’/-]*$/.test(x) || PARTICELLE.has(x.toLowerCase())));
-      }
-      return false;
+      const m = /^(?:paziente|cognome\s+e\s+nome|cognome|nominativo|assistito|sig\.?(?:ra)?)\s*:\s*(.+)$/i.exec(r)
+        || /^(?:nat[oa](?:\s+(?:il|a))?|data\s+di\s+nascita|d\.?\s?n\.?|luogo\s+di\s+nascita|codice\s+fiscale|cod(?:\.|ice)?\s*fisc(?:ale|\.)?|c\.?\s?f\.?|sesso|et[àa]|residen\w+|tessera\s+sanitaria|n\.?\s*episodio|episodio|nosologico|id\s+paziente)(?![A-Za-zÀ-ÿ])\s*[:.]?\s*(.*)$/i.exec(r);
+      return !!m && dato(m[1].trim());
     };
     const esame = (r) => /^\d+-\d+\s+\S.*\(\s*[A-Z0-9]+\s*\)\s+\d{1,2}\/\d{1,2}\/\d{2,4}\s+\d{1,2}[:.]\d{2}/i.test(r);
-    // l'intestazione di chi referta (solo in testa, prima di ogni riga clinica)
-    const intestazione = (r) => /^(?:ospedale|azienda|asst|ats|ausl|asl|presidio|p\.\s?o\.|struttura|u\.\s?o\.\s?c?\.?|unit[àa]\s+operativa|reparto|servizio|dipartimento|istituto|policlinico|casa\s+di\s+cura)\b/i.test(r)
+    // l'intestazione di chi referta (solo in testa, prima di ogni riga clinica) — mai una
+    // frase che finisce col punto: «Struttura ossea regolare.» è referto
+    const intestazione = (r) => !/[a-zà-ù]{3}\.$/i.test(r) && (/^(?:ospedale|azienda|asst|ats|ausl|asl|presidio|p\.\s?o\.|struttura\s+(?:complessa|semplice|dipartimentale)|u\.\s?o\.\s?c?\.?|unit[àa]\s+operativa|reparto|servizio|dipartimento|istituto|policlinico|casa\s+di\s+cura)\b/i.test(r)
       || (/^(?:radiologia|radiodiagnostica|diagnostica\s+per\s+immagini|pronto\s+soccorso)\b\s*(?:[-–—:|]\s*(.*))?$/i.test(r)
         && (!/[-–—:|]/.test(r) || /ospedale|azienda|presidio|asst|ats|\bu\.\s?o\.|reparto|servizio|dipartimento|policlinico/i.test(r)))
       || /^(?:modalit[àa]|operatore|tecnico|esecutore|richiedente|medico\s+richiedente|reparto\s+richiedente|provenienza)(?![A-Za-zÀ-ÿ])/i.test(r)
-      || /^referto(?:\s+(?:radiologico|di\s+radiologia|medico))?\s*:?$/i.test(r);
+      || /^referto(?:\s+(?:radiologico|di\s+radiologia|medico))?\s*:?$/i.test(r));
     // la firma: «Il Medico DOTTORE ESEMPIO», «Dott.ssa A. Bianchi», «Firmato digitalmente da …» — con dopo solo un nome
     const firma = (r) => {
       const m = /^(?:(?:il|la)\s+)?(?:medico(?:\s+(?:refertante|radiologo|specialista))?|radiologo|dirigente\s+medico|refertato\s+da|referto\s+(?:redatto|firmato)\s+da|firmato(?:\s+digitalmente)?(?:\s+da)?|firma|validato(?:\s+da)?|dott\.?(?:ssa)?|dr\.?(?:ssa)?|prof\.?(?:ssa)?)(?![A-Za-zÀ-ÿ])\.?\s*:?\s*(.*)$/i.exec(r);
@@ -15915,10 +15918,10 @@
       if (!(testa && esame(r))) testa = false;
       out.push(r);
     }
-    // 2. la coda: da una riga di firma in poi, se dopo non c'è che firma, nomi, piè di pagina
-    for (let i = Math.max(0, out.length - 6); i < out.length; i++) {
-      if (firma(out[i]) && out.slice(i + 1).every((x) => firma(x) || nomeDi(x))) { out.length = i; break; }
-    }
+    // 2. la coda: le righe di firma in fondo, e solo quelle. Una riga dopo la firma che non è
+    // firma anche lei («ADDENDUM», «FRATTURA COMPOMESSA», «Nessuna variazione») è referto:
+    // resta, e con lei la firma che la precede. (Così un secondo taglio non toglie più niente.)
+    while (out.length && firma(out[out.length - 1])) out.length--;
     return out.length ? out : tutte;
   }
 

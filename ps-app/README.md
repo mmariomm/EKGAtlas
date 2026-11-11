@@ -919,10 +919,12 @@ richiesta da confermare.
   data e ora) e il referto fra le due righe di trattini, mai l'anagrafica in testa, la modalità,
   l'operatore o il piè di pagina (stesso taglio sul PC, sul telefono e nella copia); se la struttura
   del PDF non è riconosciuta non si taglia a corpo, ma se ne vanno le righe che sono **certamente**
-  cornice — nome e dati anagrafici del paziente (nato il, codice fiscale, sesso, età, episodio),
-  intestazione di ospedale e reparto in testa, «Il Medico … / Dott. …» e il piè di pagina in coda,
-  i trattini — e **mai una riga di cui non si è sicuri** (il quesito, il titolo e ogni riga
-  clinica restano; se tutto sembrasse cornice, resta tutto). Gli altri documenti (consulenze…) stanno in **Altri
+  cornice — nome e dati anagrafici del paziente (nato il, codice fiscale, sesso, età, episodio:
+  solo se dopo l'etichetta c'è un dato, cioè codice fiscale, data, numero, M/F o il suo nome),
+  intestazione di ospedale e reparto in testa, «Il Medico … / Dott. …» e il piè di pagina in coda
+  (solo se dopo non c'è altro), i trattini — e **mai una riga di cui non si è sicuri** (il
+  quesito, il titolo e ogni riga clinica restano, anche scritte in maiuscolo; se tutto sembrasse
+  cornice, resta tutto). Gli altri documenti (consulenze…) stanno in **Altri
   documenti**, e si aprono nella loro scheda.
 - **Di chi è il referto**: prima di mostrare un testo, il codice fiscale scritto nel PDF (o nome e
   data di nascita) si confronta col paziente. Fra i PDF che il portale mostra, quello rimasto
