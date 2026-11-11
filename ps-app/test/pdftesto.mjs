@@ -256,6 +256,8 @@ check(await ante(["69-35 RX TORACE (6979) 01/10/2026 10:51", "NON FOCOLAI BRONCO
   "un referto tutto maiuscolo: la sua prima frase, non la riga dell'esame");
 check(await ante(["U.O.C. RADIOLOGIA DIAGNOSTICA", "RADIOGRAFIA TORACE 2 PROIEZIONI", "NON PNX.", "OMBRA CARDIACA NEI LIMITI."]) === "OMBRA CARDIACA NEI LIMITI.",
   "in maiuscolo, né l'intestazione del reparto né il titolo dell'esame");
+check(await ante(["TORACE IN 2 PROIEZIONI", "69-35 RX TORACE", "Non focolai in atto."]) === "Non focolai in atto.",
+  "un titolo maiuscolo sopra un referto con le minuscole: resta la frase del referto");
 
 console.log("\nil referto è di questo paziente?");
 const ROSSI = { cf: "SMPRSS80A01F205X", nome: "ROSSI MARIO", nascita: "01/01/1980" };
