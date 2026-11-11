@@ -1297,8 +1297,12 @@ async function ordControlla(l) {
 function nonStampate(rec, testo) {
   // («Confermata» solo per un ordine confermato; una ristampa, un consenso, un'etichetta anagrafica dicono com'è andata e basta)
   const ordine = !!rec.confermata || !!(rec.stampa && rec.stampa.tag === "Confermata");
+  // (e col nome di quello che non è uscito: «Etichette» solo se sono etichette — un consenso, un PDF, col suo)
+  const jobs = (rec.stampa && Array.isArray(rec.stampa.jobs) ? rec.stampa.jobs : []).filter((j) => j && j.name);
+  const cosa = jobs.length && jobs.every((j) => j.printer === "etichettatrice") ? "Etichette NON stampate"
+    : jobs.length === 1 ? `NON stampato: ${corto(jobs[0].name, 60)}` : "Fogli NON stampati";
   rec.stato = "avviso"; rec.agg = Date.now(); rec.stampa = null; delete rec.fogli;
-  rec.vista = ordine ? { tag: CONFERMATA, testo: "Etichette NON stampate", quesito: testo, tono: "warn" } : { tag: "Etichette NON stampate", testo, tono: "warn" };
+  rec.vista = ordine ? { tag: CONFERMATA, testo: "Etichette NON stampate", quesito: testo, tono: "warn" } : { tag: cosa, testo, tono: "warn" };
 }
 // «Ci sei?» alle schede zitte — fuori dalla fila: una scheda bloccata non deve
 // fermare gli altri ordini, il ⏹ né le letture —; la risposta si scrive dopo,

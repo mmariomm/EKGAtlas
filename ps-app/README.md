@@ -1732,7 +1732,8 @@ Windows), con **Stampa una pagina di prova** per ciascuna. Da lì:
   motivo sulla striscia; per un ordine dal telefono aspetta un tocco su **Stampa** («Etichette NON
   stampate · la stampante «Zebra ZD421» risulta spenta o offline»). Accanto, il ✕ **«Annulla: non
   stamparle»**: non si stampano, mai un dialogo; il PC non lo ripete, e l'ordine — anche per il
-  telefono — dice «Etichette NON stampate · annullate sul PC» (si stampano dalla sua pagina).
+  telefono — dice «Etichette NON stampate · annullate sul PC» (si stampano dalla sua pagina; una
+  stampa che non è di etichette — un consenso, un PDF — col suo nome: «NON stampato: …»).
   Uscite, la striscia di un ordine dal telefono aggiunge «avvisa chi preleva».
 - **La striscia è una sola**, e dice la cosa più seria, fra due pari la più nuova: un errore, un
   avviso da leggere, le etichette pronte qui, l'ordine che gira, la coda, le etichette di un
