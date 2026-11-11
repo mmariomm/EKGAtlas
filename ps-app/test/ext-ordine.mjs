@@ -128,7 +128,10 @@ const azzeraStampe = (p) => p.evaluate(() => localStorage.setItem("__psaStampe",
 const strisce = (p) => p.evaluate(() => JSON.parse(sessionStorage.getItem("__psaStrisce") || "[]"));
 const striscia = async (page, re, timeout = 30000) => {
   const h = await page.waitForFunction((src) => {
-    const t = (document.getElementById("psassist-host")?.shadowRoot?.querySelector(".pill.run")?.innerText || document.getElementById("psassist-host")?.shadowRoot?.querySelector(".gchip")?.dataset.riga || "").replace(/\s+/g, " ").trim();
+    const r = document.getElementById("psassist-host")?.shadowRoot;
+    const t = (r?.querySelector(".pill.run")?.innerText || r?.querySelector(".gchip[data-riga]")?.dataset.riga || "").replace(/\s+/g, " ").trim();
+    // un ordine finito di un altro paziente è un segno nella pill: un tocco lo apre (lo farebbe il medico)
+    if (!t) { r?.querySelector("#expand .segno")?.click(); r?.querySelector("#gchipsegno")?.click(); }
     return new RegExp(src).test(t) ? t : false;
   }, re.source, { timeout });
   return h.jsonValue();
@@ -439,6 +442,15 @@ if (prova("l'errore arriva nella tua scheda, col resoconto intero — e «Svuota
   await ordina(doc, ["CREATININEMIA", "EMOCROMOCITOMETRICO", "TROPONINA"], { quesito: "febbre" });
   const w1 = await nasce;
   await suPagina(doc, B.patientUrl);
+  // Sulla pagina di BIANCHI l'ordine di ROSSI non è andato: non una striscia che
+  // prende il posto della pill di BIANCHI, ma un segno «✕ ROSSI M.» dentro la pill
+  const segnoErr = await doc.waitForFunction(() => {
+    const s = document.getElementById("psassist-host")?.shadowRoot?.querySelector("#expand .segno.err");
+    return s ? s.textContent.replace(/\s+/g, " ").trim() : false;
+  }, null, { timeout: 40000 }).then((h) => h.jsonValue()).catch(() => "");
+  check(segnoErr === "✕ ROSSI M." && (await $panel(doc, ".pill.run").count()) === 0 && /BIANCHI/.test(await $panel(doc, "#expand").innerText()),
+    `l'ordine non partito di un altro paziente: «✕ ROSSI M.» nella pill di BIANCHI, niente striscia (got: ${segnoErr || "niente"})`);
+  await $panel(doc, "#expand .segno").click();   // un tocco sul segno: l'esito
   const rossa = await striscia(doc, /ROSSI MARIO.*(non mandat|Errore)/, 40000).catch(() => "");
   check(/TROPONINA US: non mandato/.test(rossa) && /apri il carrello → Riprova/.test(rossa) && !/oggi si chiama/.test(rossa) && (await $panel(doc, ".pill.run.err").count()) === 1,
     `la striscia del medico è rossa e comincia da cosa fare: «TROPONINA US: non mandato · apri il carrello → Riprova» — il perché sta nel resoconto (got: ${rossa || "niente"})`);

@@ -628,6 +628,13 @@ lette stanno in `sessionStorage` (`smart.giro.v1`) e muoiono con lei.
    ferma tutto. **Esc** non ferma mai il giro, nemmeno col pannello aperto (lascerebbe un
    carrello a metà): riduce il pannello, come ovunque; si ferma col **⏹**. Se intanto sei sulla scheda di un altro paziente la striscia diventa **ambra** e
    lo scrive: gli esami restano quelli di chi li hai ordinati.
+   **Un ordine finito di un altro paziente non prende il posto della tua pill.** Sulla pagina di
+   BIANCHI, l'ordine finito di ROSSI resta un **segno piccolo dentro la pill** — «✓ ROSSI M.»
+   (fatto), «⚠» (da guardare), «✕» (non partito), scelto dal tono dell'esito, non dalle parole —;
+   un tocco lo apre come striscia intera, col suo ⏹/✕/«Ristampa». Il mouse sulla pill la apre come
+   sempre (a finestra aperta il segno è un chip in intestazione). Sulla pagina dello stesso
+   paziente, e per un ordine che gira, è in coda o aspetta un tocco per le etichette, la striscia
+   resta intera.
    **Con l'estensione il giro va in una scheda di sottofondo.** «Conferma e stampa» (e «solo
    carrello») non mandano gli esami dalla tua scheda: l'estensione apre **una seconda scheda,
    accanto e dietro**, sulla pagina vera del paziente — lo stesso indirizzo da cui il giro

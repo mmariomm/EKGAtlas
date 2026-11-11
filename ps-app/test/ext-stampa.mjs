@@ -217,7 +217,10 @@ const aspettaScheda = async (p, cond, timeout = 20000) => {
 };
 const striscia = async (page, re, timeout = 30000) => {
   const h = await page.waitForFunction((src) => {
-    const t = (document.getElementById("psassist-host")?.shadowRoot?.querySelector(".pill.run")?.innerText || document.getElementById("psassist-host")?.shadowRoot?.querySelector(".gchip")?.dataset.riga || "").replace(/\s+/g, " ").trim();
+    const r = document.getElementById("psassist-host")?.shadowRoot;
+    const t = (r?.querySelector(".pill.run")?.innerText || r?.querySelector(".gchip[data-riga]")?.dataset.riga || "").replace(/\s+/g, " ").trim();
+    // un ordine finito di un altro paziente è un segno nella pill: un tocco lo apre (lo farebbe il medico)
+    if (!t) { r?.querySelector("#expand .segno")?.click(); r?.querySelector("#gchipsegno")?.click(); }
     return new RegExp(src).test(t) ? t : false;
   }, re.source, { timeout }).catch(() => null);
   return h ? h.jsonValue() : "";
@@ -505,8 +508,25 @@ if (await prova("una conferma nella scheda del medico: la striscia, nessuna ante
     `la richiesta è confermata, una volta${rec ? "" : ` (got ${JSON.stringify((await ordini()).map((x) => [x.stato, x.pubblico, x.interrotta]))})`}`);
   check(!!rec && rec.pubblico.titolo === "Stampato su Zebra ZD421 e HP LaserJet A4" && /^1 esame confermato alle \d\d:\d\d$/.test(rec.pubblico.testo),
     `«Stampato su Zebra ZD421 e HP LaserJet A4 · 1 esame confermato alle HH:MM» (got ${JSON.stringify(rec && rec.pubblico)})`);
+  // Finito, sulla pagina di BIANCHI: non una striscia che prende il posto della sua
+  // pill, ma «✓ ROSSI M.» dentro la pill di BIANCHI; un tocco apre l'esito
+  const segnoOk = await doc.waitForFunction(() => {
+    const r = document.getElementById("psassist-host")?.shadowRoot;
+    const s = r?.querySelector("#expand .segno");
+    return s && !r.querySelector(".pill.run") ? s.textContent.replace(/\s+/g, " ").trim() : false;
+  }, null, { timeout: 8000 }).then((h) => h.jsonValue()).catch(() => "");
+  check(segnoOk === "✓ ROSSI M." && /BIANCHI/.test(await $panel(doc, "#expand").innerText().catch(() => "")),
+    `sulla pagina di BIANCHI, l'ordine finito di ROSSI è «✓ ROSSI M.» nella pill di BIANCHI, niente striscia (got ${segnoOk || "niente"})`);
+  // il mouse sulla pill: la finestra si apre come sempre (con una striscia non succedeva)
+  await $panel(doc, "#expand").hover({ position: { x: 14, y: 8 } });
+  await doc.waitForSelector("#psassist-host .card", { timeout: 4000 }).catch(() => {});
+  check(await $panel(doc, ".card").count() === 1 && /ROSSI M\./.test(await $panel(doc, "#gchipsegno").innerText().catch(() => "")),
+    "il mouse sulla pill apre la finestra, e il segno diventa un chip in intestazione");
+  await doc.mouse.move(300, 600);   // via il mouse: la finestra «al passaggio» si richiude
+  await doc.waitForSelector("#psassist-host .card", { state: "detached", timeout: 6000 }).catch(() => {});
+  await $panel(doc, "#expand .segno").click({ timeout: 5000 });
   const fine = await striscia(doc, /Stampato su/, 8000);
-  check(/ROSSI MARIO/.test(fine), `sulla pagina di BIANCHI la striscia dice di ROSSI: «Stampato su …» (got ${fine})`);
+  check(/ROSSI MARIO/.test(fine), `un tocco sul segno: la striscia dice di ROSSI: «Stampato su …» (got ${fine})`);
   await sospendi(1500);
   const l = lavoriPerStampante();
   check(l.length === 2 && l[0].tipo === "etichette" && l[1].tipo === "a4", `i due fogli, una volta ciascuno, anche col medico altrove (got ${JSON.stringify(l.map((x) => x.tipo))})`);

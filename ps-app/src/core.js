@@ -5776,6 +5776,11 @@
     .pill .l2 { font-size: 11.5px; font-weight: 500; opacity: .93; max-width: 100%;
                 white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .pill .tick { font-size: 13px; font-weight: 800; }
+    /* un ordine finito di un altro paziente: un segno piccolo nella pill, non la striscia */
+    .pill .segno { display: inline-flex; align-items: center; gap: 3px; padding: 1px 7px; border-radius: 999px; background: #fff; color: var(--ok); font-size: 11px; font-weight: 800; cursor: pointer; white-space: nowrap; }
+    .pill .segno.warn { color: var(--att); }
+    .pill .segno.err { color: var(--err); }
+    .pill .segno:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
     /* quale quesito è partito: una riga piccola sotto il resoconto */
     .pill .l3 { font-size: 11px; font-weight: 500; opacity: .8; max-width: 100%;
                 white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -8100,6 +8105,32 @@
       const w = this.root.querySelector("#girow");
       if (w) w.innerHTML = this.chipGiro();
     }
+    // Il segno di un ordine finito di un altro paziente (vedi stripOrdine): solo
+    // quando cambia si ridisegna, e a finestra aperta cambia solo il chip.
+    segnaSegno(s) {
+      const firma = JSON.stringify(s);
+      if (firma === this._firmaSegno) return;
+      this._firmaSegno = firma;
+      this.segnoOrdine = s;
+      if (this.collapsed) this.render();
+      else this.rifaiChipGiro();
+    }
+    // un tocco sul segno: l'ordine torna una striscia intera, coi suoi bottoni
+    apriSegno() {
+      const s = this.segnoOrdine;
+      if (!s) return;
+      this._segnoAperto = s.id;
+      this._sullaPill = false; clearTimeout(this._tApre);   // (il mouse è lì sopra: la finestra non si apre sotto il tocco)
+      this._firmaOrdine = "";
+      this.stripOrdine();
+    }
+    // dentro la pill (collapsed): «✓ ROSSI M.» — ✓ fatto, ⚠ da guardare, ✕ non partito
+    segnoHtml() {
+      const s = this.segnoOrdine;
+      if (!s || this.runState || this.striscia) return "";
+      const ico = s.tono === "err" ? "✕" : s.tono === "warn" ? "⚠" : "✓";
+      return `<span class="segno ${esc(s.tono)}" data-segno="1" title="${esc(s.titolo)} — tocca per aprirlo">${ico} ${esc(s.chi)}</span>`;
+    }
     // A pannello aperto, quello che succede fuori dalla finestra — l'ordine in
     // sottofondo, la stampa, un errore, una ricetta — è un chip in
     // intestazione: la riga stessa della striscia (la stessa fonte, segnala),
@@ -8112,7 +8143,7 @@
       // (il resoconto di un errore o di un ⏹ a vista nel corpo: la sua striscia è già lui)
       if ((this.runState === "fail" || this.runState === "stopped") && (this.view === "richieste" || !this.resoNelleRichieste())) return "";
       const s = !running ? this.striscia : null;
-      if (!s && !running) return "";
+      if (!s && !running) return this.segnoChip();
       const quiNome = this.epDiQuesta() ? nomeInPagina() : "";
       const chi = s ? s.paziente || (s.daOrdine || s.daRicetta ? "" : quiNome) : this.runPatient || quiNome;
       const tono = s ? (["err", "warn", "run"].includes(s.tono) ? s.tono : "ok") : "run";
@@ -8135,6 +8166,13 @@
           : `<span class="gcorpo">${segno}<span class="gt">${testo}</span></span>`}</span>${
         // (le righe dei fogli, come sotto la striscia: ognuna col suo ✕ o «Ristampa»)
         s && s.righe && s.righe.length ? `<span class="gchiprighe">${this.righeHtml(s.righe)}</span>` : ""}`;
+    }
+    // a finestra aperta il segno di un ordine finito (di un altro paziente) è un chip piccolo in intestazione
+    segnoChip() {
+      const s = this.segnoOrdine;
+      if (!s || this.runState) return "";
+      const ico = s.tono === "err" ? "✕" : s.tono === "warn" ? "⚠" : "✓";
+      return `<span class="gchip ${esc(s.tono)}" role="status" title="${esc(s.titolo)}"><button class="gcorpo" id="gchipsegno" title="${esc(s.titolo)} — tocca per aprirlo"><span class="gtick">${ico}</span><span class="gt"><b>${esc(s.chi)}</b></span></button></span>`;
     }
     // gli avvisi di prima (un errore, un ordine da guardare) mentre un altro
     // ordine gira: piegati in un «!1» rosso accanto alla striscia; un tocco li mostra
@@ -8835,17 +8873,31 @@
         return t === "err" ? 0 : x.stato === "stampa" ? (tel(x) ? 5 : 2) : t === "warn" ? 1
           : ["avvio", "corre", "stampo"].includes(x.stato) ? 3 : x.stato === "coda" ? 4 : 6;
       };
-      const l = this.ordini.filter((x) => !x.visto && (grado(x) < 6 || Date.now() - (x.agg || 0) < OK_STRISCIA));
+      const vivi = this.ordini.filter((x) => !x.visto && (grado(x) < 6 || Date.now() - (x.agg || 0) < OK_STRISCIA));
       // L'ordine che gira vince la striscia: gli avvisi di ordini finiti
       // (un errore, uno da guardare) intanto si piegano in un «!1» accanto —
       // un tocco li mostra (mostraPiegati), e finito l'ordine tornano loro.
       const gira = (x) => ["avvio", "corre", "stampo"].includes(x.stato);
+      // Sulla pagina di UN ALTRO paziente un ordine finito non prende il posto
+      // della sua pill: resta un segno piccolo («✓ ROSSI M.») dentro la pill, e
+      // un tocco lo apre (_segnoAperto). Quello che gira, che è in coda o che
+      // aspetta un tocco per le etichette resta una striscia: serve a chi guarda.
+      const qui = this.epDiQuesta();
+      if (this._segnoAperto && !this.ordini.some((x) => x.id === this._segnoAperto)) this._segnoAperto = null;
+      const altrove = (x) => !!qui && !!x.ep && String(x.ep) !== String(qui) && !gira(x) && x.stato !== "coda" && x.stato !== "stampa" && x.id !== this._segnoAperto;
+      const l = vivi.filter((x) => !altrove(x));
+      const segnoDi = vivi.filter(altrove).sort((a, b) => grado(a) - grado(b) || (b.agg || 0) - (a.agg || 0))[0];
+      const segno = segnoDi ? { id: segnoDi.id, chi: nomeCorto(segnoDi.paziente || ""),
+        tono: (segnoDi.pubblico || {}).tono === "err" ? "err" : (segnoDi.pubblico || {}).tono === "warn" ? "warn" : "ok",
+        titolo: [segnoDi.paziente, (segnoDi.pubblico || {}).titolo, (segnoDi.pubblico || {}).testo].filter(Boolean).join(" · ") } : null;
+      this.segnaSegno(segno);
       const avviso = (x) => grado(x) <= 1 && !gira(x) && x.stato !== "stampa";
       if (this._mostraAvviso && !l.some((x) => x.id === this._mostraAvviso && avviso(x))) this._mostraAvviso = null;
       const piegati = l.some(gira) ? l.filter((x) => avviso(x) && x.id !== this._mostraAvviso) : [];
       const fuoco = [...l].filter((x) => !piegati.includes(x)).sort((a, b) => grado(a) - grado(b) || (b.agg || 0) - (a.agg || 0))[0];
       clearTimeout(this._tOk);
-      if (fuoco && grado(fuoco) === 6) this._tOk = setTimeout(() => this.stripOrdine(), OK_STRISCIA - (Date.now() - (fuoco.agg || 0)) + 500);
+      const scadono = [fuoco, segnoDi].filter((x) => x && grado(x) === 6).map((x) => OK_STRISCIA - (Date.now() - (x.agg || 0)) + 500);
+      if (scadono.length) this._tOk = setTimeout(() => this.stripOrdine(), Math.min(...scadono));
       const mia = !!(this.striscia && this.striscia.daOrdine);
       if (!fuoco) {
         if (mia && !this._delegando) { this.segnala(null); this.sorvegliaConferme(); this.stripRicetta?.(); }
@@ -9616,7 +9668,7 @@
             </div>
             ${running ? this.righeHtml([this.rigaGiro()]) : ""}
           ` : this.collapsed ? `
-            <button class="pill" id="expand" title="${esc(who)}${ep ? " · episodio " + esc(ep) : ""} — ${esc(APP)}, trascina per spostare">${pillInner}${this.chipRec()}${this.promUrgente()}</button>
+            <button class="pill" id="expand" title="${esc(who)}${ep ? " · episodio " + esc(ep) : ""} — ${esc(APP)}, trascina per spostare">${pillInner}${this.chipRec()}${this.promUrgente()}${this.segnoHtml()}</button>
             ${sulPaziente ? this.dfNotaSlot(this.epDiQuesta(), undefined, `${pp && Number.isFinite(pp.left) && pp.left < window.innerWidth / 2 ? " sx" : ""}${pp && Number.isFinite(pp.top) && pp.top > window.innerHeight - 180 ? " su" : ""}`) : ""}
           ` : `
             <div class="card${inStanza ? " stanza" : ""}${this.view === "iphone" && !this.runState ? " iphone" : ""}" role="dialog" aria-label="${esc(APP)}" tabindex="-1">
@@ -14548,7 +14600,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     // la finestra al centro.
     attachDrag(el) {
       el.addEventListener("pointerdown", (e) => {
-        if (e.button !== 0 || e.target.closest(".iconbtn, .tchip, .menuw, button:not(#expand):not(#pinpill), input, a, [data-rz], [data-prurg]")) return;
+        if (e.button !== 0 || e.target.closest(".iconbtn, .tchip, .menuw, button:not(#expand):not(#pinpill), input, a, [data-rz], [data-prurg], [data-segno]")) return;
         try { el.setPointerCapture(e.pointerId); } catch { /* niente */ }
         const wrap = el.closest(".wrap") || this.root.querySelector(".wrap");   // (Al passaggio la pill sopra la finestra ha la sua)
         const r = wrap.getBoundingClientRect();
@@ -14637,6 +14689,8 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         // preferenza: finito il giro il pannello torna com'era
         if (this.runState === "running") { this.collapsed = false; this.render(); return; }
         if (this._justDragged) return; // it was a drag, not a click
+        // il segno di un ordine finito di un altro paziente: l'ordine, non il pannello
+        if (e.target.closest?.("[data-segno]")) { this.apriSegno(); return; }
         // durante la stampa la striscia porta i suoi comandi, non il pannello
         if (this.striscia && this.striscia.onTap) { this.striscia.onTap(); return; }
         this.apri();
@@ -14654,6 +14708,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         else if (b.id === "gchipaz") { b.blur(); this.striscia?.azione?.fn?.(); }
         else if (b.id === "gchipagg") { b.blur(); this.aggiornaOfferta()?.fn(); }
         else if (b.id === "gchipapri") this.striscia?.onTap?.();
+        else if (b.id === "gchipsegno") this.apriSegno();
         else if (b.id === "gchippieg") this.mostraPiegati();
       });
       $("#strpieg")?.addEventListener("click", (e) => { e.stopPropagation(); this.mostraPiegati(); });
