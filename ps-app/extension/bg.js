@@ -933,8 +933,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
 
   // «Dimentica i dati…» (⋯): schede cliniche, referti salvati, schede dietro
   // finite, chi aprì lo storico, ordini finiti e quello che il ponte ne
-  // ricorda. Restano stampanti, portale, associazione col telefono, e un
-  // ordine che non ha finito.
+  // ricorda, le letture di cartella e terapie per il telefono. Restano
+  // stampanti, portale, associazione col telefono, e un ordine che non ha finito.
   if (msg.t === "resetPazienti") {
     (async () => {
       await inFila(async () => {
@@ -951,8 +951,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
         for (const rec of l.filter((x) => !aperto.has(x.stato))) await togli(l, rec);
         await ordScrivi(l);
       });
-      // e la registrazione, che ha le pagine vere dei pazienti
+      // e la registrazione, che ha le pagine vere dei pazienti, e quello che il
+      // ponte tiene in memoria per il telefono (cartella, terapie, le sue note)
       if (typeof regCancella === "function") await regCancella().catch(() => {});
+      if (typeof ponteDimentica === "function") await ponteDimentica().catch(() => {});
       reply({ ok: true });
     })().catch(() => reply({ ok: false }));
     return true;

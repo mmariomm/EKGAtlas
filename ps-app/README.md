@@ -1070,7 +1070,8 @@ che si può rimpiangere: Annulla rimette tutto com'era (le altre schede e l'este
 puliscono finiti gli 8 secondi, o subito se cambi pagina). Via **tutto** quello che sa dei pazienti e del turno — elenco, aree e posti
 nelle stanze, stato degli esami, «Da fare», note e segni, valori, referti salvati e il loro testo, schede
 cliniche, ordini finiti, richieste da confermare, quesiti, la memoria di ogni scheda aperta, gli
-ordini che ricorda il Ponte, la registrazione non salvata e gli ultimi minuti di quella automatica (gli zip salvati,
+ordini che ricorda il Ponte, le letture di cartella e terapie che il Ponte tiene per l'iPhone e le
+sue note coi nomi, la registrazione non salvata e gli ultimi minuti di quella automatica (gli zip salvati,
 anonimizzati, restano). **Restano**: stampanti e
 stampa automatica, indirizzo del portale, associazione con l'iPhone, fogli di dimissione ed EO,
 le stanze, le opzioni delle aree, la finestra. Non c'è mentre questa scheda manda un giro (un

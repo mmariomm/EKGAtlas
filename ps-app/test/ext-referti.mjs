@@ -845,7 +845,10 @@ check(/non si vede da qui/.test(rosso) && /portale \/clin-port\/loginPC\.jsp/.te
   const VIA_SCHEDA = [`ris.${ep}.zz`, `visto.${ep}.zz`, `reftxt.${ep}.zz`, `log.${ep}`, `ui.${ep}`, "receipt.v1", "confirm.v1", "queue.v1",
     "print.v1", "cuori.v1", "richieste.nostre.v1", "registriOrdini.v1", "avviso.v1", "dimdraft.x", "eodraft.x"];
   const VIA_EXT = ["ref:zz", "storicoArch"], RESTA_EXT = ["portale", "stampa", "stampaEsito", "stampaMisura", "ponte.coppia", "ponte.host", "errori.v1"];   // (il registro degli errori resta)
-  const VIA_SESS = ["apertura", "sotto:999", "ordine:o-fine"], RESTA_SESS = ["ponte", "ordiniVisti", "ordiniFogli", "stampaVerificata"];
+  // (del ponte: via le letture di cartella e terapie che tiene per il telefono; restano i numeri delle
+  // richieste dal telefono — chi ne rimanda una ha la stessa risposta, mai un secondo invio — e chi è loggato)
+  const VIA_SESS = ["apertura", "sotto:999", "ordine:o-fine", "ponte.cartella", "ponte.terapia"],
+    RESTA_SESS = ["ponte", "ordiniVisti", "ordiniFogli", "stampaVerificata", "ponte.terapia.rq", "ponte.accetta.rq", "ponte.operatore"];
 
   const pR = await ctx.newPage();
   await pR.goto(mock.patientUrl);
@@ -879,6 +882,8 @@ check(/non si vede da qui/.test(rosso) && /portale \/clin-port\/loginPC\.jsp/.te
     for (const k of [...viaS, ...restaS]) s[k] = k === "sotto:999" ? { esito: "letto" } : k === "ordiniVisti" || k === "ordiniFogli" ? ["o-fine"] : { prova: k };
     await chrome.storage.session.set(s);
   }, [VIA_EXT, RESTA_EXT, VIA_SESS, RESTA_SESS]);
+  // (e una nota del ponte col nome di un paziente, come quelle che la pagina iPhone del PC mostra)
+  await sw.evaluate(() => { ponteNota("Cartella di ROSSI MARIO dal telefono: salvati Allergie"); return ponteScriviStato(); });
 
   await pR.locator("#psassist-host #menubtn").click();
   await pR.locator("#psassist-host #resetpaz").click({ timeout: 3000 }).catch(() => {});
@@ -911,8 +916,10 @@ check(/non si vede da qui/.test(rosso) && /portale \/clin-port\/loginPC\.jsp/.te
   check(!(ext.s.ordini || []).length && !(ext.s["ponte.ordini"] || []).length, "via gli ordini finiti, anche quelli che ricordava il ponte");
   const persi = [...RESTA_EXT.filter((k) => !(k in ext.l)), ...RESTA_SESS.filter((k) => !(k in ext.s))];
   check(!persi.length, `estensione: restano ${[...RESTA_EXT, ...RESTA_SESS].join(", ")} (persi: ${persi.join(", ") || "nessuno"})`);
+  const notePonte = await sw.evaluate(() => pt.registro.length);
+  check(!notePonte && !/ROSSI/.test(JSON.stringify(ext.s.ponte || {})), `e le note del ponte coi nomi dei pazienti (rimaste: ${notePonte} · ${JSON.stringify((ext.s.ponte || {}).registro || []).slice(0, 100)})`);
   check(await pR.locator("#psassist-host .rdot.saved").count() === 0, "negli Esiti, nessun referto più salvato");
-  await sw.evaluate(async (ks) => { await chrome.storage.local.remove(ks); await chrome.storage.session.remove(["ponte", "stampaVerificata"]); }, RESTA_EXT);
+  await sw.evaluate(async (ks) => { await chrome.storage.local.remove(ks); await chrome.storage.session.remove(["ponte", "stampaVerificata", "ponte.terapia.rq", "ponte.accetta.rq", "ponte.operatore"]); }, RESTA_EXT);
   await pR.close(); await pAltra.close();
 }
 

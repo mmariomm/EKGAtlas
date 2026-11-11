@@ -1078,6 +1078,17 @@ const ponteTerapiaMemoScrivi = (ep, l) => (ponteFilaTerapiaMemo = ponteFilaTerap
   const tieni = Object.values(m).filter((y) => ponteOra() - y.letto < PONTE_REGISTRO).sort((a, b) => b.letto - a.letto).slice(0, 40);
   await chrome.storage.session.set({ [PONTE_TERAPIA]: Object.fromEntries(tieni.map((y) => [y.ep, y])) });
 }).catch(() => {}));
+// «Dimentica i dati…» del PC (bg.js, resetPazienti): le letture della cartella e
+// delle terapie (anamnesi, allergie, farmaci) e le note del ponte, che hanno i
+// nomi dei pazienti. Restano l'associazione col telefono e quello che sta
+// andando: le schede aperte, e i numeri delle richieste (chi ne rimanda una ha
+// la stessa risposta, mai un secondo invio).
+async function ponteDimentica() {
+  ponteFilaCartella = ponteFilaCartella.then(() => chrome.storage.session.remove(PONTE_CARTELLA)).catch(() => {});
+  ponteFilaTerapiaMemo = ponteFilaTerapiaMemo.then(() => chrome.storage.session.remove(PONTE_TERAPIA)).catch(() => {});
+  pt.registro = [];
+  await Promise.all([ponteFilaCartella, ponteFilaTerapiaMemo, ponteScriviStato()]);
+}
 // (questa può fallire: chi annota «inviato» non deve credere di averlo fatto)
 let ponteFilaTerapiaRq = Promise.resolve();
 function ponteTerapiaRqScrivi(rq, x) {
