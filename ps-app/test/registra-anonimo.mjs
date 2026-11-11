@@ -576,6 +576,9 @@ check(!nomi.includes("eviewer.json") && !/Visualizzatore di immagini/.test(riep)
   const t8 = con8.files["testi/registro.txt"] || "", pag8 = (x) => x.files["pagine/001-PsoEpisodioClinicoAmbulatorio.html"] || "";
   check(t8.includes("NT-proBNP = 12500 · Troponina = >35000") && t8.includes("CK-MB = 23456") && pag8(con8) === pag8(senza8) && !/880777|880778/.test(t8),
     `i valori di laboratorio nel Registro non sono identificativi: restano, e la pagina è quella di senza Registro (${t8.split("\n").slice(0, 2).join(" | ")})`);
+  // (nella diagnosi, la struttura di una pagina coi suoi script, «var idReferto = 4567890;» resta un identificativo)
+  const d8 = r8([{ nome: "diagnosi-1.txt", testo: "---\n<script>var idReferto = 4567890;</script>" }]).files["testi/diagnosi-1.txt"] || "";
+  check(/var idReferto = \d{7};/.test(d8) && !d8.includes("4567890"), `…ma nella diagnosi «nome = numero» resta un identificativo (${d8.split("\n")[1]})`);
 }
 
 // ------------- quello che il pannello manda (core.js): la diagnosi, il Registro, l'errore grave
