@@ -451,6 +451,24 @@ check(!nomi.includes("eviewer.json") && !/Visualizzatore di immagini/.test(riep)
   check(/id="riga_\d\d-\d\d-1950_x"/.test(tb) && /class="n_\d\d\.\d\d\.1950"/.test(tb), "la data di nascita resta una data dello stesso anno, con i separatori che aveva");
 }
 
+// ------------------------------------- testo libero (il registro, la diagnosi): raccolta.testi
+// Un testo di altri pezzi dell'estensione entra nello zip come testi/<nome> passando dalla
+// stessa anonimizzazione: gli stessi nomi finti e gli stessi id delle pagine, e un nome che
+// in nessuna pagina c'è (COGNOME NOME in mezzo a una riga) o un codice fiscale non escono.
+{
+  const registro = [`09:12 Ordine partito per ${P1.nome}, episodio ${P1.ep} (${P1.cf})`,
+    `09:13 Richieste ${G}/sa4pso/restrict/menuPsoEpisodio.do?MVPG=PsoRichiestaCreaRcs&EPISODIO_ID=${P1.ep}&CODICE_FISCALE=${P1.cf}.`,
+    `09:20 Paziente TRAVERSI GIOVANNA in visita, nato il 02/04/1944, tel. 333 7654321`, `09:21 Sig. Bianchetti Orlando chiama da via Roma 5`, "09:30 Conferma 2/2 provata"].join("\n");
+  const rt = anonimizza({ ...raccolta, testi: [{ nome: "registro.txt", testo: registro }, { nome: "../../x y.txt", testo: "ok" }] }, { vocabolario, sfasamento: 30 });
+  const tt = rt.files["testi/registro.txt"] || "";
+  const fintoP1 = (/<title>([^<]*)<\/title>/.exec(rt.files[Object.keys(rt.files).find((n) => /002-/.test(n))]) || [])[1];
+  check(!!tt && Object.keys(rt.files).some((n) => /^testi\/[\w.-]*x_y\.txt$/.test(n)) && !Object.keys(rt.files).some((n) => n.includes("..")), "il testo esce come testi/<nome> (il nome ripulito)");
+  check(!/VERDONE|TRAVERSI|GIOVANNA|Bianchetti|Orlando|120595|VRDCRL|02\/04\/1944|7654321|via Roma/i.test(tt), `nel testo non c'è niente di vero (${tt.replace(/\n/g, " | ").slice(0, 200)})`);
+  check(tt.includes(`per ${fintoP1} ,`) || tt.includes(`per ${fintoP1},`), `il paziente delle pagine ha lo stesso nome finto (${fintoP1})`);
+  check(tt.includes(`EPISODIO_ID=${epFinto}`) && /09:12 /.test(tt) && /09:30 Conferma 2\/2 provata/.test(tt), "lo stesso episodio finto, e orari e frasi del programma restano");
+  check(rt.gate.ok, `e il cancello passa (${rt.gate.punti})`);
+}
+
 // --------------------------------------------------------------- lo zip
 const zip = creaZip({ "a.txt": "ciao", "pagine/001-x.html": "<p>è</p>" });
 const dir = mkdtempSync(join(tmpdir(), "psa-zip-"));

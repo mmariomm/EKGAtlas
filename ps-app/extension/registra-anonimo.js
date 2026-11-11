@@ -681,8 +681,8 @@
       let t = String(s);
       t = t.replace(CF_RE, (v) => cfFinto(v));
       t = t.replace(EMAIL_RE, (v) => (/@esempio\.it$/i.test(v) ? v : (conta.email++, "utente@esempio.it")));
-      for (const re of TESSERA_RE) t = t.replace(re, (all, g) => { const v = g || all; if (!/\d/.test(v)) return all; conta.tessere++; return all.replace(v, "0".repeat(v.length)); });
-      for (const re of TEL_RE) t = t.replace(re, (all, g) => { const v = g || all; if ((v.match(/\d/g) || []).length < 7) return all; conta.telefoni++; return all.replace(v, v.replace(/\d/g, "0")); });
+      for (const re of TESSERA_RE) t = t.replace(re, (all, g) => { const v = typeof g === "string" && g ? g : all; if (!/\d/.test(v)) return all; conta.tessere++; return all.replace(v, "0".repeat(v.length)); });
+      for (const re of TEL_RE) t = t.replace(re, (all, g) => { const v = typeof g === "string" && g ? g : all; if ((v.match(/\d/g) || []).length < 7) return all; conta.telefoni++; return all.replace(v, v.replace(/\d/g, "0")); });
       t = t.replace(INDIRIZZO_RE, () => { conta.indirizzi++; return "VIA ESEMPIO 1"; });
       t = t.replace(CAP_RE, () => { conta.indirizzi++; return "00000 CITTÀ ESEMPIO (XX)"; });
       t = t.replace(IP_RE, "127.0.0.1");
@@ -1485,6 +1485,21 @@
     const clic = (Array.isArray(raccolta.clic) ? raccolta.clic : []).slice().sort((a, b) => a.ts - b.ts);
     for (const c of clic) { idDaUrl(c.url, true); const t = c.bersaglio && c.bersaglio.testo; if (t) { scopri(String(t)); scopriViewer(t); } }
 
+    // i testi che portano altri pezzi dell'estensione (il registro, la diagnosi):
+    // `raccolta.testi = [{ nome, testo }]`, escono come testi/<nome>. Le persone che
+    // vi compaiono sono cercate come altrove, più i COGNOME NOME in maiuscolo in mezzo a una riga.
+    const testiLiberi = (Array.isArray(raccolta.testi) ? raccolta.testi : []).filter((x) => x && typeof x.testo === "string");
+    const URL_IN_TESTO = /https?:\/\/[^\s"'<>)]*[^\s"'<>).,;:]/g;
+    const MAIUSCOLE_RE = /(?<![A-Za-zÀ-ÿ'’])[A-ZÀ-Ù][A-ZÀ-Ù'’]+(?:[ \t]+[A-ZÀ-Ù][A-ZÀ-Ù'’]+){1,3}(?![A-Za-zÀ-ÿ'’])/g;
+    for (const x of testiLiberi) {
+      for (const riga of String(x.testo).split(/\r?\n/)) {
+        const r = decodifica(riga);
+        scopri(r); scopri(decURI(r));
+        for (const u of r.match(URL_IN_TESTO) || []) idDaUrl(u);
+        for (const m of r.matchAll(MAIUSCOLE_RE)) if (formaNome(m[0])) registraNome(m[0], "nomi");
+      }
+    }
+
     // --------------------------------------- seconda passata: trasformare
     const files = {};
     const tipoDi = (u) => {
@@ -1643,6 +1658,13 @@
     // esportata): i tempi come il flusso, il resto passa dalla ripulitura e dal cancello
     const errori = (Array.isArray(raccolta.errori) ? raccolta.errori : []).map(({ ts, ...x }) => ({ t: Math.round(((ts || 0) - (raccolta.inizio || 0)) / 1000), ...x }));
     files["errori.json"] = JSON.stringify({ unita: "secondi dall'inizio della registrazione", errori }, null, 1);
+    // i testi liberi: riga per riga indirizzi, codici fiscali, email, telefoni, numeri e date
+    // come per il resto; i nomi li sostituisce la ripulitura qui sotto, come per ogni file
+    testiLiberi.forEach((x, i) => {
+      const base = String(x.nome || "testo.txt").replace(/[^\w.-]/g, "_").replace(/\.{2,}/g, ".").replace(/^\./, "_").slice(0, 60) || "testo.txt";
+      const nome = files[`testi/${base}`] != null ? `testi/${i + 1}-${base}` : `testi/${base}`;
+      files[nome] = String(x.testo).split(/\r?\n/).map((riga) => motivi(riga.replace(URL_IN_TESTO, (u) => anonUrl(u, "flusso")))).join("\n");
+    });
 
     // ------------------------------------------ terza passata: ripulire
     // Quello che è stato visto di vero e sostituito in un punto, sostituito
