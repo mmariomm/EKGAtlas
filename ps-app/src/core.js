@@ -14429,7 +14429,14 @@
       // due tocchi: il primo chiede, il secondo (entro pochi secondi) cancella
       $("#resetpaz")?.addEventListener("click", (e) => {
         e.stopPropagation();
-        if (!this.resetArmato()) { this._resetArmato = Date.now(); this.render(); return; }
+        if (!this.resetArmato()) {
+          this._resetArmato = Date.now(); this.render();
+          // passati i 6 secondi il bottone torna «Dimentica i dati…»: mai un «Tocca di nuovo» che non vale più
+          clearTimeout(this._resetArmatoT);
+          this._resetArmatoT = setTimeout(() => { if (this.menuAperto && !this.resetArmato()) this.render(); }, 6050);
+          return;
+        }
+        clearTimeout(this._resetArmatoT);
         this._resetArmato = 0; this.menuAperto = false;
         this.resetDatiPazienti();
       });

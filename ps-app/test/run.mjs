@@ -4259,6 +4259,11 @@ async function scenarioRisultati(browser) {
     `nel menu ⋯ un comando solo che cancella: «Dimentica i dati…» (got ${(await $panel(page, ".menu .mreset").allInnerTexts()).join(" | ")})`);
   await $panel(page, "#resetpaz").click();
   check(scen, /^Dimentico tutto\? Tocca di nuovo$/.test((await $panel(page, "#resetpaz").innerText()).trim()) && (await page.locator("#psassist-host .sttab").count()) > 0, "il primo tocco chiede soltanto (la tabella resta)");
+  // passati i 6 secondi la domanda non vale più, e il bottone lo dice: di nuovo «Dimentica i dati…»
+  await page.waitForTimeout(6400);
+  const scaduto = (await $panel(page, "#resetpaz").innerText().catch(() => "")).trim();
+  check(scen, scaduto === "Dimentica i dati…" && (await page.locator("#psassist-host .sttab").count()) > 0, `dopo 6 secondi il bottone torna «Dimentica i dati…» (got «${scaduto}»)`);
+  await $panel(page, "#resetpaz").click();
   await $panel(page, "#resetpaz").click();
   await page.waitForTimeout(300);
   check(scen, (await page.locator("#psassist-host .sttab").count()) === 0 && /Carica i valori/.test(await $panel(page, "#risall").innerText())

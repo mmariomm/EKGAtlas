@@ -1065,7 +1065,7 @@ attivi. L'elenco tiene un giorno e centocinquanta pazienti: un turno è di dodic
 pazienti scadono da soli in 12–24 ore.
 
 **⋯ → Dimentica i dati…** è l'**unico** comando che cancella: due
-tocchi («Dimentico tutto? Tocca di nuovo»), poi «Dati dei pazienti dimenticati · **Annulla**» per 8 secondi, come per ogni altra cosa
+tocchi («Dimentico tutto? Tocca di nuovo»: vale 6 secondi, poi il bottone torna «Dimentica i dati…»), poi «Dati dei pazienti dimenticati · **Annulla**» per 8 secondi, come per ogni altra cosa
 che si può rimpiangere: Annulla rimette tutto com'era (le altre schede e l'estensione si
 puliscono finiti gli 8 secondi, o subito se cambi pagina). Via **tutto** quello che sa dei pazienti e del turno — elenco, aree e posti
 nelle stanze, stato degli esami, «Da fare», note e segni, valori, referti salvati e il loro testo, schede
