@@ -67,7 +67,7 @@ const quale = (url) => {
 // Ogni pagina del modulo richieste con un RICHIESTA_ID la fa sua; la lista
 // smart la perde; le etichette di una richiesta la spostano su quella. Un
 // inserimento su una richiesta che non è la corrente: ORA-20965.
-const sess = { corrente: null, log: [], ora: 0, forzaOra: null, area: null, dopoConferma: null };
+const sess = { corrente: null, log: [], ora: 0, forzaOra: null, area: null, dopoConferma: null, confermaLenta: 0 };
 // L'area della sessione: null, quella dei pazienti; un'altra (RISORSA_ID di
 // Imposta), e la pagina di ROSSI arriva come sull'area sbagliata.
 const imposta = (id) => { sess.area = id || null; sess.log.push({ t: Date.now(), cosa: "area", area: sess.area }); };
@@ -144,6 +144,8 @@ await ctx.route(`${ORIGIN}/**`, async (r) => {
     out = mock.handle({ method: "GET", url: dove });
   }
   if (req.method() === "POST" && /^Prestazioni/.test(p.get("ccsForm") || "") && sess.dopoConferma) sess.dopoConferma(mock, p);
+  // (una Conferma che torna coi suoi tempi, come le vere: 3–14 s)
+  if (req.method() === "POST" && /^Prestazioni/.test(p.get("ccsForm") || "") && sess.confermaLenta) await sospendi(sess.confermaLenta);
   if (sess.area && mock === A && req.method() === "GET" && p.get("MVPG") === "PsoEpisodioClinicoAmbulatorio" && /html/.test((out.headers || {})["content-type"] || "")) {
     sess.log.push({ t: Date.now(), cosa: "paziente", area: sess.area });
     out = { ...out, body: Buffer.from(altraArea(Buffer.from(out.body).toString("latin1")), "latin1") };
@@ -167,7 +169,7 @@ async function finche(fn, timeout = 30000) {
   for (const t0 = Date.now(); Date.now() - t0 < timeout; await sospendi(150)) if (await fn()) return true;
   return false;
 }
-async function ordina(page, esami, { quesito = "dolore toracico" } = {}) {
+async function ordina(page, esami, { quesito = "dolore toracico", solo = false } = {}) {
   if (!(await $panel(page, ".card").count())) {
     await $panel(page, "#expand").click();
     await page.waitForSelector("#psassist-host .card", { timeout: 8000 });
@@ -175,7 +177,7 @@ async function ordina(page, esami, { quesito = "dolore toracico" } = {}) {
   if (!(await $panel(page, "#q").count())) await $panel(page, '[data-seg="richieste"]').click();
   await $panel(page, "#q").fill(quesito);
   for (const e of esami) await $panel(page, `.opt[title*="${e}"]`).click();
-  await $panel(page, "#goconfirm").click();
+  await $panel(page, solo ? "#go" : "#goconfirm").click();
 }
 const nuovaPagina = (timeout = 15000) => ctx.waitForEvent("page", { timeout }).catch(() => null);
 async function suPagina(p, url) {
@@ -203,7 +205,7 @@ const SOLO = (process.argv[2] || "").toLowerCase();
 const prova = (t) => {
   if (SOLO && !t.toLowerCase().includes(SOLO)) return false;
   console.log("\nsessione: " + t); nuovi();
-  Object.assign(sess, { corrente: null, log: [], ora: 0, forzaOra: null, area: null, dopoConferma: null });
+  Object.assign(sess, { corrente: null, log: [], ora: 0, forzaOra: null, area: null, dopoConferma: null, confermaLenta: 0 });
   return true;
 };
 const ESAMI = ["CREATININEMIA", "EMOCROMOCITOMETRICO", "TROPONINA"];   // tre esami POC: un erogatore, una richiesta
@@ -592,6 +594,75 @@ if (prova("un referto preso dal service worker mentre un ordine inserisce: aspet
   check(!!(r && r.ok) && chiesto(), `finito il motore, lo prende e lo tiene (got ${JSON.stringify(r)})`);
   await sw.evaluate(() => Promise.all([chrome.storage.session.set({ ordini: [] }), chrome.storage.local.remove("ref:swattesa1")]));
   await est.close().catch(() => {});
+}
+
+// ---- 7c. «Conferma per …» toccato due volte: una Conferma sola -------------
+// Il bottone della ricevuta preme la Conferma vera del gestionale, che torna in
+// 3–14 s: intanto la pagina è ancora lì, col bottone. Un secondo tocco (un
+// doppio clic) non preme di nuovo: mai due Conferme della stessa richiesta.
+if (prova("«Conferma per …» due volte mentre la Conferma è in volo: una Conferma sola")) {
+  await daCapo();
+  await suPagina(doc, A.patientUrl);
+  await nienteSmart(doc);
+  const nasce = nuovaPagina();
+  await ordina(doc, ["TROPONINA"], { solo: true });
+  await nasce;
+  await striscia(doc, /in carrello.*Conferma dal gestionale/, 40000).catch(() => "");
+  const rid = Object.keys(A.state.richieste)[0];
+  await $panel(doc, AZIONE).click();   // «apri il carrello»
+  await doc.waitForURL(/RcsRichiestaPrestazioniRicercaErogatore/, { timeout: 15000 });
+  await doc.waitForSelector("#psassist-host .pill.run", { timeout: 10000 });
+  await $panel(doc, ".pill.run").click();
+  await doc.waitForSelector("#psassist-host #confirmnow", { timeout: 10000 });
+  check(conferme(A).length === 0, "solo carrello: niente confermato da solo");
+  sess.confermaLenta = 6000;
+  await doc.evaluate(() => {
+    const r = document.getElementById("psassist-host").shadowRoot;
+    r.querySelector("#confirmnow").click();
+    setTimeout(() => r.querySelector("#confirmnow")?.click(), 200);
+  });
+  await sospendi(9000);
+  check(conferme(A).length === 1 && conferme(A)[0].params.RICHIESTA_ID === rid,
+    `doppio clic su «Conferma per …», la Conferma lenta (6 s): una Conferma sola (got ${conferme(A).length})`);
+  sess.confermaLenta = 0;
+}
+// …e «Conferma e stampa» sulla riga della richiesta da confermare: la riga
+// dice «Confermo…» finché la pagina non se ne va, mai di nuovo a capo a tempo.
+if (prova("«Conferma e stampa» sulla riga, la Conferma lenta (14 s): la riga non torna a capo, una Conferma sola")) {
+  await daCapo();
+  await suPagina(doc, A.patientUrl);
+  await nienteSmart(doc);
+  const nasce = nuovaPagina();
+  await ordina(doc, ["TROPONINA"], { solo: true });
+  await nasce;
+  const daConf = () => ordini().then((l) => l.find((x) => x.stato === "avviso" && x.consegna?.url));
+  await finche(daConf, 60000);
+  await suPagina(doc, (await daConf()).consegna.url);
+  if (!(await $panel(doc, ".card").count())) await $panel(doc, "#expand").click();
+  await $panel(doc, "#dcconferma").waitFor({ timeout: 10000 });
+  const riga = () => doc.evaluate(() => document.getElementById("psassist-host")?.shadowRoot?.querySelector("#dcconferma")?.innerText || "").catch(() => "");
+  sess.confermaLenta = 14000;
+  await $panel(doc, "#dcconferma").click();   // il primo tocco legge il carrello
+  await finche(async () => /Confermo 1 esame/.test(await riga()), 10000);
+  // il secondo: la Conferma del gestionale. Da qui la pagina aspetta la risposta
+  // (gli evaluate aspettano la pagina nuova): si guarda e si tocca da dentro.
+  let dopo9 = null;
+  const ascolta = (m) => { if (m.text().startsWith("test:riga9 ")) dopo9 = m.text().slice(11); };
+  doc.on("console", ascolta);
+  await doc.evaluate(() => {
+    const dc = () => document.getElementById("psassist-host")?.shadowRoot?.querySelector("#dcconferma");
+    dc().click();
+    setTimeout(() => {
+      console.log("test:riga9 " + (dc()?.innerText || ""));
+      dc()?.click();                            // il medico, che non vede tornare niente, tocca ancora…
+      setTimeout(() => dc()?.click(), 1500);    // …e conferma
+    }, 9000);
+  });
+  await sospendi(18000);
+  doc.off("console", ascolta);
+  check(/Confermo…/.test(dopo9 || ""), `9 s dopo, la Conferma ancora in volo: la riga dice «Confermo…» (got «${dopo9}»)`);
+  check(conferme(A).length === 1, `una Conferma sola (got ${conferme(A).length})`);
+  sess.confermaLenta = 0;
 }
 
 // ---- 8. gli ordini finiti non restano in memoria --------------------------
