@@ -33,7 +33,8 @@ const AGG_PAUSA = "aggiornaPausa";       // storage.local: { v, ts, why } — co
 const AGG_ZIP_MAX = 28 * 1024 * 1024;   // in base64 resta sotto i 40 MB che l'aiutante accetta
 const AGG_ATTESA = 180e3;                // l'aiutante apre lo zip e scambia la cartella
 const AGG_AVVIO = 60e3;                  // all'avvio del browser, lo scambio con le schede aperte: solo nel primo minuto
-let aggNato = Date.now();                // quando è partito questo service worker (i test lo spostano)
+let aggNato = 0;                         // la partenza di questo service worker, in performance.now() (non si sposta con
+                                         // l'orologio del PC: il minuto dell'avvio è un minuto vero; i test lo spostano)
 const AGG_APERTO = new Set(["coda", "avvio", "corre", "stampo", "stampa"]);   // come ORDINE_APERTO nel pannello
 const AGG_CARTELLA = "%LOCALAPPDATA%\\PSAssist\\estensione";
 const AGG_OCCUPATO = "Dopo l'ordine in corso";
@@ -236,7 +237,7 @@ async function aggiorna({ avvio = false } = {}) {
   if (z.why) return aggNo(v, z.why);
   // Scaricato e controllato, in silenzio. Lo scambio, sulla build completa, solo senza schede del gestionale
   // aperte — o all'avvio del browser, con lo zip già pronto e nel primo minuto (anche nella fila, qui sotto).
-  const aspetta = async () => !aggSolaLettura() && !(avvio && z.pronto && Date.now() - aggNato < AGG_AVVIO) && !!(await aggSchede());
+  const aspetta = async () => !aggSolaLettura() && !(avvio && z.pronto && performance.now() - aggNato < AGG_AVVIO) && !!(await aggSchede());
   if (await aspetta()) return { ok: false, why: AGG_SCHEDE };
   // l'aiutante, solo adesso che si scambia: che cosa c'è nella cartella (già la nuova: manca solo la ricarica)
   const i = await aggInstallata(v);
@@ -330,7 +331,7 @@ async function aggAuto(avvio = false) {
     let r = await aggiorna({ avvio }).catch(() => null);
     // all'avvio le schede ripristinate stanno ancora caricando e non rispondono (nel dubbio è
     // occupato): si riprova finché dura il primo minuto
-    while (avvio && r && r.why === AGG_OCCUPATO && Date.now() - aggNato < AGG_AVVIO - 10e3) {
+    while (avvio && r && r.why === AGG_OCCUPATO && performance.now() - aggNato < AGG_AVVIO - 10e3) {
       await new Promise((res) => setTimeout(res, 10e3));
       r = await aggiorna({ avvio }).catch(() => null);
     }

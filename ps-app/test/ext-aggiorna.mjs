@@ -365,29 +365,40 @@ console.log("\naggiorna: lo zip deve essere quello giusto");
   // all'avvio del browser lo scambio parte anche con le schede (ripristinate) aperte — ma solo con lo zip
   // già scaricato, e solo entro un minuto dalla partenza del service worker (dopo, il medico lavora)
   const z0 = zipScaricati();
-  await sw.evaluate(() => { aggNato = Date.now(); });
+  await sw.evaluate(() => { aggNato = performance.now(); });
   r = await sw.evaluate(() => aggiorna({ avvio: true }));
   check(!r.ok && r.why === "Dopo la chiusura del gestionale" && zipScaricati() === z0 + 1 && !lavori().some((x) => x.aggiorna),
     `all'avvio, ma lo zip non c'era ancora: si scarica, e lo scambio aspetta la chiusura del gestionale (got ${r.why}, zip ${zipScaricati() - z0})`);
-  await sw.evaluate(() => { aggNato = Date.now() - 61e3; });
+  await sw.evaluate(() => { aggNato = performance.now() - 61e3; });
   r = await sw.evaluate(() => aggiorna({ avvio: true }));
   check(!r.ok && r.why === "Dopo la chiusura del gestionale" && !lavori().some((x) => x.aggiorna),
     `all'avvio, con lo zip pronto, ma più di un minuto dopo la partenza: lo scambio aspetta (got ${r.why})`);
   // (il minuto che passa mentre si chiede all'aiutante che cosa c'è nella cartella: lo vede il controllo nella fila degli ordini)
-  await sw.evaluate(() => { aggNato = Date.now(); self.__inst = aggInstallata; aggInstallata = async (...a) => { const i = await self.__inst(...a); aggNato = Date.now() - 61e3; return i; }; });
+  await sw.evaluate(() => { aggNato = performance.now(); self.__inst = aggInstallata; aggInstallata = async (...a) => { const i = await self.__inst(...a); aggNato = performance.now() - 61e3; return i; }; });
   r = await sw.evaluate(() => aggiorna({ avvio: true }));
   await sw.evaluate(() => { aggInstallata = self.__inst; });
   check(!r.ok && r.why === "Dopo la chiusura del gestionale" && !lavori().some((x) => x.aggiorna),
     `…e se il minuto passa intanto, l'ultimo controllo prima dello scambio aspetta lo stesso (got ${r.why})`);
-  await sw.evaluate(() => { aggNato = Date.now(); });
+  await sw.evaluate(() => { aggNato = performance.now(); });
   r = await sw.evaluate(() => aggiorna({ avvio: true }));
   check(!r.ok && /Aggiornamento non riuscito: la cartella è in uso/.test(r.why) && !r.ricarica && zipScaricati() === z0 + 1,
     `all'avvio, con lo zip pronto, entro il minuto: lo scambio parte con la scheda aperta; l'aiutante dice di no: lo si dice, niente ricarica (got ${r.why})`);
+  // il minuto dell'avvio si conta dalla partenza del service worker, non con l'orologio del PC (che
+  // all'accensione Windows rimette): avanti di due ore appena partito non lo chiude, e un minuto dopo
+  // l'orologio indietro di due ore non lo tiene aperto
+  await sw.evaluate(() => chrome.storage.local.remove("aggiornaPausa"));
+  check(await riavviaSw(), "(il service worker appena ripartito)");
+  const conOrologio = (ms) => sw.evaluate((d) => { const v = Date.now; Date.now = () => v() + d; return aggiorna({ avvio: true }).finally(() => { Date.now = v; }); }, ms);
+  r = await conOrologio(2 * 3600e3);
+  check(/Aggiornamento non riuscito: la cartella è in uso/.test(r.why), `appena partito, l'orologio del PC avanti di due ore: è ancora il minuto dell'avvio (got ${r.why})`);
+  await sw.evaluate(() => { aggNato = performance.now() - 61e3; });
+  r = await conOrologio(-2 * 3600e3);
+  check(r.why === "Dopo la chiusura del gestionale", `un minuto dopo, l'orologio indietro di due ore: il minuto è finito (got ${r.why})`);
   // all'avvio le schede ripristinate stanno ancora caricando (qui: una che per qualche secondo non risponde):
   // nel dubbio è occupato, e si riprova finché dura il minuto
   azzeraLavori();
   await sw.evaluate(() => chrome.storage.local.remove("aggiornaPausa"));
-  await sw.evaluate(() => { aggNato = Date.now(); });
+  await sw.evaluate(() => { aggNato = performance.now(); });
   const carica = doc.evaluate(() => { const t0 = Date.now(); while (Date.now() - t0 < 4000); }).catch(() => {});
   await sospendi(200);
   await sw.evaluate(() => aggAuto(true));
@@ -560,7 +571,7 @@ console.log("\naggiorna: un ordine premuto mentre l'aiutante scambia la cartella
   await controlla();
   await doc.goto(A.patientUrl);
   await doc.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
-  await sw.evaluate(() => { aggNato = Date.now(); });
+  await sw.evaluate(() => { aggNato = performance.now(); });
   const r0 = await sw.evaluate(() => aggiorna({ avvio: true }));
   check(!r0.ok && r0.why === "Dopo la chiusura del gestionale", `(lo zip scaricato prima, lo scambio aspetta: ${r0.why})`);
   // la richiesta pronta nel pannello (un campo di testo, non un testo da salvare): manca solo il tocco
@@ -581,7 +592,7 @@ console.log("\naggiorna: un ordine premuto mentre l'aiutante scambia la cartella
   const prima = A.state.requests.length, schede = [];
   const contaSchede = (p) => schede.push(p);
   ctx.on("page", contaSchede);
-  await sw.evaluate(() => { aggNato = Date.now(); });
+  await sw.evaluate(() => { aggNato = performance.now(); });
   const nasce = ctx.waitForEvent("serviceworker", { timeout: 40000 }).catch(() => null);
   await sw.evaluate(() => { aggAuto(true).catch(() => {}); return true; });
   // lo scambio è nella fila e aspetta l'aiutante («chi» è passato, lo zip è da lui)
