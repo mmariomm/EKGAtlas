@@ -94,12 +94,18 @@ sessione. Vedi:
   800 ms (un doppio tocco per sbaglio) non conta. Poi l'ordine fa sul PC il giro di sempre — la scheda dell'ordine,
   tutti i controlli, la conferma provata. Il telefono dice a che punto è («esame 2 di 6») e come
   finisce, con le parole che `bg.js` scrive per la striscia del PC (`pubblico`) — tranne dove al
-  telefono serve un'altra frase: «Confermato · etichette al PC» invece di «Etichette NON stampate · tocca Stampa», «Etichette
+  telefono serve un'altra frase: «Confermata · etichette al PC» invece di «Etichette NON stampate · tocca Stampa», «Etichette
   forse stampate: guarda Zebra ZD421 prima di ristamparle dal PC» invece del perché tecnico. Il
-  titolo della carta è com'è andata («Stampato su Zebra ZD421», «Mandato a Zebra ZD421» in ambra),
+  titolo della carta è una delle tre parole di un ordine — «Confermata», «Da controllare», «Non partita» — e sotto la stampa («Stampato su Zebra ZD421», «Mandato a Zebra ZD421» in ambra),
   l'ora c'è una volta, e una carta finita bene se ne va da sola dopo due minuti. Un ordine
   finito male resta in fondo alla lista, e in testa alla pagina di ogni altro paziente
-  («Ordine non completo · BIANCHI ANNA»: toccalo e sei sul paziente), finché non lo chiudi con ✕.
+  («Non partita · BIANCHI ANNA»: toccalo e sei sul paziente), finché non lo chiudi con ✕. La carta
+  nomina i suoi esami, in breve («TROPONINA US, EMOCROMO POC»): due ordini dello stesso paziente
+  non sono due carte uguali. Se la stazione di stampa non risponde, la carta ha **Stampa sul PC**: lo
+  stesso tocco di «Stampa qui» sul PC, una volta (solo se il PC stampa da solo; mai per un foglio «forse stampato»: si guarda lì). E se il PC non ha la
+  stampa automatica, Ristampa, 🖨️ e Stampa PDF verso il PC sono spenti e lo dicono prima del tocco
+  (`catalogo.stampa.auto`); impostata o tolta sul PC, il telefono collegato lo sa subito (l'evento
+  `stampa`), senza riaprire.
   Sul PC la striscia dell'ordine dice **«dall'iPhone»**. La radiologia, come
   dal pannello, si conferma e si stampa da sola: un secondo ordine, dopo quello del laboratorio — e il laboratorio è un
   ordine per erogatore (POC, Urgenze…), come dal pannello: il gestionale non ne vuole due nella stessa richiesta. Su un episodio precedente
@@ -443,7 +449,7 @@ build mini (stampa, non scrive). Il registro dice «iPhone · un referto stampat
 **Gli ordini, raccontati.** Il service worker guarda passare gli ordini del telefono in `ordini`
 (`storage.session`) e li racconta con le parole che `bg.js` scrive in ogni record (`pubblico:
 {tono, titolo, testo, dettaglio}`, e `pubblico.tel` dove il telefono dice un'altra frase); non
-riscrive niente. Al posto di «Quesito: il tuo» `bg.js` dice il quesito scritto sul telefono. Un ordine che
+riscrive niente. Il quesito non sta sulla carta (si vede dove si sceglie). Un ordine che
 sparisce da `ordini` (le etichette prese da una scheda del PC, ✕ sul PC, tolto dalla coda) resta sul
 telefono com'era l'ultima volta, finché non lo si chiude; sparito prima della conferma, «Da
 controllare».

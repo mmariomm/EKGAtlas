@@ -538,8 +538,9 @@ lette stanno in `sessionStorage` (`smart.giro.v1`) e muoiono con lei.
    quesito della richiesta, di norma parte quello. Ma se nella casella del pannello il quesito
    l'hai **scritto tu, a mano**, vince il tuo (vale anche per il «Quesito RX»). Un chip o un
    pacchetto che riscrive la casella non conta come scritto a mano: lì resta il triage. La
-   ricevuta e la striscia finale dicono quale è partito, in una riga: «Quesito del triage:
-   "…"» oppure «Quesito: il tuo». (Il «⧉ Copia» del Registro il quesito lo omette, come sempre.)
+   ricevuta dice quale è partito, in una riga: «Quesito del triage: "…"» oppure «Quesito: il
+   tuo». Le strisce no: il quesito si vede dove si sceglie. (Il «⧉ Copia» del Registro il quesito
+   lo omette, come sempre.)
    **Tre quesiti sono pacchetti di esami**, sempre i primi chip (anche se l'elenco dei quesiti
    salvato non li ha), e ognuno dice quanti esami porta — «Dolore toracico · 7»: un tocco scrive
    il quesito **e** spunta gli esami che servono quasi sempre.
@@ -586,9 +587,10 @@ lette stanno in `sessionStorage` (`smart.giro.v1`) e muoiono con lei.
    **solo quando un RX è scelto**. La barra **«Conferma per ROSSI M. · N esami»** (piena, ferma
    in fondo) c'è **solo quando qualcosa è scelto**; **Ctrl+Invio** la preme (lo dice, piccolo,
    dentro la barra), e **solo carrello** le sta accanto, piccolo. Un clic sulla scheda Richieste
-   col quesito vuoto mette già il cursore nel quesito. La **Stampa** delle richieste confermate
-   non sta più qui: è nel menu **⋯ → Stampa le richieste** (e la «Ristampa» sulla striscia dopo un
-   ordine); qui, in fondo, resta solo un link quieto, **Stampa l'ultima richiesta**. Per tutto il
+   col quesito vuoto mette già il cursore nel quesito. Le ristampe, in fondo, quiete, sono due:
+   **Ristampa** — l'ultimo ordine intero: tutte le sue richieste (una per erogatore), etichette,
+   lista esami e RX, una volta ciascuno — e **Altre…**, le richieste di prima una per una (la
+   sezione Stampa). Per tutto il
    resto: la casella in cima, con la tendina su tutti i laboratori. Lo stesso esame delle
    Urgenze e del laboratorio centrale (le Urgenze ne sono un sottomenu) è **una riga sola**,
    quella delle Urgenze — la stessa che usano i pacchetti. I selezionati restano in alto, una
@@ -657,7 +659,7 @@ lette stanno in `sessionStorage` (`smart.giro.v1`) e muoiono con lei.
    del primo, non mentre scrivi — nel gestionale o in un campo del pannello (cursore in un
    campo, un tasto da poco: aspettano); sulla pagina di un **altro** paziente non si apre da
    solo: «Etichette di ROSSI M. pronte · **Stampa**», un tocco. Senza una scheda del gestionale
-   davanti aspettano (mezz'ora; poi dalla sua pagina, ⋯ → Stampa le richieste); la pagina di accesso non
+   davanti aspettano (mezz'ora; poi «Ristampa», in fondo alle Richieste); la pagina di accesso non
    le butta via.
    **Il gestionale su un'altra area.** L'area è un'impostazione della sessione, e su un'area che
    non è quella del paziente la sua pagina arriva **senza le Richieste**. Se il pannello sa dove
@@ -666,8 +668,8 @@ lette stanno in `sessionStorage` (`smart.giro.v1`) e muoiono con lei.
    **Conferma** → di nuovo la sua pagina (quella che aveva aperto, mai un indirizzo costruito) →
    l'ordine, come sempre. Prima non parte niente. Una volta per ordine, al più due «Conferma» e
    45 secondi: area che in Imposta non c'è, «Conferma» che non passa, Richieste che non ci sono
-   nemmeno lì — «Non partito», col perché. Area del paziente che non si sa, o la stessa in testa:
-   «Non partito» come prima, mai un'area indovinata. Il passaggio vale per **tutte** le schede di
+   nemmeno lì — «Non partita · niente inviato», col perché. Area del paziente che non si sa, o la
+   stessa in testa: lo stesso, mai un'area indovinata. Il passaggio vale per **tutte** le schede di
    quella sessione: la striscia lo dice mentre passa («Parte · passo all'area Alta intensità…») e
    l'esito una volta («… · gestionale ora sull'area Alta intensità»); indietro non si torna da
    soli. Lo stesso per gli ordini dal telefono.
@@ -678,8 +680,9 @@ lette stanno in `sessionStorage` (`smart.giro.v1`) e muoiono con lei.
    turno **prima di partire** — «In coda» — mai a metà. Il motore è uno solo in tutto il browser
    (regola 19).
    **Niente sparisce zitto, anche qui.** Chiusa a metà la scheda dell'ordine, la striscia dice
-   «Scheda chiusa · 2 esami non mandati: …» e «Da controllare» per quello che era in volo (mai
-   fra i non mandati). Una scheda che non parte entro 45 secondi è un avviso rosso; una che tace
+   «Non partita · apri il carrello» e sotto «la scheda dell'ordine si è chiusa · Mancano: … · Da
+   controllare: …» (quello che era in volo, mai fra i mancanti); chiusa dopo l'ultimo invio, la
+   Conferma può esserci stata: «Da controllare». Una scheda che non parte entro 45 secondi è un avviso rosso; una che tace
    da tre minuti si interroga: se risponde era lenta, se no «Ordine fermo» — ma finché esiste
    niente è «non mandato», la coda aspetta e ⏹ la chiude (le letture no: referti, lista smart
    e schede di sottofondo non la aspettano). Col browser caduto la scheda
@@ -698,20 +701,31 @@ lette stanno in `sessionStorage` (`smart.giro.v1`) e muoiono con lei.
    (aspetta il caricamento, non un timer) e le scadenze, contate sull'orologio. Un ordine dura
    molto meno di 5 minuti, e la scheda è segnata perché la memoria del browser non la scarichi.
    Le etichette non le aspetta la scheda nascosta: arrivano e si stampano nella tua, davanti.
+   **Com'è finito un ordine: tre parole sole**, le stesse sulla striscia, nel pannello, sul
+   telefono e nel Registro. **Confermata** (verde): c'è la prova; sotto, dove sono andate le
+   etichette («Stampato su Zebra ZD421 e HP LaserJet A4»; se la stampa ha un problema la
+   striscia è ambra, ma la parola resta «Confermata»). **Da controllare** (ambra): la Conferma è
+   partita, la prova no — sotto, «guarda le sue richieste: se c'è, Ristampa; se no, apri il
+   carrello». **Non partita** (rossa): il gestionale non l'ha presa, o il giro si è fermato prima
+   della Conferma — sotto, l'unica cosa da fare: «Conferma di nuovo», «apri il carrello» o
+   «riprova i mancanti». Che cosa manca e il perché stanno in una riga ancora sotto, o nel
+   Registro: mai una parola nuova. (Fino alla 3.85: «Non confermata», «Conferma sospesa»,
+   «Interrotto», «Errore · completa a mano», «Sessione scaduta», «Scheda chiusa», «Ordine
+   incerto», «Non partito»… dodici parole per tre situazioni.)
 4. **Un bottone solo: Conferma per ROSSI M. · 68 M · N esami.** Fa tutto da solo e conferma **subito**: il
    click è la decisione, e la conferma parte solo se ogni controllo passa — episodio,
    richiesta, nome dell'ultimo esame, e
    **carrello identico alla ricevuta** (un avanzo di un tentativo precedente la **sospende** e
-   la lascia a te: striscia ambra «Conferma sospesa», sul carrello). La finestra del pannello
+   la lascia a te: «Non partita · apri il carrello», sul carrello). La finestra del pannello
    **non si apre mai da sola**: la striscia dice «Confermo…» → «Confermata · Aspetto le
    etichette…»; arrivate, le etichette compaiono **in anteprima** con la stampante su cui vanno
    e si apre il dialogo di stampa (vedi «Stampa etichette e lista esami») → «Aspetto la lista
-   esami…» → e alla fine il **resoconto, che resta** finché non fai altro: «Stampa finita · 6
-   esami confermati 14:32», con sotto la riga del quesito, e accanto un **Ristampa** tranquillo
+   esami…» → e alla fine il **resoconto, che resta** finché non fai altro: «Confermata · Stampa
+   finita», sotto «6 esami confermati 14:32», e accanto un **Ristampa** tranquillo
    (chiuso il dialogo, il browser non dice se hai stampato o annullato). «Stampato», senza
    Ristampa, solo se sei andato avanti tu, «→ Avanti», documento per documento. Con la
    **stampa automatica** non c'è né anteprima né dialogo: «Confermata · Stampo le etichette su
-   Zebra ZD421… · foglio 1 di 2», poi «Stampato su …» (vedi «Stampa automatica»).
+   Zebra ZD421… · foglio 1 di 2», poi «Confermata · Stampato su …» (vedi «Stampa automatica»).
    Accanto al bottone c'è un link, **solo carrello**: aggiunge e verifica gli esami e si atterra
    sul carrello del gestionale con la striscia «✓ N esami in carrello · Conferma dal
    gestionale»: premi **Conferma** lì (le etichette partono lo stesso), o tocca la striscia per
@@ -737,19 +751,21 @@ lette stanno in `sessionStorage` (`smart.giro.v1`) e muoiono con lei.
    alla fine di un giro in revisione — il pannello annota la richiesta — solo numeri:
    richiesta, episodio, ora, quanti esami; mai un nome — e la tiene d'occhio: se dopo **2
    minuti** la pagina di quel paziente che hai davanti non la mostra fra le confermate, la
-   striscia dice «Richiesta 14:32 non confermata · tocca per il carrello». Vale anche se hai
+   striscia dice «Da controllare», sotto «la richiesta delle 14:32 non risulta confermata»: un
+   tocco apre il carrello, ✕ la ignora. Vale anche se hai
    cambiato pagina mentre diceva «Confermo…»: la conferma automatica muore con la pagina e non
    riparte da sola più tardi. Vista confermata, il segno se ne va (dopo 12 ore comunque). Al
    server non si chiede niente per questo: si guarda la pagina che hai aperto.
    **Un ordine che non parte si dimentica** («se non parte l'ordine nel carrello, ignoralo»): un
    giro fermato da un errore o da ⏹, o la scheda dell'ordine fermata prima della Conferma, non
-   lascia promemoria — né «Non confermata» né «ancora da confermare»: lo dice **una volta** la
+   lascia promemoria — né «Da controllare» né «ancora da confermare»: lo dice **una volta** la
    striscia rossa (✕ la chiude). Il promemoria resta solo per un carrello finito e per una
    Conferma premuta e non ancora provata (può essere confermata e non ancora in elenco).
    **Se qualcosa va storto, si finisce a mano nel gestionale.** La striscia diventa **rossa** —
-   «Errore · completa a mano» / «Mancano: PTT POC · Da controllare: Troponina»; per un ordine in
-   sottofondo comincia da che cosa fare, «TROPONINA US: non mandato · apri il carrello → Riprova»,
-   e il perché sta nel resoconto (un ordine che **non è partito** non ha resoconto: il perché lo dice
+   «Non partita · riprova i mancanti», sotto «Mancano: PTT POC · Da controllare: Troponina»; per
+   un ordine in sottofondo «Non partita · apri il carrello → Riprova i mancanti», sotto «TROPONINA
+   US: non mandato»; sul carrello di quella richiesta **«Riprova i mancanti» è un tocco sulla
+   striscia stessa** — e il perché sta nel resoconto (un ordine che **non è partito** non ha resoconto: il perché lo dice
    la striscia sotto, anche al telefono — «il gestionale non mostra le Richieste: è sull'area Bassa,
    è quella del paziente?» quando la pagina del paziente arriva senza Richieste e la sua area non
    si sa) — e la scheda va
@@ -842,7 +858,7 @@ lette stanno in `sessionStorage` (`smart.giro.v1`) e muoiono con lei.
    pagina, una dopo l'altra, con **una sola** stampa finale: etichette → liste → la prenotazione
    RX; lì le richieste vivono nella memoria del pannello, a metà non si riprendono, e il browser
    avvisa prima di cambiare pagina.
-5. **Stampa** (menu **⋯ → Stampa le richieste**, non più in fondo alle Richieste): ogni richiesta con data, ora e la lista compatta degli esami, e «Ristampa». Sull'iPhone la stessa lista è **«Richieste fatte»**, in fondo alle Richieste, con il suo «Ristampa» (comandi `ristampe` e `ristampa`, solo stampa: mai Conferma né Registra).
+5. **Stampa** («Altre…» in fondo alle Richieste): ogni richiesta con data, ora e la lista compatta degli esami, e «Ristampa». Sull'iPhone la stessa lista è **«Richieste fatte»**, in fondo alle Richieste, con il suo «Ristampa» (comandi `ristampe` e `ristampa`, solo stampa: mai Conferma né Registra).
 
 ### Esiti
 Il **Workup**, come in Epic: **Lab · ECG · Imaging** in un posto solo, tre sezioni distinte, ognuna
@@ -1440,7 +1456,7 @@ striscia («Aspetto le etichette…», «Aspetto la lista esami…»; senza pann
 aperto, un riquadrino in alto a destra). **Arrivato il PDF compare la scheda**, com'era
 prima: il PDF **in anteprima**, a vista — un'occhiata dice che è la richiesta giusta — e in
 testa la **stampante su cui va** («→ etichettatrice», «→ stampante normale»); da quella scheda
-si apre subito il **dialogo di stampa** del browser. Alla fine la striscia dice «Stampa finita ·
+si apre subito il **dialogo di stampa** del browser. Alla fine la striscia dice «Confermata · Stampa finita ·
 6 esami confermati 14:32» (con **Ristampa**), e **resta** finché non fai altro. Quando l'ordine
 l'ha fatto la scheda di sottofondo (con l'estensione), tutto questo succede nella scheda del
 gestionale **dove sei** — la finestra in primo piano —, e la scheda e la striscia dicono di chi
@@ -1448,7 +1464,7 @@ sono i fogli. Mai mentre scrivi; e sulla pagina di un **altro** paziente il dial
 solo: «Etichette di ROSSI M. pronte · **Stampa**», un tocco. **Un ordine partito dall'iPhone non
 apre mai da solo il dialogo**: davanti al PC può non esserci nessuno, e un dialogo aperto su uno
 schermo che nessuno guarda è un'etichetta non stampata che sembra stampata. La striscia lo dice
-(«Etichette NON stampate · dall'iPhone · tocca Stampa»), il telefono non la fa suonare come un allarme («Confermato · etichette al
+(«Etichette NON stampate · dall'iPhone · tocca Stampa»), il telefono non la fa suonare come un allarme («Confermata · etichette al
 PC»), e un tocco su **Stampa** nella striscia del PC le stampa. Così è senza la **stampa automatica**; con lei
 non c'è né la scheda né il dialogo: tutti i fogli li stampa il service worker, e la striscia
 dice a che punto è (vedi «Stampa automatica», più sotto).
@@ -1464,7 +1480,7 @@ dice a che punto è (vedi «Stampa automatica», più sotto).
 **Non serve una mano libera**: quando la finestra di stampa del browser si chiude, si **passa da
 solo al documento dopo** — come se avessi premuto «→ Avanti»: la scheda si toglie finché quel
 documento non arriva, poi torna con la sua anteprima — e dopo l'ultimo la scheda se ne va e la
-striscia dice «Stampa finita · N esami confermati HH:MM». Come si sa che il dialogo si è chiuso: il
+striscia dice «Confermata · Stampa finita · N esami confermati HH:MM». Come si sa che il dialogo si è chiuso: il
 PDF lo stampa il visore di Chrome, che l'evento «afterprint» non lo manda a nessuno (in Chrome
 vero si restava ad aspettare «→ Avanti»). Il dialogo, finché è aperto, **si prende il fuoco della
 pagina**: fuoco perso dopo la stampa = dialogo aperto, fuoco tornato = chiuso, e si va avanti (lo
@@ -1511,17 +1527,29 @@ sono per provetta), e se in pagina ce ne sono meno lascia nel registro degli err
 «parziale» (solo i due numeri) che fa partire la **registrazione automatica** — nessun messaggio a te,
 la striscia è quella di sempre. Una pagina che non elenca gli esami delle righe non conta.
 
-**Poi la pagina del paziente si aggiorna.** Con l'ordine in sottofondo la pagina del paziente che hai
-davanti è quella di prima della Conferma: gli esami nuovi non ci sono. Quando la stampa dei fogli di
-quell'ordine è **finita** — l'aiutante li ha avuti tutti (stampa automatica), o li hai stampati qui
-col dialogo — la pagina si ricarica da sola dal suo **«Aggiorna»** (il link della pagina a se
-stessa: una lettura, mai un modulo rimandato), una volta per ordine, e la striscia resta. Mai prima:
-il PDF lo scarica una pagina (la scheda dell'ordine, o questa col dialogo), e una pagina che se ne va
-perde il suo. Solo sulla pagina di **quel** paziente, nella scheda che si vede, se è stata caricata
-prima della Conferma; durante un dialogo di stampa o un giro aspetta che finisca; e mai mentre scrivi:
-allora accanto alla striscia c'è un **Aggiorna** tranquillo, e lo tocchi tu. Etichette che aspettano
-il tuo tocco (un ordine dal telefono, o hai toccato qualcosa dopo la Conferma): si ricarica dopo che
-le hai stampate.
+**La pagina del paziente non si ricarica.** Con l'ordine in sottofondo la pagina che hai davanti è
+quella di prima della Conferma: la richiesta nuova non c'è. Prima si ricaricava da sola a stampa
+finita (nelle registrazioni vere, tre ricariche in mezzo minuto, e ognuna si portava via
+scorrimento e campi); ora no. La scheda dell'ordine ha già letto la pagina del paziente per la
+prova: i fogli che quella elenca (solo numeri, indirizzi della pagina e nomi di esami, per
+episodio, in memoria condivisa) arrivano al pannello, e **Ristampa** e **Altre…** vedono la
+richiesta nuova; lo stato degli esami (✓, ⏳) lo scrive già la stessa lettura. L'«Aggiorna» del
+gestionale resta quello di sempre: un tuo tocco.
+
+**Prima le etichette.** Senza la stampa automatica le etichette le stampa la tua scheda, col
+dialogo. Il secondo ordine dello stesso tocco (le Urgenze dopo il POC, l'RX) non parte finché la tua
+scheda non ha preso tutti i PDF del primo — li scarica tutti subito, uno dopo l'altro, e lo dice al
+service worker (al più 20 secondi; se nessuna scheda può prenderli adesso, o quella che li ha presi
+si chiude o cambia pagina, la coda non li aspetta).
+Sempre un motore alla volta: le pagine del gestionale sono di una sessione sola, e i PDF del primo
+ordine aspettavano dietro gli esami del secondo (3,5–8,6 secondi di «Aspetto le etichette…»).
+
+**Un tocco su Conferma, un esito.** Gli ordini nati dallo stesso tocco (una richiesta per
+erogatore) finiti tutti dicono **una riga sola**: la parola peggiore (Non partita, poi Da
+controllare, poi Confermata), dove sono andati i fogli («Stampato su Zebra ZD421 e HP LaserJet
+A4»), e sotto «2 richieste, 7 esami». La sua **Ristampa** rifà i fogli di tutte, una volta
+ciascuno, le etichette prima. Col dialogo, la striscia alla fine e la sua Ristampa sono lo stesso
+di tutte le richieste di quel tocco.
 
 Sul campo, dopo la Conferma il gestionale **torna alla pagina del paziente**: è lì che la stampa
 parte da sola (e se un'installazione mostrasse una pagina intermedia, parte lì se ha i link,
@@ -1531,12 +1559,12 @@ lì la stampa non parte — i suoi PDF morirebbero con la pagina, «Stampa inter
 paziente; una pagina dove la scheda resta più di 3 secondi vale come sempre. **Solo per le richieste di PS Assist**: quelle in cui
 il pannello ha mandato esami (o che ha aperto lui), confermate dal pannello o col bottone del
 gestionale. Una richiesta fatta tutta a mano nel gestionale, confermata col suo bottone, non
-stampa niente da sola. Dalla pagina paziente puoi **ristampare qualsiasi richiesta** (menu **⋯ →
-Stampa le richieste**: ogni richiesta della pagina — **anche quelle non fatte dall'estensione** — è
-elencata con **data e ora**, la **lista compatta degli esami** che contiene e il suo **«Ristampa»**:
-etichette e foglio di quella richiesta) e, sopra l'elenco, **Stampa l'ultima richiesta**: la più recente, e con
-lei quella di pochi minuti prima (laboratorio e radiologia dello stesso ordine), etichette
-prima. Con la stampa automatica, senza dialogo.
+stampa niente da sola. Dalla pagina paziente puoi **ristampare qualsiasi richiesta**: in fondo alle
+Richieste **Ristampa** rifà l'ultimo ordine — la richiesta più recente e quelle di pochi minuti
+prima (fino a quattro: POC, laboratorio, RX dello stesso tocco), etichette prima —, e **Altre…**
+apre la sezione Stampa: ogni richiesta della pagina — **anche quelle non fatte dall'estensione** —
+con **data e ora**, la **lista compatta degli esami** e il suo **«Ristampa»** (etichette e foglio
+di quella richiesta). Con la stampa automatica, senza dialogo.
 
 **Laboratorio + radiologia insieme**: se confermi una richiesta di laboratorio e poi una di
 radiologia prima di tornare alla pagina del paziente, la stampa parte **una volta sola** e in
@@ -1553,7 +1581,7 @@ Windows), con **Stampa una pagina di prova** per ciascuna. Da lì:
 
 - **le etichette vanno all'etichettatrice, tutto il resto all'A4** — liste esami, prenotazioni
   RX, i moduli dei Consensi —, da soli, **senza dialogo e senza niente davanti**: né la scheda
-  della stampa né l'anteprima. Dopo una conferma, con «Ristampa», «Stampa l'ultima richiesta» o
+  della stampa né l'anteprima. Dopo una conferma, con «Ristampa» (sulla striscia o in fondo alle Richieste) o
   un consenso, la striscia dice «Stampo le etichette su Zebra ZD421… · foglio 1 di 2», poi
   com'è andata, con **Ristampa** accanto (un'etichetta inceppata si vede solo davanti alla
   stampante). **Puoi andare subito su un altro paziente**, o chiudere la scheda: la stampa la
@@ -1601,14 +1629,14 @@ Windows), con **Stampa una pagina di prova** per ciascuna. Da lì:
   gestionale aperta. La scheda dell'ordine gli dà i PDF (letti dalla pagina, coi controlli di
   sempre); lui scrive nell'ordine, foglio per foglio, che cosa sta per mandare **prima** di
   mandarlo, e poi com'è andata. Intanto ogni scheda del gestionale lo racconta («Confermata ·
-  Stampo le etichette su Zebra ZD421… · foglio 1 di 2», con ⏹), e alla fine dice **«Stampato su
+  Stampo le etichette su Zebra ZD421… · foglio 1 di 2», con ⏹), e alla fine dice **«Confermata · Stampato su
   Zebra ZD421 e HP LaserJet · 2 esami confermati alle 14:32»** col nome del paziente,
   **Ristampa** (un tocco: si ristampa lì) e ✕; dopo due minuti un «Stampato» se ne va da solo
-  (la Ristampa resta nel menu **⋯ → Stampa le richieste** del paziente). Una volta sola: ogni foglio parte una volta, e
+  (la Ristampa resta in fondo alle Richieste del paziente). Una volta sola: ogni foglio parte una volta, e
   uno mandato da un service worker che poi è ripartito è «sconosciuto», mai rimandato. Se la
   scheda dell'ordine si ricarica o si chiude a metà, o premi ⏹, i fogli che restano non partono e
-  l'ordine finisce **«Stampa interrotta»**, con **Ristampa** (la richiesta è confermata, e lo
-  dice: mai «Scheda chiusa · controlla il carrello»); **Ristampa** rifà i fogli non usciti. Un foglio
+  l'ordine finisce **«Confermata · Stampa interrotta»** (in ambra), con **Ristampa** (la richiesta è confermata, e lo
+  dice: mai «Non partita · apri il carrello»); **Ristampa** rifà i fogli non usciti. Un foglio
   che non è partito per un no detto arriva alla scheda dove sei, come le etichette di prima, col
   motivo sulla striscia; per un ordine dal telefono aspetta un tocco su **Stampa** («Etichette NON
   stampate · la stampante «Zebra ZD421» risulta spenta o offline»). Accanto, il ✕ **«Annulla: non
@@ -1718,11 +1746,17 @@ telefono), li stampa sulle sue stampanti e dice com'è andata.
   da quella del PC, e si cambia per quell'ordine.
 - **Com'è andata, per quello che è.** «Stampo le etichette in Infermeria…», poi **«Stampato in
   Infermeria»** solo quando la stazione l'ha detto («Mandato in Infermeria» in ambra, o il suo
-  errore). La stazione spenta o che non risponde: **«Infermeria non risponde»**, con **Stampa qui**:
-  un tocco, e quei fogli escono qui (la stampa automatica di questo PC, o il dialogo), una volta.
-  Mai stampati qui da soli, nemmeno per un ordine dal telefono. Il foglio arrivato e la risposta no:
+  errore). **Prima, non dopo**: quando l'ordine nasce (dal PC o dal telefono) il PC chiede alla
+  stazione se c'è — la stessa prova in sola lettura che fa prima di mandare un foglio; non mentre
+  un altro ordine le sta mandando fogli —, e se tace
+  la striscia lo dice subito, «Infermeria non risponde: stampo qui?», con **Stampa qui**: un tocco,
+  e le etichette di quell'ordine le stampa questo PC. La stazione spenta o che non risponde dopo:
+  **«Infermeria non risponde»**, con **Stampa qui**: un tocco, e quei fogli escono qui (la stampa
+  automatica di questo PC, o il dialogo), una volta. Sul telefono la carta dell'ordine ha lo
+  stesso tocco, **Stampa sul PC** (solo se il PC stampa da solo: un dialogo su un PC che nessuno
+  guarda non è una stampa). Mai stampati qui da soli, nemmeno per un ordine dal telefono. Il foglio arrivato e la risposta no:
   «Infermeria non risponde · forse stampate: guarda lì prima di stamparle qui» — mai rimandato da
-  solo, mai due volte. Una stazione che non risponde si dice **in pochi secondi**, «niente mandato»,
+  solo, mai due volte, e dal telefono niente «Stampa sul PC»: si guarda lì, si decide al PC. Una stazione che non risponde si dice **in pochi secondi**, «niente mandato»,
   non dopo due minuti di «forse»: se non si sente da un po', il PC la mette alla prova (in sola
   lettura) prima di mandare il foglio, e la stazione tiene sveglio da sé il suo service worker.
 - **La stazione riceve fogli e risponde, nient'altro**: non può mandare un comando al PC del medico
@@ -2164,8 +2198,8 @@ nella tendina del gestionale») — poi **Prepara nel gestionale** (o Ctrl+Invio
    ci porta. Un salto deciso da un giro si spegne quando ne parte un altro (non porta via la
    pagina a «Riprova» o a «Svuota» toccati subito), e la scheda di un ordine dopo un errore non
    salta affatto: il resoconto viaggia con la striscia. Dopo una conferma non si ricarica niente
-   per cercarne la prova: la prova si legge in sottofondo (regola 5). La pagina del paziente si
-   ricarica solo a stampa finita, dal suo «Aggiorna», con questo stesso controllo (vedi «Stampa
+   per cercarne la prova: la prova si legge in sottofondo (regola 5), e dopo un ordine la pagina
+   del paziente non si ricarica mai (i fogli nuovi li legge la scheda dell'ordine: vedi «Stampa
    etichette e lista esami»).
 2. **Mai il paziente sbagliato**: l'EPISODIO_ID viene fissato all'avvio e ogni pagina ricevuta è
    verificata **dal contenuto che il server dichiara** (non dall'URL richiesto); se manca o non
@@ -2333,7 +2367,10 @@ nella tendina del gestionale») — poi **Prepara nel gestionale** (o Ctrl+Invio
     episodio semplicemente non esiste.
 14. **Dove finisce il contenuto clinico, detto con precisione.** Dei pazienti *conosciuti*
     restano solo nome, episodio, indirizzo della pagina e colore del triage, al massimo 60 e per 24 ore, con
-    **svuota** a mano e **🗑** per cancellare tutto di uno. **Da fare** sta nel `localStorage`
+    **svuota** a mano e **🗑** per cancellare tutto di uno. I fogli che la scheda di un ordine ha letto
+    sulla pagina del paziente (`stampeFresche.v1`: numeri, indirizzi della pagina, nomi di esami, per
+    episodio — perché «Ristampa» veda la richiesta nuova senza ricaricare) se ne vanno col login e col
+    reset. **Da fare** sta nel `localStorage`
     (`dafare.v1`) per episodio: la cosa da fare («tropo») e l'ora se c'è, mai un nome; al massimo 15
     voci aperte a paziente, scadono 12 ore dopo l'ora fissata (24 dall'ultima modifica senza ora, 5
     minuti dopo la spunta), la pagina di login non le tocca (sopravvivono a una
@@ -2402,7 +2439,7 @@ nella tendina del gestionale») — poi **Prepara nel gestionale** (o Ctrl+Invio
     sempre, col motivo scritto; e mai da solo per un ordine dal telefono, che aspetta un tocco al
     PC. Le parole le scrive una funzione sola nel service worker (`ordPubblico`, a ogni
     scrittura dell'ordine): la striscia del PC e il telefono dicono le stesse, salvo dove il
-    telefono ha la sua (`tel`: «Confermato · etichette al PC», non «Etichette NON stampate · tocca Stampa»). Spenta
+    telefono ha la sua (`tel`: «Confermata · etichette al PC», non «Etichette NON stampate · tocca Stampa»). Spenta
     (l'interruttore), non configurata, o col preferito, il percorso è quello di prima, identico.
 18. **Il testo di un referto si mostra solo se è di questo paziente.** Ogni testo letto da un PDF
     passa da `identitaReferto`: il codice fiscale scritto nel PDF contro quello del paziente (il
@@ -2651,7 +2688,7 @@ riga coi suoi «Elimina», e il promemoria che segue il carrello vero; il salto 
 errore che non parte sopra un «Riprova» toccato subito), e **la scheda dell'ordine**
 con l'estensione vera (`test/ext-ordine.mjs`: la scheda dietro, il medico subito su un altro
 paziente con la striscia che racconta, la conferma provata, le etichette che lì aspettano un
-tocco — «Etichette di ROSSI M. pronte · Stampa» — e alla fine «Stampa finita · Ristampa»;
+tocco — «Etichette di ROSSI M. pronte · Stampa» — e alla fine «Confermata · Stampa finita · Ristampa»;
 un'occhiata alla scheda dell'ordine che non la fa tua; la scheda che si chiude da sola, o resta
 slegata se la stai guardando quando finisce; l'errore che arriva nella tua scheda col resoconto
 intero e «Svuota» coi nomi; l'errore con te sopra — la scheda non salta, e un ordine di un altro

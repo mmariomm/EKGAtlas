@@ -135,6 +135,7 @@ await ctx.route(`${ORIGIN}/**`, async (r) => {
     }
   } else sessioneVede(u);
   if (req.method() === "POST" && /^Prestazioni/.test(p.get("ccsForm") || "")) sess.log.push({ t: Date.now(), cosa: "conferma" });
+  if (/RcsStampaEtichetteLISHMIMU|jasperservlet/.test(u)) sess.log.push({ t: Date.now(), cosa: "pdf", rid: p.get("RICHIESTA_ID") });
   if (req.method() === "POST" && /^RICHIESTACrea/.test(p.get("ccsForm") || "")) sess.log.push({ t: Date.now(), cosa: "crea", ep: p.get("EPISODIO_ID") });
   let out = mock.handle({ method: req.method(), url: u, bodyBuffer: req.postDataBuffer() });
   let h = 0;
@@ -474,11 +475,35 @@ if (prova("la Conferma ignorata ma il carrello senza la sua Conferma: le attese,
   await finche(ultima, 60000);
   const rec = await ultima();
   const v = rec?.vista || {};
-  check(rec?.stato === "avviso" && v.tag !== "Non partita" && !v.riconferma && v.tono === "warn",
-    `carrello senza Conferma: ambra, mai «Non partita» né «Conferma di nuovo» (got ${JSON.stringify(rec && [rec.stato, v.tag, v.testo, v.tono])})`);
+  check(rec?.stato === "avviso" && v.tag === "Da controllare" && /guarda le sue richieste/.test(v.testo || "") && !v.riconferma && v.tono === "warn",
+    `carrello senza Conferma: ambra, «Da controllare», mai «Non partita» né «Conferma di nuovo» (got ${JSON.stringify(rec && [rec.stato, v.tag, v.testo, v.tono])})`);
   check(conferme(A).length === 1, "una Conferma sola");
   await ctx.unroute(`${ORIGIN}/**`, togliConferma);
   sess.dopoConferma = null;
+}
+
+// ---- 2d. prima le etichette ------------------------------------------------
+// Senza la stampa automatica le etichette le stampa la scheda del medico, col
+// dialogo. Prima, il secondo ordine dello stesso tocco (Urgenze, dopo il POC)
+// partiva subito, e i PDF del primo aspettavano dietro di lui (3,5–8,6 s di
+// «Aspetto le etichette…»). Ora la scheda del medico prende tutti i PDF del
+// primo, e solo dopo parte il secondo: sempre uno alla volta.
+if (prova("prima le etichette: senza la stampa automatica, i PDF del primo ordine prima che parta il secondo")) {
+  await daCapo();
+  lento = 300;
+  await sw.evaluate(() => chrome.storage.local.remove("stampa"));
+  await suPagina(doc, A.patientUrl);
+  await nienteSmart(doc);
+  await ordina(doc, DUE);
+  await finche(() => conferme(A).length === 2, 90000);
+  await doc.waitForSelector("#psassist-print", { state: "attached", timeout: 20000 }).catch(() => {});
+  const [r1] = Object.keys(A.state.richieste);
+  const crea = sess.log.filter((x) => x.cosa === "crea"), pdf1 = sess.log.filter((x) => x.cosa === "pdf" && x.rid === r1);
+  const conf1 = sess.log.find((x) => x.cosa === "conferma");
+  check(crea.length === 2 && pdf1.length >= 2 && pdf1.every((x) => x.t < crea[1].t) && conf1.t < crea[1].t,
+    `i PDF del primo ordine (etichette e lista) presi prima che nasca la seconda richiesta (got ${pdf1.map((x) => x.t - conf1.t).join(", ")} ms dalla prima Conferma · Crea ${crea[1] ? crea[1].t - conf1.t : "?"} ms)`);
+  check(sess.ora === 0 && conferme(A).length === 2, `e tutt'e due confermate, senza «ORA-» (got ${sess.ora})`);
+  lento = 0;
 }
 
 // ---- 3. mai due motori per un ordine ------------------------------------

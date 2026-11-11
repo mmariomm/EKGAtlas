@@ -110,9 +110,9 @@ async function errore(page, { su = /RcsRichiestaPrestazioniRicercaErogatore/, ti
   const h = await page.waitForFunction(() => {
     const r = document.getElementById("psassist-host")?.shadowRoot;
     const t = (r?.querySelector(".pill.run")?.innerText || r?.querySelector(".gchip")?.dataset.riga || "").replace(/\s+/g, " ").trim();
-    if (/Errore · completa a mano|Sessione scaduta/.test(t)) return t;
+    if (/Non partita/.test(t)) return t;
     const b = r?.querySelector(".card .banner.err");
-    return b ? `Errore · completa a mano (resoconto) ${r.querySelector(".card .bd").innerText.replace(/\s+/g, " ").trim()}` : false;
+    return b ? `Non partita (resoconto) ${r.querySelector(".card .bd").innerText.replace(/\s+/g, " ").trim()}` : false;
   }, null, { timeout });
   return h.jsonValue();
 }
@@ -431,7 +431,8 @@ async function scenarioAutoConfirm(browser) {
     "e il dialogo di stampa si apre subito, da quella cornice");
   await avanti(page);   // chiuso il dialogo delle etichette…
   check(scen, /Lista esami/.test(await docStampa(page)), "…si passa da soli alla lista esami");
-  check(scen, await nienteDavanti(page), "e mentre la lista arriva la scheda non c'è");
+  // (i PDF si prendono tutti subito, uno dopo l'altro: la lista arriva mentre si
+  // stampano le etichette — prima le etichette, e niente attesa dopo)
   await attendiAnteprima(page);
   check(scen, /Lista esami/.test(await anteprima(page)) && /→ stampante normale/.test(await anteprima(page)),
     `poi ricompare, con la lista in anteprima (got: ${await anteprima(page) || "niente"})`);
@@ -453,11 +454,13 @@ async function scenarioAutoConfirm(browser) {
     `e a che punto, in ESAMI: «esame 1 di 2», «esame 2 di 2» — non i passi (got: ${reg.testi.filter((t) => /esame \d/.test(t)).join(" | ").slice(0, 160)})`);
   check(scen, /esami in carrello/.test(tutto) && /Confermo/.test(tutto), `poi «✓ N esami in carrello · Confermo…» (got: ${tutto.slice(0, 300)})`);
   check(scen, /Confermata/.test(tutto) && /Aspetto le etichette/.test(tutto), "poi «Confermata · Aspetto le etichette…»");
-  check(scen, /Stampo le etichette/.test(tutto) && /Aspetto la lista esami/.test(tutto) && /Stampo la lista esami/.test(tutto),
+  check(scen, /Stampo le etichette/.test(tutto) && /Stampo la lista esami/.test(tutto) && tutto.indexOf("Stampo le etichette") < tutto.indexOf("Stampo la lista esami"),
     "poi le etichette e la lista, una dopo l'altra");
+  check(scen, hits(mock, "RcsStampaEtichetteLISHMIMU") === 1 && hits(mock, "jasperservlet") === 1,
+    `ogni PDF preso una volta sola, anche presi tutti subito (got ${hits(mock, "RcsStampaEtichetteLISHMIMU")} etichette · ${hits(mock, "jasperservlet")} liste)`);
   check(scen, /Stampa finita/.test(resoconto) && !/Stampato/.test(resoconto) && /2 esami confermati \d\d:\d\d/.test(resoconto),
     `e alla fine il resoconto: «Stampa finita · 2 esami confermati HH:MM», mai «Stampato» (got: ${resoconto})`);
-  check(scen, /Quesito: il tuo/.test(resoconto), `con una riga per il quesito che è partito (got: ${resoconto})`);
+  check(scen, !/Quesito/.test(resoconto), `il quesito non sta sulla striscia: lo dice la ricevuta (got: ${resoconto})`);
   await page.waitForTimeout(6000);
   const resta = await striscia(page, /./, 2000).catch(() => "");
   check(scen, /2 esami confermati/.test(resta), `e il resoconto resta finché non fai altro, non svanisce (got: ${resta})`);
@@ -558,7 +561,7 @@ async function scenarioCorniceVietata(browser) {
 // sul carrello con la striscia ambra, e un tocco apre il motivo.
 async function sospesa(page) {
   await page.waitForURL(/RcsRichiestaPrestazioniRicercaErogatore/, { timeout: 25000 });
-  const t = await striscia(page, /Conferma sospesa/, 10000).catch(() => "");
+  const t = await striscia(page, /Non partita/, 10000).catch(() => "");
   if (t) await apriStriscia(page);
   return t;
 }
@@ -577,7 +580,7 @@ async function scenarioAutoConfirmMismatch(browser) {
   const pill = await sospesa(page);
   const rid = Object.keys(mock.state.richieste)[0];
   check(scen, mock.state.richieste[rid].confirmed === false, "col carrello diverso dalla ricevuta NON conferma");
-  check(scen, !!pill, "si atterra sul carrello con la striscia «Conferma sospesa», non con la finestra");
+  check(scen, !!pill, "si atterra sul carrello con la striscia «Non partita · Controlla il carrello e premi tu Conferma», non con la finestra");
   check(scen, /sospesa/i.test(await $panel(page, ".card").innerText()), "e un tocco dice perché: decide il medico");
   await context.close();
 }
@@ -1173,7 +1176,7 @@ async function scenarioRigaCercata(browser) {
   const ricarica = b.page.waitForEvent("load", { timeout: 40000 });
   await $panel(b.page, "#riprova").click();
   await ricarica;
-  await striscia(b.page, /Errore · completa a mano/, 20000).catch(() => "");
+  await striscia(b.page, /Non partita/, 20000).catch(() => "");
   await b.page.waitForTimeout(3000);
   check(scen2, cercate() === 3 && !mock2.state.insertCount[`${rid2}:324`],
     `«↻ Riprova» del medico cerca ancora, una volta, e non ritenta più da solo (got ${cercate()} ricerche)`);
@@ -1264,7 +1267,7 @@ async function scenarioRiprovaDaSolo(browser) {
   const ricarica = b.page.waitForEvent("load", { timeout: 40000 });
   await $panel(b.page, "#riprova").click();
   await ricarica;
-  const rossa2 = await striscia(b.page, /Errore · completa a mano/, 20000).catch(() => "");
+  const rossa2 = await striscia(b.page, /Non partita/, 20000).catch(() => "");
   const n2 = mock2.state.requests.length;
   await b.page.waitForTimeout(3000);
   check(scen2, /Mancano: TROPONINA/.test(rossa2) && /Da controllare: EMOCROMO/.test(rossa2),
@@ -1293,7 +1296,7 @@ async function scenarioRiprovaDaSolo(browser) {
   const rossa3 = await errore(c.page, { su: null });
   const n3 = mock3.state.requests.length;
   await c.page.waitForTimeout(3000);
-  check(scen3, /Sessione scaduta/.test(rossa3), `«Sessione scaduta» (got: ${rossa3})`);
+  check(scen3, /Sessione scaduta|rifai l'accesso/i.test(rossa3), `«Non partita · rifai l'accesso» (o il resoconto: «Sessione scaduta») (got: ${rossa3})`);
   check(scen3, mock3.state.requests.length === n3 && mock3.state.requests.filter((q) => q.params.s_PRESTAZIONE).length === 1
     && !/da solo/.test(await registroDi(c.page)), "nessun ritentativo da solo");
   await c.context.close();
@@ -1302,8 +1305,8 @@ async function scenarioRiprovaDaSolo(browser) {
 // Il medico clicca nel gestionale mentre la cornice sta ancora confermando: la
 // pagina se ne va, e la conferma automatica con lei — non riparte da sola più
 // tardi su un carrello aperto a mano. Resta un segno (solo numeri): passati i
-// 2 minuti (qui accorciati), la pagina di quell'episodio dice «Richiesta HH:MM
-// non confermata · tocca per il carrello». Confermata dal gestionale, il
+// 2 minuti (qui accorciati), la pagina di quell'episodio dice «Da controllare · guarda le sue
+// richieste…», sotto «la richiesta delle HH:MM non risulta confermata». Confermata dal gestionale, il
 // segno se ne va.
 async function scenarioConfermaInterrotta(browser) {
   const scen = "conferma-interrotta";
@@ -1331,9 +1334,9 @@ async function scenarioConfermaInterrotta(browser) {
   const segno = await page.evaluate(() => JSON.parse(localStorage.getItem("psassist:daConfermare.v1") || "[]"));
   check(scen, segno.length === 1 && segno[0].rid === rid && segno[0].ep === "999001" && segno[0].n === 2 && !/ROSSI|MARIO/i.test(JSON.stringify(segno)),
     `resta il segno, solo numeri (got ${JSON.stringify(segno).slice(0, 140)})`);
-  check(scen, !/non confermata/i.test(await $panel(page, "#expand").innerText()), "prima del tempo la pill non dice niente");
-  const avviso = await striscia(page, /Richiesta \d\d:\d\d non confermata/, 15000).catch(() => "");
-  check(scen, /tocca per il carrello/.test(avviso) && (await $panel(page, TONO("warn")).count()) === 1,
+  check(scen, !/non confermata|non risulta confermata/i.test(await $panel(page, "#expand").innerText()), "prima del tempo la pill non dice niente");
+  const avviso = await striscia(page, /Da controllare.*la richiesta delle \d\d:\d\d non risulta confermata/, 15000).catch(() => "");
+  check(scen, /apri il carrello/.test(avviso) && (await $panel(page, TONO("warn")).count()) === 1,
     `passato il tempo, la pagina dello stesso episodio lo dice, ambra (got: ${avviso})`);
   check(scen, Date.now() - t0 >= 4000, "e non prima");
   check(scen, confermePost(mock).length === 0, "niente si è confermato da solo");
@@ -1344,7 +1347,7 @@ async function scenarioConfermaInterrotta(browser) {
   await page.waitForTimeout(1500);
   check(scen, mock.state.richieste[rid].confirmed === false && confermePost(mock).length === 0,
     "e lì la conferma automatica non riparte da sola: decide il medico");
-  check(scen, !/non confermata/i.test(await $panel(page, ".wrap").innerText()), "sul carrello di quella richiesta l'avviso non serve");
+  check(scen, !/non confermata|non risulta confermata/i.test(await $panel(page, ".wrap").innerText()), "sul carrello di quella richiesta l'avviso non serve");
   // il medico conferma dal gestionale: la pagina dopo la elenca coi suoi fogli, e il segno se ne va
   await page.locator('form[name="Prestazioni"] input[name="Update"]').click();
   await page.waitForSelector('a[title="Richieste Laboratorio"]', { timeout: 15000 });
@@ -1421,8 +1424,8 @@ async function scenarioErroreCompletaAMano(browser) {
   const ultima = mock.state.requests[n0 - 1];
   check(scen, ultima && ultima.method === "GET" && ultima.params.MVPG === "RcsRichiestaPrestazioniRicercaErogatore" && !ultima.params.Insert,
     "l'ultima cosa chiesta al server è la lettura del carrello");
-  check(scen, /Errore · completa a mano/.test(rossa) && /Mancano: TROPONINA/.test(rossa),
-    `striscia: «Errore · completa a mano» / «Mancano: …» (got: ${rossa})`);
+  check(scen, /Non partita/.test(rossa) && /Mancano: TROPONINA/.test(rossa),
+    `striscia: «Non partita» / «Mancano: …» (got: ${rossa})`);
   check(scen, (await $panel(page, TONO("err")).count()) === 1, "e rossa");
   await page.waitForTimeout(2500);
   check(scen, mock.state.requests.length === n0,
@@ -1586,7 +1589,7 @@ async function scenarioRiprovaDueVolte(browser) {
   const ricarica = page.waitForEvent("load", { timeout: 40000 });
   await $panel(page, "#riprova").click();
   await ricarica;   // il secondo errore riporta sul carrello
-  const rossa = await striscia(page, /Errore · completa a mano/, 20000).catch(() => "");
+  const rossa = await striscia(page, /Non partita/, 20000).catch(() => "");
   check(scen, /Mancano: TROPONINA US/.test(rossa) && /Da controllare: EMOCROMO POC/.test(rossa),
     `il secondo errore: la TROPONINA manca ancora, e l'EMOCROMO resta da controllare (got: ${rossa || "niente"})`);
   rotta = false;
@@ -1664,7 +1667,7 @@ async function scenarioChiudi(browser) {
   const riga2 = (await $panel(page, ".daconf").innerText().catch(() => "")).replace(/\s+/g, " ");
   check(scen, !riga2, `nessuna riga «ancora da confermare» (got: ${riga2 || "niente"})`);
   await $panel(page, "#collapse").click();
-  const promemoria = await striscia(page, /non confermata/, 12000).catch(() => "");
+  const promemoria = await striscia(page, /non confermata|non risulta confermata/, 12000).catch(() => "");
   check(scen, !promemoria, `passato il tempo, nessun promemoria «non confermata» (got: ${promemoria || "niente"})`);
   await page.goto(mock.patientUrl);
   await richieste(page);
@@ -1817,7 +1820,7 @@ async function scenarioSvuotaNonVuoto(browser) {
     const n0 = mock.state.requests.length;
     await armaSvuota(page);
     await $panel(page, "#svuota").click();
-    const rossa = await striscia(page, /Errore · completa a mano/, 30000).catch(() => "");
+    const rossa = await striscia(page, /Non partita/, 30000).catch(() => "");
     await page.waitForTimeout(800);
     const ins = mock.state.requests.slice(n0).filter((q) => q.params.Insert === "Inserisci");
     check(scen, tentativi >= 1 && ins.length === 0, `${modo}: provato col «Svuota», e niente rimesso (got ${tentativi} svuota, ${ins.length} invii)`);
@@ -1829,7 +1832,7 @@ async function scenarioSvuotaNonVuoto(browser) {
     `${modo}: il resoconto dice cosa resta (got: ${card.slice(0, 160)})`);
     check(scen, (await $panel(page, "#svuota").count()) === 0 && (await $panel(page, "#riprova").count()) === 0,
       `${modo}: niente «Svuota» né «Riprova» da soli: si finisce a mano`);
-    check(scen, /Errore/.test(rossa), `${modo}: striscia rossa (got: ${rossa})`);
+    check(scen, /Non partita/.test(rossa), `${modo}: striscia rossa (got: ${rossa})`);
     await context.close();
   }
 }
@@ -2153,7 +2156,7 @@ async function scenarioSaltoSpento(browser) {
   await $panel(page, '.opt[title*="CREATININEMIA"]').click();
   await $panel(page, '.opt[title*="TROPONINA"]').click();
   await $panel(page, "#go").click();
-  await striscia(page, /Errore · completa a mano/, 20000);
+  await striscia(page, /Non partita/, 20000);
   rotta = false;
   const rid = Object.keys(mock.state.richieste)[0];
   let salti = 0;
@@ -2168,7 +2171,7 @@ async function scenarioSaltoSpento(browser) {
   check(scen, [...mock.state.richieste[rid].cart.keys()].sort().join(",") === "176,320,324" && mock.state.insertCount[`${rid}:324`] === 1,
     "e nel carrello ci sono tutti, la TROPONINA una volta");
   const ora = (await $panel(page, ".pill.run").innerText().catch(() => "")).replace(/\s+/g, " ");
-  check(scen, !/Errore/.test(ora), `e la pagina non torna all'errore di prima (got: ${ora})`);
+  check(scen, !/Non partita/.test(ora), `e la pagina non torna all'errore di prima (got: ${ora})`);
   await context.close();
 }
 
@@ -2362,13 +2365,13 @@ async function scenarioSedeOSG(browser) {
   await $panel(page, "#q").fill("febbre");
   await $panel(page, '.opt[title*="PROTEINA C REATTIVA"]').click();
   await $panel(page, "#go").click();
-  const fine = await striscia(page, /in carrello|Errore/, 30000);
+  const fine = await striscia(page, /in carrello|Non partita/, 30000);
   const rid = Object.keys(mock.state.richieste)[0];
   const carrello = [...mock.state.richieste[rid].cart.entries()];
   check(scen, carrello.length === 1 && carrello[0][1] === OSG.LAB && carrello[0][0] === "293",
     `la PCR è nel laboratorio unico, non nel POC (got ${JSON.stringify(carrello)})`);
   check(scen, !Object.keys(mock.state.insertCount).some((k) => k.endsWith(":266")), "la PCR POC non viene nemmeno tentata");
-  check(scen, !/Errore/.test(fine), `nessun errore di risorsa (got: ${fine})`);
+  check(scen, !/Non partita/.test(fine), `nessun errore di risorsa (got: ${fine})`);
   await context.close();
 }
 
@@ -2409,7 +2412,7 @@ async function scenarioExpiryOnInsert(browser) {
   await $panel(page, "#go").click();
   // sessione scaduta: solo la striscia rossa, nessun salto di pagina
   const rossa = await errore(page, { su: null });
-  check(scen, /Sessione scaduta/.test(rossa), `la striscia dice che la sessione è scaduta (got: ${rossa})`);
+  check(scen, /Sessione scaduta|rifai l'accesso/i.test(rossa), `la striscia (o il resoconto) dice che la sessione è scaduta (got: ${rossa})`);
   await apriStriscia(page);
   const banner = await $panel(page, ".banner.err").innerText();
   check(scen, /potrebbe essere stato aggiunto/i.test(banner), `messaggio di ambiguità presente (got: ${banner.slice(0, 90)})`);
@@ -2440,7 +2443,7 @@ async function scenarioSessionExpiry(browser) {
 // Il quesito del triage resta, di norma — ma se il medico ha scritto il suo
 // nel pannello, a mano, vale il suo. Un chip (o un pacchetto) che riscrive la
 // casella non conta come «scritto a mano». E si dice quale è partito: una
-// riga nella ricevuta e una nella striscia finale.
+// riga nella ricevuta (la striscia no: il quesito si vede dove si sceglie).
 async function scenarioPrefilledQuesito(browser) {
   const scen = "quesito-triage";
   const TRIAGE = "trauma cranico da triage";
@@ -2471,13 +2474,13 @@ async function scenarioPrefilledQuesito(browser) {
   }, { daCrea: true });
   check(scen, g.quesito === TRIAGE, `non toccato: resta quello del triage (got ${JSON.stringify(g.quesito)})`);
   check(scen, /Quesito del triage: "trauma cranico da triage"/.test(g.ricevuta), `la ricevuta dice quale è partito (got: ${g.ricevuta})`);
-  check(scen, /Quesito del triage: "trauma cranico da triage"/.test(g.strip), `e la striscia anche (got: ${g.strip})`);
+  check(scen, !/Quesito/.test(g.strip), `la striscia no: il quesito si vede dove si sceglie, e nella ricevuta (got: ${g.strip})`);
 
   // 2. lo stesso, ma il medico scrive il suo: vince il suo
   g = await giro(async (page) => { await $panel(page, "#q").fill("frattura di polso, il mio quesito"); }, { daCrea: true });
   check(scen, g.quesito === "frattura di polso, il mio quesito", `scritto a mano nel pannello: vince il suo (got ${JSON.stringify(g.quesito)})`);
-  check(scen, /Quesito: il tuo, al posto del triage/.test(g.ricevuta) && /Quesito: il tuo/.test(g.strip),
-    `e lo dicono ricevuta e striscia (got: ${g.ricevuta} · ${g.strip})`);
+  check(scen, /Quesito: il tuo, al posto del triage/.test(g.ricevuta) && !/Quesito/.test(g.strip),
+    `e lo dice la ricevuta, non la striscia (got: ${g.ricevuta} · ${g.strip})`);
 
   // 3. dalla pagina del paziente: scritto a mano e poi un chip che riscrive la
   //    casella — il chip non è «scritto a mano», il triage resta
@@ -2685,10 +2688,11 @@ async function scenarioPrintManual(browser) {
   await page.waitForTimeout(1800); // fallback print attempt fires even without a PDF viewer
   check(scen, Number(await page.locator("#psassist-print").getAttribute("data-print-attempts")) >= 1, "print dialog richiesto automaticamente");
   check(scen, hits(mock, "RcsStampaEtichetteLISHMIMU.do") === 1, "PDF etichette scaricato una volta");
+  // (prima le etichette, poi subito tutti gli altri PDF: la lista è già qui mentre le etichette aspettano il dialogo)
+  check(scen, hits(mock, "REPORT=RcsRichiesta&") === 1, "e la lista esami è già presa, mentre le etichette aspettano il dialogo");
   await $wiz(page, "#pwnext").click();
   head = await docStampa(page);
   check(scen, /Stampa 2 di 2 — Lista esami/.test(head) && /stampante normale/.test(await stampante()), `job 2 = lista → stampante normale (got: ${head.slice(0, 70)})`);
-  check(scen, await nienteDavanti(page), "«→ Avanti»: la scheda se ne va finché la lista non arriva");
   await attendiAnteprima(page);
   const vista2 = await anteprima(page);
   check(scen, /Stampa 2 di 2 — Lista esami/.test(vista2) && /→ stampante normale/.test(vista2), `poi la lista in anteprima (got: ${vista2 || "niente"})`);
@@ -3174,8 +3178,8 @@ async function scenarioPrintMergedFlow(browser) {
   await context.close();
 }
 
-// «Stampa l'ultima richiesta», nella sezione Stampa: la più recente; e con lei
-// quella di pochi minuti prima (laboratorio + RX dello stesso ordine).
+// «Ristampa», in fondo alle Richieste: l'ultimo ordine — la più recente, e con lei
+// quelle di pochi minuti prima (laboratorio + RX dello stesso ordine).
 async function scenarioStampaUltima(browser) {
   const scen = "stampa-ultima";
   const mock = createMock({ seedConfirmed: true, seedConfirmedRadio: true });
@@ -3188,7 +3192,7 @@ async function scenarioStampaUltima(browser) {
     }
   }, o);
   const giro = async () => {
-    await stampaRichieste(page);
+    await richieste(page);
     await page.locator("#psassist-host #stultima").click();
     await page.waitForSelector("#psassist-print", { state: "attached", timeout: 15000 });
     const heads = [];
@@ -3196,10 +3200,10 @@ async function scenarioStampaUltima(browser) {
     return heads;
   };
   await page.goto(mock.patientUrl);
-  await stampaRichieste(page);
+  await richieste(page);
   const testo = (await page.locator("#psassist-host #stultima").innerText().catch(() => "")).trim();
-  check(scen, testo === "Stampa l'ultima richiesta" && (await page.locator('#psassist-host [data-print]').count()) === 2,
-    `nella sezione Stampa, sopra l'elenco che resta (got «${testo}»)`);
+  check(scen, testo === "Ristampa" && (await page.locator('#psassist-host #stampaltre').count()) === 1,
+    `in fondo alle Richieste, «Ristampa» e «Altre…» (got «${testo}»)`);
   await page.locator("#psassist-host #stultima").scrollIntoViewIfNeeded().catch(() => {});
   await shot(page, "stampa-ultima-richiesta");
   await ore({ 699999: "2026-10-27 14:33:00.0", 699998: "2026-10-27 14:31:00.0" });
@@ -6044,7 +6048,7 @@ async function scenarioRilancioPaginaEsami(browser) {
   // non lo mostra — il motore rilegge il carrello dal server
   await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
   await Promise.all([page.waitForEvent("load", { timeout: 30000 }), $panel(page, "#go").click()]);
-  await striscia(page, /Conferma dal gestionale|Errore/, 10000);
+  await striscia(page, /Conferma dal gestionale|Non partita/, 10000);
   check(scen, mock.state.insertCount[`${rid}:320`] === 1,
     `rilanciando NON lo ordina una seconda volta (got ${mock.state.insertCount[`${rid}:320`]})`);
   const reg = await registroDi(page);
@@ -6621,7 +6625,7 @@ async function scenarioStopButton(browser) {
   // si ferma dalla striscia, col ⏹
   await $panel(page, "#stopbtn").click();
   // fermato: lo dice la striscia (la finestra non si apre da sola), un tocco il resoconto
-  const ferma = await striscia(page, /Interrotto/, 10000);
+  const ferma = await striscia(page, /Non partita/, 10000);
   check(scen, (await $panel(page, ".card").count()) === 0, `la striscia dice che è interrotto (got: ${ferma})`);
   await apriStriscia(page);
   await page.waitForSelector("#psassist-host .banner.warn", { timeout: 10000 });
@@ -7118,8 +7122,8 @@ async function scenarioRichiesteCompatte(browser) {
   const t1 = await tasti();
   check(scen, t1.c === '"Ctrl+Invio"' && t1.px <= 11.5 && t1.dentro, `nella barra, piccolo accanto a «Conferma per …»: «Ctrl+Invio» (got ${JSON.stringify(t1)})`);
   // la ristampa a un tocco, quieta, in fondo alle Richieste (una richiesta confermata c'è)
-  check(scen, (await $panel(page, ".bd #stultima.rpiede").count()) === 1 && (await testoPanel(page, "#stultima")) === "Stampa l'ultima richiesta",
-    "in fondo alle Richieste, quieta: «Stampa l'ultima richiesta»");
+  check(scen, (await $panel(page, ".bd .rpiede #stultima").count()) === 1 && (await testoPanel(page, "#stultima")) === "Ristampa",
+    "in fondo alle Richieste, quieta: «Ristampa»");
   await shotSide(page, "paz-richieste");
   // un clic sulla scheda Richieste col quesito vuoto: il cursore è già nel quesito
   // (scritto, no: il clic non lo tocca)

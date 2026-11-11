@@ -494,6 +494,7 @@ async function ponteRisposta(s, d) {
       return await ponteOrdina(d);
     }
     if (d.cmd === "ristampa") return await ponteRistampa(d);
+    if (d.cmd === "ordineQui") return await ponteOrdineQui(d);
     if (d.cmd === "pdf") return await ponteDaiPdf(s, d);
     if (d.cmd === "stampa") return await ponteStampa(s, d);
     if (d.cmd === "stampaReferto") return await ponteStampaReferto(s, d);
@@ -716,11 +717,14 @@ function ponteStampaParole(rec) {
 
 // Con il catalogo, dove vanno i fogli: la stazione collegata (il suo nome) e
 // la scelta del PC, che il telefono propone e si può cambiare per un ordine.
+// (`auto`: questo PC stampa da solo, con l'aiutante — se no il telefono spegne
+// Ristampa, 🖨️ e Stampa PDF verso il PC, e dice perché, prima del tocco)
 async function ponteStampaDove() {
   const o = await chrome.storage.local.get(["stampa", "stazione.coppia"]);
   const c = o["stazione.coppia"];
-  if (!c || c.revoca) return { stazione: "" };
-  return { stazione: corto(c.nome || "Infermeria", 40), dove: (o.stampa || {}).dove === "stazione" ? "stazione" : "qui" };
+  const auto = !!(await stampaScelte().catch(() => null));
+  if (!c || c.revoca) return { stazione: "", auto };
+  return { stazione: corto(c.nome || "Infermeria", 40), dove: (o.stampa || {}).dove === "stazione" ? "stazione" : "qui", auto };
 }
 
 // L'ordine. Il numero lo fa il telefono quando arma «Conferma» (oid): la
@@ -745,9 +749,23 @@ async function ponteOrdina(d) {
   const nati = suoi(await ponteOrdiniMemo());
   if (r.ok || nati.length) return { ok: true, dati: { ...(r.ok ? r.dati : {}), ordini: nati.length ? nati : r.dati.ordini } };
   // non partito, o non si sa: la sua carta (se il telefono l'aveva) lo dice
-  ponteInvia(pt.sessione, { evento: "ordine", ordine: { ...sp, tono: r.incerto ? "warn" : "err", titolo: r.incerto ? "Da controllare" : "Non partito",
-    testo: r.errore || "", fine: true } });
+  // (le tre parole di un ordine finito: bg.js, CONFERMATA / DA_CONTROLLARE / NON_PARTITA)
+  ponteInvia(pt.sessione, { evento: "ordine", ordine: { ...sp, tono: r.incerto ? "warn" : "err", titolo: r.incerto ? DA_CONTROLLARE : NON_PARTITA,
+    testo: r.incerto ? GUARDA : "niente inviato: riprova", dettaglio: corto(r.errore || "", 240), fine: true } });
   return r;
+}
+
+// «Stampa sul PC» sulla carta di un ordine del telefono la cui stazione di
+// stampa non risponde: lo stesso tocco di «Stampa qui» sulla striscia del PC
+// (ordQui, bg.js) — il tocco è il consenso, mai una stampa da sola; un ordine
+// che stampa già qui, o già stampato, non si rifà. Solo un ordine del telefono.
+async function ponteOrdineQui(d) {
+  const id = typeof d.id === "string" && /^tel[\w-]{8,40}$/.test(d.id) ? d.id : "";
+  if (!id || !(await ponteOrdiniMemo()).some((m) => m.id === id)) return { ok: false, errore: "Ordine non trovato sul PC" };
+  const r = await ordQui(id, { daTel: true });
+  ponteNota(r.ok ? "iPhone · «Stampa sul PC» per un ordine della stazione" : `iPhone · «Stampa sul PC» non riuscita: ${corto(r.errore || "", 80)}`);
+  await ponteScriviStato();
+  return r.ok ? { ok: true, dati: { cambiata: !!r.cambiata } } : { ok: false, errore: r.errore || "Stampa non partita" };
 }
 
 // «Ristampa» di una richiesta già sulla pagina del paziente (Richieste fatte):
@@ -1385,20 +1403,26 @@ async function ponteAccettaFine(id, esito) {
 // scheda, ✕ sul PC) resta com'era l'ultima volta.
 const PONTE_FINALI = new Set(["avviso", "errore", "chiusa", "interrotto"]);
 function ponteStatoOrdine(m, rec) {
-  const base = { id: m.id, ep: m.ep, paziente: m.paziente, n: m.n, rx: m.rx, ts: m.ts };
+  const esami = Array.isArray(m.esami) ? m.esami : rec && Array.isArray(rec.nomi) && rec.nomi.length ? rec.nomi.slice(0, 12).map((x) => corto(x, 40)) : null;
+  const base = { id: m.id, ep: m.ep, paziente: m.paziente, n: m.n, rx: m.rx, ts: m.ts, ...(esami ? { esami } : {}) };
   if (!rec) {
-    if (m.stato === "coda") return { ...base, stato: "tolto", tono: "warn", titolo: "Tolto dalla coda", testo: "Tolto dalla coda sul PC: niente inviato", dettaglio: "", fine: true };
+    if (m.stato === "coda") return { ...base, stato: "tolto", tono: "err", titolo: NON_PARTITA, testo: "niente inviato", dettaglio: "tolto dalla coda sul PC", fine: true };
     // sparito prima della conferma: non si sa che cosa è entrato
     if (["", "avvio", "corre"].includes(m.stato || "")) {
-      return { ...base, stato: "perso", tono: "warn", titolo: "Da controllare", testo: "L'ordine non risulta più sul PC: guarda il carrello prima di rifarlo", dettaglio: "", fine: true };
+      return { ...base, stato: "perso", tono: "warn", titolo: DA_CONTROLLARE, testo: GUARDA, dettaglio: "l'ordine non risulta più sul PC", fine: true };
     }
     // etichette in attesa che spariscono: una scheda del PC le ha prese per stamparle
-    if (m.stato === "stampa") return { ...base, stato: "preso", tono: "ok", titolo: "Etichette prese in stampa sul PC", testo: "", dettaglio: "", fine: true };
+    if (m.stato === "stampa") return { ...base, stato: "preso", tono: "ok", titolo: CONFERMATA, testo: "Etichette prese in stampa sul PC", dettaglio: "", fine: true };
     return { ...m, fine: true };
   }
   const p = { ...rec.pubblico, ...(rec.pubblico && rec.pubblico.tel) };
+  // «Stampa sul PC»: la stazione non risponde (ancora prima dell'ordine), o non ha stampato le sue etichette.
+  // (Mai per un foglio «forse stampato» — arrivato, risposta persa —: dal telefono non si vede il PC, e due etichette non si rischiano)
+  const f = Array.isArray(rec.fogli) ? rec.fogli : [];
+  const qui = rec.dest === "stazione" && (["coda", "avvio", "corre"].includes(rec.stato) ? !!rec.stazioneMuta
+    : !!rec.stampa && ["stampa", "avviso"].includes(rec.stato) && f.some((x) => x.stato === "fallito") && !f.some((x) => x.stato === "sconosciuto"));
   return { ...base, stato: rec.stato, tono: p.tono || "run", titolo: corto(p.titolo, 80), testo: corto(p.testo, 200),
-    dettaglio: corto(p.dettaglio, 240), quieto: !!p.quieto, fine: PONTE_FINALI.has(rec.stato) };
+    dettaglio: corto(p.dettaglio, 240), quieto: !!p.quieto, fine: PONTE_FINALI.has(rec.stato), ...(qui ? { qui: true } : {}) };
 }
 async function ponteOrdiniMemo() {
   const l = (await chrome.storage.session.get(PONTE_ORDINI))[PONTE_ORDINI];
@@ -1411,8 +1435,10 @@ async function ponteOrdiniTel() {
 }
 let ponteFilaOrdini = Promise.resolve();
 const ponteInFilaOrdini = (fn) => (ponteFilaOrdini = ponteFilaOrdini.then(fn, fn));
+// (quali esami, in breve: due carte «Confermata · 1 esame» uguali non dicono niente)
 const ponteMemo = (o) => ({ id: o.id, ep: corto(o.ep, 40), paziente: corto(o.paziente, 60), n: Number(o.n) || 0,
-  rx: !!o.rx || /r$/.test(o.id), ts: ponteOra(), stato: "", fine: false });
+  rx: !!o.rx || /r$/.test(o.id), ts: ponteOra(), stato: "", fine: false,
+  ...(Array.isArray(o.nomi) && o.nomi.length ? { esami: o.nomi.slice(0, 12).map((x) => corto(x, 40)) } : {}) });
 function ponteSegnaOrdini(nuovi) {
   return ponteInFilaOrdini(async () => {
     const memo = await ponteOrdiniMemo();
@@ -1435,6 +1461,13 @@ async function ponteAggiornaOrdini(memo, l) {
   }
   if (cambiato) await chrome.storage.session.set({ [PONTE_ORDINI]: memo.slice(-20) });
 }
+// Le stampe del PC cambiate (la stampa automatica accesa o spenta, la stazione
+// collegata o tolta): il telefono collegato lo sa subito — i suoi bottoni di
+// stampa si accendono o si spengono col perché (ponteStampaDove), senza riaprire.
+chrome.storage.onChanged.addListener((ch, area) => {
+  if (area !== "local" || !(ch.stampa || ch["stazione.coppia"]) || !pt.sessione) return;
+  ponteStampaDove().then((stampa) => ponteInvia(pt.sessione, { evento: "stampa", stampa })).catch(() => {});
+});
 chrome.storage.onChanged.addListener((ch, area) => {
   if (area !== "session" || !ch.ordini) return;
   const l = Array.isArray(ch.ordini.newValue) ? ch.ordini.newValue : [];

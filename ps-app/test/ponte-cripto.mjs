@@ -273,6 +273,9 @@ async function pcFinto({ sessione = {}, locale = {}, scheda = null, gest = null,
     setTimeout, clearTimeout, setInterval: () => 0, __salto: 0,
     ordLeggi: async () => sessione.ordini || [], sulGestionale: (u) => String(u || "").startsWith(GEST), leggibileOrd: () => true,
     corto: (s, n = 160) => String(s == null ? "" : s).slice(0, n),
+    // (le tre parole di un ordine finito, di bg.js)
+    CONFERMATA: "Confermata", DA_CONTROLLARE: "Da controllare", NON_PARTITA: "Non partita",
+    GUARDA: "guarda le sue richieste: se c'è, Ristampa; se no, apri il carrello",
     KEY: (id) => "ref:" + id, REF_TTL: 6e5,
     stampaScelte: async () => ({ attiva: true }),
     stampaTelVista: async (rid) => stampate.has(rid),
@@ -538,10 +541,25 @@ await blocco(async () => {
   await sospendi(60);
   const ev2 = await t.leggi(pc.tira());
   const ultimo = ev2.filter((x) => x.evento === "ordine").at(-1);
-  check(ultimo && ultimo.ordine.titolo === "Etichette prese in stampa sul PC" && !ultimo.ordine.testo && ultimo.ordine.tono === "ok" && ultimo.ordine.fine === true,
-    "sparito da «ordini» mentre le etichette aspettavano: «Etichette prese in stampa sul PC» (il titolo è com'è andata), finito e verde");
+  check(ultimo && ultimo.ordine.titolo === "Confermata" && ultimo.ordine.testo === "Etichette prese in stampa sul PC" && ultimo.ordine.tono === "ok" && ultimo.ordine.fine === true,
+    "sparito da «ordini» mentre le etichette aspettavano: «Confermata · Etichette prese in stampa sul PC», finito e verde");
   check(ultimo && !/il tuo/.test(ultimo.ordine.dettaglio), `e mai «Quesito: il tuo», la frase del PC (${ultimo && ultimo.ordine.dettaglio})`);
   // le parole sono quelle di bg.js, e dove il telefono dice altro (`tel`), le sue
+  // la carta di un ordine nomina i suoi esami; «Stampa sul PC» solo per la stazione che non ha stampato;
+  // e il catalogo dice se il PC stampa da solo (il telefono spegne le stampe col perché, prima del tocco)
+  const carta = await pc.ev(`ponteStatoOrdine({ id: "telcarta1l", ep: "1", paziente: "ROSSI MARIO", n: 2, ts: 1 },
+    { id: "telcarta1l", stato: "stampa", dest: "stazione", nomi: ["TROPONINA US", "EMOCROMO POC"], stampa: { jobs: [{ name: "Etichette" }] },
+      fogli: [{ stato: "fallito", stazione: true, nonRisponde: true }], pubblico: { tono: "warn", titolo: "Confermata", testo: "Infermeria non risponde" } })`);
+  const cartaQui = await pc.ev(`ponteStatoOrdine({ id: "telcarta2l", ep: "1", n: 1, ts: 1 }, { id: "telcarta2l", stato: "avviso", dest: "qui", nomi: ["PCR"],
+      stampa: { jobs: [{ name: "Etichette" }] }, fogli: [{ stato: "fallito" }], pubblico: { tono: "warn", titolo: "Confermata", testo: "Stampa interrotta" } })`);
+  check(JSON.stringify(carta.esami) === JSON.stringify(["TROPONINA US", "EMOCROMO POC"]) && carta.qui === true && !cartaQui.qui && JSON.stringify(cartaQui.esami) === '["PCR"]',
+    `la carta nomina gli esami, e «Stampa sul PC» c'è solo quando la stazione non ha stampato (${JSON.stringify([carta.esami, carta.qui, cartaQui.qui])})`);
+  const cartaForse = await pc.ev(`ponteStatoOrdine({ id: "telcarta3l", ep: "1", n: 1, ts: 1 }, { id: "telcarta3l", stato: "avviso", dest: "stazione", nomi: ["PCR"],
+      stampa: { jobs: [{ name: "Etichette" }, { name: "Lista" }] }, fogli: [{ stato: "sconosciuto", stazione: true }, { stato: "fallito", stazione: true }],
+      pubblico: { tono: "warn", titolo: "Confermata", testo: "Etichette forse stampate in Infermeria" } })`);
+  check(!cartaForse.qui, `un foglio «forse stampato» in Infermeria: dal telefono niente «Stampa sul PC» — si guarda lì, si decide al PC (${JSON.stringify(cartaForse.qui)})`);
+  const dove = await pc.ev("ponteStampaDove()");
+  check(dove.auto === true, `catalogo.stampa dice se il PC stampa da solo (got ${JSON.stringify(dove)})`);
   pc.ev("PONTE_ATTESA.ordina = 25e3");
   crea = null;
   const r2 = await t.manda({ id: 4, cmd: "ordina", ep: "1", oid: "veloce12", esami: ["lab:A1"], quesito: "dolore toracico" });
@@ -646,9 +664,22 @@ await blocco(async () => {
   check(ok.tono === "ok" && ok.titolo === "Stampato su Zebra ZD421 e HP LaserJet A4" && ok.testo === "2 esami confermati alle 14:32" && (tutto(ok).match(/14:32/g) || []).length === 1 && !ok.tel,
     `stampato: il titolo è com'è andata («Stampato su Zebra ZD421 e HP LaserJet A4»), l'ora una volta (${tutto(ok)})`);
   const telOk = pub(rec("telabc12345l", "avviso", fogli(["etichette", "stampato", "Zebra ZD421"])));
-  check(/Quesito: «dolore toracico»/.test(telOk.dettaglio) && !/il tuo/.test(tutto(telOk)) && /avvisa chi preleva/.test(telOk.dettaglio),
-    `un ordine dal telefono dice il quesito vero, non «Quesito: il tuo» (${telOk.dettaglio})`);
-  check(/Quesito: il tuo/.test(ok.dettaglio), "(uno del PC resta com'era: «Quesito: il tuo»)");
+  check(!/Quesito/.test(tutto(telOk)) && !/Quesito/.test(tutto(ok)) && /avvisa chi preleva/.test(telOk.dettaglio),
+    `il quesito non sta sulla striscia, né del PC né del telefono (${tutto(ok)} // ${telOk.dettaglio})`);
+  // un ordine confermato: il titolo è «Confermata», la stampa la frase sotto
+  const conf = pub(rec("pc5", "avviso", fogli(["etichette", "stampato", "Zebra ZD421"], ["a4", "stampato", "HP LaserJet A4"]), { confermata: ora }));
+  check(conf.tono === "ok" && conf.titolo === "Confermata" && conf.testo === "Stampato su Zebra ZD421 e HP LaserJet A4" && conf.dettaglio === "2 esami confermati alle 14:32",
+    `un ordine: «Confermata · Stampato su Zebra ZD421 e HP LaserJet A4», i conti sotto (${tutto(conf)})`);
+  const confRotta = pub(rec("pc6", "avviso", fogli(["etichette", "stampato", "Zebra ZD421"], ["a4", "attesa", ""]), { confermata: ora, interrotta: "la scheda dell'ordine si è chiusa" }));
+  check(confRotta.tono === "warn" && confRotta.titolo === "Confermata" && confRotta.testo === "Stampa interrotta" && /non usciti: Lista esami/.test(confRotta.dettaglio),
+    `…e una stampa interrotta: «Confermata», in ambra, «Stampa interrotta» sotto (${tutto(confRotta)})`);
+  const nonPartita = pub({ id: "pc7", ep: "1", stato: "errore", agg: ora, vista: { tag: "Non partita", testo: "niente inviato: riprova", tono: "err", quesito: "la scheda per l'ordine non si è aperta" },
+    resto: { mancano: ["TROPONINA US"], controllare: [], nel: [] } });
+  const chiusaMeta = pub({ id: "pc8", ep: "1", stato: "chiusa", agg: ora, vista: {}, resto: { mancano: [], controllare: ["EMOCROMO"], nel: ["TROPONINA US"] } });
+  const chiusaPrima = pub({ id: "pc9", ep: "1", stato: "chiusa", agg: ora, vista: {}, resto: { mancano: ["EMOCROMO"], controllare: [], nel: ["TROPONINA US"] } });
+  check(nonPartita.titolo === "Non partita" && nonPartita.tono === "err" && nonPartita.testo === "niente inviato: riprova" && /non si è aperta/.test(nonPartita.dettaglio)
+    && chiusaMeta.titolo === "Da controllare" && chiusaMeta.tono === "warn" && chiusaPrima.titolo === "Non partita" && /Mancano: EMOCROMO/.test(chiusaPrima.dettaglio),
+    `tre parole: «Non partita · niente inviato», la scheda chiusa dopo l'ultimo invio «Da controllare», prima «Non partita» (${[nonPartita, chiusaMeta, chiusaPrima].map(tutto).join(" // ")})`);
   const mandato = pub(rec("pc2", "avviso", fogli(["etichette", "mandato", "Zebra ZD421"], ["a4", "stampato", "HP LaserJet A4"])));
   check(mandato.tono === "warn" && mandato.titolo === "Mandato a Zebra ZD421" && /nella coda di Windows/.test(mandato.dettaglio),
     `«Mandato»: in ambra, mai il verde di «Stampato» — è solo nella coda di Windows (${mandato.tono}: ${tutto(mandato)})`);
@@ -659,8 +690,8 @@ await blocco(async () => {
     `…e sul telefono: «Etichette forse stampate: guarda Zebra ZD421 prima di ristamparle dal PC», senza gergo (${ignoto.tel && tutto(ignoto.tel)})`);
   const aspetta = pub(rec("telabc12345l", "stampa", fogli(["etichette", "attesa", ""])));
   check(aspetta.titolo === "Etichette NON stampate" && aspetta.testo === "tocca Stampa" && !/aspettano qualcuno/.test(tutto(aspetta))
-    && aspetta.tel && aspetta.tel.titolo === "Confermato · etichette al PC" && !/NON stampate|tocca Stampa|striscia|aspettano/.test(tutto(aspetta.tel)),
-  `le etichette di un ordine dal telefono: il PC dice «tocca Stampa», il telefono «Confermato · etichette al PC» (non un allarme) — ognuno la sua (${tutto(aspetta)} // ${aspetta.tel && tutto(aspetta.tel)})`);
+    && aspetta.tel && aspetta.tel.titolo === "Confermata" && aspetta.tel.testo === "etichette al PC" && !/NON stampate|tocca Stampa|striscia|aspettano/.test(tutto(aspetta.tel)),
+  `le etichette di un ordine dal telefono: il PC dice «tocca Stampa», il telefono «Confermata · etichette al PC» (non un allarme) — ognuno la sua (${tutto(aspetta)} // ${aspetta.tel && tutto(aspetta.tel)})`);
   const rotta = pub(rec("telabc12345l", "stampa", fogli(["etichette", "fallito", "Zebra ZD421", "la stampante (o il suo driver) ha dato errore"], ["a4", "stampato", "HP LaserJet A4"])));
   check((tutto(rotta).match(/ha dato errore/g) || []).length === 1 && !/aspettano qualcuno/.test(tutto(rotta)) && /aspettano qualcuno al PC/.test(tutto(rotta.tel)),
     `un'etichetta che non esce: il perché una volta sola, non «Zebra ZD421 ha dato errore · la stampante ha dato errore» (${tutto(rotta)})`);
