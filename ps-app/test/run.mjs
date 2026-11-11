@@ -3227,13 +3227,35 @@ async function scenarioStampaUltima(browser) {
   let h = await giro();
   check(scen, h.length === 2 && /1 di 2 — Etichette/.test(h[0]) && /2 di 2 — Lista esami/.test(h[1]),
     `due richieste a due minuti l'una dall'altra, senza sapere se sono lo stesso tocco: solo l'ultima (got ${h.join(" | ")})`);
-  // la scheda dell'ordine le ha annotate come lo stesso tocco su Conferma: tutt'e due, prima le etichette
-  await page.evaluate(() => localStorage.setItem("psassist:stampeFresche.v1", JSON.stringify({
-    999001: { ts: performance.timeOrigin - 1000, map: {}, gesti: { gprova: ["699999", "699998"] } } })));
-  h = await giro();
-  check(scen, h.length === 3 && /1 di 3 — Etichette/.test(h[0]) && /Lista esami/.test(h[1]) && /3 di 3 — Richiesta radiologia/.test(h[2]),
-    `annotate dalla scheda dell'ordine come lo stesso tocco: tutt'e due, prima le etichette (got ${h.join(" | ")})`);
   await context.close();
+  // Lo stesso tocco su Conferma fatto in QUESTA scheda (laboratorio e RX, la
+  // conferma in cornice, le etichette col dialogo): le richieste stampate
+  // insieme sono annotate come un ordine solo, e «Ristampa» le rifà tutt'e due.
+  const mock2 = createMock({});
+  const b = await newPage(browser, mock2);
+  await b.page.goto(mock2.patientUrl);
+  await richieste(b.page);
+  await $panel(b.page, "#q").fill("dolore toracico");
+  await $panel(b.page, '.opt[title*="TROPONINA"]').click();   // POC
+  await $panel(b.page, '.opt[title*="RX TORACE ("]').first().click(); // RX
+  await $panel(b.page, "#goconfirm").click();
+  await b.page.waitForSelector("#psassist-print", { state: "attached", timeout: 60000 });
+  for (let k = 0; k < 4 && (await b.page.locator("#psassist-print").count()); k++) { await docStampa(b.page); await avanti(b.page); }
+  await b.page.waitForSelector("#psassist-print", { state: "detached", timeout: 8000 }).catch(() => {});
+  const confermate = Object.values(mock2.state.richieste).filter((r) => r.confirmed).length;
+  await b.page.goto(mock2.patientUrl);   // (le richieste nuove, sulla pagina)
+  const giro2 = async () => {
+    await richieste(b.page);
+    await b.page.locator("#psassist-host #stultima").click();
+    await b.page.waitForSelector("#psassist-print", { state: "attached", timeout: 15000 });
+    const heads = [];
+    for (let k = 0; k < 4 && (await b.page.locator("#psassist-print").count()); k++) { heads.push(await docStampa(b.page)); await avanti(b.page); }
+    return heads;
+  };
+  h = await giro2();
+  check(scen, confermate === 2 && h.length === 3 && /1 di 3 — Etichette/.test(h[0]) && h.some((x) => /Lista esami/.test(x)) && h.some((x) => /Richiesta radiologia/.test(x)),
+    `confermate qui insieme, laboratorio e RX: «Ristampa» le rifà tutt'e due, prima le etichette (got ${confermate} confermate · ${h.join(" | ")})`);
+  await b.context.close();
 }
 
 async function scenarioPrintHardViewer(browser) {

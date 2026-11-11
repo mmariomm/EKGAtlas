@@ -1041,7 +1041,8 @@
   };
   // «Ristampa»: l'ultimo ordine intero — la richiesta più recente, e con lei
   // le altre dello STESSO tocco su Conferma (una per erogatore: POC,
-  // laboratorio, RX), come le ha annotate la scheda dell'ordine (ricordaGesto).
+  // laboratorio, RX), come le ha annotate chi ne ha preso le etichette
+  // (maybeAutoPrint: la scheda dell'ordine, o quella del medico — ricordaStampe).
   // Mai a occhio, dall'ora: una richiesta di tre minuti prima può essere un
   // altro ordine. Senza l'annotazione, la più recente sola. Al più quattro.
   function ultimeRichieste(map, ep = "") {
@@ -16932,6 +16933,10 @@
     if (wizardOpen) return false;   // keep the flag: these jobs must not vanish behind another wizard
     tabStore.set("print.v1", null);
     prese();
+    // (le richieste che si stampano insieme sono lo stesso tocco su Conferma — il giro, la revisione,
+    // la cornice, il bottone del gestionale —: «Ristampa» le rifà insieme, come quelle di un ordine in
+    // sottofondo. Solo quali sono: i fogli restano quelli della pagina — quella nella cornice può non elencarli tutti)
+    ricordaStampe(here, null, { gesto: "p" + (flag.ts || Date.now()), rids: ids });
     // (la Conferma: quando l'ha premuta lui — il giro, o il bottone del gestionale)
     const p = Number(tabStore.get(PREMUTO, 0)) || 0;
     const premuto = p && p <= (flag.ts || 0) + 1000 && (flag.ts || 0) - p < PRINT_FLAG_TTL ? p : flag.ts || 0;
@@ -17073,15 +17078,17 @@
     const l = store.get(STAMPE_FRESCHE, {}) || {};
     return Object.fromEntries(Object.entries(l).filter(([, x]) => x && Date.now() - (x.ts || 0) < STAMPE_FRESCHE_TTL).slice(-30));
   };
+  // (`map` null: solo il tocco — i fogli e la loro ora restano quelli di prima)
   function ricordaStampe(ep, map, chi = null) {
-    if (!ep || !map || typeof map !== "object") return;
+    if (!ep || (map ? typeof map !== "object" : !chi)) return;
     try {
       const vive = stampeVive(), prima = vive[String(ep)] || {};
       const gesti = { ...(prima.gesti || {}) };
       const rids = chi ? (Array.isArray(chi.rids) ? chi.rids : [chi.rid]).filter(Boolean).map(String) : [];
       if (chi && chi.gesto && rids.length) gesti[String(chi.gesto)] = [...new Set([...(gesti[String(chi.gesto)] || []), ...rids])].slice(-6);
       const tieni = Object.fromEntries(Object.entries(gesti).slice(-10));
-      store.set(STAMPE_FRESCHE, { ...vive, [String(ep)]: { ts: Date.now(), map, gesti: tieni } });
+      const fogli = map ? { ts: Date.now(), map } : { ts: prima.ts || Date.now(), ...(prima.map ? { map: prima.map } : {}) };
+      store.set(STAMPE_FRESCHE, { ...vive, [String(ep)]: { ...fogli, gesti: tieni } });
     } catch { /* memoria piena: resta la pagina com'è */ }
   }
   // i fogli che la pagina del paziente elenca: quelli letti dopo di lei, se ci sono

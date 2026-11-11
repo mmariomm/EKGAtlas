@@ -1647,7 +1647,8 @@ il pannello ha mandato esami (o che ha aperto lui), confermate dal pannello o co
 gestionale. Una richiesta fatta tutta a mano nel gestionale, confermata col suo bottone, non
 stampa niente da sola. Dalla pagina paziente puoi **ristampare qualsiasi richiesta**: in fondo alle
 Richieste **Ristampa** rifà l'ultimo ordine — la richiesta più recente e le altre dello stesso tocco
-su Conferma, come le ha annotate la scheda dell'ordine (fino a quattro: POC, laboratorio, RX; mai a
+su Conferma, come le ha annotate chi le ha stampate — la scheda dell'ordine, o la tua: le richieste
+stampate insieme dopo una Conferma (fino a quattro: POC, laboratorio, RX; mai a
 occhio dall'ora — un'aggiunta di tre minuti dopo è un altro ordine —, e senza annotazione la più recente
 sola), etichette prima —, e **Altre…**
 apre la sezione Stampa: ogni richiesta della pagina — **anche quelle non fatte dall'estensione** —
