@@ -226,6 +226,8 @@ async function aggMiniAuto() {
 }
 chrome.runtime.onStartup?.addListener(() => { aggMiniAuto().catch(() => {}); });
 if (aggSolaLettura() && chrome.alarms) {
-  chrome.alarms.create(AGG_MINI_ALLARME, { periodInMinutes: AGG_MINI_ORE, delayInMinutes: 3 });
+  // solo se non c'è già: rifatta a ogni risveglio del service worker, la sveglia ripartiva da
+  // «fra 3 minuti» ogni volta — con un service worker che Chrome ferma ogni minuto non suonava mai
+  chrome.alarms.get(AGG_MINI_ALLARME).then((a) => a || chrome.alarms.create(AGG_MINI_ALLARME, { periodInMinutes: AGG_MINI_ORE, delayInMinutes: 3 })).catch(() => {});
   chrome.alarms.onAlarm.addListener((a) => { if (a && a.name === AGG_MINI_ALLARME) aggMiniAuto().catch(() => {}); });
 }

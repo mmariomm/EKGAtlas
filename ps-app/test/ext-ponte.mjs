@@ -2212,9 +2212,13 @@ await ctx.close();
 ctx = await apriBrowser();
 sw = await swDi(ctx);
 check((await coppiaPc())?.k === K3, "riaperto il browser, l'associazione c'è ancora: sta su disco (storage.local) fino alla revoca");
-check(/estensione sul PC si è riavviata/.test(await aspettaTel(tel, /Sessione chiusa/, 30000)), "il telefono sa che la sessione di prima è finita: «L'estensione sul PC si è riavviata»");
+// (senza una scheda del gestionale il PC non sta sul ponte: non serve a niente, e per il telefono non c'è)
+await sospendi(3000);
+check(relay.prese().pc === 0 && (await statoPonte())?.relay !== "su", "riaperto il browser senza il gestionale: il PC non torna sul ponte da solo");
 const doc3 = await ctx.newPage();
 await suPagina(doc3, A.worklistUrl);
+check(await finche(async () => relay.prese().pc === 1, 40000), "aperto il gestionale: il PC è di nuovo sul ponte");
+check(/estensione sul PC si è riavviata/.test(await aspettaTel(tel, /Sessione chiusa/, 30000)), "il telefono sa che la sessione di prima è finita: «L'estensione sul PC si è riavviata»");
 await tocca(tel, '[data-a="riapri"]');
 check(/ROSSI MARIO/.test(await aspettaTel(tel, /ROSSI MARIO/, 20000)), "«Riapri»: di nuovo l'elenco, senza QR nuovo");
 

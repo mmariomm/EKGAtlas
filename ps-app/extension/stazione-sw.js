@@ -99,21 +99,26 @@ function staOffertaDa(testo) {
 
 // --------------------------------------------------------------- una presa
 // Una WebSocket verso il ripetitore, che si rifà da sola (presto la prima
-// volta, poi sempre più di rado fino a 15 secondi), col battito ogni 20
-// secondi: se il «pong» non torna, se ne apre un'altra. `pari`: dall'altra
-// parte della stanza c'è qualcuno (lo dice il ripetitore).
+// volta, poi sempre più di rado: fino a 15 secondi mentre c'è un foglio in
+// viaggio o un abbinamento — `ascolta.attivo` —, fino a 5 minuti se no), col
+// battito ogni 20 secondi: se il «pong» non torna, se ne apre un'altra.
+// `pari`: dall'altra parte della stanza c'è qualcuno (lo dice il ripetitore).
+// Una sola alla volta: la vecchia si chiude prima di aprire la nuova; e chi
+// chiede di aprirla mentre un tentativo è in programma aspetta quello.
+const STA_TENUTA = 2 * 60e3;   // i tentativi ricominciano da capo solo dopo una presa che ha tenuto tanto
 class StaPresa {
-  constructor(ascolta) { Object.assign(this, { ws: null, url: "", su: false, pari: false, tentativi: 0, tRiprova: 0, tPong: 0, ascolta }); }
-  apri(url) {
+  constructor(ascolta) { Object.assign(this, { ws: null, url: "", su: false, pari: false, tentativi: 0, tRiprova: 0, tPong: 0, aperta: 0, ascolta }); }
+  apri(url, forte = false) {
     if (this.ws && this.url === url && this.ws.readyState <= 1) return;
+    if (!forte && !this.ws && this.tRiprova && this.url === url) return;
     this.stacca();
     this.url = url;
-    clearTimeout(this.tRiprova);
+    clearTimeout(this.tRiprova); this.tRiprova = 0;
     let ws;
     try { ws = new WebSocket(url); } catch { this.riprova(); return; }
     ws.binaryType = "arraybuffer";
-    this.ws = ws;
-    ws.onopen = () => { if (this.ws !== ws) return; this.su = true; this.tentativi = 0; this.ascolta.stato?.(); };
+    this.ws = ws; this.aperta = 0;
+    ws.onopen = () => { if (this.ws !== ws) return; this.su = true; this.aperta = staOra(); this.ascolta.stato?.(); };
     ws.onmessage = (ev) => {
       if (this.ws !== ws) return;
       if (ev.data === "pong") { clearTimeout(this.tPong); this.tPong = 0; return; }
@@ -129,6 +134,7 @@ class StaPresa {
       if (this.ws !== ws) return;
       this.ws = null; this.su = false; this.pari = false;
       clearTimeout(this.tPong); this.tPong = 0;
+      if (this.aperta && staOra() - this.aperta >= STA_TENUTA) this.tentativi = 0;
       this.ascolta.stato?.(); this.ascolta.pari?.(false);
       this.riprova(ev && ev.code === 4001);
     };
@@ -139,20 +145,21 @@ class StaPresa {
     clearTimeout(this.tPong); this.tPong = 0;
     if (ws) try { ws.close(1000, "fine"); } catch { /* già chiusa */ }
   }
-  ferma() { this.url = ""; clearTimeout(this.tRiprova); this.stacca(); }
+  ferma() { this.url = ""; clearTimeout(this.tRiprova); this.tRiprova = 0; this.stacca(); }
   riprova(altrove = false) {
-    clearTimeout(this.tRiprova);
+    clearTimeout(this.tRiprova); this.tRiprova = 0;
     const url = this.url;
     if (!url) return;
-    const b = altrove ? 30e3 : Math.min(15e3, 1e3 * 2 ** Math.min(this.tentativi++, 4));
-    this.tRiprova = setTimeout(() => { if (this.url === url && !this.ws) this.apri(url); }, Math.round(b / 2 + Math.random() * b / 2));
+    const max = Math.max(this.ascolta.attivo?.() ? 15e3 : 5 * 60e3, altrove ? 30e3 : 0);
+    const b = Math.min(max, (altrove ? 30e3 : 1e3) * 2 ** Math.min(this.tentativi++, 9));
+    this.tRiprova = setTimeout(() => { this.tRiprova = 0; if (this.url === url && !this.ws) this.apri(url, true); }, Math.round(b / 2 + Math.random() * b / 2));
   }
   manda(f) { if (this.ws && this.ws.readyState === 1) { this.ws.send(f); return true; } return false; }
   battito() {
     const ws = this.ws;
     if (!ws || ws.readyState !== 1 || this.tPong) return;
     ws.send("ping");
-    this.tPong = setTimeout(() => { this.tPong = 0; if (this.ws !== ws) return; const u = this.url; this.stacca(); this.apri(u); }, STA_ATTESA.pong);
+    this.tPong = setTimeout(() => { this.tPong = 0; if (this.ws !== ws) return; const u = this.url; this.stacca(); this.apri(u, true); }, STA_ATTESA.pong);
   }
   // aperta e con qualcuno dall'altra parte, entro `ms`
   async pronta(ms) {
@@ -181,7 +188,16 @@ stm.presa = new StaPresa({
   dati: (b) => { stm.fila = stm.fila.then(() => stmRicevi(b)).catch(() => {}); },
   pari: (si) => { stmScriviStato(); if (si && stm.coppia && stm.coppia.revoca) stmDiRevoca().catch(() => {}); if (!si) stmFineSessione(); },
   stato: () => stmScriviStato(),
+  attivo: () => stmOccupato(),
 });
+// Quando la presa del medico serve: un foglio in viaggio (o un saluto, una
+// domanda), o una scheda del gestionale aperta su questo PC (o chiusa da meno
+// di 10 minuti: psaGestionale, ponte-sw.js). Se no, niente presa: il PC che
+// deve stampare la apre lui, e la stazione che non c'è «non risponde».
+let stmLavori = 0;
+const stmOccupato = () => stmLavori > 0 || !!stmSalutoInCorso || stm.attese.size > 0;
+const staGestionale = async () => (typeof psaGestionale === "function" ? psaGestionale().catch(() => true) : true);
+const stmUrl = () => staUrl(stm.host, stm.chiavi.stanza, "medico");
 function stmNota(testo) {
   stm.registro.push({ ts: staOra(), testo: corto(testo, 160) });
   if (stm.registro.length > 30) stm.registro.splice(0, stm.registro.length - 30);
@@ -212,7 +228,7 @@ async function stmAvviaOra() {
   }
   stm.coppia = c;
   if (!c) { stm.k = null; stm.chiavi = null; stm.chiaviDi = ""; stmFineSessione(); }
-  if (c && stm.host) stm.presa.apri(staUrl(stm.host, stm.chiavi.stanza, "medico"));
+  if (c && stm.host && (stmOccupato() || await staGestionale())) stm.presa.apri(stmUrl());
   else stm.presa.ferma();
   staSveglia();
   await stmScriviStato();
@@ -269,7 +285,9 @@ function stmSessione(ms = STA_ATTESA.saluto) {
   if (stm.sessione) return Promise.resolve(stm.sessione);
   if (stmSalutoInCorso) return stmSalutoInCorso;
   stmSalutoInCorso = (async () => {
-    if (!stmAttiva() || !(await stm.presa.pronta(ms))) return null;
+    if (!stmAttiva() || !stm.host) return null;
+    stm.presa.apri(stmUrl(), true);   // (chiusa perché non serviva: adesso serve)
+    if (!(await stm.presa.pronta(ms))) return null;
     const n = PonteCripto.b64u(PonteCripto.casuale(16));
     const r = new Promise((risolvi) => { stm.saluto = { n, risolvi }; });
     if (!stm.presa.manda(await PonteCripto.sigilla(stm.chiavi.salutoTel, PonteCripto.TIPO.SALUTO_TEL, 0, { v: 1, n, dev: "medico" }))) { stm.saluto = null; return null; }
@@ -296,6 +314,10 @@ async function stmChiedi(s, obj, ms) {
 // `rq`: il numero del foglio, lo stesso se lo si rimanda (la stazione lo
 // stampa una volta sola).
 async function stazioneStampa(tipo, pdf, copie, rq) {
+  stmLavori++;
+  try { return await stazioneStampaOra(tipo, pdf, copie, rq); } finally { stmLavori--; }
+}
+async function stazioneStampaOra(tipo, pdf, copie, rq) {
   const c = stm.coppia, nome = (c && c.nome) || STA_NOME;
   const fine = (o) => ({ copie: 1, ...o, stampante: nome, stazione: true, ts: staOra() });
   const nonRisponde = (why = `${nome} non risponde`) => fine({ ok: false, esito: "fallito", why, nonRisponde: true });
@@ -440,8 +462,23 @@ stz.presa = new StaPresa({
   dati: (b) => { stz.fila = stz.fila.then(() => stzRicevi(b)).catch(() => {}); },
   pari: (si) => { stzScriviStato(); if (si && stz.qui && stz.qui.revoca) stzDiRevoca().catch(() => {}); },
   stato: () => stzScriviStato(),
+  attivo: () => stz.inCorso.size > 0 || stz.stampa.size > 0,
 });
-stz.abbina = new StaPresa({ dati: (b) => { stz.fila = stz.fila.then(() => stzAbbina(b)).catch(() => {}); } });
+stz.abbina = new StaPresa({ dati: (b) => { stz.fila = stz.fila.then(() => stzAbbina(b)).catch(() => {}); }, attivo: () => true });
+// Quando la stazione sta sul ponte: con una scheda del gestionale aperta su
+// questo PC (o chiusa da meno di 10 minuti), con la sua pagina aperta, o con
+// un foglio in arrivo. Fuori turno, a gestionale chiuso, niente presa: il PC
+// del medico dice «Infermeria non risponde» e stampa da sé, o lo propone.
+const stzUso = { pagina: 0 };
+async function stzPagina() {
+  try {
+    const c = await chrome.runtime.getContexts?.({ contextTypes: ["TAB"] });
+    if (Array.isArray(c)) return c.some((x) => String(x.documentUrl || "").startsWith(chrome.runtime.getURL("stazione.html")));
+  } catch { /* Chrome vecchio */ }
+  // (prima di Chrome 116: la pagina che ha chiesto lo stato da meno di 10 minuti)
+  return staOra() - stzUso.pagina < 10 * 60e3;
+}
+const stzUtile = async () => stz.inCorso.size > 0 || stz.stampa.size > 0 || await stzPagina() || await staGestionale();
 const stzAttiva = () => !!stz.qui && !stz.qui.revoca;
 const stzNome = async () => corto(String((await chrome.storage.local.get(STA.nome))[STA.nome] || "").trim(), 40) || STA_NOME;
 const stzStampanti = async () => (await chrome.storage.local.get("stampa")).stampa || {};
@@ -473,7 +510,7 @@ async function stzAvviaOra() {
   }
   stz.qui = q;
   if (!q) { stz.k = null; stz.chiavi = null; stz.chiaviDi = ""; stz.sessione = null; stz.attesa = null; }
-  if (q && stz.host) stz.presa.apri(staUrl(stz.host, stz.chiavi.stanza, "stazione"));
+  if (q && stz.host && await stzUtile()) stz.presa.apri(staUrl(stz.host, stz.chiavi.stanza, "stazione"));
   else stz.presa.ferma();
   // l'offerta: finché vale e nessun PC l'ha presa, la sua stanza resta aperta
   const o = stz.offerta;
@@ -686,7 +723,7 @@ setInterval(() => {
   if (stz.offerta && stz.offerta.scade <= staOra()) stzAvvia().catch(() => {});
   // una chiamata qualunque all'API dell'estensione azzera il riposo del service worker (da Chrome 110: il solo
   // ping della presa conta da Chrome 116): senza, una stazione dormiente ha la presa aperta e non riceve niente
-  if (stm.coppia || stzAttiva()) try { chrome.runtime.getPlatformInfo().catch(() => {}); } catch { /* niente */ }
+  if (stm.presa.ws || stz.presa.ws) try { chrome.runtime.getPlatformInfo().catch(() => {}); } catch { /* niente */ }
 }, STA_BATTITO);
 
 // Le pagine dell'estensione (la stazione, le impostazioni del PC). Le chiavi non escono mai di qui.
@@ -694,7 +731,15 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   if (!msg || typeof msg !== "object" || typeof msg.t !== "string" || !msg.t.startsWith("stazione")) return;
   if (!String(sender && sender.url || "").startsWith(chrome.runtime.getURL(""))) return reply({ ok: false, why: "non da qui" }), true;
   const fai = (fn) => { staCaricato.then(fn).then(reply, (e) => reply({ ok: false, why: corto(e && e.message || e, 80) })); return true; };
-  if (msg.t === "stazioneStato") return fai(async () => ({ ok: true, stazione: await stzScriviStato(), lavori: (await chrome.storage.local.get(STA.lavori))[STA.lavori] || [] }));
+  // (la pagina della stazione aperta: la stazione sta sul ponte)
+  if (msg.t === "stazioneStato") {
+    return fai(async () => {
+      const prima = staOra() - stzUso.pagina >= 60e3;
+      stzUso.pagina = staOra();
+      if (prima && stz.qui && !stz.presa.ws) await stzAvvia();
+      return { ok: true, stazione: await stzScriviStato(), lavori: (await chrome.storage.local.get(STA.lavori))[STA.lavori] || [] };
+    });
+  }
   if (msg.t === "stazioneOfferta") return fai(async () => ({ ok: true, stazione: await stzOfferta() }));
   if (msg.t === "stazioneNome") {
     return fai(async () => {
