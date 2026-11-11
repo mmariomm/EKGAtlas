@@ -618,6 +618,56 @@ await blocco(async () => {
   const t5 = await telFinto(pc, k, DEV);
   check((await t5.manda({ id: 1, cmd: "ciao" })).some((x) => x.re === 1 && x.ok), "rientrati nel gestionale, lo stesso telefono riapre: la stessa associazione, niente QR nuovo");
 });
+// Un PC lasciato acceso senza il gestionale (la notte, il PC delle infermiere):
+// non sta sul ponte, e non ci torna a ogni risveglio del service worker. Con
+// la 3.85.2 ogni avvio apriva una presa: con Chrome che lo ferma ogni ~85 s,
+// 42 all'ora. Il gestionale aperto lo riporta sul ponte; chiuso, ci resta 10 minuti.
+await blocco(async () => {
+  const sessione = {}, gest = [];
+  const pc = await pcFinto({ sessione, gest });
+  const k = kDalQr((await pc.pagina({ t: "ponteAssocia" })).qr);
+  await sospendi(30);
+  check(pc.prese.length === 1 && pc.presa().readyState === 1, "«Associa» senza gestionale aperto: il PC sta sul ponte per il QR");
+  const t = await telFinto(pc, k, DEV);
+  await t.manda({ id: 1, cmd: "ciao" });
+  check(!!pc.pt().sessione, "(il telefono entra: una sessione)");
+  pc.salta(4 * 60e3);
+  await pc.ev("ponteControlla()");
+  check(!pc.pt().sessione && pc.presa().readyState === 3 && pc.pt().relay === "riposo" && !!pc.locale["ponte.coppia"],
+    "3 minuti senza comandi, nessuna scheda del gestionale: la sessione si chiude e il PC lascia il ponte (ws.close); l'associazione resta");
+  check(/lascia il ponte/.test(pc.pt().registro.map((x) => x.testo).join("\n")), "il registro del ponte lo dice");
+  // un'ora: il service worker riparte ogni 85 s (Chrome che lo ferma), senza gestionale
+  let aperte = 0;
+  for (let i = 0; i < 42; i++) {
+    const pcI = await pcFinto({ sessione, gest, locale: pc.locale });
+    pcI.salta(4 * 60e3 + i * 85e3);
+    await pcI.ev("ponteControlla()");
+    aperte += pcI.prese.length;
+  }
+  check(aperte === 0, `un'ora di risvegli del service worker (42, uno ogni 85 s) senza gestionale: ${aperte} prese aperte (3.85.2: 42)`);
+  // il medico apre il gestionale: il PC torna sul ponte (la scheda lo sveglia)
+  gest.push({ id: 7, url: GEST + "menuPsoEpisodio.do?EPISODIO_ID=1", active: true, windowId: 1, index: 0 });
+  const pcG = await pcFinto({ sessione, gest, locale: pc.locale });
+  await sospendi(30);
+  check(pcG.prese.length === 1 && pcG.presa().readyState === 1, "una scheda del gestionale aperta: il PC sta sul ponte");
+  await pcG.pagina({ t: "ponteSveglia" }, { url: GEST + "x", tab: { id: 7 } });
+  check(pcG.prese.length === 1, "le schede che svegliano non aprono prese in più (una sola, sempre)");
+  // chiusa: resta 10 minuti, poi lascia il ponte
+  gest.length = 0;
+  pcG.salta(9 * 60e3);
+  await pcG.ev("ponteControlla()");
+  check(pcG.presa().readyState === 1, "chiuso il gestionale, il PC resta sul ponte ancora per un po' (9 minuti: sì)");
+  pcG.salta(2 * 60e3);
+  await pcG.ev("ponteControlla()");
+  check(pcG.presa().readyState === 3 && pcG.prese.length === 1, "…e dopo 10 minuti lo lascia, senza riprovare");
+  // il ponte giù col gestionale aperto: i tentativi si diradano fino a minuti, e una presa che cade
+  // subito dopo essersi aperta non fa ripartire il conto
+  const b = await pcG.ev(`(() => { pt.tentativi = 0; const v = []; const s = setTimeout; const m = Math.random;
+    Math.random = () => 1; globalThis.setTimeout = (f, ms) => { v.push(ms); return 0; };
+    try { for (let i = 0; i < 12; i++) ponteRiprova(); } finally { globalThis.setTimeout = s; Math.random = m; pt.tentativi = 0; pt.tRiprova = 0; }
+    return v; })()`);
+  check(b[0] === 1000 && b[4] === 16000 && Math.max(...b) === 300000, `senza sessione i tentativi arrivano a 5 minuti (${b.map((x) => Math.round(x / 1000) + " s").join(", ")})`);
+});
 await blocco(async () => {
   // «Aggiorna i valori»: la scheda annotata in storage.session; il service
   // worker riparte a metà, e lei si chiude lo stesso, alla sua ora

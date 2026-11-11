@@ -251,9 +251,11 @@ blocco **«Per l'IT»**, da mandare così com'è.
 
 Dal Chrome del PC esce **una** connessione (due con una [stazione di stampa](#la-stazione-di-stampa) collegata, e una dal PC della stazione, uguali): una WebSocket su HTTPS, `wss://ekg-atlas.whirly.workers.dev/ponte/ws`,
 **TCP 443**, solo in uscita, che deve passare il proxy (l'upgrade a WebSocket). È un indirizzo
-`*.workers.dev` (Cloudflare): molti filtri web lo bloccano per categoria, e va consentito questo nome. È lunga — fino a 14
-ore — con un battito ogni **20 secondi** (un piccolo «ping»): non va chiusa per inattività né per
-durata. Nessuna porta in entrata, nessun UDP, nessun altro host. Dentro il TLS i messaggi sono cifrati
+`*.workers.dev` (Cloudflare): molti filtri web lo bloccano per categoria, e va consentito questo nome. C'è solo
+**mentre il gestionale è aperto** su quel PC (e per 10 minuti dopo), o durante una sessione col telefono: a
+gestionale chiuso nessun PC tiene connessioni verso il ponte. Mentre c'è è una sola, lunga, con un battito
+ogni **20 secondi** (un piccolo «ping»): non va chiusa per inattività né per durata; caduta, si riprova
+sempre più di rado (fino a 5 minuti fra un tentativo e l'altro, senza una sessione). Nessuna porta in entrata, nessun UDP, nessun altro host. Dentro il TLS i messaggi sono cifrati
 una seconda volta, da un capo all'altro (AES-256-GCM): si può **escludere dall'ispezione TLS** senza
 esporre niente, e né l'IT né Cloudflare possono leggerli. Il gestionale non vede niente di nuovo: le
 pagine che l'estensione apre o legge per un comando sono le stesse, con le stesse richieste, di quando
@@ -517,8 +519,12 @@ arrivato (la stazione assente, nessuna risposta al saluto o a un pezzo) → «no
 stampato; l'ultimo pezzo senza risposta → `esito` su una sessione nuova; non si sa → «forse
 stampato». La stazione non manda mai niente per prima, se non i saluti e «scollegata»: tutto il resto,
 sul PC, si scarta (`stm.ignorati`). Un service worker ripartito sulla stazione dice «riparti», e il PC
-risaluta. Le due prese restano aperte (battito ogni 20 secondi; una sveglia di Chrome ogni minuto le
-riapre: la stazione non ha schede del gestionale che la svegliano).
+risaluta. Le due prese ci sono solo quando servono: sul PC del medico con una scheda del gestionale
+aperta (o chiusa da meno di 10 minuti) o un foglio in viaggio — il PC la apre lui per stampare —; sulla
+stazione con il gestionale aperto, la sua pagina aperta o un foglio in arrivo. Fuori turno, a gestionale
+chiuso, niente presa: il PC del medico dice «Infermeria non risponde» e stampa da sé, o lo propone. Battito
+ogni 20 secondi; caduta, si riprova sempre più di rado (fino a 15 secondi con un foglio in viaggio, fino a 5
+minuti se no); una sveglia di Chrome ogni minuto ricontrolla se serve.
 
 **Scollegare**: da tutte e due le parti, due tocchi. Chi scollega non usa più K da subito; l'altro lo
 sa adesso (un saluto «revoca» con K), o appena si ricollega: per dirglielo chi ha scollegato tiene K,

@@ -658,6 +658,29 @@ const visti = ["ROSSI", "MARIO", "TROPONINA", "999001", "Infermeria", "%PDF", "J
 check(inoltrati.length > 20 && !visti.length, `il ripetitore ha inoltrato ${inoltrati.length} messaggi: niente in chiaro (trovati: ${visti.join(", ") || "nessuno"})`);
 
 // ===========================================================================
+// Fuori turno: Chrome aperto sul PC delle infermiere, ma né la pagina della
+// stazione né il gestionale. La stazione non tiene la presa (niente
+// connessioni tutta la notte); il PC del medico la vede «non presente».
+// Riaperta la pagina, la presa c'è di nuovo.
+sezione("fuori turno: senza la sua pagina né il gestionale, la stazione non sta sul ponte");
+await pSta.close();
+const vuota = await staCtx.newPage();
+await vuota.goto("about:blank");
+await staSw.evaluate(() => stzAvvia());
+check(!!(await finche(async () => (await pubblicoPc())?.presente === false && !(relay.prese().stazione) && !(await staSw.evaluate(() => !!stz.presa.ws)), 10000))
+  && !!(await staSw.evaluate(() => chrome.storage.local.get("stazione.qui").then((o) => o["stazione.qui"]))),
+  "chiusa la pagina della stazione, nessun gestionale sul suo PC: la presa si chiude (l'abbinamento resta), il PC del medico la vede «non presente»");
+const entrateSta = relay.entrate().stazione;
+await staSw.evaluate(() => stzAvvia());
+await staSw.evaluate(() => stzAvvia());
+await sospendi(1500);
+check(relay.entrate().stazione === entrateSta, "e i risvegli (la sveglia di ogni minuto) non la riaprono");
+pSta = await staCtx.newPage();
+await pSta.goto(EXTURL("stazione.html"));
+check(!!(await finche(async () => (await pubblicoPc())?.presente === true, 20000)) && relay.prese().stazione === 1, "riaperta la sua pagina: di nuovo sul ponte, una presa");
+await vuota.close();
+
+// ===========================================================================
 sezione("«Scollega» dalla stazione, poi dal PC (anche con la stazione spenta)");
 await pSta.locator("#scollega").click();
 check(/Scollego\?/.test(await pSta.locator("#scollega").innerText()), "«Scollega» chiede conferma");
