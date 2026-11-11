@@ -605,6 +605,43 @@ if (await prova("una conferma nella scheda del medico: la striscia, nessuna ante
   check(!!dietro && await aspettaChiusa(dietro), "la scheda dei PDF si è chiusa");
 }
 
+// ---- 3b'. il segno dell'ordine di un altro paziente: com'è, quanti, e il tocco ----
+// (✓ solo per «Confermata»: un carrello pronto non è fatto; due ordini dicono
+// «+1»; un tocco lo apre anche con un altro ordine che gira qui)
+if (await prova("il segno dell'ordine di un altro paziente: ⚠ per un carrello pronto, «+1» per il secondo, e il tocco lo apre")) {
+  installa(false);
+  await scelte(null);
+  await suPagina(doc, B.patientUrl);
+  const ora = Date.now();
+  const base = { ep: "999001", paziente: "ROSSI MARIO", n: 1, ts: ora, agg: ora, worker: null, resto: { mancano: [], controllare: [], nel: ["TROPONINA US"] } };
+  const scrivi = (l) => sw.evaluate((x) => ordScrivi(x), l);
+  const segnoPill = () => doc.evaluate(() => (document.getElementById("psassist-host")?.shadowRoot?.querySelector("#expand .segno")?.textContent || "").replace(/\s+/g, " ").trim());
+  // «solo carrello»: l'esame è nel carrello, la Conferma no
+  await scrivi([{ ...base, id: "pccarr0001", stato: "avviso", vista: { tag: "✓ 1 esame in carrello", testo: "Conferma dal gestionale", tono: "ok" } }]);
+  const carr = await finche(async () => (await segnoPill()) || false, 8000);
+  check(/^⚠ ROSSI M\.$/.test(carr || ""), `un carrello pronto, non confermato: «⚠ ROSSI M.», mai «✓» (got «${carr || "niente"}»)`);
+  // due ordini finiti dello stesso paziente: il più serio, e «+1»
+  await scrivi([{ ...base, id: "pccarr0001", stato: "avviso", vista: { tag: "✓ 1 esame in carrello", testo: "Conferma dal gestionale", tono: "ok" } },
+    { ...base, id: "pcerr0002", stato: "errore", agg: ora + 1, vista: { tag: "Non partita", testo: "niente inviato: riprova", tono: "err", quesito: "la scheda per l'ordine non si è aperta" } }]);
+  const due = await finche(async () => { const t = await segnoPill(); return /\+1/.test(t) ? t : false; }, 8000);
+  check(/^✕ ROSSI M\. \+1$/.test(due || ""), `due ordini finiti: il più serio, «✕ ROSSI M. +1» (got «${due || await segnoPill()}»)`);
+  // un ordine di BIANCHI che gira qui, e il segno di ROSSI accanto: il tocco apre ROSSI, non lo piega
+  const wid = await sw.evaluate(() => chrome.tabs.query({}).then((l) => l.find((t) => !/smarthealth/.test(t.url || ""))?.id));
+  await scrivi([{ ...base, id: "pcerr0002", stato: "errore", vista: { tag: "Non partita", testo: "niente inviato: riprova", tono: "err", quesito: "la scheda per l'ordine non si è aperta" } },
+    { id: "pcgira0001", ep: "999002", paziente: "BIANCHI ANNA", n: 2, stato: "corre", ts: ora, agg: ora, worker: wid, vista: { tag: "", badge: "2 esami", testo: "esame 1 di 2", tono: "run", prog: [1, 2] },
+      resto: { mancano: ["EMOCROMO"], controllare: [], nel: [] } }]);
+  const accanto = await doc.waitForFunction(() => document.getElementById("psassist-host")?.shadowRoot?.querySelector("#strsegno, #gchipsegno"), null, { timeout: 8000 }).catch(() => null);
+  check(!!accanto, "accanto alla striscia di BIANCHI che gira, il segno di ROSSI");
+  await doc.evaluate(() => document.getElementById("psassist-host").shadowRoot.querySelector("#strsegno, #gchipsegno")?.click());
+  const aperta = await doc.waitForFunction(() => {
+    const r = document.getElementById("psassist-host")?.shadowRoot;
+    const t = (r?.querySelector(".pill.run")?.innerText || r?.querySelector(".gchip")?.dataset.riga || "").replace(/\s+/g, " ").trim();
+    return /ROSSI MARIO/.test(t) && /Non partita/.test(t) ? t : false;
+  }, null, { timeout: 8000 }).then((h) => h.jsonValue()).catch(() => "");
+  check(!!aperta, `un tocco sul segno: la striscia è quella di ROSSI, «Non partita» — non piegata dietro l'ordine che gira (got «${aperta || "niente"}»)`);
+  await sw.evaluate(() => chrome.storage.session.set({ ordini: [] }));
+}
+
 // ---- 3c. una richiesta fatta tutta a mano: la sua Conferma non stampa ------
 // (stampa solo quello che ha ordinato PS Assist, anche con la stampa automatica)
 if (await prova("una richiesta fatta tutta a mano, confermata dal gestionale: niente stampa")) {
@@ -2018,6 +2055,7 @@ if (await prova("doppio clic sulle icone di stampa del gestionale: uno apre il P
   ctx.off("page", segna);
   await chiudiAperte();
   ritocca = null;
+  await scelte(ATTIVA);   // (le stampanti di prima: com'era)
 }
 
 await ctx.close();

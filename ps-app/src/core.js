@@ -86,6 +86,7 @@
   ]);
 
   const TIMEOUT_MS = 20000;      // per-request timeout
+  const PRESA_SCHEDA_MAX = 18e3;  // le etichette di un ordine prese col dialogo: oltre, i PDF si prendono quando servono (bg.js: PRESA_PDF_MAX = questo + TIMEOUT_MS)
   const PACE_MS = 250;           // gentle pause between consecutive requests
   // Le riletture dell'elenco prima di dire che un esame non è entrato, e la
   // pausa prima di ciascuna: un gestionale carico mette l'esame in carrello
@@ -1039,14 +1040,16 @@
     return nomiCorti([...all.flatMap((j) => j.filter((x) => x.printer === "etichettatrice")), ...all.flatMap((j) => j.filter((x) => x.printer !== "etichettatrice"))]);
   };
   // «Ristampa»: l'ultimo ordine intero — la richiesta più recente, e con lei
-  // quelle di pochi minuti prima: le richieste dello stesso tocco su Conferma
-  // (una per erogatore: POC, laboratorio, RX). Al più quattro.
-  const ULTIMA_INSIEME = 5 * 60e3;
-  function ultimeRichieste(map) {
+  // le altre dello STESSO tocco su Conferma (una per erogatore: POC,
+  // laboratorio, RX), come le ha annotate la scheda dell'ordine (ricordaGesto).
+  // Mai a occhio, dall'ora: una richiesta di tre minuti prima può essere un
+  // altro ordine. Senza l'annotazione, la più recente sola. Al più quattro.
+  function ultimeRichieste(map, ep = "") {
     const l = richiesteStampabili(map);
     if (!l.length) return [];
-    const t0 = printMeta(map, l[0]).ts;
-    return [l[0], ...l.slice(1, 4).filter((r) => { const t = printMeta(map, r).ts; return t0 && t && t0 - t <= ULTIMA_INSIEME; })];
+    const f = ep ? stampeVive()[String(ep)] : null;
+    const gruppo = f && f.gesti ? Object.values(f.gesti).find((rids) => Array.isArray(rids) && rids.includes(String(l[0]))) : null;
+    return gruppo ? l.filter((r) => gruppo.includes(String(r))).slice(0, 4) : [l[0]];
   }
   // Compact description of what a richiesta will print, e.g. "2× etichette + 2× liste".
   function printLabelFor(map, rid) {
@@ -8051,7 +8054,7 @@
     apriSegno() {
       const s = this.segnoOrdine;
       if (!s) return;
-      this._segnoAperto = s.id;
+      this._segnoAperto = s.id; this._segnoApertoTs = Date.now();
       this._sullaPill = false; clearTimeout(this._tApre);   // (il mouse è lì sopra: la finestra non si apre sotto il tocco)
       this._firmaOrdine = "";
       this.stripOrdine();
@@ -8061,7 +8064,7 @@
       const s = this.segnoOrdine;
       if (!s || this.runState || this.striscia) return "";
       const ico = s.tono === "err" ? "✕" : s.tono === "warn" ? "⚠" : "✓";
-      return `<span class="segno ${esc(s.tono)}" data-segno="1" title="${esc(s.titolo)} — tocca per aprirlo">${ico} ${esc(s.chi)}</span>`;
+      return `<span class="segno ${esc(s.tono)}" data-segno="1" title="${esc(s.titolo)} — tocca per aprirlo">${ico} ${esc(s.chi)}${s.n > 1 ? ` +${s.n - 1}` : ""}</span>`;
     }
     // A pannello aperto, quello che succede fuori dalla finestra — l'ordine in
     // sottofondo, la stampa, un errore, una ricetta — è un chip in
@@ -8100,18 +8103,20 @@
         s && s.righe && s.righe.length ? `<span class="gchiprighe">${this.righeHtml(s.righe)}</span>` : ""}`;
     }
     // accanto a una striscia (o al suo chip) il segno è un bottoncino, come gli avvisi piegati
+    // (accanto a una striscia che non è di un ordine — una stampa, un errore di questa scheda — il segno resta lo stesso)
     segnoBtnHtml(id) {
-      const g = this.striscia && this.striscia.segno;
+      const s = this.striscia;
+      const g = s && (s.segno || (!s.daOrdine ? this.segnoOrdine : null));
       if (!g) return "";
       const t = `${g.titolo} — tocca per aprirlo`;
-      return `<button class="pieg ${esc(g.tono)}" id="${id}" title="${esc(t)}" aria-label="${esc(t)}">${g.tono === "err" ? "✕" : g.tono === "warn" ? "⚠" : "✓"} ${esc(g.chi)}</button>`;
+      return `<button class="pieg ${esc(g.tono)}" id="${id}" title="${esc(t)}" aria-label="${esc(t)}">${g.tono === "err" ? "✕" : g.tono === "warn" ? "⚠" : "✓"} ${esc(g.chi)}${g.n > 1 ? ` +${g.n - 1}` : ""}</button>`;
     }
     // a finestra aperta il segno di un ordine finito (di un altro paziente) è un chip piccolo in intestazione
     segnoChip() {
       const s = this.segnoOrdine;
       if (!s || this.runState) return "";
       const ico = s.tono === "err" ? "✕" : s.tono === "warn" ? "⚠" : "✓";
-      return `<span class="gchip ${esc(s.tono)}" role="status" title="${esc(s.titolo)}"><button class="gcorpo" id="gchipsegno" title="${esc(s.titolo)} — tocca per aprirlo"><span class="gtick">${ico}</span><span class="gt"><b>${esc(s.chi)}</b></span></button></span>`;
+      return `<span class="gchip ${esc(s.tono)}" role="status" title="${esc(s.titolo)}"><button class="gcorpo" id="gchipsegno" title="${esc(s.titolo)} — tocca per aprirlo"><span class="gtick">${ico}</span><span class="gt"><b>${esc(s.chi)}</b>${s.n > 1 ? ` +${s.n - 1}` : ""}</span></button></span>`;
     }
     // gli avvisi di prima (un errore, un ordine da guardare) mentre un altro
     // ordine gira: piegati in un «!1» rosso accanto alla striscia; un tocco li mostra
@@ -8328,28 +8333,14 @@
       }
       if (esito === "incerta") {
         // Nessuna prova dalla cornice: la pagina del paziente, riletta con
-        // pazienza — e, se non la elenca, il carrello (il gestionale l'ha presa?)
-        const prova = await provaConferma(rid, ep, { patientUrl: plan?.patientUrl, panel: this, carrello: listUrl });
-        if (prova && prova.nonPartita) esito = "nonPartita";
-        else if (prova) {
+        // pazienza. (Il carrello no: quanto ci ha messo la Conferma nella
+        // cornice non si sa, e senza la strada veloce non si giudica da lui.)
+        const prova = await provaConferma(rid, ep, { patientUrl: plan?.patientUrl, panel: this });
+        if (prova) {
           let partita = false;
           try { partita = maybeAutoPrint(this, prova.doc, prova.url); } catch { partita = false; }
           esito = partita ? "stampata" : "confermata";
         }
-      }
-      if (esito === "nonPartita") {
-        // Il carrello ha ancora i suoi esami e la sua Conferma: il gestionale
-        // non l'ha presa. Mai una seconda Conferma da sola: un tocco apre il
-        // carrello, e lì la preme il medico.
-        tabStore.set("confirm.v1", null);
-        if (TRACCIA) TRACCIA.attiva = false;
-        segnaErrore("ordine", { episodio: ep, richiesta: rid, motivo: "Conferma non presa dal gestionale", traccia: riassuntoTraccia() });
-        const str = { tag: "Non partita", testo: "Il gestionale non ha preso la Conferma: premi tu Conferma", tono: "err" };
-        this.message = { head: "Il gestionale non ha preso la Conferma", body: "Il carrello ha ancora i suoi esami e il suo bottone Conferma: aprilo e premi tu Conferma." };
-        this.segnala({ tag: "Non partita", testo: "apri il carrello e premi Conferma", titolo: "tocca per il carrello", tono: "err", paziente: chi,
-          onTap: () => { consegna(str); nav(listUrl); } });
-        this.render();
-        return;
       }
       const fine = { n, ts: Date.now() };
       if (esito === "stampata" || esito === "confermata") confermataProvata(rid);
@@ -8710,6 +8701,21 @@
       if (!r || !r.ok) return;
       this.log(`${now()}  ── «Conferma di nuovo» per ${p.patientName || "il paziente"}: richiesta ${rid}, una volta ──`);
       this.segnala({ tag: "", testo: "Confermo di nuovo…", tono: "run" });
+      // Confermata intanto altrove (il medico sul carrello: la sua scheda l'ha
+      // provata, ha stampato le etichette e l'ha tolta dalle «da confermare»):
+      // niente si preme e niente si stampa da qui. Se la pagina del paziente
+      // la elenca, «Confermata · era già confermata» — la Ristampa resta in
+      // fondo alle sue Richieste, un tocco del medico; se no, il carrello.
+      if (!daConfermare().some((x) => x.rid === rid)) {
+        const gia = await provaConferma(rid, ep, { patientUrl: p.patientUrl || "", panel: this, una: true });
+        if (LAVORO !== L || this._lavoroChiuso) return;
+        if (gia && gia.doc) {
+          this.log(`${now()}  non è più da confermare, e la pagina del paziente la elenca: era già confermata — niente premuto, niente stampato`);
+          ricordaStampe(ep, printModel(gia.doc, gia.url), { gesto: L.gesto || L.id, rid });
+          return this.consegnaLavoro({ tag: "Confermata", testo: "era già confermata: Ristampa in fondo alle sue Richieste", tono: "ok" }, null, "avviso");
+        }
+        return alCarrello("non risulta più da confermare: guarda le sue richieste — niente premuto");
+      }
       // la ricevuta del giro di allora, senza la foto delle richieste di prima:
       // le richieste nate da allora sono altri ordini, non si stampano con questa
       const { prima, ...rc } = p.receipt || {};
@@ -8726,6 +8732,17 @@
       const items = Array.isArray(rc.items) ? rc.items : [];
       const last = items[items.length - 1];
       if (!last) return alCarrello("la ricevuta del giro non c'è più: niente premuto");
+      // Il carrello che è qui adesso, subito prima di premere: ancora col SUO
+      // Conferma e con tutti gli esami della ricevuta per questo erogatore. Se
+      // no non è più quello di allora (un esame tolto, la richiesta passata):
+      // niente si preme, decide il medico.
+      const vivo = examModel(document, location.href);
+      const nel = new Set((vivo.exams || []).filter((e) => e.isDel).map((e) => String(e.code)));
+      const suoi = items.filter((i) => String(i.res) === String(vivo.res)).map((i) => String(i.code));
+      if (String(vivo.richiestaId) !== rid || !vivo.confirmButton || !suoi.length || !suoi.every((c) => nel.has(c))) {
+        this.log(`${now()}  il carrello non è più quello della ricevuta (${vivo.confirmButton ? "manca un esame" : "senza la sua Conferma"}): niente premuto`);
+        return alCarrello("il carrello non è più quello della ricevuta: niente premuto");
+      }
       tabStore.set("confirm.v1", { richiestaId: rid, episodeId: ep, lastCode: last.code, lastLabel: last.label, count: items.length, ts: Date.now() });
       let cliccato = false;
       try { cliccato = maybeAutoConfirm(this); } catch (e) { this.log(`${now()}  conferma interrotta: ${e?.message || e}`); }
@@ -8884,15 +8901,28 @@
       if (this._segnoAperto && !this.ordini.some((x) => x.id === this._segnoAperto)) this._segnoAperto = null;
       const altrove = (x) => !!qui && !!x.ep && String(x.ep) !== String(qui) && !gira(x) && x.stato !== "coda" && x.stato !== "stampa" && x.id !== this._segnoAperto;
       const l = vivi.filter((x) => !altrove(x));
-      const segnoDi = vivi.filter(altrove).sort((a, b) => grado(a) - grado(b) || (b.agg || 0) - (a.agg || 0))[0];
-      const segno = segnoDi ? { id: segnoDi.id, chi: nomeCorto(segnoDi.paziente || ""),
-        tono: (segnoDi.pubblico || {}).tono === "err" ? "err" : (segnoDi.pubblico || {}).tono === "warn" ? "warn" : "ok",
-        titolo: [segnoDi.paziente, (segnoDi.pubblico || {}).titolo, (segnoDi.pubblico || {}).testo].filter(Boolean).join(" · ") } : null;
+      const altri = vivi.filter(altrove).sort((a, b) => grado(a) - grado(b) || (b.agg || 0) - (a.agg || 0));
+      const segnoDi = altri[0];
+      // (✓ solo per un ordine «Confermata», o per una stampa che non è un ordine
+      // — una ristampa, un consenso —: un carrello pronto, «solo carrello», non è fatto)
+      const tonoSegno = (x) => {
+        const p = x.pubblico || {};
+        if (p.tono === "err" || p.tono === "warn") return p.tono;
+        return (x.stampa && x.stampa.tag === "Stampa") || p.titolo === "Confermata" ? "ok" : "warn";
+      };
+      const segno = segnoDi ? { id: segnoDi.id, chi: nomeCorto(segnoDi.paziente || ""), tono: tonoSegno(segnoDi), n: altri.length,
+        titolo: [segnoDi.paziente, (segnoDi.pubblico || {}).titolo, (segnoDi.pubblico || {}).testo].filter(Boolean).join(" · ") + (altri.length > 1 ? ` (e altri ${altri.length - 1})` : "") } : null;
       this.segnaSegno(segno);
       const avviso = (x) => grado(x) <= 1 && !gira(x) && x.stato !== "stampa";
       if (this._mostraAvviso && !l.some((x) => x.id === this._mostraAvviso && avviso(x))) this._mostraAvviso = null;
-      const piegati = l.some(gira) ? l.filter((x) => avviso(x) && x.id !== this._mostraAvviso) : [];
-      const fuoco = [...l].filter((x) => !piegati.includes(x)).sort((a, b) => grado(a) - grado(b) || (b.agg || 0) - (a.agg || 0))[0];
+      // (il segno toccato è la striscia: mai piegato, mai coperto da quello che
+      // girava già. Un ordine partito DOPO il tocco vince lui, come sempre — il
+      // suo ⏹ a vista —, e quello toccato si piega accanto: un tocco, e torna)
+      const apertoX = this._segnoAperto ? l.find((x) => x.id === this._segnoAperto) : null;
+      const dopo = !!apertoX && l.some((x) => gira(x) && x !== apertoX && (x.ts || 0) > (this._segnoApertoTs || 0));
+      const aperto = apertoX && !dopo ? apertoX : null;
+      const piegati = l.some(gira) ? l.filter((x) => x !== aperto && x.id !== this._mostraAvviso && (avviso(x) || x === apertoX)) : [];
+      const fuoco = aperto || [...l].filter((x) => !piegati.includes(x)).sort((a, b) => grado(a) - grado(b) || (b.agg || 0) - (a.agg || 0))[0];
       clearTimeout(this._tOk);
       const scadono = [fuoco, segnoDi].filter((x) => x && grado(x) === 6).map((x) => OK_STRISCIA - (Date.now() - (x.agg || 0)) + 500);
       if (scadono.length) this._tOk = setTimeout(() => this.stripOrdine(), Math.min(...scadono));
@@ -11537,7 +11567,7 @@
       // una per una (la sezione Stampa).
       let ristampa = "";
       if (this.pageType === "patient" && this.epDiQuesta()) {
-        const map = stampePaziente(this.epDiQuesta()), ult = ultimeRichieste(map), altre = richiesteStampabili(map).length > ult.length;
+        const map = stampePaziente(this.epDiQuesta()), ult = ultimeRichieste(map, this.epDiQuesta()), altre = richiesteStampabili(map).length > ult.length;
         if (ult.length) ristampa = `<div class="rpiede"><button class="lnk ultima" id="stultima" title="Etichette e fogli di nuovo, di tutto l'ultimo ordine: ${
           esc(ult.map((r) => printMeta(map, r).when || "richiesta " + r).join(" e "))}${perChi ? ` — ${esc(perChi)}` : ""}">${icoIn("etichetta")}Ristampa</button>${
           altre ? ` <button class="lnk ultima" id="stampaltre" title="Le richieste di prima, una per una">Altre…</button>` : ""}</div>`;
@@ -15074,7 +15104,7 @@
       $("#stampaltre")?.addEventListener("click", () => this.setView("stampa"));
       $("#stultima")?.addEventListener("click", () => {
         const map = stampePaziente(this.epDiQuesta());
-        const ids = ultimeRichieste(map);
+        const ids = ultimeRichieste(map, this.epDiQuesta());
         avviaStampa(fogliDi(map, ids), { panel: this, title: `${ids.length > 1 ? "Richieste" : "Richiesta"} ${ids.join(" e ")}.`,
           ep: this.episodeId, paziente: this.nomePaziente(), url: location.href, jobId: `rist-${ids.join("-")}-${Math.floor(Date.now() / 2000)}` });
       });
@@ -15224,13 +15254,16 @@
   const GUARDA = "guarda le sue richieste: se c'è, Ristampa; se no, apri il carrello";
   const RIFARLA = "Se c'è già fra le sue richieste: Ristampa. Se no: premi tu Conferma";
   const RIFARLA_PERCHE = "La Conferma è partita, ma la pagina del paziente non mostra questa richiesta. Prima di rifarla guarda le sue richieste (in fondo alle Richieste, «Altre…»): se c'è, Ristampa; se no, controlla il carrello e premi tu Conferma.";
-  // `carrello`: l'elenco della richiesta. Se la pagina del paziente non la
-  // elenca, si legge anche lui (carrelloFermo): ancora coi suoi esami e col
-  // SUO bottone Conferma, il gestionale non l'ha presa — «Non partita», senza
-  // aspettare. Quando: subito dopo la prima lettura se la Conferma è tornata
-  // sospettamente in fretta (`subito`, CONFERMA_SOSPETTA: un indizio di quando
-  // guardare, mai una prova), se no dopo l'ultima attesa. `una`: una lettura
-  // sola, senza attese. → { doc, url } confermata, { nonPartita } o null.
+  // `carrello`: l'elenco della richiesta. SOLO se la Conferma è tornata
+  // sospettamente in fretta (`subito`: prima di CONFERMA_SOSPETTA — l'unica
+  // Conferma ignorata delle registrazioni è tornata in 0,2 s, le vere in
+  // 3–14 s) e la pagina del paziente alla prima lettura non la elenca, si
+  // legge anche lui (carrelloFermo): ancora coi suoi esami e col SUO bottone
+  // Conferma, il gestionale non l'ha presa — «Non partita». Una Conferma
+  // tornata coi suoi tempi non si giudica dal carrello (che aspetto abbia
+  // quello di una richiesta confermata, le registrazioni non lo dicono): resta
+  // «Da controllare». `una`: una lettura sola, senza attese.
+  // → { doc, url } confermata, { nonPartita } o null.
   async function provaConferma(rid, ep, { patientUrl = "", panel = null, carrello = "", subito = false, una = false } = {}) {
     // solo l'indirizzo di una pagina da leggere: mai quello di un modulo inviato
     const leggibile = (x) => { try { return !!x && new URL(x).origin === location.origin && !/[?&](ccsForm|Insert|Delete|Update)=/i.test(x); } catch { return false; } };
@@ -15238,7 +15271,7 @@
     const u = [qui, patientUrl, (tuttiPazienti().find((p) => p.ep === ep) || {}).url].find(leggibile) || "";
     if (!rid || !ep || !u) return null;
     const attese = una ? [] : CONFIRM_WAITS;
-    let guardato = !carrello;
+    let guardato = !carrello || !subito;   // (il carrello solo sulla strada veloce)
     for (let k = 0; ; k++) {
       try {
         const { doc, url } = await fetchDoc(u);
@@ -15251,7 +15284,7 @@
       } catch (e) {
         panel?.log(`${now()}  controllo della conferma non riuscito: ${e?.head || e?.message || e}`);
       }
-      if (!guardato && (subito || k >= attese.length)) {
+      if (!guardato) {
         guardato = true;
         if (await carrelloFermo(rid, ep, carrello, panel)) return { nonPartita: true };
       }
@@ -16365,8 +16398,16 @@
       }
       return pre.get(k);
     };
+    // (passati PRESA_SCHEDA_MAX non se ne comincia un altro: quello in volo
+    // finisce entro il suo TIMEOUT_MS, e il service worker aspetta al più la
+    // somma — PRESA_PDF_MAX —, così il prossimo ordine non parte mai mentre una
+    // lettura di questa scheda sposta la richiesta corrente della sessione)
     (async () => {
-      for (let k = 0; k < jobs.length && !chiuso; k++) await prendi(k).catch(() => {});
+      const t0 = Date.now();
+      for (let k = 0; k < jobs.length && !chiuso; k++) {
+        if (opzioni.presi && Date.now() - t0 > PRESA_SCHEDA_MAX) break;
+        await prendi(k).catch(() => {});
+      }
       if (opzioni.presi && hasExt()) ask({ t: "ordinePresi", id: opzioni.presi }).catch(() => {});
     })();
 
@@ -16841,7 +16882,7 @@
     // qui, come sempre (con la stampa automatica, anche lei dal service worker).
     if (LAVORO && String(flag.episodeId || here) === String(LAVORO.ep)) {
       tabStore.set("print.v1", null);
-      ricordaStampe(here, map);   // (la pagina del medico non si ricarica: i fogli nuovi li vede da qui)
+      ricordaStampe(here, map, { gesto: LAVORO.gesto || LAVORO.id, rids: ids });   // (la pagina del medico non si ricarica: i fogli nuovi li vede da qui; e quali sono di questo tocco)
       if (panel) panel._lavoroChiuso = true;   // da qui la scheda non racconta più niente: l'ordine è delle etichette
       consegnaFogli(panel, LAVORO.id, jobs, fine);
       panel?.segnala({ tag: "Confermata", testo: "Etichette pronte: si stampano dove sei", tono: "ok" });
@@ -16939,7 +16980,7 @@
       const prova = await provaConferma(rid, ep, { patientUrl: (L.piano && L.piano.patientUrl) || "", panel, carrello: listUrl, subito });
       if (LAVORO !== L || (panel && panel._lavoroChiuso)) return;
       if (prova && prova.doc && maybeAutoPrint(panel, prova.doc, prova.url)) return;
-      if (prova && prova.doc) { ricordaStampe(ep, printModel(prova.doc, prova.url)); return fine({ tag: "Confermata", testo: "etichette dalla sua pagina, Stampa", tono: "ok" }); }
+      if (prova && prova.doc) { ricordaStampe(ep, printModel(prova.doc, prova.url), { gesto: L.gesto || L.id, rid }); return fine({ tag: "Confermata", testo: "etichette dalla sua pagina, Stampa", tono: "ok" }); }
       if (prova && prova.nonPartita) {
         // Il gestionale non l'ha presa (il suo carrello lo dice). Mai una
         // seconda Conferma da sola: «Conferma di nuovo» è un tocco del medico,
@@ -16975,19 +17016,38 @@
   // esami, ✓ e ⏳) lo scrive già leggiStatoPagina. L'«Aggiorna» del gestionale
   // resta quello che è: un tocco tuo.
   const STAMPE_FRESCHE = "stampeFresche.v1", STAMPE_FRESCHE_TTL = 12 * 3600e3;
-  function ricordaStampe(ep, map) {
+  // (`chi`: la richiesta e il tocco su Conferma da cui viene — `gesti`, per
+  // episodio: quali richieste sono lo stesso ordine, perché «Ristampa» le rifaccia insieme)
+  const stampeVive = () => {
+    const l = store.get(STAMPE_FRESCHE, {}) || {};
+    return Object.fromEntries(Object.entries(l).filter(([, x]) => x && Date.now() - (x.ts || 0) < STAMPE_FRESCHE_TTL).slice(-30));
+  };
+  function ricordaStampe(ep, map, chi = null) {
     if (!ep || !map || typeof map !== "object") return;
     try {
-      const l = store.get(STAMPE_FRESCHE, {}) || {};
-      const vive = Object.fromEntries(Object.entries(l).filter(([k, x]) => k !== String(ep) && x && Date.now() - (x.ts || 0) < STAMPE_FRESCHE_TTL).slice(-30));
-      store.set(STAMPE_FRESCHE, { ...vive, [String(ep)]: { ts: Date.now(), map } });
+      const vive = stampeVive(), prima = vive[String(ep)] || {};
+      const gesti = { ...(prima.gesti || {}) };
+      const rids = chi ? (Array.isArray(chi.rids) ? chi.rids : [chi.rid]).filter(Boolean).map(String) : [];
+      if (chi && chi.gesto && rids.length) gesti[String(chi.gesto)] = [...new Set([...(gesti[String(chi.gesto)] || []), ...rids])].slice(-6);
+      const tieni = Object.fromEntries(Object.entries(gesti).slice(-10));
+      store.set(STAMPE_FRESCHE, { ...vive, [String(ep)]: { ts: Date.now(), map, gesti: tieni } });
     } catch { /* memoria piena: resta la pagina com'è */ }
   }
   // i fogli che la pagina del paziente elenca: quelli letti dopo di lei, se ci sono
+  // (scaduti, non valgono nemmeno a leggerli)
   function stampePaziente(ep, doc = document, url = location.href) {
     const viva = printModel(doc, url);
-    const f = ep ? (store.get(STAMPE_FRESCHE, {}) || {})[String(ep)] : null;
+    const f = ep ? stampeVive()[String(ep)] : null;
     return f && f.map && f.ts > performance.timeOrigin && doc === document ? f.map : viva;
+  }
+  // all'avvio: quelli scaduti se ne vanno (anche se nessuno scrive più)
+  function potaStampe() {
+    try {
+      const l = store.get(STAMPE_FRESCHE, null);
+      if (!l) return;
+      const vive = stampeVive();
+      if (Object.keys(vive).length !== Object.keys(l).length) store.set(STAMPE_FRESCHE, vive);
+    } catch { /* niente */ }
   }
 
   // Le etichette di un ordine fatto in sottofondo arrivano qui, dalla scheda
@@ -17504,7 +17564,8 @@
       for (let k = 0; k < 3 && !r.ok && !r.no; k++) r = await ask({ t: "ordineNuovo", job });
       if (!r.ok) {
         const perche = r.no ? r.why || "rifiutato" : "il service worker non risponde: guarda il carrello prima di rifarlo";
-        if (!ordini.length) return { ok: false, errore: `Ordine non partito: ${perche}` };
+        // (senza risposta non si sa se è partito: «Da controllare» sul telefono, come sul PC — mai «niente inviato»)
+        if (!ordini.length) return { ok: false, ...(r.no ? {} : { incerto: true }), errore: r.no ? `Ordine non partito: ${perche}` : `Non so se l'ordine è partito: ${perche}` };
         const fuori = gambe.slice(g).map(([, , nome]) => nome).join(", ");
         return { ok: true, dati: { ordini, avviso: `Non partiti: ${fuori} (${perche})` }, registro: `ordine per ${p.name}: non partiti ${fuori}` };
       }
@@ -18498,6 +18559,7 @@
     if (!eTerapie()) tabStore.del(TERAPIA);   // il giro della terapia vive solo di pagina delle terapie in pagina delle terapie
     LAVORO = chi && chi.lavoro ? chi.lavoro : null;
     if (LAVORO) annotaDurataConferma();   // (la prima pagina dopo il clic su Conferma: quanto ci ha messo)
+    potaStampe();   // (i fogli letti dopo un ordine, scaduti: via, anche se nessuno scrive più)
     segnaScheda(chi);
     PONTE_VALORI = chi && chi.ponteValori ? chi.ponteValori : null;
     PONTE_CARTELLA = chi && chi.ponteCartella ? chi.ponteCartella : null;

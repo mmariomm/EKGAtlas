@@ -1018,7 +1018,9 @@ const daPrendere = (rec) => rec.stato === "stampo" && !rec.ferma && !rec.interro
 // che manda esami intanto le avrebbe fatte aspettare dietro di sé.
 // (In memoria: un service worker che riparte non aspetta niente.)
 const PRESE = new Map();   // id dell'ordine → { t: quando una scheda ha preso le sue etichette, tab: quale }
-const PRESA_PDF_MAX = 20e3, DARE_MAX = 12e3;
+// (PRESA_PDF_MAX: i 18 s in cui la scheda comincia a prendere i PDF — PRESA_SCHEDA_MAX, content — più
+// i 20 s che l'ultimo può metterci — TIMEOUT_MS —: mai il prossimo ordine con una sua lettura in volo)
+const PRESA_PDF_MAX = 40e3, DARE_MAX = 12e3;
 const preseInCorso = () => { const ora = Date.now(); for (const [k, x] of PRESE) if (ora - x.t > PRESA_PDF_MAX) PRESE.delete(k); return PRESE.size > 0; };
 // (la scheda che le ha prese se ne va — chiusa, o su un'altra pagina —: i suoi PDF non arrivano più, la coda non li aspetta)
 const preseVia = (tab) => {
@@ -1128,6 +1130,12 @@ async function ordApri(rec, l, stato = "avvio") {
   // la memoria del browser non deve buttarla via a metà giro
   chrome.tabs.update(t.id, { autoDiscardable: false }).catch(() => {});
 }
+// Un ordine la cui scheda non è partita: niente inviato, si riprova. Ma per
+// «Conferma di nuovo» la richiesta c'è già, coi suoi esami nel carrello:
+// niente premuto, e la Conferma resta da premere — lì.
+const nonPartito = (rec, perche) => (rec && rec.riconfermata
+  ? { tag: NON_PARTITA, testo: "apri il carrello e premi Conferma", tono: "err", quesito: `${perche}: niente premuto` }
+  : { tag: NON_PARTITA, testo: "niente inviato: riprova", tono: "err", quesito: perche });
 // La prossima in coda, se nessun motore sta girando. Se la sua scheda non si
 // apre, quell'ordine non parte e lo si dice: niente è stato mandato.
 async function ordAvanti(l) {
@@ -1138,7 +1146,7 @@ async function ordAvanti(l) {
     try { await ordApri(next, l); return; }
     catch {
       next.stato = "errore"; next.agg = Date.now(); next.worker = null;
-      next.vista = { tag: NON_PARTITA, testo: "niente inviato: riprova", tono: "err", quesito: "la scheda per l'ordine non si è aperta" };
+      next.vista = nonPartito(next, "la scheda per l'ordine non si è aperta");
       await ordScrivi(l);
     }
   }
@@ -1229,7 +1237,7 @@ async function ordControlla(l) {
       if (rec.stato === "stampo") rec.interrotta = rec.interrotta || "la scheda dell'ordine si è chiusa";
     } else if (rec.stato === "avvio" && ora - rec.agg > AVVIO_MAX) {
       rec.stato = "errore"; rec.agg = ora;
-      rec.vista = { tag: NON_PARTITA, testo: "niente inviato: riprova", tono: "err", quesito: "la scheda dell'ordine non ha risposto" };
+      rec.vista = nonPartito(rec, "la scheda dell'ordine non ha risposto");
       await ordSlega(rec);
     } else if (rec.stato === "avvio" && t && !rec.riaperta && rec.consegnata == null && ora - rec.agg > AVVIO_VUOTA && !sulGestionale(t.url) && !sulGestionale(t.pendingUrl)) {
       // La scheda nuova non è mai arrivata sulla pagina (il suo processo è
@@ -1244,7 +1252,7 @@ async function ordControlla(l) {
       try { await ordApri(rec, l); }
       catch {
         rec.stato = "errore"; rec.agg = ora; rec.worker = null;
-        rec.vista = { tag: NON_PARTITA, testo: "niente inviato: riprova", tono: "err", quesito: "la scheda per l'ordine non si è aperta" };
+        rec.vista = nonPartito(rec, "la scheda per l'ordine non si è aperta");
       }
     } else if (rec.stato === "corre" && ora - rec.agg > MUTO_MAX) {
       // Zitta da troppo: le si chiede se c'è (ordSonda, fuori dalla fila).
@@ -1271,8 +1279,10 @@ async function ordControlla(l) {
 // Etichette che aspettavano una scheda e non si stampano più — non le ha prese
 // nessuno, o «Annulla» —: non stampate, e lo si dice in ambra, mai un verde.
 function nonStampate(rec, testo) {
+  // («Confermata» solo per un ordine confermato; una ristampa, un consenso, un'etichetta anagrafica dicono com'è andata e basta)
+  const ordine = !!rec.confermata || !!(rec.stampa && rec.stampa.tag === "Confermata");
   rec.stato = "avviso"; rec.agg = Date.now(); rec.stampa = null; delete rec.fogli;
-  rec.vista = { tag: CONFERMATA, testo: "Etichette NON stampate", quesito: testo, tono: "warn" };
+  rec.vista = ordine ? { tag: CONFERMATA, testo: "Etichette NON stampate", quesito: testo, tono: "warn" } : { tag: "Etichette NON stampate", testo, tono: "warn" };
 }
 // «Ci sei?» alle schede zitte — fuori dalla fila: una scheda bloccata non deve
 // fermare gli altri ordini, il ⏹ né le letture —; la risposta si scrive dopo,
@@ -1523,6 +1533,9 @@ async function stazioneSonda() {
 // gestionale le passa alla stampa automatica). Dal telefono solo con la stampa
 // automatica: un dialogo su un PC che nessuno guarda non è una stampa.
 async function ordQui(id, { daTel = false } = {}) {
+  // (dal telefono prima di tutto la stampa automatica: anche un ordine che gira
+  // cambierebbe strada verso un dialogo su un PC che nessuno guarda)
+  if (daTel && !(await stampaScelte().catch(() => null))) return { ok: false, errore: "Sul PC la stampa automatica non è impostata" };
   const fatto = await inFilaOrd(async () => {
     const l = await ordLeggi();
     const rec = l.find((x) => x.id === id && x.dest === "stazione");
@@ -1537,12 +1550,15 @@ async function ordQui(id, { daTel = false } = {}) {
   if (fatto.ok || !fatto.rec) return fatto;
   const rec = fatto.rec;
   if (!rec.stampa || !["stampa", "avviso"].includes(rec.stato)) return { ok: false, errore: "Niente da stampare qui" };
-  if (daTel && !(await stampaScelte().catch(() => null))) return { ok: false, errore: "Sul PC la stampa automatica non è impostata" };
   const f = Array.isArray(rec.fogli) ? rec.fogli : [];
   // (dal telefono mai un foglio «forse stampato»: chi tocca non vede il PC — lì si guarda, e si decide al PC)
   if (daTel && f.some((x) => x.stato === "sconosciuto")) return { ok: false, errore: "Forse già stampate: guarda lì, poi decidi dal PC" };
   if (daTel && !f.some((x) => x.stato === "fallito")) return { ok: false, errore: "Niente da stampare sul PC" };
-  const non = rec.stampa.jobs.filter((_, i) => f[i] && !usciti(f[i]) && f[i].stato !== "tolto");
+  // In «stampa» (ordStampoFine) i fogli dell'ordine sono già solo quelli non
+  // stampati: tutti, così come sono — `fogli` ha ancora l'elenco intero, e i
+  // suoi indici non sono più quelli dei fogli. In «avviso» i fogli sono tutti:
+  // quelli non usciti, come fa «Stampa qui» sulla striscia (ordineStampaQui).
+  const non = rec.stato === "avviso" ? rec.stampa.jobs.filter((_, i) => f[i] && !usciti(f[i]) && f[i].stato !== "tolto") : [];
   const tutte = (await chrome.tabs.query({}).catch(() => [])).filter((t) => sulGestionale(t.url));
   for (const t of [...tutte.filter((x) => x.active), ...tutte.filter((x) => !x.active)]) {
     if (await ordDai(rec.id, t.id, true, non.length ? non : null, "qui")) return { ok: true };
@@ -1973,7 +1989,7 @@ function ordMessaggio(msg, sender, reply) {
     try { paz = new URL(rec.url).searchParams.get("MVPG") === "PsoEpisodioClinicoAmbulatorio" && leggibileOrd(rec.url) ? rec.url : ""; } catch { paz = ""; }
     const piano = { startPage: "riconferma", richiestaId: rid, episodeId: rec.ep, patientName: rec.paziente || "", patientUrl: paz,
       listUrl: c.url, receipt: rc, items: rc.items, kind: rec.kind || "" };
-    const nuovo = { id, ep: rec.ep, paziente: rec.paziente, n: rc.items.length, autoConfirm: true, url: c.url, kind: rec.kind || "", rid,
+    const nuovo = { id, ep: rec.ep, paziente: rec.paziente, n: rc.items.length, autoConfirm: true, url: c.url, kind: rec.kind || "", rid, riconfermata: true,
       listUrl: c.url, opener: tab.id, worker: null, quesito: rec.quesito || "", stato: "coda", ts: Date.now(), agg: Date.now(), vista: null,
       resto: { mancano: [], controllare: [], nel: nomi(rc.items.map((i) => i.display || i.label)) }, dest: rec.dest || "qui",
       ...(rec.destNome ? { destNome: rec.destNome } : {}), ...(rec.gesto ? { gesto: rec.gesto } : {}) };

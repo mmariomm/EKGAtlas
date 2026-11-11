@@ -751,9 +751,10 @@ async function scenarioCarrelloPerso(browser) {
 // «Confermata» solo con una PROVA: una pagina dello stesso episodio che
 // elenca i fogli di quella richiesta. Il POST della conferma che risponde 500
 // — o che ripresenta il carrello — non lo è: la pagina del paziente si legge
-// (con le sue attese), e se non la elenca si legge il carrello: ancora coi
-// suoi esami e la sua Conferma, il gestionale non l'ha presa — la pill è
-// rossa, «Non partita», mai verde. Nessuna seconda conferma da sola: un tocco
+// (con le sue attese), e se non la elenca la pill è ambra, «Da controllare»,
+// mai verde. Il carrello non la giudica: quanto ci ha messo la Conferma nella
+// cornice non si sa (solo una Conferma tornata in fretta, nella scheda di un
+// ordine, si guarda dal carrello). Nessuna seconda conferma da sola: un tocco
 // apre il carrello.
 async function scenarioConfirmPostFails(browser) {
   for (const [scen, opz, rifiuta] of [["confirm-500", { confirmFails: true }, false], ["confirm-ancora-carrello", {}, true]]) {
@@ -777,14 +778,13 @@ async function scenarioConfirmPostFails(browser) {
     await $panel(page, "#q").fill("dolore toracico");
     await $panel(page, '.opt[title*="TROPONINA"]').click();
     await $panel(page, "#goconfirm").click();
-    const ambra = await striscia(page, /Non partita/, 40000).catch(() => "");
+    const ambra = await striscia(page, /Da controllare/, 40000).catch(() => "");
     const rid = Object.keys(mock.state.richieste)[0];
     check(scen, mock.state.richieste[rid].confirmed === false, "la richiesta resta non confermata");
-    check(scen, /Non partita/.test(ambra) && /apri il carrello/.test(ambra) && (await $panel(page, TONO("err")).count()) === 1,
-      `pill rossa «Non partita · apri il carrello» (got: ${ambra})`);
-    const iPost = mock.state.requests.findIndex((q) => q.method === "POST" && (q.params.ccsForm || "").startsWith("Prestazioni"));
-    check(scen, mock.state.requests.slice(iPost + 1).some((q) => q.method === "GET" && q.params.MVPG === "RcsRichiestaPrestazioniRicercaErogatore" && q.params.RICHIESTA_ID === rid),
-      "per dirlo si è letto il carrello, dopo la Conferma");
+    check(scen, /Da controllare/.test(ambra) && (await $panel(page, TONO("warn")).count()) === 1 && !/Non partita|Conferma di nuovo/.test(ambra),
+      `pill ambra «Da controllare», mai «Non partita · Conferma di nuovo» su un forse (got: ${ambra})`);
+    // la Conferma è partita: prima di rifarla, le sue richieste — non «premi tu Conferma» come se niente fosse
+    check(scen, /guarda le sue richieste/.test(ambra), `e prima del carrello, le sue richieste (got: ${ambra})`);
     const testi = (await registrato(page)).testi;
     check(scen, !testi.some((t) => /Confermata|confermat[ia] \d/.test(t)), `mai verde, mai «Confermata» (got: ${testi.slice(-3).join(" | ")})`);
     const conferme = mock.state.requests.filter((q) => q.method === "POST" && (q.params.ccsForm || "").startsWith("Prestazioni"));
@@ -3222,13 +3222,17 @@ async function scenarioStampaUltima(browser) {
   await page.locator("#psassist-host #stultima").scrollIntoViewIfNeeded().catch(() => {});
   await shot(page, "stampa-ultima-richiesta");
   await ore({ 699999: "2026-10-27 14:33:00.0", 699998: "2026-10-27 14:31:00.0" });
+  // a due minuti l'una dall'altra, ma senza sapere se sono lo stesso ordine (una
+  // troponina alle 10:00, un'aggiunta alle 10:03 sono due ordini): solo l'ultima
   let h = await giro();
-  check(scen, h.length === 3 && /1 di 3 — Etichette/.test(h[0]) && /Lista esami/.test(h[1]) && /3 di 3 — Richiesta radiologia/.test(h[2]),
-    `due richieste a due minuti l'una dall'altra: tutt'e due, prima le etichette (got ${h.join(" | ")})`);
-  await ore({ 699999: "2026-10-27 14:33:00.0", 699998: "2026-10-27 09:05:00.0" });
-  h = await giro();
   check(scen, h.length === 2 && /1 di 2 — Etichette/.test(h[0]) && /2 di 2 — Lista esami/.test(h[1]),
-    `la RX di stamattina no: solo l'ultima (got ${h.join(" | ")})`);
+    `due richieste a due minuti l'una dall'altra, senza sapere se sono lo stesso tocco: solo l'ultima (got ${h.join(" | ")})`);
+  // la scheda dell'ordine le ha annotate come lo stesso tocco su Conferma: tutt'e due, prima le etichette
+  await page.evaluate(() => localStorage.setItem("psassist:stampeFresche.v1", JSON.stringify({
+    999001: { ts: performance.timeOrigin - 1000, map: {}, gesti: { gprova: ["699999", "699998"] } } })));
+  h = await giro();
+  check(scen, h.length === 3 && /1 di 3 — Etichette/.test(h[0]) && /Lista esami/.test(h[1]) && /3 di 3 — Richiesta radiologia/.test(h[2]),
+    `annotate dalla scheda dell'ordine come lo stesso tocco: tutt'e due, prima le etichette (got ${h.join(" | ")})`);
   await context.close();
 }
 
