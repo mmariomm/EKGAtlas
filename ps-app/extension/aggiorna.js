@@ -64,14 +64,17 @@ async function aggVersione() {
 
 // Si può aggiornare da qui? L'estensione deve girare dalla cartella che
 // l'aiutante scambia: c'è `installata.json` (lo scrive solo l'installazione)
-// e l'aiutante dice che lì dentro c'è questa versione.
-async function aggInstallata() {
+// e l'aiutante dice che lì dentro c'è questa versione — o già la nuova `v`
+// (`gia`: lo scambio finito senza che l'aiutante rispondesse; manca la ricarica).
+async function aggInstallata(v) {
   const come = `per aggiornarla con un tocco: stampa\\installa.cmd, poi in chrome://extensions carica l'estensione da ${AGG_CARTELLA}`;
   const marca = await fetch(chrome.runtime.getURL("installata.json")).then((r) => r.ok).catch(() => false);
   if (!marca) return { puo: false, come };
   const c = await ospite({ t: "chi" }, 30e3);
   if (!c.ok) return { puo: false, come: `l'aiutante non risponde (${corto(c.why, 120)}): rilancia stampa\\installa.cmd` };
-  if (String(c.estensione || "") !== aggMia()) return { puo: false, come };
+  const e = String(c.estensione || "");
+  if (v && e === v && e !== aggMia()) return { puo: true, come: "", gia: true };
+  if (e !== aggMia()) return { puo: false, come };
   return { puo: true, come: "" };
 }
 
@@ -82,7 +85,7 @@ async function aggControlla() {
   try { v = await aggVersione(); } catch { return prima; }   // senza rete: resta quello che si sapeva
   const rec = { ts: Date.now(), nuova: "", puo: false, come: "" };
   if (aggPiuNuova(v, aggMia())) {
-    const i = await aggInstallata();
+    const i = await aggInstallata(v);
     Object.assign(rec, { nuova: v, puo: i.puo, come: i.puo ? "" : `C'è la ${v}: ${i.come}.` });
   }
   await chrome.storage.local.set({ aggiorna: rec });
@@ -93,7 +96,8 @@ async function aggControlla() {
 // che gira in una scheda del medico (il suo appunto, o il presidio di chi sta
 // mandando); un foglio sulla stazione di stampa; una registrazione; un testo
 // non salvato in una scheda del gestionale (una cartella, una dimissione, la
-// terapia, il pannello). Nel dubbio (la scheda non risponde in tempo, o non si
+// terapia, il pannello); una registrazione automatica che aspetta il suo
+// minuto prima di salvarsi (REG_INC). Nel dubbio (la scheda non risponde in tempo, o non si
 // lascia leggere) è occupato: si riprova fra poco. Non contano le schede
 // scartate da Chrome e quelle dei PDF delle stampe (lì il pannello non nasce).
 const aggPdf = (t) => (chrome.runtime.getManifest().content_scripts?.[0]?.exclude_matches || []).some((m) => String(t.url || "").startsWith(m.replace(/\*$/, "")));
@@ -102,6 +106,7 @@ async function aggOccupato() {
   if (typeof stz !== "undefined" && (stz.stampa.size || stz.inCorso.size)) return true;          // (un foglio per la stazione che arriva o stampa)
   try { if (typeof regLeggi === "function") await regPronto; } catch { /* sotto */ }
   if ((typeof regAttiva === "function" && regAttiva()) || (typeof regStato !== "undefined" && regStato && regStato.stato === "fermo" && !regStato.errore && regSalvando(regStato))) return true;
+  if (typeof REG_INC !== "undefined" && (await chrome.storage.session.get(REG_INC).catch(() => ({})))[REG_INC]) return true;
   const schede = await chrome.tabs.query({ url: SA4 + "/*" }).catch(() => []);
   for (const t of schede) {
     if (t.discarded || aggPdf(t)) continue;
@@ -232,23 +237,28 @@ async function aggiorna({ avvio = false } = {}) {
   // aperte — o all'avvio del browser, con lo zip già pronto e nel primo minuto (anche nella fila, qui sotto).
   const aspetta = async () => !aggSolaLettura() && !(avvio && z.pronto && Date.now() - aggNato < AGG_AVVIO) && !!(await aggSchede());
   if (await aspetta()) return { ok: false, why: AGG_SCHEDE };
-  // l'aiutante, solo adesso che si scambia: che cosa c'è nella cartella
-  const i = await aggInstallata();
+  // l'aiutante, solo adesso che si scambia: che cosa c'è nella cartella (già la nuova: manca solo la ricarica)
+  const i = await aggInstallata(v);
   if (!i.puo) return aggNo(v, `Non si aggiorna da qui: ${i.come}.`);
-  const t = await aggZipTenuto(v);
+  const t = i.gia ? {} : await aggZipTenuto(v);
   if (t.why) return aggNo(v, t.why);
   // L'ultimo controllo e lo scambio dentro la fila degli ordini: nessun ordine
   // parte in mezzo, e la ricarica arriva subito dopo lo scambio.
   return inFilaOrd(async () => {
     if (await aggOccupato()) return { ok: false, why: AGG_OCCUPATO };
     if (await aspetta()) return { ok: false, why: AGG_SCHEDE };   // (una scheda aperta intanto, o il minuto passato)
-    const h = await ospite({ t: "aggiorna", versione: v, zip: b64(t.buf) }, AGG_ATTESA);
-    if (!h.ok && !h.ignoto) return aggNo(v, `Aggiornamento non riuscito: ${corto(h.why || "l'aiutante ha detto di no", 160)}`);
+    if (!i.gia) {
+      const h = await ospite({ t: "aggiorna", versione: v, zip: b64(t.buf) }, AGG_ATTESA);
+      // Nessuna risposta: l'aiutante può essere ancora a metà della copia, e la
+      // ricarica lo chiuderebbe lì (una cartella mezza vecchia e mezza nuova,
+      // che Chrome carica al prossimo avvio). Niente ricarica: la pausa, poi
+      // si chiede all'aiutante che cosa c'è nella cartella (qui sopra, `gia`).
+      if (h.ignoto) return aggNo(v, `L'aiutante non ha risposto: ${corto(h.why || "", 120)}`);
+      if (!h.ok) return aggNo(v, `Aggiornamento non riuscito: ${corto(h.why || "l'aiutante ha detto di no", 160)}`);
+    }
     await caches.delete(AGG_CACHE).catch(() => {});
     await chrome.storage.local.set({ aggiorna: { ts: 0, nuova: "", puo: false, come: "", fatto: v, quando: Date.now() } });
-    // (nessuna risposta: la cartella può essere già quella nuova, e una
-    // ricarica è più sicura di un'estensione mezza vecchia e mezza nuova)
-    return { ok: true, versione: v, ricarica: true, ...(h.ok ? {} : { incerto: true }) };
+    return { ok: true, versione: v, ricarica: true };
   });
 }
 

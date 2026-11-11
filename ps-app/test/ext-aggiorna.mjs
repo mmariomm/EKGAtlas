@@ -163,6 +163,10 @@ const zipScaricati = () => gh.richieste.filter((x) => /\.zip$/.test(x.url)).leng
 const pausa = () => sw.evaluate(() => chrome.storage.local.get("aggiornaPausa").then((o) => o.aggiornaPausa || null));
 const azzeraZip = () => sw.evaluate(() => Promise.all([caches.delete("psassist-aggiorna"), chrome.storage.local.remove("aggiornaPausa")]));
 const allarme = () => sw.evaluate(() => chrome.alarms.get("psassist-aggiorna").then((a) => a && a.scheduledTime));
+// (l'orologio finto: la pausa scritta più indietro)
+const indietro = (ms) => sw.evaluate((d) => chrome.storage.local.get("aggiornaPausa").then((o) => chrome.storage.local.set({ aggiornaPausa: { ...o.aggiornaPausa, ts: Date.now() - d } })), ms);
+const manifestDi = (d) => JSON.parse(readFileSync(join(d, "manifest.json"), "utf8"));
+const entro = (p, ms) => Promise.race([p, sospendi(ms).then(() => null)]).catch(() => null);
 // il service worker che si ferma e riparte (come fa Chrome dopo mezzo minuto di quiete): la memoria
 // del service worker si perde, storage e Cache Storage restano. Lo risveglia una pagina dell'estensione.
 // (Playwright tiene lo stesso oggetto `sw`: un segno nella memoria dice se è ripartito davvero)
@@ -296,6 +300,11 @@ console.log("\naggiorna: mai a metà di qualcosa");
   check(r === true, `una registrazione in corso: occupato (got ${r})`);
   await sw.evaluate(() => chrome.storage.local.remove(REG));
   await finche(async () => !(await sw.evaluate(() => regAttiva())), 5000);
+  // una registrazione automatica che aspetta il suo minuto (dopo un incidente, prima di salvarsi)
+  await sw.evaluate(() => chrome.storage.session.set({ [REG_INC]: { ts: Date.now(), motivi: ["prova"] } }));
+  r = await sw.evaluate(() => aggOccupato());
+  await sw.evaluate(() => chrome.storage.session.remove(REG_INC));
+  check(r === true, `una registrazione automatica che aspetta il suo minuto: occupato (got ${r})`);
   // un foglio che arriva sulla stazione di stampa (questo PC fa anche da stazione)
   await sw.evaluate(() => stz.inCorso.set("prova", { n: 1 }));
   r = await sw.evaluate(() => aggOccupato());
@@ -430,8 +439,6 @@ console.log("\naggiorna: da sé, quando è il momento");
   for (let k = 0; k < 3; k++) await sw.evaluate(() => aggAuto());
   check(lavori().length === n1 && zipScaricati() === zip2 && gh.richieste.length === gh2,
     `dopo il no, altri tre giri: niente all'aiutante, niente scaricato, niente rete (aiutante ${lavori().length - n1}, zip ${zipScaricati() - zip2})`);
-  // (l'orologio finto: la pausa scritta più indietro)
-  const indietro = (ms) => sw.evaluate((d) => chrome.storage.local.get("aggiornaPausa").then((o) => chrome.storage.local.set({ aggiornaPausa: { ...o.aggiornaPausa, ts: Date.now() - d } })), ms);
   await indietro(6 * 3600e3 - 60e3);
   await sw.evaluate(() => aggAuto());
   check(lavori().length === n1, `cinque ore e 59 minuti dopo: ancora niente (aiutante ${lavori().length - n1})`);
@@ -476,6 +483,49 @@ console.log("\naggiorna: da sé, quando è il momento");
   if (nuovo) sw = nuovo;
   const dopo = await memoria();
   check(!dopo || !dopo.nuova, `dopo: nessuna versione nuova da offrire (got ${JSON.stringify(dopo)})`);
+}
+
+console.log("\naggiorna: l'aiutante che non risponde (può essere a metà della copia)");
+{
+  // una versione ancora più nuova; il gestionale chiuso; l'aiutante ci mette più di quanto lo si aspetta
+  // (qui il «non ha risposto in tempo» di ospite() arriva dopo 1,5 secondi: l'aiutante intanto continua)
+  const PIU = "99.2.0";
+  gh.versione = PIU;
+  gh.zip = zipDi(PIU);
+  comportati({ lento: 4000 });
+  azzeraLavori();
+  await dimentica();
+  await azzeraZip();
+  await doc.goto("about:blank");
+  await sw.evaluate(() => chrome.tabs.query({ url: "https://smarthealth.multimedica.it/*" }).then((t) => chrome.tabs.remove(t.map((x) => x.id))));
+  await sw.evaluate(() => {
+    self.__osp = ospite;
+    self.__vivo = true;
+    ospite = (m, ms) => (m.t === "aggiorna" ? Promise.race([self.__osp(m, ms), new Promise((r) => setTimeout(() => r({ ok: false, why: "l'aiutante di stampa non ha risposto in tempo", ignoto: true }), 1500))]) : self.__osp(m, ms));
+  });
+  let ricaricata = false;
+  ctx.waitForEvent("serviceworker", { timeout: 10000 }).then(() => { ricaricata = true; }, () => {});
+  await entro(sw.evaluate(() => aggAuto()), 20000);
+  const copiata = await finche(async () => lavori().some((x) => x.aggiorna && x.ok), 15000);
+  await sospendi(1500);
+  const vivo = await entro(sw.evaluate(() => self.__vivo === true && chrome.runtime.getManifest().version), 3000);
+  check(!ricaricata && vivo === NUOVA, `nessuna risposta in tempo: niente ricarica (che chiuderebbe l'aiutante a metà della copia) (got ${ricaricata ? "ricaricata" : vivo})`);
+  check(copiata && manifestDi(EST).version === PIU, `…e l'aiutante finisce la copia da sé (cartella ${manifestDi(EST).version})`);
+  const p = await entro(pausa(), 3000);
+  check(p && p.v === PIU, `la versione aspetta, come dopo un no (got ${JSON.stringify(p)})`);
+  const n1 = lavori().length;
+  await entro(sw.evaluate(() => aggAuto()), 10000);
+  check(lavori().length === n1, `il giro dopo: niente all'aiutante, né lo zip né «chi» (got ${lavori().length - n1})`);
+  // sei ore dopo: si chiede all'aiutante che cosa c'è nella cartella — è già la nuova: si ricarica e basta
+  await entro(indietro(6 * 3600e3 + 60e3), 3000);
+  const nasce = ctx.waitForEvent("serviceworker", { timeout: 30000 }).catch(() => null);
+  await entro(sw.evaluate(() => { aggAuto().catch(() => {}); return true; }), 5000);
+  const nuovo = await nasce;
+  const v2 = nuovo ? await entro(nuovo.evaluate(() => chrome.runtime.getManifest().version), 5000) : "";
+  check(v2 === PIU && lavori().filter((x) => x.aggiorna).length === 1 && lavori().slice(n1).some((x) => x.chi),
+    `sei ore dopo, l'aiutante dice che nella cartella c'è già la ${PIU}: si ricarica, senza rimandargli lo zip (got ${v2 || "nessuna ricarica"}, zip all'aiutante ${lavori().filter((x) => x.aggiorna).length})`);
+  if (nuovo) sw = nuovo;
+  comportati();
 }
 
 check(fuori.length === 0, `nessun'altra richiesta fuori dall'ospedale (got ${fuori.slice(0, 3).join(", ")})`);
