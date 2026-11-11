@@ -3505,8 +3505,6 @@
   function azzeraPazienti() {
     for (const k of RESET_VIA()) store.del(k);
     potaImparati();   // (via i quesiti, via i pacchetti che avevano imparato; quelli dell'elenco di partenza restano)
-    const t = store.get(tempiKey, null);   // i tempi restano, senza chi
-    if (Array.isArray(t)) store.set(tempiKey, t.map(({ paz, ep, ...x }) => x));
     azzeraScheda();
   }
   // le altre schede puliscono la loro (vedi «storage» all'avvio)
@@ -3518,7 +3516,7 @@
   function fotoReset() {
     let scheda = [];
     try { scheda = Object.keys(sessionStorage).filter((k) => k.startsWith(NS)).map((k) => [k, sessionStorage.getItem(k)]); } catch { /* niente */ }
-    return { locale: [...RESET_VIA(), tempiKey].map((k) => [k, store.get(k, null)]), scheda };
+    return { locale: RESET_VIA().map((k) => [k, store.get(k, null)]), scheda };
   }
   function rimettiReset(f) {
     for (const [k, v] of f.locale) { if (v === null) store.del(k); else store.set(k, v); }
@@ -4033,7 +4031,7 @@
   // --------------------------------------------------------------- DA FARE
   // Una lista sola per paziente, a spunte tonde: le cose da fare, e — con
   // un'ora scritta dentro («11:30 tropo», «tra 2h ECG») — i promemoria. Si
-  // tiene l'ISTANTE, come il cronometro: ricaricare la pagina non sposta
+  // tiene l'ISTANTE: ricaricare la pagina non sposta
   // niente. La prima voce aperta è il post-it della riga e del letto; l'ordine
   // lo decide il medico (trascinando). Una voce spuntata resta 5 minuti, poi se
   // ne va. Per episodio, mai un nome; al massimo 15 aperte; una con l'ora
@@ -4321,95 +4319,8 @@
     return !!dfAggiungi(ep, p.testo, { t: p.t });
   }
 
-  // ------------------------------------------------------------ RIFERIMENTI
-  // La tabella del medico, i «can't-miss killers»: per sintomo, cosa
-  // escludere per primo. Testo suo, in inglese come l'ha scritta; la terza
-  // voce sono solo parole per trovarla scrivendo in italiano.
-  const RIFERIMENTI = {
-    ancora: "Don't anchor the DDx — lethal DDx for this complaint? · actively excluded (not assumed)? · every vital explained?",
-    gruppi: [
-      { titolo: "Can't-miss killers — by complaint, rule out first", voci: [
-        ["Chest pain", "ACS · PE · dissection · tamponade · tension PTX · Boerhaave", "dolore toracico torace petto"],
-        ["Dyspnoea", "PE · APE/SCAPE · tension PTX · anaphylaxis · sepsis · near-fatal asthma", "dispnea affanno respiro"],
-        ["Headache", "SAH · meningitis · mass/↑ICP · CVST · GCA · carotid/vertebral dissection · pituitary apoplexy · CO · angle-closure glaucoma", "cefalea mal di testa"],
-        ["Back pain", "AAA · dissection · cord compression · epidural abscess · epidural haematoma", "lombalgia dorsalgia schiena mal di schiena"],
-        ["Abdo pain", "AAA · mesenteric ischaemia · ectopic · perforation · strangulated obstruction", "dolore addominale addome pancia"],
-        ["Syncope", "PE · SAH · AAA · malignant arrhythmia · ectopic · AS · HCM (exertional = flag)", "sincope svenimento"],
-        ["Palpitations", "WPW + pre-excited AF · long QT · Brugada · ARVC · HCM", "palpitazioni cardiopalmo"],
-        ["Sore throat / neck", "Ludwig's · epiglottitis · retropharyngeal abscess · carotid dissection · Lemierre's", "mal di gola faringodinia collo"],
-        ["Unilateral leg", "DVT · acute limb ischaemia · nec fasc · compartment syndrome", "gamba arto inferiore edema"],
-        ["Fever + rash", "meningococcaemia · sepsis · nec fasc · toxic shock", "febbre esantema rash petecchie"],
-        ["Altered mental state", "hypoglycaemia · hypoxia · sepsis/CNS · stroke · tox · ↑ICP · non-convulsive status · Wernicke", "alterazione coscienza confusione stato mentale"],
-        ["Vomiting", "strangulated obstruction · DKA (incl. euglycaemic) · ↑ICP · bowel ischaemia", "vomito"],
-        ["♀ pain / bleeding", "ectopic until proven otherwise · haemorrhage", "donna gravidanza metrorragia sanguinamento"],
-        ["Overdose", "TCA · salicylates · toxic alcohols · paracetamol (silent) · CCB/BB · CO", "intossicazione sovradosaggio"],
-        ["Traveller (febrile)", "malaria · typhoid · viral haemorrhagic fever · sepsis", "viaggiatore viaggio febbre"],
-      ] },
-      { titolo: "Benign labels that hide killers", freccia: true, voci: [
-        ["Gastroenteritis", "surgical abdomen · DKA · inferior MI · Addisonian", "gastroenterite"],
-        ["Mechanical back pain", "leaking AAA · epidural abscess", "lombalgia meccanica"],
-        ["Anxiety / hypervent.", "PE", "ansia iperventilazione"],
-        ["Renal colic >50", "ruptured AAA", "colica renale"],
-        ["Muscular chest pain", "ACS", "dolore toracico muscolare"],
-        ["Simple faint", "exertional/structural (AS, HCM, arrhythmia)", "sincope vasovagale"],
-        ["UTI (elderly)", "urosepsis / source unproven", "infezione urinaria anziano"],
-      ] },
-      { titolo: "Who reweights the list", freccia: true, voci: [
-        ["Pregnant", "ectopic · PE · pre-eclampsia · dissection", "gravidanza incinta"],
-        ["Immunocompromised", "atypical/late · neutropenic sepsis = emergency", "immunodepresso"],
-        ["Anticoagulated", "ICH · epidural haematoma · occult bleed", "anticoagulato tao doac"],
-        ["Elderly", "atypical MI · silent sepsis · delirium = presentation", "anziano"],
-        ["IV drug user", "endocarditis · septic emboli · abscess", "tossicodipendente"],
-        ["Traveller", "malaria · typhoid · VHF", "viaggiatore viaggio"],
-      ] },
-    ],
-    piede: "Same complaint, different killer list — who is this patient reweights everything.",
-  };
-  // il filtro: tutte le parole scritte devono esserci (in inglese o in italiano)
-  const rifCombacia = (testo, q) => {
-    const t = testo.toLowerCase();
-    return q.toLowerCase().split(/\s+/).filter(Boolean).every((w) => t.includes(w));
-  };
-
-  // ----------------------------------------------------------------- TEMPI
-  // Un cronometro per capire dove va il tempo di un turno. Si tiene solo
-  // l'ISTANTE DI INIZIO, mai i secondi passati: così ricaricare la pagina o
-  // riavviare il browser non perde niente e il conto resta giusto. Il
-  // cronometro in corso è semplicemente la voce che non ha ancora una fine.
-  const tempiKey = "tempi.v1";
-  const TEMPI_TTL = 7 * 24 * 3600e3;
-  const TITOLI = ["Visita ed esami", "Scrittura cartella", "Gestione (consulenti)", "Dimissione"];
-  function tempi() {
-    const l = store.get(tempiKey, []);
-    const ora = Date.now();
-    const vivi = (Array.isArray(l) ? l : []).filter((t) => t && t.inizio && ora - t.inizio < TEMPI_TTL);
-    if (vivi.length !== (Array.isArray(l) ? l.length : 0)) store.set(tempiKey, vivi);
-    return vivi;
-  }
-  const tempoInCorso = () => tempi().find((t) => !t.fine) || null;
-  function avviaTempo(titolo, paz, ep) {
-    const l = tempi();
-    const ora = Date.now();
-    for (const t of l) if (!t.fine) t.fine = ora;   // uno solo alla volta: il precedente si chiude
-    l.push({ id: "t" + ora.toString(36), titolo: String(titolo || "").slice(0, 60) || "Attivita",
-             paz: String(paz || "").slice(0, 60), ep: String(ep || ""), inizio: ora });
-    return store.set(tempiKey, l);
-  }
-  function fermaTempo() {
-    const l = tempi();
-    const t = l.find((x) => !x.fine);
-    if (!t) return false;
-    t.fine = Date.now();
-    return store.set(tempiKey, l);
-  }
-  const scordaTempo = (id) => store.set(tempiKey, tempi().filter((t) => t.id !== id));
-  const durata = (t) => Math.max(0, ((t.fine || Date.now()) - t.inizio));
-  const mmss = (ms) => {
-    const s = Math.floor(ms / 1000);
-    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
-    return h ? `${h}h ${String(m).padStart(2, "0")}m` : `${m}m ${String(s % 60).padStart(2, "0")}s`;
-  };
-  const oraDi = (ms) => new Date(ms).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" });
+  // (il Cronometro non c'è più: i tempi che teneva se ne vanno, una volta)
+  store.del("tempi.v1");
   const giornoDi = (ms) => new Date(ms).toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric" });
 
   const dimKey = "dimissioni.v1";
@@ -6198,6 +6109,9 @@
     .dnuovo:hover { border-color: var(--azione); color: var(--azione); background: #F4F9FD; }
     .dnuovo:focus-visible { outline: 2px solid var(--azione); outline-offset: 1px; }
     .dplus { font-size: 17px; font-weight: 400; line-height: 1; }
+    /* sotto i fogli, piccoli e quieti: il file dei fogli (un altro PC, una copia, l'editor dimissioni.html) */
+    .dfile { display: flex; justify-content: flex-end; gap: 6px; margin-top: 8px; }
+    .dfile .mini { color: var(--neutro); }
     /* il nome del foglio tuo: un titolo che si scrive, non un modulo */
     .dhd { display: flex; align-items: center; gap: 6px; max-width: 820px; margin-bottom: 10px; }
     .dhd .mini { float: none; flex: none; white-space: nowrap; }
@@ -6327,17 +6241,6 @@
             border-radius: 7px; padding: 3px 8px; font: 600 11px/1.4 inherit; cursor: pointer; }
     .abtn:hover { border-color: #9DBFDE; color: var(--azione); }
     .abtn.del:hover { border-color: #E9BAB6; background: var(--err-f); color: var(--err); }
-    .tchip { display: flex; align-items: center; }
-    .tchip button { display: inline-flex; align-items: center; gap: 6px; height: 32px; border: 1px solid #E3E8EF; background: #fff; color: var(--neutro);
-                    font: 600 12px/1 inherit; border-radius: 8px; padding: 0 9px; cursor: pointer; font-variant-numeric: tabular-nums; }
-    .tchip.off button { border-color: transparent; width: 36px; justify-content: center; padding: 0; }
-    .tchip button:hover { background: #F1F4F7; color: var(--testo); }
-    .tchip .tdot { width: 7px; height: 7px; border-radius: 50%; background: var(--info); }
-    /* i chip di stato dell'intestazione (cronometro, REC, iPhone): la stessa forma del .gchip */
-    .tchip.on button { height: 30px; border: 0; background: var(--info-f); color: #0B2A4A; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
-    .tchip.on button:first-child { border-radius: 999px 0 0 999px; padding: 0 8px 0 11px; }
-    .tchip.on button:last-child { border-radius: 0 999px 999px 0; padding: 0 11px 0 7px; border-left: 1px solid #fff; }
-    .tchip.on button:hover { background: #DCEAF7; color: #0B2A4A; }
     .recchip { display: inline-flex; align-items: center; padding: 1px 8px; border-radius: 999px; background: var(--err-f); color: var(--err);
                font-size: 12px; font-weight: 600; white-space: nowrap; margin: 0 4px; }
     /* nell'intestazione, la forma delle altre chip (.gchip); sulla pill resta piccola: la pill non cresce mentre registri */
@@ -6372,9 +6275,7 @@
                border-radius: 8px; padding: 8px 10px; margin: 8px 0 0; max-height: 260px; overflow: auto; }
     .tnow { display: flex; align-items: center; gap: 10px; background: var(--ok-f); border: 1px solid #BCE0C9;
             border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; }
-    .tbig { font: 800 20px/1 inherit; color: var(--ok); font-variant-numeric: tabular-nums; }
     .tlab { flex: 1 1 auto; font-size: 12px; color: #35506B; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-    .tpres { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 6px; }
     .ricetta .lbl { margin-top: 12px; }
     .ricetta .lbl:first-child { margin-top: 0; }
     .ricpref, .ricris { display: flex; flex-wrap: wrap; gap: 5px; }
@@ -6406,38 +6307,7 @@
     .ricstato.warn { background: var(--att-f); border-left-color: #B26B00; }
     .ricstato.err { background: var(--err-f); border-left-color: var(--err); color: #8C1D18; font-weight: 700; }
     .ricstato .ricbtn { margin-left: 8px; }
-    .rif { max-width: 820px; }
-    .rifanc { font-size: 12px; color: #35506B; background: #F4F8FB; border-left: 3px solid var(--azione);
-              border-radius: 0 8px 8px 0; padding: 8px 11px; margin-bottom: 10px; line-height: 1.45; }
-    #riffiltro { width: 100%; box-sizing: border-box; border: 1px solid #D9E2EC; border-radius: 8px; padding: 8px 10px;
-                 font: 13px/1.3 inherit; color: var(--testo); margin-bottom: 4px; }
-    #riffiltro:focus { outline: 2px solid var(--azione); outline-offset: 1px; }
-    .rifg { margin-top: 12px; }
-    .rift { border-top: 1px solid #EDF1F6; }
-    .rifr { display: grid; grid-template-columns: minmax(120px, 170px) 1fr; gap: 12px; padding: 6px 2px;
-            border-bottom: 1px solid #EDF1F6; font-size: 12.5px; line-height: 1.45; }
-    .rifr b { color: var(--testo); font-weight: 700; }
-    .rifr span { color: #35506B; }
-    .rifr i { font-style: normal; color: #9AAABB; }
-    .rifvuoto { font-size: 12px; color: var(--neutro); padding: 10px 2px; }
-    .rifpiede { font-size: 11.5px; color: var(--neutro); font-style: italic; margin-top: 12px; }
-    .tpre { border: 1px solid #C4D0DC; background: #fff; color: var(--testo); border-radius: 999px;
-            padding: 7px 12px; font: 600 12px/1 inherit; cursor: pointer; }
-    .tpre:hover { border-color: var(--azione); color: var(--azione); background: #F4F8FB; }
-    .tlibero { display: flex; gap: 6px; }
-    .tlibero input { flex: 1 1 auto; border: 1px solid #D9E2EC; border-radius: 8px; padding: 7px 9px;
-                     font: 12.5px/1.3 inherit; color: var(--testo); }
-    .tlibero input:focus { outline: 2px solid var(--azione); outline-offset: 1px; }
     .ttot { float: right; font-size: 11px; color: var(--neutro); font-weight: 600; }
-    .tlist { display: flex; flex-direction: column; gap: 3px; }
-    .trow { display: flex; align-items: center; gap: 8px; padding: 5px 6px 5px 9px; font-size: 11.5px;
-            border: 1px solid #EDF1F6; border-radius: 8px; background: #fff; }
-    .trow .tt { flex: 1 1 auto; font-weight: 600; color: var(--testo); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-    .trow .tp { flex: 0 1 90px; color: var(--neutro); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-    .trow .td { flex: 0 0 auto; font-weight: 700; color: var(--azione); font-variant-numeric: tabular-nums; }
-    .trow .to { flex: 0 0 auto; color: var(--neutro); font-size: 11px; font-variant-numeric: tabular-nums; }
-    .tdel { border: 0; background: transparent; color: var(--neutro); cursor: pointer; font-size: 12px; padding: 0 2px; }
-    .tdel:hover { color: var(--err); }
     /* CONSEGNE: una riga per paziente, il nome in grassetto */
     .consegne .mini + .mini { margin-right: 6px; }
     .consr { padding: 6px 2px; border-bottom: 1px solid #EDF1F6; font-size: 12.5px; line-height: 1.45; color: #35506B; overflow-wrap: anywhere; }
@@ -7191,9 +7061,8 @@
     indietro: ico('<path d="M10 3 5 8l5 5"/>'),
     riduci: ico('<path d="M3.5 8h9"/>'),
     altro: ico('<circle cx="3.5" cy="8" r=".9" fill="currentColor" stroke="none"/><circle cx="8" cy="8" r=".9" fill="currentColor" stroke="none"/><circle cx="12.5" cy="8" r=".9" fill="currentColor" stroke="none"/>'),
-    crono: ico('<circle cx="8" cy="9" r="5"/><path d="M8 9V6.5M6.5 2h3M12 4.5l1-1"/>'),
     ferma: ico('<rect x="4.5" y="4.5" width="7" height="7" rx="1.2" fill="currentColor" stroke="none"/>'),
-    // la sveglia dei promemoria (il cronometro è un'altra cosa)
+    // la sveglia dei promemoria
     sveglia: ico('<circle cx="8" cy="9" r="5.2"/><path d="M8 6.6V9l1.7 1.1M2.6 4.3l1.9-1.7M13.4 4.3l-1.9-1.7"/>'),
     // «Da fare»: due spunte tonde e le loro righe
     dafare: ico('<circle cx="4" cy="4.5" r="2.2"/><circle cx="4" cy="11.5" r="2.2"/><path d="M8.5 4.5h5.5M8.5 11.5h5.5"/>'),
@@ -7202,13 +7071,11 @@
     bracciale: ico('<path d="M4.5 10.6C2.9 10.3 2 9.6 2 8.6 2 6.6 4.7 5 8 5s6 1.6 6 3.6c0 1-.9 1.7-2.5 2"/><rect x="4.5" y="8.4" width="7" height="4.6" rx="1.1"/><path d="M6.5 10.7h3"/>'),
     // le voci del menu ⋯ (una per voce, stesso tratto) e i comandi che prima
     // erano emoji o glifi Unicode (🗑 🖨 ⟳ ↻ ↗): un dialetto solo
-    centro: ico('<rect x="1.8" y="2.5" width="12.4" height="11" rx="1.6"/><rect x="5.2" y="5.6" width="5.6" height="4.8" rx=".8"/>'),
     affianca: ico('<rect x="1.8" y="2.8" width="12.4" height="10.4" rx="1.5"/><path d="M9.5 2.8v10.4M11.2 6h1.3M11.2 8.4h1.3"/>'),
     ricetta: ico('<path d="M3.8 1.8h8.4v12.4H3.8z"/><path d="M6 5v5.2M6 5h1.8a1.5 1.5 0 0 1 0 3H6M7.6 8l2.6 3.2"/>'),
     terapia: ico('<g transform="rotate(-40 8 8)"><rect x="2" y="5.2" width="12" height="5.6" rx="2.8"/><path d="M8 5.2v5.6"/></g>'),
     esporta: ico('<path d="M8 10V2.5M5.2 5.3 8 2.5l2.8 2.8M2.5 10v3.5h11V10"/>'),
     importa: ico('<path d="M8 2.5V10M5.2 7.2 8 10l2.8-2.8M2.5 10v3.5h11V10"/>'),
-    libro: ico('<path d="M8 4.3C6.6 3.3 4.6 2.9 2 3.1v9.4c2.6-.2 4.6.2 6 1.2 1.4-1 3.4-1.4 6-1.2V3.1c-2.6-.2-4.6.2-6 1.2z"/><path d="M8 4.3v9.4"/>'),
     tabellone: ico('<rect x="1.8" y="2.3" width="5.4" height="4.9" rx="1.1"/><rect x="8.8" y="2.3" width="5.4" height="4.9" rx="1.1"/><rect x="1.8" y="8.8" width="5.4" height="4.9" rx="1.1"/><rect x="8.8" y="8.8" width="5.4" height="4.9" rx="1.1"/>'),
     tel: ico('<rect x="4.4" y="1.4" width="7.2" height="13.2" rx="1.7"/><path d="M7 12.1h2"/>'),
     rec: ico('<circle cx="8" cy="8" r="5.8"/><circle cx="8" cy="8" r="2.5" fill="currentColor" stroke="none"/>'),
@@ -7232,7 +7099,7 @@
   const memo = (e) => `<span class="mico mem" aria-hidden="true">${e}</span>`;
   // Le schermate che si aprono dal menu ⋯: il nome e l'icona della loro voce,
   // in testa al posto delle schede. E il nome delle schede, per il ‹ che ci torna.
-  const VISTE_MENU = { riferimenti: ["Riferimenti", "libro"], tempi: ["Cronometro", "crono"], registrazioni: ["Registrazioni", "rec"],
+  const VISTE_MENU = { registrazioni: ["Registrazioni", "rec"],
     iphone: ["iPhone", "tel"], ricetta: ["Ricetta SISS", "ricetta"], terapia: ["Terapia", "terapia"], consegne: ["Consegne", "dafare"] };
   const NOME_SCHEDA = { richieste: "Richieste", esiti: "Esiti", referto: "Esiti", eo: "EO", eotesto: "EO", consensi: "Consensi",
     dimissioni: "Dimissioni", dimtesto: "Dimissioni", dimimport: "Dimissioni", home: "Pazienti" };
@@ -7371,17 +7238,25 @@
   const FINESTRA_MAX_PX = 1150;
   const AFFIANCA = { x: 0.63, y: 0.02, w: 0.36, h: 0.96 };   // una colonna a destra: il gestionale resta visibile
   const eAffiancata = (w) => !!w && ["x", "y", "w", "h"].every((k) => Math.abs(w[k] - AFFIANCA[k]) < 0.005);
-  // La FORMA del pannello (⋯ → Forma): la finestra che si apre al passaggio
-  // del mouse sulla pill e si richiude uscendo — quella di partenza: il medico
-  // l'ha chiesta così —; la finestra di sempre, che apre e chiude solo un
-  // tocco; o «Affianca»: la finestra in una colonna a destra, il gestionale
-  // visibile a sinistra. Un'impostazione: il reset la lascia.
+  // La FORMA del pannello (Impostazioni → Il pannello): «Al passaggio», la
+  // finestra che si apre al passaggio del mouse sulla pill e si richiude
+  // uscendo — quella di partenza: il medico l'ha chiesta così; un clic la apre
+  // già fissata —; o «Affianca»: la finestra in una colonna a destra, il
+  // gestionale visibile a sinistra, che apre e chiude solo un tocco. Si
+  // sceglie in Impostazioni (`forma` in chrome.storage.local, vedi
+  // seguiForma) e si tiene qui, nella memoria del gestionale, che il disegno
+  // legge. Un'impostazione: il reset la lascia. (Il tabellone è una pagina:
+  // niente passaggio.)
   const FORMA = "forma.v1";
-  const FORME_PANNELLO = ["finestra", "passaggio"];
-  const NOME_FORMA = { finestra: "Finestra", passaggio: "Al passaggio" };
-  const formaOra = () => { if (TABELLONE) return "finestra"; const f = store.get(FORMA, null); return FORME_PANNELLO.includes(f) ? f : "passaggio"; };
-  // (la «Colonna» di prima è «Affianca»: la sua preferenza passa lì, una volta)
-  try { if (store.get(FORMA, null) === "colonna") { store.set(FORMA, "finestra"); store.set("win.v1", { ...AFFIANCA }); } } catch { /* niente */ }
+  const FORME_PANNELLO = ["passaggio", "affianca"];
+  const formaOra = () => { if (TABELLONE) return "pagina"; const f = store.get(FORMA, null); return FORME_PANNELLO.includes(f) ? f : "passaggio"; };
+  // (la «Finestra» di prima: Al passaggio la copre — una Finestra messa ad
+  // Affianca resta Affianca —; la «Colonna», più vecchia ancora, è Affianca)
+  try {
+    const f = store.get(FORMA, null);
+    if (f === "colonna") { store.set(FORMA, "affianca"); store.set("win.v1", { ...AFFIANCA }); }
+    else if (f === "finestra") store.set(FORMA, eAffiancata(store.get("win.v1", null)) ? "affianca" : "passaggio");
+  } catch { /* niente */ }
   const PASSAGGIO_APRE_MS = 250, PASSAGGIO_CHIUDE_MS = 500;
   const geometriaPropria = (win) => !!win && [win.x, win.y, win.w, win.h].every(Number.isFinite);
   function geometriaFinestra(win) {
@@ -7467,7 +7342,7 @@
       if (titleEl) {
         this._titleObs = new MutationObserver(() => {
           // mai ricostruire una schermata in cui si sta scrivendo
-          const scrive = ["dfin", "riffiltro"].includes(this.root.activeElement?.id) || !!this.root.querySelector(".dfmod");
+          const scrive = this.root.activeElement?.id === "dfin" || !!this.root.querySelector(".dfmod");
           if (this.runState !== "running" && !scrive
               && this.view !== "dimtesto" && this.view !== "dimimport" && this.view !== "eotesto") this.render();
         });
@@ -7617,7 +7492,7 @@
       if (v === "esiti") this.caricaStorico();   // letto sul portale intanto? e l'identità è cambiata?
       if (v === "esiti" && !LAVORO && !PONTE_VALORI) this.autoCarica({ esiti: true }).catch(() => {});   // un laboratorio a metà: si ricontrolla qui
     }
-    // Una schermata del menu ⋯ (Riferimenti, Cronometro…) al posto delle schede
+    // Una schermata del menu ⋯ (Registrazioni, Consegne…) al posto delle schede
     // dice dov'è: «‹ [icona] Nome». Solo dove la sua schermata si mostra davvero.
     vistaMenu(v = this.view) {
       const m = VISTE_MENU[v];
@@ -7632,15 +7507,6 @@
     }
     nomeRitorno() { return NOME_SCHEDA[this.ritorno().v] || "Pazienti"; }
     tornaDaVista() { const d = this.ritorno(); this.setView(d.v, d.id); }
-    // Il cronometro si vede da ogni schermata MENTRE corre, altrimenti ci si
-    // dimentica di fermarlo — ed è l'unica cosa che lo rende utile. Un tocco sul
-    // tempo apre la scheda, un tocco su ⏹ lo ferma: fermarlo non deve costare
-    // due passaggi. Fermo non occupa posto: «Tempi» sta nel menu ⋯.
-    chipTempo() {
-      const t = tempoInCorso();
-      if (!t) return "";
-      return `<span class="tchip on"><button id="tapri" title="${esc(t.titolo)}${t.paz ? " · " + esc(t.paz) : ""} — apri i tempi"><i class="tdot"></i>${esc(mmss(durata(t)))}</button><button id="tstop" title="Ferma il cronometro" aria-label="Ferma il cronometro">${ICO.ferma}</button></span>`;
-    }
     // L'etichetta anagrafica, accanto agli identificativi: un link vero, quello
     // della pagina (senza la stampa automatica si apre in una scheda, come dal
     // gestionale). Con la stampa automatica, all'etichettatrice col motore e il
@@ -9498,11 +9364,9 @@
       else if (this.view === "dimimport") body = this.viewDimImport();
       else if (this.view === "consensi") body = this.viewConsensi();
       else if (this.view === "eo") body = this.viewEo();
-      else if (this.view === "tempi") body = this.viewTempi();
       else if (this.view === "registrazioni") body = this.viewRegistrazioni();
       else if (this.view === "ricetta" && this.ricettaPossibile()) body = this.viewRicetta();
       else if (this.view === "terapia" && this.terapiaPossibile()) body = this.viewTerapia();
-      else if (this.view === "riferimenti") body = this.viewRiferimenti();
       else if (this.view === "consegne") body = this.viewConsegne();
       else if (this.view === "iphone" && hasExt()) body = this.viewIphone();
       else if (this.view === "stampa") body = this.viewStampa();
@@ -9535,7 +9399,7 @@
       // whose data is on screen must be answerable at a glance, always:
       // patient in the title, episode always next to the section name.
       const inHome = (!this.runState || resoTab) && this.view === "home";
-      const section = this.runState && !resoTab ? "" : { richieste: "Richieste", esiti: "Esiti", referto: "Referto", dimissioni: "Dimissioni", dimtesto: "Dimissioni", dimimport: "Dimissioni", consensi: "Consensi", eo: "EO", eotesto: "EO", tempi: "Tempi", registrazioni: "Registrazioni", riferimenti: "Riferimenti", consegne: "Consegne", iphone: "iPhone", ricetta: "Ricetta", terapia: "Terapia" }[this.view] || "";
+      const section = this.runState && !resoTab ? "" : { richieste: "Richieste", esiti: "Esiti", referto: "Referto", dimissioni: "Dimissioni", dimtesto: "Dimissioni", dimimport: "Dimissioni", consensi: "Consensi", eo: "EO", eotesto: "EO", registrazioni: "Registrazioni", consegne: "Consegne", iphone: "iPhone", ricetta: "Ricetta", terapia: "Terapia" }[this.view] || "";
       // (i fogli di dimissione sono modelli, ma chi va a casa è questo paziente:
       // l'intestazione lo dice anche lì)
       const inDim = this.view === "dimissioni" || this.view === "dimtesto" || this.view === "dimimport";
@@ -9633,28 +9497,21 @@
                 ${TABELLONE ? "" : ponteSpia()}
                 ${this.listaPs() && this.inPazienti() && hasExt() && !TABELLONE ? `<button class="iconbtn" id="tabapri" title="Il tabellone in una scheda sua" aria-label="Il tabellone in una scheda sua">${ICO.tabellone}</button>` : ""}
                 <span id="stautow">${this.chipStampa()}</span>
-                ${this.chipRec(true)}${this.chipTempo()}
+                ${this.chipRec(true)}
                 ${TABELLONE ? "" : `<span class="menuw">
                   <button class="iconbtn${this.aggNuova() ? " agg" : ""}" id="menubtn" title="${this.aggNuova() ? `Altro · c'è la versione ${esc(this.agg.nuova)}` : "Altro"}" aria-label="Altro" aria-haspopup="true" aria-expanded="${this.menuAperto ? "true" : "false"}">${ICO.altro}</button>
                   ${this.menuAperto ? `<div class="menu" role="menu">
-                    ${this.menuSez("", [
-                      `<div class="mforma" role="group" aria-label="Forma"><span>Forma</span>${FORME_PANNELLO.map((f) => { const su = f === forma && !(f === "finestra" && eAffiancata(this.win)); return `<button role="menuitemradio" data-forma="${f}" aria-checked="${su}"${su ? ' class="on"' : ""}>${NOME_FORMA[f]}</button>`; }).join("")}<button role="menuitemradio" id="winaffianca" aria-checked="${forma === "finestra" && eAffiancata(this.win)}"${forma === "finestra" && eAffiancata(this.win) ? ' class="on"' : ""} title="Una colonna a destra: il gestionale resta visibile a sinistra">Affianca</button></div>`,
-                      this.win ? `<button role="menuitem" id="wincentra" title="La finestra al centro, nella misura di partenza">${mico("centro")}Al centro</button>` : ""])}
-                    ${this.menuSez(this.epDiQuesta() ? "Paziente" : "Dimissioni", [
+                    ${this.menuSez("Paziente", [
                       // (rara e distruttiva: non nella testata degli Esiti, accanto ad «Aggiorna»; due tocchi)
                       this.valoriDimenticabili() ? (this.valArmato() ? `<button role="menuitem" id="valreset" class="mreset mrischio" title="Dimentica i valori letti e la scheda in archivio di questo paziente">${mico("cestino")}Dimentico? Tocca di nuovo</button>`
                         : `<button role="menuitem" id="valreset" class="mreset" title="Dimentica i valori letti e la scheda in archivio di questo paziente: ⭳ Carica i valori li rilegge da zero">${mico("cestino")}Dimentica i valori letti</button>`) : "",
                       this.ricettaPossibile() ? `<button role="menuitem" id="ricmenu" title="Farmaci e quesito preparati nel Prescrittivo del SISS, fino all'Anteprima: Registra lo premi tu">${mico("ricetta")}Ricetta SISS</button>` : "",
                       this.terapiaPossibile() ? `<button role="menuitem" id="termenu" title="I farmaci nella pagina Terapia del gestionale, una riga per volta: Conferma la premi tu">${mico("terapia")}Terapia</button>` : "",
                       this.pageType === "patient" && this.epDiQuesta() && richiesteStampabili(printModel(document, location.href)).length
-                        ? `<button role="menuitem" id="stampamenu" title="Etichette e lista esami delle richieste già confermate">${mico("etichetta")}Stampa le richieste</button>` : "",
-                      this.view === "dimissioni" ? `<button role="menuitem" id="dimexport" title="Salva i tuoi testi in un file JSON (e negli appunti)">${mico("esporta")}Esporta i fogli</button>
-                    <button role="menuitem" id="dimimport" title="Rimetti i testi di un JSON esportato">${mico("importa")}Importa i fogli…</button>` : ""])}
+                        ? `<button role="menuitem" id="stampamenu" title="Etichette e lista esami delle richieste già confermate">${mico("etichetta")}Stampa le richieste</button>` : ""])}
                     ${this.menuSez("Strumenti", [
                       hasExt() ? `<button role="menuitem" id="tabmenu" title="Il tabellone dei Pazienti in una scheda sua: da fissare, o sul secondo schermo">${mico("tabellone")}Tabellone</button>` : "",
                       hasExt() ? `<button role="menuitem" id="pontemenu" title="Il pannello sull'iPhone: associa il telefono, prova la rete">${memo("📱")}iPhone</button>` : "",
-                      `<button role="menuitem" id="tempimenu" title="Il cronometro: misura quanto ti prende un'attività">${mico("crono")}Cronometro</button>`,
-                      `<button role="menuitem" id="rifmenu" title="Can't-miss killers: per sintomo, cosa escludere per primo">${mico("libro")}Riferimenti</button>`,
                       `<button role="menuitem" id="consmenu" title="Al cambio turno: una riga per paziente — posto, nome, età, da quanto è in PS, cosa aspetta, cosa c'è da fare — da copiare o stampare">${mico("dafare")}Consegne</button>`,
                       // (quelle della stanza ci sono solo sulla mappa: in fondo, così le altre non cambiano posto)
                       inStanza && !this.stanzaEdit ? `<button role="menuitem" id="stmodmenu" title="Ritocca la stanza: aggiungi, sposta e rinomina letti, sedie e aree">${mico("matita")}Modifica la stanza</button>` : "",
@@ -10235,7 +10092,7 @@
     }
     // la schermata dei Pazienti: quella che non è nessun'altra
     inPazienti() {
-      return !this.runState && !["esiti", "referto", "dimissioni", "dimtesto", "dimimport", "consensi", "eo", "eotesto", "tempi", "registrazioni", "riferimenti", "consegne", "iphone", "richieste", "stampa", "ricetta", "terapia"].includes(this.view);
+      return !this.runState && !["esiti", "referto", "dimissioni", "dimtesto", "dimimport", "consensi", "eo", "eotesto", "registrazioni", "consegne", "iphone", "richieste", "stampa", "ricetta", "terapia"].includes(this.view);
     }
     // In fondo alla fila delle schede, solo in Modifica: + Letto, + Sedia,
     // + Area e Fine. Si entra in Modifica dal menu «⋯».
@@ -13241,6 +13098,7 @@
           <div class="dlist">${righe}
             <button type="button" class="dnuovo" id="dimnuovo" title="Scrivi un foglio tuo: resta in cima all'elenco, su questo computer"><span class="dplus" aria-hidden="true">+</span>Nuovo foglio di dimissione</button>
           </div>
+          <div class="dfile"><button type="button" class="mini" id="dimexport" title="Salva i tuoi testi in un file JSON (e negli appunti): per un altro PC, o una copia">${icoIn("esporta", 13)}Esporta i fogli</button><button type="button" class="mini" id="dimimport" title="Rimetti i testi di un JSON esportato (o salvato da dimissioni.html)">${icoIn("importa", 13)}Importa i fogli…</button></div>
         </div>
         ${ritiro.length ? `
         <details class="sec ritiro" id="ritiro"${this.ritiroAperto ? " open" : ""}>
@@ -13280,96 +13138,6 @@
             placeholder="Terapia, controlli, quando tornare">${esc(testo)}</textarea>
           <div class="hint">Niente dati del paziente: è un modello.</div>
         </div>`;
-    }
-
-    // Un tocco apre il modulo e la finestra di stampa. I PDF sono dentro
-    // l'estensione: nessuna richiesta al server, funziona anche offline.
-    // Fine turno: una pagina HTML da guardare o stampare, raggruppata per
-    // paziente, coi totali per attività. Come per l'editor dei fogli, si apre
-    // anche in una scheda: un download che il browser rifiuta non deve
-    // lasciare le mani vuote.
-    esportaTempi() {
-      const chiusi = tempi().filter((t) => t.fine).sort((a, b) => a.inizio - b.inizio);
-      if (!chiusi.length) return;
-      const perPaz = new Map(), perTit = new Map();
-      for (const t of chiusi) {
-        const k = t.paz || "(senza paziente)";
-        if (!perPaz.has(k)) perPaz.set(k, []);
-        perPaz.get(k).push(t);
-        perTit.set(t.titolo, (perTit.get(t.titolo) || 0) + durata(t));
-      }
-      const tot = chiusi.reduce((n, t) => n + durata(t), 0);
-      const riga = (t) => `<tr><td>${esc(t.titolo)}</td><td class="n">${esc(mmss(durata(t)))}</td><td class="n">${esc(oraDi(t.inizio))}</td><td class="n">${esc(oraDi(t.fine))}</td></tr>`;
-      const html = `<!doctype html><html lang="it"><head><meta charset="utf-8">
-<title>Tempi ${esc(giornoDi(chiusi[0].inizio))}</title><style>
-  body{font:14px/1.5 -apple-system,"Segoe UI",Roboto,Arial,sans-serif;color:#151E27;background:#fff;margin:0;padding:28px 22px 60px}
-  h1{font-size:22px;margin:0 0 4px} .sub{color:#5D6E7E;font-size:13px;margin-bottom:22px}
-  h2{font-size:15px;margin:22px 0 6px;padding-bottom:4px;border-bottom:1px solid #DBE3EA;display:flex;justify-content:space-between}
-  table{border-collapse:collapse;width:100%;max-width:760px} td,th{padding:4px 8px;border-bottom:1px solid #EDF1F6;text-align:left}
-  th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#8397A8}
-  .n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap} .tot{font-weight:700}
-  @media print{body{padding:0}}
-</style></head><body>
-<h1>Tempi — ${esc(giornoDi(chiusi[0].inizio))}</h1>
-<p class="sub">${chiusi.length} attività · totale <b>${esc(mmss(tot))}</b> · dalle ${esc(oraDi(chiusi[0].inizio))} alle ${esc(oraDi(chiusi[chiusi.length - 1].fine))}</p>
-<h2>Per attività</h2>
-<table><tbody>${[...perTit.entries()].sort((a, b) => b[1] - a[1])
-  .map(([k, v]) => `<tr><td>${esc(k)}</td><td class="n tot">${esc(mmss(v))}</td><td class="n">${Math.round((v / tot) * 100)}%</td></tr>`).join("")}</tbody></table>
-${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span class="tot">${esc(mmss(l.reduce((n, t) => n + durata(t), 0)))}</span></h2>
-<table><thead><tr><th>Attività</th><th class="n">Durata</th><th class="n">Inizio</th><th class="n">Fine</th></tr></thead>
-<tbody>${l.map(riga).join("")}</tbody></table>`).join("")}
-</body></html>`;
-      // UN solo Blob: prima se ne creavano due per lo stesso testo e il secondo
-      // non veniva mai liberato, quindi restava in memoria per tutta la scheda
-      const u = URL.createObjectURL(new Blob([html], { type: "text/html" }));
-      let file = false;
-      try {
-        const a = document.createElement("a");
-        a.href = u; a.download = `tempi-${new Date(chiusi[0].inizio).toISOString().slice(0, 10)}.html`;
-        document.documentElement.appendChild(a); a.click(); a.remove();
-        file = true;
-      } catch { /* la scheda qui sotto resta */ }
-      openTab(u, "_blank");
-      setTimeout(() => URL.revokeObjectURL(u), 60000);
-      this.message = { ok: file ? "Tempi esportati: file nei download, e aperti in una scheda." : "Tempi aperti in una scheda: da lì Ctrl+S o Ctrl+P." };
-      this.render();
-    }
-
-    // Riferimenti: la tabella dei «can't-miss killers», da consultare al
-    // volo. Scrivendo si filtra (anche in italiano: «cefalea», «sincope»).
-    viewRiferimenti() {
-      const q = this.rifFiltro || "";
-      const gruppi = RIFERIMENTI.gruppi.map((g) => {
-        const righe = g.voci.map(([chi, cosa, ita]) => `
-          <div class="rifr" data-rif="${esc([chi, cosa, ita].join(" "))}"${q && !rifCombacia([chi, cosa, ita].join(" "), q) ? " hidden" : ""}>
-            <b>${esc(chi)}</b><span>${g.freccia ? `<i aria-hidden="true">→</i> ` : ""}${esc(cosa)}</span>
-          </div>`).join("");
-        return `<div class="rifg"><div class="lbl">${esc(g.titolo)}</div><div class="rift">${righe}</div></div>`;
-      }).join("");
-      return `
-        <div class="sec rif">
-          <div class="rifanc">${esc(RIFERIMENTI.ancora)}</div>
-          <input id="riffiltro" type="search" autocomplete="off" spellcheck="false" value="${esc(q)}"
-                 placeholder="Filtra: chest, cefalea, sincope, anziano…" aria-label="Filtra i riferimenti">
-          ${gruppi}
-          <div class="rifvuoto" hidden>Niente per «<span></span>».</div>
-          <div class="rifpiede">${esc(RIFERIMENTI.piede)}</div>
-        </div>`;
-    }
-    // filtra senza ridisegnare: il campo tiene il cursore
-    rifFiltra() {
-      const q = this.rifFiltro || "";
-      let quante = 0;
-      this.root.querySelectorAll(".rifg").forEach((g) => {
-        let qui = 0;
-        g.querySelectorAll(".rifr").forEach((r) => {
-          const si = !q || rifCombacia(r.getAttribute("data-rif") || "", q);
-          r.hidden = !si; if (si) qui++;
-        });
-        g.hidden = !qui; quante += qui;
-      });
-      const vuoto = this.root.querySelector(".rifvuoto");
-      if (vuoto) { vuoto.hidden = !!quante; vuoto.querySelector("span").textContent = q; }
     }
 
     // ⋯ → iPhone: la pagina «iPhone» dell'estensione (ponte.html: il QR, il
@@ -13471,39 +13239,6 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         <div class="sec consegne">
           <div class="lbl">Pazienti (${righe.length})<button class="mini" id="conscopia" title="Le stesse righe, in testo, negli appunti">⧉ Copia</button><button class="mini" id="consstampa" title="Queste righe al dialogo di stampa">Stampa</button></div>
           <div class="conslist">${righe.map((r) => `<div class="consr">${r.parti.map((x, k) => (!x ? "" : k === r.chi ? `<b>${esc(x)}</b>` : esc(x))).filter(Boolean).join(" · ")}</div>`).join("")}</div>
-        </div>`;
-    }
-
-    viewTempi() {
-      const t = tempoInCorso();
-      const chiusi = tempi().filter((x) => x.fine).sort((a, b) => b.inizio - a.inizio);
-      const chi = this.nomePaziente();
-      const preset = TITOLI.map((x) => `<button class="tpre" data-avvia="${esc(x)}">${esc(x)}</button>`).join("");
-      const tot = chiusi.reduce((n, x) => n + durata(x), 0);
-      const righe = chiusi.slice(0, 40).map((x) => `
-        <div class="trow">
-          <span class="tt">${esc(x.titolo)}</span>
-          <span class="tp">${esc(x.paz || "—")}</span>
-          <span class="td">${esc(mmss(durata(x)))}</span>
-          <span class="to">${esc(oraDi(x.inizio))}–${esc(oraDi(x.fine))}</span>
-          <button class="tdel" data-scorda="${esc(x.id)}" title="Togli questa riga">✕</button>
-        </div>`).join("");
-      return `
-        <div class="sec">
-          ${t ? `
-            <div class="tnow">
-              <span class="tbig">${esc(mmss(durata(t)))}</span>
-              <span class="tlab">${esc(t.titolo)}${t.paz ? ` · ${esc(t.paz)}` : ""}</span>
-              <button class="btn primary" id="tstop2">⏹ Ferma</button>
-            </div>` : `
-            <div class="lbl">Cosa stai facendo${chi ? ` · ${esc(chi)}` : ""}</div>
-            <div class="tpres">${preset}</div>
-            <div class="tlibero">
-              <input id="tlib" placeholder="…oppure scrivilo" maxlength="60" aria-label="Attività">
-              <button class="mini" id="tavvia">▶ Avvia</button>
-            </div>`}
-          <div class="lbl" title="Si salva l'istante di inizio, non i secondi passati: ricaricare la pagina o riavviare il browser non cambia il conto. Restano una settimana, su questo computer.">Registrati (${chiusi.length})${chiusi.length ? `<button class="mini" id="texp">⬇ Esporta</button><span class="ttot">totale ${esc(mmss(tot))}</span>` : ""}</div>
-          <div class="tlist">${righe}</div>
         </div>`;
     }
 
@@ -14521,12 +14256,30 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       if (this.tieneAperto()) { this._tChiude = setTimeout(() => this.passaggioChiude(), PASSAGGIO_CHIUDE_MS); return; }
       this.riduci({ fuoco: false });
     }
-    sceglieForma(f) {
-      if (!FORME_PANNELLO.includes(f)) return;
-      store.set(FORMA, f);
-      this.menuAperto = false; this.fissata = true;
-      clearTimeout(this._tChiude); this._tChiude = 0;
-      this.render();
+    // La forma si sceglie in Impostazioni (portale.html): `forma` in
+    // chrome.storage.local, copiata qui nella memoria del gestionale, che il
+    // disegno legge. Affianca mette la finestra nella colonna a destra; Al
+    // passaggio la rimette al centro, se era lì. Finché in Impostazioni non
+    // c'è una scelta, si scrive quella di qui (anche quella migrata dalla
+    // Finestra): la pagina mostra la forma com'è.
+    seguiForma() {
+      const metti = (f) => {
+        if (TABELLONE || !FORME_PANNELLO.includes(f) || f === formaOra()) return;
+        store.set(FORMA, f);
+        if (f === "affianca") this.win = { ...AFFIANCA };
+        else if (eAffiancata(this.win)) this.win = null;
+        store.set("win.v1", this.win);
+        this.fissata = true;
+        clearTimeout(this._tChiude); this._tChiude = 0;
+        this.render();
+      };
+      try {
+        chrome.storage.local.get("forma").then((o) => {
+          if (FORME_PANNELLO.includes(o.forma)) metti(o.forma);
+          else if (!TABELLONE) chrome.storage.local.set({ forma: formaOra() }).catch(() => {});
+        }).catch(() => {});
+        chrome.storage.onChanged.addListener((ch, area) => { if (area === "local" && ch.forma) metti(ch.forma.newValue); });
+      } catch { /* senza estensione: resta quella di qui */ }
     }
     // Copiato un testo da incollare nel gestionale (EO, dimissioni, referto):
     // la finestra si toglie di mezzo da sola, la pill dice che è pronto.
@@ -14548,7 +14301,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     // la finestra al centro.
     attachDrag(el) {
       el.addEventListener("pointerdown", (e) => {
-        if (e.button !== 0 || e.target.closest(".iconbtn, .tchip, .menuw, button:not(#expand):not(#pinpill), input, a, [data-rz], [data-prurg]")) return;
+        if (e.button !== 0 || e.target.closest(".iconbtn, .menuw, button:not(#expand):not(#pinpill), input, a, [data-rz], [data-prurg]")) return;
         try { el.setPointerCapture(e.pointerId); } catch { /* niente */ }
         const wrap = el.closest(".wrap") || this.root.querySelector(".wrap");   // (Al passaggio la pill sopra la finestra ha la sua)
         const r = wrap.getBoundingClientRect();
@@ -14676,10 +14429,6 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         this._resetArmato = 0; this.menuAperto = false;
         this.resetDatiPazienti();
       });
-      // due posizioni pronte: al centro (85%), o in colonna a destra col gestionale visibile
-      const metti = (g) => { this.win = g; store.set("win.v1", g); this.menuAperto = false; this.render(); };
-      $("#wincentra")?.addEventListener("click", () => metti(null));
-      $("#winaffianca")?.addEventListener("click", () => { store.set(FORMA, "finestra"); metti({ ...AFFIANCA }); });
       this.root.querySelectorAll("[data-rz]").forEach((el) => this.attachResize(el));
       // doppio clic sull'angolo o sull'intestazione: di nuovo al centro, all'85%
       const alCentro = (e) => { e.stopPropagation(); this.win = null; store.set("win.v1", null); this.render(); };
@@ -14693,8 +14442,6 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       const pill = $("#expand");
       if (pill) this.attachDrag(pill);
       if ($("#pinpill")) this.attachDrag($("#pinpill"));   // Al passaggio, aperta: la pill si trascina lo stesso
-      // la forma, dal menu ⋯
-      this.root.querySelectorAll("[data-forma]").forEach((b) => b.addEventListener("click", (e) => { e.stopPropagation(); this.sceglieForma(b.getAttribute("data-forma")); }));
       // «Stampa: PC · Infermeria» (si ricorda: vale anche per le altre schede, e il telefono la propone)
       this.root.querySelectorAll("[data-stdove]").forEach((b) => b.addEventListener("click", (e) => {
         e.stopPropagation();
@@ -14996,14 +14743,11 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
           : "Esportazione non riuscita.";
         this.render();
       });
-      $("#tapri")?.addEventListener("click", () => this.setView("tempi"));
-      $("#tempimenu")?.addEventListener("click", () => { this.menuAperto = false; this.setView("tempi"); });
       $("#ricmenu")?.addEventListener("click", () => { this.menuAperto = false; this.setView("ricetta"); });
       $("#dimricetta")?.addEventListener("click", () => this.setView("ricetta"));   // (anche dalle Dimissioni)
       if (this.view === "ricetta") this.legaRicetta($);
       $("#termenu")?.addEventListener("click", () => { this.menuAperto = false; this.setView("terapia"); });
       if (this.view === "terapia") this.legaTerapia($);
-      $("#rifmenu")?.addEventListener("click", () => { this.menuAperto = false; this.setView("riferimenti"); this.root.querySelector("#riffiltro")?.focus(); });
       $("#consmenu")?.addEventListener("click", () => { this.menuAperto = false; this.setView("consegne"); });
       $("#conscopia")?.addEventListener("click", async (e) => {
         const b = e.currentTarget;
@@ -15016,22 +14760,6 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       });
       $("#stampamenu")?.addEventListener("click", () => { this.menuAperto = false; this.setView("stampa"); });
       $("#bracciale")?.addEventListener("click", (e) => this.stampaBracciale(e));
-      $("#riffiltro")?.addEventListener("input", (e) => { this.rifFiltro = e.target.value; this.rifFiltra(); });
-      const ferma = () => { fermaTempo(); this.render(); };
-      $("#tstop")?.addEventListener("click", ferma);
-      $("#tstop2")?.addEventListener("click", ferma);
-      const avvia = (titolo) => {
-        if (!String(titolo || "").trim()) return;
-        avviaTempo(titolo, this.nomePaziente(), this.episodeId);
-        this.setView("tempi");
-      };
-      this.root.querySelectorAll("[data-avvia]").forEach((b) =>
-        b.addEventListener("click", () => avvia(b.getAttribute("data-avvia"))));
-      $("#tavvia")?.addEventListener("click", () => avvia(this.root.querySelector("#tlib")?.value));
-      $("#tlib")?.addEventListener("keydown", (e) => { if (e.key === "Enter") avvia(e.target.value); });
-      this.root.querySelectorAll("[data-scorda]").forEach((b) =>
-        b.addEventListener("click", () => { scordaTempo(b.getAttribute("data-scorda")); this.render(); }));
-      $("#texp")?.addEventListener("click", () => this.esportaTempi());
       this.root.querySelectorAll("[data-cons]").forEach((b) => b.addEventListener("click", () => {
         const c = CONSENSI.find((x) => x.k === b.getAttribute("data-cons"));
         const url = c && urlConsenso(c);
@@ -18440,7 +18168,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     panel.mostraDimessi(true);
     if (chi) { panel.ordiniOk = true; ascoltaOrdini(panel); }
     if (hasExt() && !LAVORO && !PONTE_VALORI) tabelloneAscolta(panel);
-    if (hasExt()) { panel.seguiStampa(); panel.seguiRec(); panel.seguiAggiorna(); panel.seguiRicetta(); }
+    if (hasExt()) { panel.seguiStampa(); panel.seguiRec(); panel.seguiAggiorna(); panel.seguiRicetta(); panel.seguiForma(); }
     if (pageType === "patient") {
       panel.entry = patientModel(document, location.href);
       // la lista di un'area ha, riga per riga, i link per ordinare di ognuno:
@@ -18673,7 +18401,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       panel.aggiornaDaFuori();
     });
     panel.mostraDimessi(true);
-    if (hasExt()) { panel.seguiStampa(); panel.seguiRec(); panel.seguiAggiorna(); }
+    if (hasExt()) { panel.seguiStampa(); panel.seguiRec(); panel.seguiAggiorna(); panel.seguiForma(); }
     panel.restoreUi();
     panel.render();
     panel.caricaStorico();

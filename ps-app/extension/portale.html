@@ -42,6 +42,12 @@
   .dove button[aria-pressed="true"] { background: #0B5CAD; color: #fff; font-weight: 700; }
   @media (max-width: 520px) { body { padding: 16px; } .box { padding: 18px 16px 22px; } .riga { grid-template-columns: 1fr; } }
 </style></head><body>
+<div class="box" id="pannello">
+  <h1>Il pannello</h1>
+  <p class="sub">Come si apre sulle pagine del gestionale (lo seguono subito tutte le schede).</p>
+  <div class="dove" role="group" aria-label="Forma del pannello"><span>Forma</span><button data-forma="passaggio">Al passaggio</button><button data-forma="affianca">Affianca</button></div>
+  <p class="hint" id="formadice"></p>
+</div>
 <div class="box" id="stampa">
   <h1>Stampa automatica</h1>
   <p class="sub">Etichette all'etichettatrice, liste esami e moduli all'A4: ogni foglio va da solo alla sua stampante, senza il dialogo di stampa.</p>

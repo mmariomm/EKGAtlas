@@ -158,7 +158,8 @@ hai spostato o ridimensionato, e **Affianca**, restano come le hai messe. **—*
 resta dove la trascini; il mouse fermo sulla pill (o un tocco) riapre la finestra dove l'avevi lasciata
 (vedi *Forma*). Per usare il gestionale sotto, si riduce alla pill: la finestra lo copre quasi tutto, apposta.
 
-**Forma.** ⋯ → **Forma: Finestra · Al passaggio · Affianca** (si ricorda; il reset la lascia). **Al
+**Forma.** **Impostazioni → Il pannello: Al passaggio · Affianca** (`forma` nella memoria
+dell'estensione: ogni scheda del gestionale la segue subito; il reset la lascia). **Al
 passaggio** è la forma di partenza (l'ha chiesta il medico): il mouse fermo sulla pill per un quarto di
 secondo (chi ci passa sopra e basta non la apre) apre la finestra senza togliere la tastiera al
 gestionale, e mezzo secondo dopo che il mouse è uscito la richiude — non con il cursore o del testo non
@@ -168,10 +169,12 @@ pagina dell'iPhone (⋯ → iPhone: il mouse dentro non si vede, e col QR la man
 Ripassando si riapre **dove eri**: la stessa schermata, scorsa allo stesso punto. Un clic sulla pill (che
 resta, sopra la finestra, e si trascina anche lì; se copre ⋯ e — quelli si fanno in là) la fissa, un
 altro la libera, Esc la chiude; la pill che ricompare sotto il mouse fermo non si riapre da sola; col
-dito un tocco apre e un tocco chiude. **Finestra** è quella di sempre, qui sopra: si apre e si chiude
-con un tocco. In tutt'e due **F2** (non mentre scrivi nel gestionale) la apre **sui Pazienti, col
-filtro pronto** — F2 · lettere · Invio apre un paziente — e la richiude. **Affianca**: la finestra in una colonna a destra (il 36% dello schermo), col gestionale visibile
-a sinistra; si sposta e si ridimensiona come la Finestra. (Chi aveva scelto «Colonna» la ritrova come Affianca.)
+dito un tocco apre e un tocco chiude. Un clic sulla pill ridotta la apre già fissata: è la «Finestra» di
+prima, che non c'è più (chi l'aveva ritrova Al passaggio). **Affianca**: la finestra in una colonna a
+destra (il 36% dello schermo), col gestionale visibile a sinistra; si apre e si chiude con un tocco, si
+sposta e si ridimensiona (chi aveva «Colonna», o la Finestra messa lì, la ritrova). In tutt'e due **F2**
+(non mentre scrivi nel gestionale) la apre **sui Pazienti, col filtro pronto** — F2 · lettere · Invio
+apre un paziente — e la richiude. Col preferito (bookmarklet) Impostazioni non c'è: resta Al passaggio.
 **Tabellone** (⋯, o la sua icona accanto al ⋯ sulla lista) apre la pagina `tabellone.html` dell'estensione: lo stesso
 tabellone a tutta pagina, da fissare o sul secondo schermo. Disegna da uno specchio delle sole
 chiavi del tabellone che le schede del gestionale tengono in `chrome.storage.local` a ogni
@@ -187,12 +190,11 @@ pill: lì stai lavorando tu. La finestra si apre da sola quando la pagina l'ha a
 finestra la apri tu con un tocco. **Esc** o un clic fuori la riducono; dopo **Copia** si riduce da sola e la pill dice
 «✓ Copiato · incolla». Il menu **⋯** è a sezioni, ognuna col suo titolo piccolo, le voci corte due
 per riga, ognuna con la sua **icona** (grigia, 16 px) accanto alla parola — salvo iPhone 📱, Impostazioni 🖨️ e Registrazioni 📦, che hanno la stessa emoji del menu del telefono; una sezione che su quella
-pagina non ha voci non c'è. In cima **Forma** (vedi sopra), con **Al centro**. Poi:
+pagina non ha voci non c'è. Ci sta solo quello che serve durante il turno:
 - **Paziente** (sulla sua pagina): **Ricetta SISS** e **Terapia** (solo con l'estensione), **Stampa
-  le richieste**; in Dimissioni anche **Esporta i fogli** (un JSON) e **Importa i fogli…** (sulla
-  lista, dove un paziente non c'è, la sezione si chiama **Dimissioni**);
+  le richieste**;
 - **Strumenti**, quelli clinici: **Tabellone** e **iPhone** (il Ponte; solo con l'estensione),
-  **Cronometro**, **Riferimenti** (i *can't-miss killers*), **Consegne** (vedi sotto); in fondo, sulla stanza, **Modifica la
+  **Consegne** (vedi sotto); in fondo, sulla stanza, **Modifica la
   stanza** e **Segue il gestionale**;
 - **Impostazioni**: **Impostazioni** (una pagina sola: stampanti, stazione di stampa, indirizzo del
   portale, iPhone), e — scelte le due stampanti — **Stampa automatica** (vedi
@@ -202,16 +204,10 @@ pagina non ha voci non c'è. In cima **Forma** (vedi sopra), con **Al centro**. 
   pallino blu con la spunta, acceso);
 
 e in fondo la versione, con accanto **Ricarica** (l'estensione) e sopra, quando c'è una versione
-nuova, **Aggiorna app**. Le schermate che si aprono dal ⋯ (Riferimenti, Cronometro, Registrazioni,
-iPhone, Ricetta SISS, Terapia) dicono dove sei: al posto delle schede **«‹ [icona] Nome»**, e ‹ (o
-Esc) torna alla scheda da cui eri venuto. Il cronometro compare in intestazione **solo mentre corre**
-(un tocco sul tempo apre la scheda, ⏹ lo ferma).
-
-**Riferimenti** (menu ⋯) è la tabella del medico, i *can't-miss killers*, nel suo inglese: in cima
-«Don't anchor the DDx…», poi tre tabelle — **per sintomo, cosa escludere per primo**; le
-**etichette benigne che nascondono un killer**; **chi cambia la lista** (gravidanza,
-immunodepresso, anticoagulato, anziano…). Il cursore è già nel filtro: si scrive in inglese o in
-italiano («cefalea», «sincope», «anziano») e restano solo le righe che servono.
+nuova, **Aggiorna app**. Le schermate che si aprono dal ⋯ (Consegne, Registrazioni, iPhone,
+Ricetta SISS, Terapia) dicono dove sei: al posto delle schede **«‹ [icona] Nome»**, e ‹ (o
+Esc) torna alla scheda da cui eri venuto. (Il Cronometro e i Riferimenti non ci sono più: i tempi che
+il cronometro teneva se ne vanno dalla memoria da soli.)
 
 **Consegne** (menu ⋯), per il cambio turno: una riga per paziente, nell'ordine del tabellone —
 `OBI 2 · ROSSI M. 68 · in PS 3h40 · Aperti: Lab 50′, RX 1h40 · Da fare: 13:30 tropo; chiamare la figlia`:
@@ -1081,7 +1077,7 @@ Una **pagina sola**, senza server: si apre col doppio clic e dentro ci sono già
 servizio. Clicchi un titolo o un testo e scrivi — nessun tasto «modifica», nessuna schermata.
 **+ Nuovo foglio**, **↑ ↓** per riordinare, **🗑** per buttarne uno (chiede conferma).
 **⬇ Salva** scarica `dimissioni.json` *e* lo copia negli appunti, nella forma esatta che il pannello
-importa con **Importa i fogli…** (menu **⋯**, in Dimissioni): si passa da lì e i fogli nuovi sono in servizio. Il lavoro a metà resta
+importa con **Importa i fogli…** (in fondo ai fogli, in Dimissioni): si passa da lì e i fogli nuovi sono in servizio. Il lavoro a metà resta
 nel browser, quindi chiudere la pagina non costa niente; **↺ Originali** rimette i testi spediti.
 La pagina sta nello zip e si rigenera con `npm run editor`.
 
@@ -1285,7 +1281,7 @@ foglio i motivi per **tornare in Pronto Soccorso**.
   I **fogli tuoi** stanno in cima, col segno *tuo*; si copiano come gli altri, ✎ li riscrive o li
   rinomina, ✕ Elimina li toglie (chiede conferma). Due fogli con lo stesso nome non si possono
   avere: nell'elenco non si distinguerebbero. Come tutti i fogli sono **modelli**, senza dati del
-  paziente, e restano su questo computer (**Esporta i fogli**, nel menu **⋯**, per portarli su un altro).
+  paziente, e restano su questo computer (**Esporta i fogli**, in fondo ai fogli, per portarli su un altro).
 - **✎** apre il testo in grande e lo riscrive **per le volte successive**: le modifiche restano su
   quel computer (`localStorage`) — **sopravvivono al logout, alla chiusura del browser e agli
   aggiornamenti del programma**, perché sono tue e non dati di un paziente. Non finiscono nel
@@ -1301,7 +1297,7 @@ foglio i motivi per **tornare in Pronto Soccorso**.
 - **↺ Originale** chiede conferma prima di buttare il tuo testo. Se una nuova versione del
   programma corregge un foglio che tu avevi modificato, quel foglio si marca **⟳** e l'editor te lo
   dice: una correzione di dosaggio non può restare invisibile a chi ha personalizzato il testo.
-- **Esporta i fogli** — nel menu **⋯**, solo in Dimissioni — salva i tuoi testi in un file JSON (e negli appunti);
+- **Esporta i fogli** — piccolo, in fondo ai fogli — salva i tuoi testi in un file JSON (e negli appunti);
   **Importa i fogli…** li rimette da una
   schermata dove incolli il JSON — entrano **solo i testi diversi dagli originali**, così un
   ripristino non congela per sempre gli altri sette.

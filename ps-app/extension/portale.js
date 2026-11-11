@@ -36,3 +36,22 @@ $("via").addEventListener("click", async () => {
   await mostra();
   dice("Rimosso.", true);
 });
+
+// La forma del pannello (`forma` in chrome.storage.local): ogni scheda del
+// gestionale la segue subito (core.js, seguiForma). Finché qui non si è scelto
+// niente, la scrive il pannello: quella che c'è.
+const FORME = {
+  passaggio: "Il mouse fermo sulla pill lo apre, uscendo si richiude; un clic lo tiene aperto.",
+  affianca: "Una colonna a destra, il gestionale visibile a sinistra: si apre e si chiude con un tocco.",
+};
+const mostraForma = async () => {
+  const f = (await chrome.storage.local.get("forma")).forma;
+  const su = FORME[f] ? f : "passaggio";
+  for (const b of document.querySelectorAll("[data-forma]")) b.setAttribute("aria-pressed", String(b.dataset.forma === su));
+  $("formadice").textContent = FORME[su];
+};
+mostraForma();
+for (const b of document.querySelectorAll("[data-forma]")) {
+  b.addEventListener("click", async () => { await chrome.storage.local.set({ forma: b.dataset.forma }); mostraForma(); });
+}
+chrome.storage.onChanged.addListener((ch, area) => { if (area === "local" && ch.forma) mostraForma(); });

@@ -87,8 +87,8 @@ const lancia = (chi) => chromium.launchPersistentContext(PROFILO[chi], {
 const ctx = await lancia("pc");
 await ctx.addInitScript(() => {
   try { if (!localStorage.getItem("psassist:win.v1")) localStorage.setItem("psassist:win.v1", JSON.stringify({ x: 0.6, y: 0.01, w: 0.39, h: 0.97 })); } catch { /* niente */ }
-  // (il pannello in finestra: la pill «al passaggio» coprirebbe il ⋯ mentre la striscia parla)
-  try { localStorage.setItem("psassist:forma.v1", JSON.stringify("finestra")); } catch { /* niente */ }
+  // (il pannello che si apre col tocco, Affianca: la pill «al passaggio» coprirebbe il ⋯ mentre la striscia parla)
+  try { localStorage.setItem("psassist:forma.v1", JSON.stringify("affianca")); } catch { /* niente */ }
   try {
     const lab = JSON.stringify({ ris: [], ref: ["aaaa1111-0000-0000-0000-000000000001", "bbbb2222-0000-0000-0000-000000000002"], rich: [] });
     localStorage.setItem("psassist:autoCarica.v1", JSON.stringify({ 999001: { ts: Date.now(), lab, parz: Date.now() } }));
