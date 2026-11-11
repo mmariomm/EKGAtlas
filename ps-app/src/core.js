@@ -8002,7 +8002,7 @@
     apriSegno() {
       const s = this.segnoOrdine;
       if (!s) return;
-      this._segnoAperto = s.id;
+      this._segnoAperto = s.id; this._segnoApertoTs = Date.now();
       this._sullaPill = false; clearTimeout(this._tApre);   // (il mouse è lì sopra: la finestra non si apre sotto il tocco)
       this._firmaOrdine = "";
       this.stripOrdine();
@@ -8863,9 +8863,13 @@
       this.segnaSegno(segno);
       const avviso = (x) => grado(x) <= 1 && !gira(x) && x.stato !== "stampa";
       if (this._mostraAvviso && !l.some((x) => x.id === this._mostraAvviso && avviso(x))) this._mostraAvviso = null;
-      // (il segno toccato è la striscia: mai piegato, mai coperto da un altro)
-      const aperto = this._segnoAperto ? l.find((x) => x.id === this._segnoAperto) : null;
-      const piegati = l.some(gira) ? l.filter((x) => avviso(x) && x.id !== this._mostraAvviso && x !== aperto) : [];
+      // (il segno toccato è la striscia: mai piegato, mai coperto da quello che
+      // girava già. Un ordine partito DOPO il tocco vince lui, come sempre — il
+      // suo ⏹ a vista —, e quello toccato si piega accanto: un tocco, e torna)
+      const apertoX = this._segnoAperto ? l.find((x) => x.id === this._segnoAperto) : null;
+      const dopo = !!apertoX && l.some((x) => gira(x) && x !== apertoX && (x.ts || 0) > (this._segnoApertoTs || 0));
+      const aperto = apertoX && !dopo ? apertoX : null;
+      const piegati = l.some(gira) ? l.filter((x) => x !== aperto && x.id !== this._mostraAvviso && (avviso(x) || x === apertoX)) : [];
       const fuoco = aperto || [...l].filter((x) => !piegati.includes(x)).sort((a, b) => grado(a) - grado(b) || (b.agg || 0) - (a.agg || 0))[0];
       clearTimeout(this._tOk);
       const scadono = [fuoco, segnoDi].filter((x) => x && grado(x) === 6).map((x) => OK_STRISCIA - (Date.now() - (x.agg || 0)) + 500);
