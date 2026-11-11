@@ -160,6 +160,25 @@ const chiudiMenu = async () => { if (await $panel(doc, ".menu").count()) await $
 const puntino = () => $panel(doc, "#menubtn").evaluate((b) => b.classList.contains("agg")).catch(() => null);
 const voce = () => $panel(doc, "#aggapp").count();
 const zipScaricati = () => gh.richieste.filter((x) => /\.zip$/.test(x.url)).length;
+const pausa = () => sw.evaluate(() => chrome.storage.local.get("aggiornaPausa").then((o) => o.aggiornaPausa || null));
+const azzeraZip = () => sw.evaluate(() => Promise.all([caches.delete("psassist-aggiorna"), chrome.storage.local.remove("aggiornaPausa")]));
+const allarme = () => sw.evaluate(() => chrome.alarms.get("psassist-aggiorna").then((a) => a && a.scheduledTime));
+// il service worker che si ferma e riparte (come fa Chrome dopo mezzo minuto di quiete): la memoria
+// del service worker si perde, storage e Cache Storage restano. Lo risveglia una pagina dell'estensione.
+// (Playwright tiene lo stesso oggetto `sw`: un segno nella memoria dice se è ripartito davvero)
+const cdpPag = await ctx.newPage();
+const cdp = await ctx.newCDPSession(cdpPag);
+await cdp.send("ServiceWorker.enable");
+async function riavviaSw() {
+  await sw.evaluate(() => { self.__primaDelRiavvio = true; });
+  await cdp.send("ServiceWorker.stopAllWorkers");
+  await sospendi(300);
+  await cdpPag.goto(`chrome-extension://${ID}/ponte.html`);
+  await cdpPag.evaluate(() => chrome.runtime.sendMessage({ t: "nessuno" }).catch(() => null)).catch(() => null);
+  const nuovo = await finche(() => Promise.race([sw.evaluate(() => typeof self.__primaDelRiavvio === "undefined"), sospendi(2000).then(() => false)]), 15000);
+  await cdpPag.goto("about:blank");
+  return !!nuovo;
+}
 
 console.log("\naggiorna: la versione su GitHub");
 {
@@ -313,7 +332,7 @@ console.log("\naggiorna: da sé, quando è il momento");
 {
   azzeraLavori();
   gh.zip = zipDi(NUOVA);
-  await sw.evaluate(() => { aggZipPronto = null; });
+  await azzeraZip();
   await dimentica();
   await controlla();
   // non è il momento: un testo scritto e non salvato. La sveglia gira, e non fa niente.
@@ -333,11 +352,51 @@ console.log("\naggiorna: da sé, quando è il momento");
   await sw.evaluate(() => aggAuto());
   check(!ra.ok && ra.why === "Dopo la chiusura del gestionale" && zipScaricati() === prima1 + 1 && JSON.parse(readFileSync(join(EST, "manifest.json"), "utf8")).version === MIA,
     `«Dopo la chiusura del gestionale», e lo zip non si riscarica a ogni giro (got ${ra.why}, zip ${zipScaricati() - prima1})`);
+  // il service worker si ferma e riparte, più volte, con la scheda aperta: lo zip non si riscarica
+  // (è nella Cache Storage, non nella memoria del service worker), nessuna domanda all'aiutante,
+  // VERSION.txt non si rilegge, e la sveglia non si sposta in avanti.
+  const sveglia = await allarme(), chi0 = lavori().filter((x) => x.chi).length, gh0 = gh.richieste.length;
+  let riavvii = 0;
+  const spostata = [];
+  for (let k = 0; k < 3; k++) {
+    if (await riavviaSw()) riavvii++;
+    const s1 = await allarme();
+    if (s1 !== sveglia) spostata.push(Math.round((s1 - sveglia) / 1000));
+    await sw.evaluate(() => aggAuto());
+  }
+  check(riavvii === 3, `(il service worker è ripartito 3 volte: ${riavvii})`);
+  check(zipScaricati() === prima1 + 1 && gh.richieste.length === gh0 && lavori().filter((x) => x.chi).length === chi0 && !lavori().some((x) => x.aggiorna),
+    `3 riavvii del service worker con la scheda aperta: lo zip scaricato una volta in tutto, niente rete, niente all'aiutante (zip ${zipScaricati() - prima1}, richieste ${gh.richieste.length - gh0}, «chi» ${lavori().filter((x) => x.chi).length - chi0})`);
+  check(spostata.length === 0, `la sveglia non si sposta a ogni riavvio (spostata di ${JSON.stringify(spostata)} s)`);
   // chiusa la scheda (qui: una pagina che non è del gestionale), al giro dopo si applica, da sé
   await doc.goto("about:blank");
   // (il gestionale simulato ha aperto anche una finestra del visualizzatore: è una scheda del gestionale anche lei, si chiude)
   await sw.evaluate(() => chrome.tabs.query({ url: "https://smarthealth.multimedica.it/*" }).then((t) => chrome.tabs.remove(t.map((x) => x.id))));
   check(await sw.evaluate(() => aggSchede()) === 0, "nessuna scheda del gestionale aperta");
+  // l'aiutante dice di no: niente ricarica, e quella versione aspetta sei ore — né zip né aiutante a ogni giro
+  comportati({ aggiornaNo: "la cartella è in uso" });
+  azzeraLavori();
+  const zip2 = zipScaricati(), gh2 = gh.richieste.length;
+  await sw.evaluate(() => aggAuto());
+  const no1 = lavori().filter((x) => x.aggiorna);
+  check(no1.length === 1 && !no1[0].ok && (await pausa())?.v === NUOVA && JSON.parse(readFileSync(join(EST, "manifest.json"), "utf8")).version === MIA,
+    `l'aiutante dice di no: una volta, niente ricarica, la versione in pausa (got ${JSON.stringify(await pausa())})`);
+  const n1 = lavori().length;
+  for (let k = 0; k < 3; k++) await sw.evaluate(() => aggAuto());
+  check(lavori().length === n1 && zipScaricati() === zip2 && gh.richieste.length === gh2,
+    `dopo il no, altri tre giri: niente all'aiutante, niente scaricato, niente rete (aiutante ${lavori().length - n1}, zip ${zipScaricati() - zip2})`);
+  // (l'orologio finto: la pausa scritta più indietro)
+  const indietro = (ms) => sw.evaluate((d) => chrome.storage.local.get("aggiornaPausa").then((o) => chrome.storage.local.set({ aggiornaPausa: { ...o.aggiornaPausa, ts: Date.now() - d } })), ms);
+  await indietro(6 * 3600e3 - 60e3);
+  await sw.evaluate(() => aggAuto());
+  check(lavori().length === n1, `cinque ore e 59 minuti dopo: ancora niente (aiutante ${lavori().length - n1})`);
+  await indietro(6 * 3600e3 + 60e3);
+  await sw.evaluate(() => aggAuto());
+  check(lavori().filter((x) => x.aggiorna).length === 2 && zipScaricati() === zip2,
+    `sei ore dopo: si riprova, una volta, con lo zip già scaricato (all'aiutante ${lavori().filter((x) => x.aggiorna).length - 1}, zip ${zipScaricati() - zip2})`);
+  comportati();
+  azzeraLavori();
+  await sw.evaluate(() => chrome.storage.local.remove("aggiornaPausa"));
   const nasce = ctx.waitForEvent("serviceworker", { timeout: 30000 }).catch(() => null);
   await sw.evaluate(() => { aggAuto().catch(() => {}); return true; }).catch(() => {});
   const nuovo = await nasce;
