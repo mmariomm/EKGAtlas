@@ -58,7 +58,11 @@ l'aiutante di Windows mette la cartella nuova al posto della vecchia (che resta 
 **solo quando è sicuro**, e se no riprova ogni quarto d'ora: mai con un ordine in corso o in coda
 (anche dal telefono), una stampa o un foglio che arriva sulla stazione di stampa, una registrazione,
 o un **testo non salvato** in una scheda del gestionale (una cartella, una dimissione riscritta, la
-terapia a metà, il pannello). Nel dubbio (una scheda non risponde) aspetta. Non c'è né un puntino né
+terapia a metà, il pannello). Nel dubbio (una scheda non risponde) aspetta. Sulla build completa lo
+**scambio** avviene solo **senza schede del gestionale aperte** (se no ogni pannello resterebbe
+orfano a metà turno, con «Ricarica la pagina»): lo zip si scarica e si controlla comunque in silenzio,
+una volta, e lo scambio parte al primo giro (ogni quarto d'ora) a gestionale chiuso — o all'avvio di
+Chrome, subito (le schede ripristinate mostrano al massimo la pillola). La mini applica come prima. Non c'è né un puntino né
 «Aggiorna app» né «Ricarica»: niente da toccare. Le schede già aperte mostrano **«Ricarica la
 pagina»**: un tocco, quando vuoi (la pagina non si ricarica mai da sola: lì può esserci un testo non
 mandato). Se la versione nuova non parte, doppio clic su `ripristina.cmd` in

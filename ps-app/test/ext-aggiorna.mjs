@@ -303,7 +303,7 @@ console.log("\naggiorna: lo zip deve essere quello giusto");
   check(!lavori().some((x) => x.aggiorna), "all'aiutante non è arrivato niente");
   gh.zip = zipDi(NUOVA);
   comportati({ aggiornaNo: "la cartella è in uso" });
-  r = await sw.evaluate(() => aggiorna());
+  r = await sw.evaluate(() => aggiorna({ avvio: true }));
   check(!r.ok && /Aggiornamento non riuscito: la cartella è in uso/.test(r.why) && !r.ricarica, `l'aiutante dice di no: lo si dice, niente ricarica (got ${r.why})`);
   check(JSON.parse(readFileSync(join(EST, "manifest.json"), "utf8")).version === MIA && temporanei().length === 0, "la cartella è quella di prima, e niente di temporaneo resta");
   comportati();
@@ -313,6 +313,7 @@ console.log("\naggiorna: da sé, quando è il momento");
 {
   azzeraLavori();
   gh.zip = zipDi(NUOVA);
+  await sw.evaluate(() => { aggZipPronto = null; });
   await dimentica();
   await controlla();
   // non è il momento: un testo scritto e non salvato. La sveglia gira, e non fa niente.
@@ -322,8 +323,21 @@ console.log("\naggiorna: da sé, quando è il momento");
   await sw.evaluate(() => aggAuto());
   check(zipScaricati() === prima1 && !lavori().some((x) => x.aggiorna) && (await memoria())?.nuova === NUOVA,
     `con un testo non salvato: niente scaricato, niente all'aiutante, e la versione nuova resta da applicare (got ${JSON.stringify(await memoria())})`);
-  // ora il testo è salvato (la pagina com'era): al giro dopo si applica, da sé
+  // il testo è salvato (la pagina com'era), ma la scheda del gestionale è ancora aperta: lo zip si scarica e si controlla
+  // in silenzio, lo scambio no (il pannello resterebbe orfano a metà turno). E non si riscarica a ogni giro.
   await doc.evaluate(() => document.getElementById("prova-cartella").remove());
+  await sw.evaluate(() => aggAuto());
+  check(zipScaricati() === prima1 + 1 && !lavori().some((x) => x.aggiorna) && (await memoria())?.nuova === NUOVA && await sw.evaluate(() => aggSchede()) >= 1,
+    `con una scheda del gestionale aperta: lo zip scaricato e controllato, niente all'aiutante, la cartella è quella di prima (zip ${zipScaricati() - prima1}, got ${JSON.stringify(await memoria())})`);
+  const ra = await sw.evaluate(() => aggiorna());
+  await sw.evaluate(() => aggAuto());
+  check(!ra.ok && ra.why === "Dopo la chiusura del gestionale" && zipScaricati() === prima1 + 1 && JSON.parse(readFileSync(join(EST, "manifest.json"), "utf8")).version === MIA,
+    `«Dopo la chiusura del gestionale», e lo zip non si riscarica a ogni giro (got ${ra.why}, zip ${zipScaricati() - prima1})`);
+  // chiusa la scheda (qui: una pagina che non è del gestionale), al giro dopo si applica, da sé
+  await doc.goto("about:blank");
+  // (il gestionale simulato ha aperto anche una finestra del visualizzatore: è una scheda del gestionale anche lei, si chiude)
+  await sw.evaluate(() => chrome.tabs.query({ url: "https://smarthealth.multimedica.it/*" }).then((t) => chrome.tabs.remove(t.map((x) => x.id))));
+  check(await sw.evaluate(() => aggSchede()) === 0, "nessuna scheda del gestionale aperta");
   const nasce = ctx.waitForEvent("serviceworker", { timeout: 30000 }).catch(() => null);
   await sw.evaluate(() => { aggAuto().catch(() => {}); return true; }).catch(() => {});
   const nuovo = await nasce;
@@ -341,6 +355,11 @@ console.log("\naggiorna: da sé, quando è il momento");
   const v = nuovo ? await nuovo.evaluate(() => chrome.runtime.getManifest().version).catch(() => "") : "";
   check(v === NUOVA, `chrome.runtime.reload(): parte l'estensione nuova (got ${v || "nessun service worker nuovo"})`);
   check(await finche(async () => lavori().some((x) => x.chi && x.avviata === NUOVA), 15000), "e lo dice all'aiutante («chi», avviata)");
+  // (la pillola, per le schede ripristinate all'avvio del browser, che si aggiorna senza aspettare: qui messa a mano)
+  if (nuovo) sw = nuovo;
+  await doc.goto(A.patientUrl);
+  await doc.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
+  await sw.evaluate(async () => { const [t] = await chrome.tabs.query({ url: "https://smarthealth.multimedica.it/*" }); await chrome.scripting.executeScript({ target: { tabId: t.id }, files: ["aggiornata.js"] }); });
   const pill = await finche(() => doc.evaluate(() => document.getElementById("psassist-aggiornata")?.shadowRoot?.querySelector("button")?.textContent || ""), 15000);
   check(pill === "PS Assist aggiornata · Ricarica la pagina", `la scheda col pannello vecchio: la pillola (got «${pill}»)`);
   const prima = A.state.requests.length;

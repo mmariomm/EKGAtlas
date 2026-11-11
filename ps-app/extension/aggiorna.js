@@ -8,7 +8,9 @@
  * l'estensione gira dalla cartella dell'installazione e l'aiutante c'è, la si
  * applica da sé, ma solo quando è sicuro (aggOccupato: niente ordine in corso
  * o in coda, niente stampa, niente registrazione, niente testo non salvato in
- * una scheda del gestionale); se no si riprova ogni quarto d'ora. Lo zip si
+ * una scheda del gestionale); la build completa lo scambia solo senza schede
+ * del gestionale aperte (all'avvio del browser, subito); se no si riprova ogni
+ * quarto d'ora. Scaricare e controllare lo zip è sempre in silenzio. Lo zip si
  * scarica qui (la rete di Chrome, che in ospedale funziona), si controlla
  * (extension/manifest.json, stessa versione di VERSION.txt, stessa chiave), e
  * va all'aiutante di Windows (native messaging), che scambia la cartella
@@ -29,6 +31,7 @@ const AGG_ATTESA = 180e3;                // l'aiutante apre lo zip e scambia la 
 const AGG_APERTO = new Set(["coda", "avvio", "corre", "stampo", "stampa"]);   // come ORDINE_APERTO nel pannello
 const AGG_CARTELLA = "%LOCALAPPDATA%\\PSAssist\\estensione";
 const AGG_OCCUPATO = "Dopo l'ordine in corso";
+const AGG_SCHEDE = "Dopo la chiusura del gestionale";
 // La build è di sola lettura? Allora scarica il SUO zip (quello mini). La
 // versione (VERSION.txt) è unica per le due build, che escono insieme dallo
 // stesso `npm run dist`.
@@ -122,6 +125,20 @@ async function aggOccupato() {
   return false;
 }
 
+// Schede del gestionale aperte (quelle dove nasce il pannello). Applicare un
+// aggiornamento con una scheda aperta la lascia col pannello orfano e la pillola
+// «Ricarica la pagina» a metà turno: la build completa aspetta che non ce ne
+// siano (le schede non si ricaricano mai da sole: una pagina di risposta di un
+// POST rimanderebbe il modulo). All'avvio del browser, invece, si applica
+// subito: le schede ripristinate al massimo mostrano la pillola.
+async function aggSchede() {
+  const cs = chrome.runtime.getManifest().content_scripts?.[0] || {};
+  const senza = (cs.exclude_matches || []).map((m) => m.replace(/\*$/, ""));
+  const schede = await chrome.tabs.query({ url: cs.matches || [SA4 + "/sa4pso/*"] });
+  return schede.filter((t) => !t.discarded && !senza.some((x) => String(t.url || "").startsWith(x))).length;
+}
+let aggZipPronto = null;   // { v, buf }: scaricato e controllato, in attesa che non ci siano schede aperte
+
 // Il manifest dentro lo zip (extension/manifest.json): il registro centrale,
 // poi quel file solo — salvato o deflate.
 async function aggManifestDelloZip(buf) {
@@ -150,7 +167,7 @@ async function aggManifestDelloZip(buf) {
 }
 
 // Il tocco su «Aggiorna app». { ok, versione, ricarica } o { ok: false, why }.
-async function aggiorna() {
+async function aggiorna({ avvio = false } = {}) {
   if (await aggOccupato()) return { ok: false, why: AGG_OCCUPATO };
   let v;
   try { v = await aggVersione(); } catch (e) { return { ok: false, why: `Non trovo la versione nuova: ${corto(e && e.message || e, 100)}` }; }
@@ -158,19 +175,26 @@ async function aggiorna() {
   const i = await aggInstallata();
   if (!i.puo) return { ok: false, why: `Non si aggiorna da qui: ${i.come}.` };
   let buf, man;
-  try {
+  if (aggZipPronto && aggZipPronto.v === v) buf = aggZipPronto.buf;   // già scaricato e controllato: non di nuovo ogni quarto d'ora
+  else try {
     const r = await aggPrendi(aggZipNome());
     if (!r.ok) throw new Error(`GitHub non risponde (${r.status})`);
     buf = await r.arrayBuffer();
     if (buf.byteLength > AGG_ZIP_MAX) throw new Error("lo zip è troppo grande");
     man = await aggManifestDelloZip(buf);
   } catch (e) { return { ok: false, why: `Lo zip non è arrivato bene: ${corto(e && e.message || e, 100)}` }; }
-  if (String(man.version) !== v) return { ok: false, why: `Lo zip su GitHub non è ancora la ${v}: riprova fra qualche minuto.` };
-  if (man.key !== chrome.runtime.getManifest().key) return { ok: false, why: "Lo zip scaricato non è di PS Assist (la chiave è diversa)." };
+  if (!aggZipPronto || aggZipPronto.v !== v) {
+    if (String(man.version) !== v) return { ok: false, why: `Lo zip su GitHub non è ancora la ${v}: riprova fra qualche minuto.` };
+    if (man.key !== chrome.runtime.getManifest().key) return { ok: false, why: "Lo zip scaricato non è di PS Assist (la chiave è diversa)." };
+    aggZipPronto = { v, buf };
+  }
+  // Scaricato e controllato, in silenzio. Lo scambio, sulla build completa, solo senza schede del gestionale aperte.
+  if (!aggSolaLettura() && !avvio && await aggSchede()) return { ok: false, why: AGG_SCHEDE };
   // L'ultimo controllo e lo scambio dentro la fila degli ordini: nessun ordine
   // parte in mezzo, e la ricarica arriva subito dopo lo scambio.
   return inFilaOrd(async () => {
     if (await aggOccupato()) return { ok: false, why: AGG_OCCUPATO };
+    if (!aggSolaLettura() && !avvio && await aggSchede()) return { ok: false, why: AGG_SCHEDE };   // (una scheda aperta intanto)
     const h = await ospite({ t: "aggiorna", versione: v, zip: b64(buf) }, AGG_ATTESA);
     if (!h.ok && !h.ignoto) return { ok: false, why: `Aggiornamento non riuscito: ${corto(h.why || "l'aiutante ha detto di no", 160)}` };
     await chrome.storage.local.set({ aggiorna: { ts: 0, nuova: "", puo: false, come: "", fatto: v, quando: Date.now() } });
@@ -221,7 +245,7 @@ chrome.runtime.onInstalled.addListener((d) => {
 // pagina» (mai da sola: lì può esserci un testo non mandato).
 const AGG_ALLARME = "psassist-aggiorna";
 let aggAutoInCorso = false;   // avvio + allarme possono scattare insieme: una sola volta
-async function aggAuto() {
+async function aggAuto(avvio = false) {
   if (aggAutoInCorso) return;
   aggAutoInCorso = true;
   try {
@@ -232,13 +256,13 @@ async function aggAuto() {
     }
     if (!(rec.nuova && rec.puo && aggPiuNuova(rec.nuova, aggMia()))) rec = await aggControlla().catch(() => null);
     if (!rec || !rec.nuova || !rec.puo) return;   // niente di nuovo, o non si aggiorna da qui
-    const r = await aggiorna().catch(() => null);
+    const r = await aggiorna({ avvio }).catch(() => null);
     if (r && r.ricarica) setTimeout(() => chrome.runtime.reload(), 400);
   } finally {
     aggAutoInCorso = false;
   }
 }
-chrome.runtime.onStartup?.addListener(() => { aggAuto().catch(() => {}); });
+chrome.runtime.onStartup?.addListener(() => { aggAuto(true).catch(() => {}); });
 if (chrome.alarms) {
   chrome.alarms.create(AGG_ALLARME, { periodInMinutes: AGG_RIPROVA, delayInMinutes: 3 });
   chrome.alarms.onAlarm.addListener((a) => { if (a && a.name === AGG_ALLARME) aggAuto().catch(() => {}); });
