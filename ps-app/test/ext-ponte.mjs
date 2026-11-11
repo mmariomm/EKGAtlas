@@ -917,7 +917,7 @@ const esitiDi = async (ep, re = /./) => {
   // (la scheda la si cerca per un poco: la richiesta trattenuta può arrivare prima che il browser segni dove va la scheda)
   let dietroR = 0;
   await finche(async () => (dietroR = await dietroSu("999001")) === 1, 5000);
-  // (una pagina lenta: trattenuta 8 secondi, oltre il controllo della navigazione persa — non si richiede)
+  // (una pagina lenta: trattenuta 8 secondi, oltre il controllo della navigazione persa — non si richiede; quella che si perde davvero: prova più sotto)
   await sospendi(Math.max(0, 8000 - (Date.now() - trattenuta)));
   const chieste = TRATTENUTE.slice(), pagR = new Set(chieste.map((x) => x.pg).filter(Boolean));
   const schedeR = dietroR === 1 ? "" : JSON.stringify(await sw.evaluate(async () => ({
@@ -974,6 +974,63 @@ const esitiDi = async (ep, re = /./) => {
   await sospendi(3000);
   check(pagineB().length === prima && !/Apro sul PC/.test(await testoTel(tel)), "riaperto: già aperto in questo turno, niente scheda nuova");
   ALLERGIE_B = false;
+}
+// Cambiare PC dal telefono: i 10 minuti del tocco su un paziente sono del PC di prima. Sull'altro, lo stesso
+// paziente non aperto in questo turno si apre con un tocco (qui l'«altro PC» è lo stesso PC con un altro nome in lista).
+{
+  const c0 = await chiaveTel(tel);
+  const clone = { ...c0, id: "ZZclone0001", nome: "Altro PC" };
+  const resetB = () => doc.evaluate(() => { const K = "psassist:patients.v1", l = JSON.parse(localStorage.getItem(K) || "[]"); for (const p of l) if (p.ep === "999002") Object.assign(p, { ts: 0, lista: Date.now() }); localStorage.setItem(K, JSON.stringify(l)); });
+  const aperteB = () => APERTE.filter((x) => /EPISODIO_ID=999002/.test(x.url)).length;
+  await resetB();
+  await tel.evaluate((v) => localStorage.setItem("psassist.ponte.pcs.v1", JSON.stringify({ v, attivo: v[0].id })), [c0, clone]);
+  await tel.reload();
+  await aspettaTel(tel, /ROSSI MARIO/, 20000);
+  const n0 = aperteB();
+  await tocca(tel, '.paz[data-ep="999002"]');
+  check(await finche(() => aperteB() === n0 + 1, 60000), "(PC A) un tocco su chi il PC non ha aperto in questo turno: lo apre dietro");
+  await aspettaTel(tel, /Allergie: PENICILLINA/, 150000);
+  await finche(async () => await dietroSu("999002") === 0, 30000);
+  await tocca(tel, '[data-a="indietro"]'); await aspettaTel(tel, /BIANCHI ANNA/);
+  await resetB();
+  await tocca(tel, '[data-a="menu"]');
+  await tocca(tel, '[data-a="pc"][data-id="ZZclone0001"]');
+  await aspettaTel(tel, /BIANCHI ANNA/, 30000);
+  const n1 = aperteB();
+  await tocca(tel, '.paz[data-ep="999002"]');
+  check(await finche(() => aperteB() === n1 + 1, 60000),
+    `passato all'altro PC, lo stesso tocco sullo stesso paziente lo apre: i 10 minuti dell'«apri» erano dell'altro PC (${aperteB() - n1} aperture)`);
+  await aspettaTel(tel, /Allergie: PENICILLINA/, 150000);
+  await finche(async () => await dietroSu("999002") === 0, 30000);
+  // La navigazione che si perde davvero (la scheda dietro resta vuota: il comando di andare alla pagina non ha portato da
+  // nessuna parte — qui il primo `tabs.update` verso il paziente è inghiottito): dopo qualche secondo la si rifà UNA volta, e
+  // la lettura va a buon fine. (Una pagina lenta ma in arrivo, più su, non si richiede.)
+  await tocca(tel, '[data-a="indietro"]'); await aspettaTel(tel, /BIANCHI ANNA/);
+  await resetB();
+  await tocca(tel, '[data-a="menu"]');
+  await tocca(tel, `[data-a="pc"][data-id="${c0.id}"]`);   // (di nuovo l'altro PC: i 10 minuti ripartono da capo)
+  await aspettaTel(tel, /BIANCHI ANNA/, 30000);
+  await sw.evaluate(() => {
+    const vero = chrome.tabs.update.bind(chrome.tabs);
+    self.__veroUpdate = chrome.tabs.update;
+    self.__perdi = 1;
+    chrome.tabs.update = (id, p, ...resto) => (self.__perdi > 0 && p && /EPISODIO_ID=999002/.test(p.url || "") ? (self.__perdi--, Promise.resolve({ id })) : vero(id, p, ...resto));
+  });
+  const n2 = aperteB();
+  await tocca(tel, '.paz[data-ep="999002"]');
+  const t2 = Date.now();
+  const rifatta = await finche(() => aperteB() === n2 + 1, 40000);
+  const dopo2 = Date.now() - t2;
+  const perso = await sw.evaluate(() => { const r = self.__perdi === 0; chrome.tabs.update = self.__veroUpdate; return r; });
+  await sospendi(8000);
+  check(perso && rifatta && aperteB() === n2 + 1, `una navigazione davvero persa: dopo qualche secondo la pagina del paziente si chiede di nuovo, una volta sola (${aperteB() - n2} richieste, dopo ${dopo2} ms)`);
+  check(await finche(async () => await dietroSu("999002") === 0, 60000), "…e la lettura finisce lo stesso: la scheda dietro si chiude");
+  // com'era: un PC solo in lista
+  await tel.evaluate((c) => localStorage.setItem("psassist.ponte.pcs.v1", JSON.stringify({ v: [c], attivo: c.id })), c0);
+  await tel.reload();
+  await aspettaTel(tel, /ROSSI MARIO/, 20000);
+  await tocca(tel, '.paz[data-ep="999002"]');   // (come prima del blocco: sul paziente)
+  await aspettaTel(tel, /Richieste/, 20000);
 }
 await doc.bringToFront();
 // sul PC il referto della radiografia si è letto da solo, aprendo il paziente: il suo testo ora viaggia anche verso il telefono

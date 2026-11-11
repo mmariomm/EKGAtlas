@@ -784,6 +784,30 @@ try {
   check(!!t24b && await finche(async () => t24b.isClosed() && (await sw.evaluate(() => pt.terapie.size)) === 0, 10000),
     "ricaricata, la scheda tenuta trova la pagina d'accesso: chiusa, e il PC non la tiene più");
   srv.login = false;
+
+  // ---- 25. chiusa per i 3 minuti e riaperta da sola sulla Terapia: nessuna pagina sul PC senza un tocco
+  await doc.goto(URL_PAZ(PZ.ep));   // (il medico sulla pagina del paziente, col pannello: risponde ai comandi del telefono)
+  await doc.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
+  await tel.reload();
+  const lista25 = await aspettaTel(/ROSSI MARIO/, 40000);
+  if (!lista25) console.log(`    (25: il telefono dopo il ricaricamento: ${(await testoTel()).replace(/\s+/g, " ").slice(0, 200)})`);
+  await tel.locator('.paz[data-ep="700001"]').first().click({ timeout: 10000 });
+  await tel.locator('[data-a="scheda"][data-s="terapia"]').click();
+  await aspettaTel(/Letto sul PC alle \d\d:\d\d/, 60000);
+  await sospendi(1500);
+  await tel.evaluate(() => { const v = Date.now; window.__oraVera = v; Date.now = () => v() + 3 * 60e3 + 10e3; });
+  await sw.evaluate(() => { const v = Date.now; Date.now = () => v() + 4 * 60e3; return ponteControlla().finally(() => { Date.now = v; }); });
+  check(!!(await aspettaTel(/Sessione chiusa/, 40000)), "(25) 3 minuti senza comandi: la sessione si chiude");
+  const p25 = srv.pagineTer.length, n25 = schede().length;
+  await tel.evaluate(() => { Date.now = window.__oraVera; document.dispatchEvent(new Event("visibilitychange")); });
+  check(await finche(async () => await tel.locator('.seg [data-s="terapia"].on').count() === 1 && /ROSSI/.test(await tel.locator(".top").innerText().catch(() => "")), 30000),
+    "(25) tornati sull'app: si riapre da sola sul paziente, scheda Terapia");
+  await sospendi(4000);
+  check(srv.pagineTer.length === p25 && schede().length === n25 && /Tocca per leggere la terapia/.test(await testoTel()),
+    `…senza aprire la pagina Terapia sul PC (${srv.pagineTer.length - p25} pagine): «Tocca per leggere la terapia» (${(await testoTel()).replace(/\s+/g, " ").slice(0, 200)})`);
+  await tel.locator('[data-a="trileggi"]').click();
+  check(await finche(async () => (await righeTel()).length > 0, 60000) && srv.pagineTer.length === p25 + 1, "…e il tocco la legge: una pagina, le terapie");
+  await finche(async () => schede().length === n25, 10000);
   await pc2.close();
 } catch (e) {
   console.error(e);
