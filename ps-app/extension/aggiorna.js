@@ -1,34 +1,48 @@
 /*
- * PS Assist — «Aggiorna app» (⋯), dal service worker. Caricato da bg.js
+ * PS Assist — l'aggiornamento, dal service worker. Caricato da bg.js
  * (importScripts): vede le sue costanti (SA4, ordLeggi, inFilaOrd, ospite,
- * corto, b64).
+ * corto, b64); bg.js legge `aggScambio`.
  *
- * Una volta al giorno, e ogni volta che si apre ⋯, si legge VERSION.txt da
- * GitHub: una GET senza cookie e senza dati, l'unica cosa che esce. Più nuova
- * di questa: un puntino su ⋯ e «Aggiorna app». Un tocco: lo zip si scarica
- * qui (la rete di Chrome, che in ospedale funziona), si controlla
- * (extension/manifest.json, stessa versione di VERSION.txt, stessa chiave), e
- * va all'aiutante di Windows (native messaging), che scambia la cartella
- * %LOCALAPPDATA%\PSAssist\estensione (la vecchia resta in estensione.prima) e
- * rinnova i suoi file; poi chrome.runtime.reload(). Solo se l'estensione gira
+ * Da sé, in tutte e due le build: all'avvio di Chrome e ogni sei ore (una
+ * sveglia, creata solo se manca) si legge VERSION.txt da GitHub — una GET
+ * senza cookie e senza dati, l'unica cosa che esce — e, se è più nuova e il PC
+ * è libero (aggOccupato), la si applica. Le schede del gestionale aperte non
+ * la fermano: dopo, mostrano «Ricarica la pagina». A mano, sulla build
+ * completa: un puntino su ⋯ e «Aggiorna app» (aprendo ⋯ si rilegge
+ * VERSION.txt). Lo zip si scarica qui (la rete di Chrome, che in ospedale
+ * funziona), si controlla (extension/manifest.json, stessa versione di
+ * VERSION.txt, stessa chiave), e va all'aiutante di Windows (native
+ * messaging), che scambia la cartella %LOCALAPPDATA%\PSAssist\estensione (la
+ * vecchia resta in estensione.prima) e rinnova i suoi file; poi
+ * chrome.runtime.reload(), dalla fila degli ordini (un ordine premuto intanto:
+ * «Non partita», mai sparito con la ricarica). Solo se l'estensione gira
  * da quella cartella (installa.cmd ci mette `installata.json`, e l'aiutante
- * dice che versione c'è dentro); mai con un ordine, una stampa o un giro in
- * corso. In storage.local, `aggiorna` = { ts, nuova, puo, come }: lo legge il
- * pannello.
+ * dice che versione c'è dentro); mai con un ordine, una stampa, un giro o una
+ * registrazione in corso. Andata male (lo zip, l'aiutante che dice di no o non
+ * risponde): da sé quella versione aspetta sei ore (`aggiornaPausa`), mai un
+ * giro dopo l'altro. In storage.local, `aggiorna` = { ts, nuova, puo, come }:
+ * lo legge il pannello.
  */
-/* global SA4, ordLeggi, inFilaOrd, ospite, corto, b64, motoreDiScheda */
+/* global SA4, ordLeggi, inFilaOrd, ospite, corto, b64, motoreDiScheda, stz, regPronto, regAttiva, regStato, regSalvando, REG_INC */
 
 const AGG_BASE = "https://raw.githubusercontent.com/mmariomm/EKGAtlas/main/ps-app/dist/";
 const AGG_GIORNO = 24 * 3600e3;
 const AGG_DI_NUOVO = 60e3;               // ⋯ aperto e richiuso: non una lettura a ogni tocco
+const AGG_ORE = 6 * 3600e3;              // da sé: ogni quanto si guarda; e la pausa dopo un tentativo andato male
+const AGG_PAUSA = "aggiornaPausa";       // storage.local: { v, ts, why } — la versione andata male, e quando
 const AGG_ZIP_MAX = 28 * 1024 * 1024;   // in base64 resta sotto i 40 MB che l'aiutante accetta
 const AGG_ATTESA = 180e3;                // l'aiutante apre lo zip e scambia la cartella
 const AGG_APERTO = new Set(["coda", "avvio", "corre", "stampo", "stampa"]);   // come ORDINE_APERTO nel pannello
 const AGG_CARTELLA = "%LOCALAPPDATA%\\PSAssist\\estensione";
+// all'avvio di Chrome, se è occupato si riprova per un minuto: il primo di questo service worker, in
+// performance.now() (non si sposta con l'orologio del PC, che Windows rimette all'accensione)
+const AGG_AVVIO = 60e3;
 const AGG_OCCUPATO = "Dopo l'ordine in corso";
-// La build è di sola lettura? Allora scarica il SUO zip (quello mini) e si
-// aggiorna da sé (vedi in fondo). La versione (VERSION.txt) è unica per le due
-// build, che escono insieme dallo stesso `npm run dist`.
+const AGG_REGISTRA = "Dopo la registrazione in corso";
+let aggScambio = false;                  // lo scambio è deciso: fino alla ricarica nessun ordine nuovo, nessuna stampa nuova (bg.js)
+// La build è di sola lettura? Allora scarica il SUO zip (quello mini). La
+// versione (VERSION.txt) è unica per le due build, che escono insieme dallo
+// stesso `npm run dist`.
 const aggSolaLettura = () => typeof self !== "undefined" && self.PSA_SOLA_LETTURA === true;
 const aggZipNome = () => (aggSolaLettura() ? "ps-assist-lettura.zip" : "ps-assist-latest.zip");
 const aggMia = () => chrome.runtime.getManifest().version;
@@ -39,9 +53,12 @@ function aggPiuNuova(a, b) {
   for (let i = 0; i < 4; i++) { const d = (x[i] || 0) - (y[i] || 0); if (d) return d > 0; }
   return false;
 }
-const aggPrendi = (nome) => fetch(AGG_BASE + nome, { cache: "no-store", credentials: "omit", referrerPolicy: "no-referrer" });
+// (un orologio rimesso indietro non ferma tutto per sempre)
+const aggDaPoco = (ts) => { const d = Date.now() - (ts || 0); return d >= 0 && d < AGG_ORE; };
+const aggPrendi = (nome, altro = {}) => fetch(AGG_BASE + nome, { cache: "no-store", credentials: "omit", referrerPolicy: "no-referrer", ...altro });
+// (al più 20 secondi: l'ultima lettura si fa dentro la fila degli ordini, e non la tiene ferma)
 async function aggVersione() {
-  const r = await aggPrendi("VERSION.txt");
+  const r = await aggPrendi("VERSION.txt", { signal: AbortSignal.timeout(20e3) });
   if (!r.ok) throw new Error(`GitHub non risponde (${r.status})`);
   const v = (await r.text()).trim();
   if (!aggVer(v)) throw new Error("VERSION.txt illeggibile");
@@ -50,14 +67,19 @@ async function aggVersione() {
 
 // Si può aggiornare da qui? L'estensione deve girare dalla cartella che
 // l'aiutante scambia: c'è `installata.json` (lo scrive solo l'installazione)
-// e l'aiutante dice che lì dentro c'è questa versione.
-async function aggInstallata() {
+// e l'aiutante dice che lì dentro c'è questa versione — o già la nuova `v`
+// (`gia`: lo scambio finito senza che l'aiutante rispondesse; manca la
+// ricarica. host.ps1 copia manifest.json per ultimo: a metà copia «chi» dice
+// ancora la vecchia).
+async function aggInstallata(v = "") {
   const come = `per aggiornarla con un tocco: stampa\\installa.cmd, poi in chrome://extensions carica l'estensione da ${AGG_CARTELLA}`;
   const marca = await fetch(chrome.runtime.getURL("installata.json")).then((r) => r.ok).catch(() => false);
   if (!marca) return { puo: false, come };
   const c = await ospite({ t: "chi" }, 30e3);
   if (!c.ok) return { puo: false, come: `l'aiutante non risponde (${corto(c.why, 120)}): rilancia stampa\\installa.cmd` };
-  if (String(c.estensione || "") !== aggMia()) return { puo: false, come };
+  const e = String(c.estensione || "");
+  if (v && e === v && e !== aggMia()) return { puo: true, come: "", gia: true };
+  if (e !== aggMia()) return { puo: false, come };
   return { puo: true, come: "" };
 }
 
@@ -68,20 +90,32 @@ async function aggControlla(ora) {
   try { v = await aggVersione(); } catch { return prima; }   // senza rete: resta quello che si sapeva
   const rec = { ts: Date.now(), nuova: "", puo: false, come: "" };
   if (aggPiuNuova(v, aggMia())) {
-    const i = await aggInstallata();
+    const i = await aggInstallata(v);
     Object.assign(rec, { nuova: v, puo: i.puo, come: i.puo ? "" : `C'è la ${v}: ${i.come}.` });
   }
   await chrome.storage.local.set({ aggiorna: rec });
   return rec;
 }
 
-// Un ordine, una stampa, un ordine dal telefono, o un giro che gira in una
-// scheda del medico (il suo appunto, o il presidio di chi sta mandando).
+// Non è il momento: un ordine (anche dal telefono) in corso o in coda, una
+// stampa, un giro in una scheda del medico (il suo appunto, o il presidio di
+// chi sta mandando), un foglio per la stazione di stampa; una registrazione
+// in corso, che si sta salvando, o quella automatica che aspetta il suo minuto
+// (REG_INC). Nel dubbio — una scheda che non risponde in tempo — è occupato.
+// Non contano le schede scartate da Chrome o non caricate, e quelle dei PDF
+// delle stampe (lì il pannello non nasce). "" se è libero; se no, perché.
+const aggPdf = (t) => (chrome.runtime.getManifest().content_scripts?.[0]?.exclude_matches || []).some((m) => String(t.url || "").startsWith(m.replace(/\*$/, "")));
 async function aggOccupato() {
-  if ((await ordLeggi()).some((x) => AGG_APERTO.has(x.stato)) || motoreDiScheda()) return true;   // (anche il motore di una scheda)
+  if ((await ordLeggi()).some((x) => AGG_APERTO.has(x.stato)) || motoreDiScheda()) return AGG_OCCUPATO;   // (anche il motore di una scheda)
+  if (typeof stz !== "undefined" && (stz.stampa.size || stz.inCorso.size)) return AGG_OCCUPATO;
+  try {
+    await regPronto;
+    if (regAttiva() || (regStato && regStato.stato === "fermo" && !regStato.errore && regSalvando(regStato))
+      || (await chrome.storage.session.get(REG_INC))[REG_INC]) return AGG_REGISTRA;
+  } catch { /* il registratore non è partito: niente da salvare */ }
   const schede = await chrome.tabs.query({ url: SA4 + "/*" }).catch(() => []);
   for (const t of schede) {
-    if (t.discarded) continue;
+    if (t.discarded || t.status === "unloaded" || aggPdf(t)) continue;
     const r = await Promise.race([
       chrome.scripting.executeScript({
         target: { tabId: t.id }, injectImmediately: true, args: [10 * 60e3, 25e3],
@@ -93,9 +127,9 @@ async function aggOccupato() {
       }).catch(() => null),
       new Promise((res) => setTimeout(() => res(null), 3000)),
     ]);
-    if (r && r[0] && r[0].result) return true;
+    if (!r || !r[0] || r[0].result !== false) return AGG_OCCUPATO;   // (libera solo se lo dice: un «no» detto)
   }
-  return false;
+  return "";
 }
 
 // Il manifest dentro lo zip (extension/manifest.json): il registro centrale,
@@ -125,34 +159,74 @@ async function aggManifestDelloZip(buf) {
   throw new Error("nello zip manca extension/manifest.json");
 }
 
-// Il tocco su «Aggiorna app». { ok, versione, ricarica } o { ok: false, why }.
+// Andata male: da sé, quella versione aspetta sei ore (aggAuto).
+async function aggNo(v, why) {
+  await chrome.storage.local.set({ [AGG_PAUSA]: { v, ts: Date.now(), why: corto(why, 200) } }).catch(() => {});
+  return { ok: false, why };
+}
+
+// Applica la versione nuova: il tocco su «Aggiorna app», o da sé (aggAuto).
+// { ok, versione, ricarica } (la ricarica è già chiamata) o { ok: false, why }.
 async function aggiorna() {
-  if (await aggOccupato()) return { ok: false, why: AGG_OCCUPATO };
+  const occupato = await aggOccupato();
+  if (occupato) return { ok: false, why: occupato };
   let v;
   try { v = await aggVersione(); } catch (e) { return { ok: false, why: `Non trovo la versione nuova: ${corto(e && e.message || e, 100)}` }; }
   if (!aggPiuNuova(v, aggMia())) { await chrome.storage.local.set({ aggiorna: { ts: Date.now(), nuova: "", puo: false, come: "" } }); return { ok: false, why: "È già l'ultima versione." }; }
-  const i = await aggInstallata();
+  // che cosa c'è nella cartella: questa versione, o già la nuova (manca solo la ricarica: lo zip non serve)
+  const i = await aggInstallata(v);
   if (!i.puo) return { ok: false, why: `Non si aggiorna da qui: ${i.come}.` };
-  let buf, man;
-  try {
-    const r = await aggPrendi(aggZipNome());
-    if (!r.ok) throw new Error(`GitHub non risponde (${r.status})`);
-    buf = await r.arrayBuffer();
-    if (buf.byteLength > AGG_ZIP_MAX) throw new Error("lo zip è troppo grande");
-    man = await aggManifestDelloZip(buf);
-  } catch (e) { return { ok: false, why: `Lo zip non è arrivato bene: ${corto(e && e.message || e, 100)}` }; }
-  if (String(man.version) !== v) return { ok: false, why: `Lo zip su GitHub non è ancora la ${v}: riprova fra qualche minuto.` };
-  if (man.key !== chrome.runtime.getManifest().key) return { ok: false, why: "Lo zip scaricato non è di PS Assist (la chiave è diversa)." };
-  // L'ultimo controllo e lo scambio dentro la fila degli ordini: nessun ordine
-  // parte in mezzo, e la ricarica arriva subito dopo lo scambio.
+  let buf = null;
+  if (!i.gia) {
+    let man;
+    try {
+      const r = await aggPrendi(aggZipNome());
+      if (!r.ok) throw new Error(`GitHub non risponde (${r.status})`);
+      buf = await r.arrayBuffer();
+      if (buf.byteLength > AGG_ZIP_MAX) throw new Error("lo zip è troppo grande");
+      man = await aggManifestDelloZip(buf);
+    } catch (e) { return aggNo(v, `Lo zip non è arrivato bene: ${corto(e && e.message || e, 100)}`); }
+    if (String(man.version) !== v) return aggNo(v, `Lo zip su GitHub non è ancora la ${v}: riprova fra qualche minuto.`);
+    if (man.key !== chrome.runtime.getManifest().key) return aggNo(v, "Lo zip scaricato non è di PS Assist (la chiave è diversa).");
+  }
+  // L'ultimo controllo, lo scambio e la ricarica dentro la fila degli ordini:
+  // nessun ordine parte in mezzo.
   return inFilaOrd(async () => {
-    if (await aggOccupato()) return { ok: false, why: AGG_OCCUPATO };
-    const h = await ospite({ t: "aggiorna", versione: v, zip: b64(buf) }, AGG_ATTESA);
-    if (!h.ok && !h.ignoto) return { ok: false, why: `Aggiornamento non riuscito: ${corto(h.why || "l'aiutante ha detto di no", 160)}` };
-    await chrome.storage.local.set({ aggiorna: { ts: 0, nuova: "", puo: false, come: "", fatto: v, quando: Date.now() } });
-    // (nessuna risposta: la cartella può essere già quella nuova, e una
-    // ricarica è più sicura di un'estensione mezza vecchia e mezza nuova)
-    return { ok: true, versione: v, ricarica: true, ...(h.ok ? {} : { incerto: true }) };
+    const ancora = await aggOccupato();
+    if (ancora) return { ok: false, why: ancora, scaricato: !i.gia };   // (lo zip c'era: all'avvio non si riscarica)
+    // Subito prima dello scambio, VERSION.txt dice ancora v? Se no (ritirata, o c'è già una più nuova)
+    // niente scambio, e quella di adesso si prova al giro dopo. GitHub che non risponde: la pausa.
+    if (!i.gia) {
+      let ora;
+      try { ora = await aggVersione(); } catch (e) { return aggNo(v, `Prima dello scambio: ${corto(e && e.message || e, 100)}`); }
+      if (ora !== v) {
+        const nuova = aggPiuNuova(ora, aggMia()) ? ora : "";
+        await chrome.storage.local.set({ aggiorna: { ts: Date.now(), nuova, puo: !!nuova, come: "" } });
+        return { ok: false, why: `Su GitHub adesso c'è la ${ora}, non la ${v}` };
+      }
+    }
+    // Da qui alla ricarica nessun ordine nuovo parte (ordineNuovo, bg.js, dice «Non partita»): la
+    // ricarica svuota storage.session, e un ordine scritto lì sparirebbe senza dirlo.
+    aggScambio = true;
+    let fatto = false;
+    try {
+      if (!i.gia) {
+        const h = await ospite({ t: "aggiorna", versione: v, zip: b64(buf) }, AGG_ATTESA);
+        // Nessuna risposta: l'aiutante può essere ancora a metà della copia, e la
+        // ricarica caricherebbe una cartella mezza vecchia e mezza nuova. Niente
+        // ricarica: la pausa, poi si chiede all'aiutante che cosa c'è nella
+        // cartella (qui sopra, `gia`).
+        if (h.ignoto) return aggNo(v, `L'aiutante non ha risposto: ${corto(h.why || "", 120)}`);
+        if (!h.ok) return aggNo(v, `Aggiornamento non riuscito: ${corto(h.why || "l'aiutante ha detto di no", 160)}`);
+      }
+      await chrome.storage.local.remove(AGG_PAUSA).catch(() => {});
+      await chrome.storage.local.set({ aggiorna: { ts: 0, nuova: "", puo: false, come: "", fatto: v, quando: Date.now() } }).catch(() => {});
+      fatto = true;
+      setTimeout(() => chrome.runtime.reload(), 400);
+      return { ok: true, versione: v, ricarica: true };
+    } finally {
+      if (!fatto) aggScambio = false;   // (andata male: gli ordini ripartono, quello in fila compreso)
+    }
   });
 }
 
@@ -163,14 +237,11 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
     aggControlla(!!msg.ora).then((r) => reply({ ok: true, aggiorna: r }), () => reply({ ok: false }));
     return true;
   }
-  aggiorna().catch((e) => ({ ok: false, why: `Aggiornamento non riuscito: ${corto(e && e.message || e, 120)}` })).then((r) => {
-    reply(r);
-    if (r.ricarica) setTimeout(() => chrome.runtime.reload(), 400);
-  });
+  aggiorna().catch((e) => ({ ok: false, why: `Aggiornamento non riuscito: ${corto(e && e.message || e, 120)}` })).then(reply);
   return true;
 });
 
-// Ricaricata (dopo «Aggiorna app», o «Ricarica estensione»): nelle schede già
+// Ricaricata (dopo l'aggiornamento, o «Ricarica estensione»): nelle schede già
 // aperte il pannello è quello vecchio e non parla più con l'estensione. Una
 // pillola lo dice; la pagina la ricarica il medico, con un tocco — mai da
 // sola: lì può esserci un testo non ancora mandato. E all'aiutante: «sono
@@ -200,34 +271,40 @@ chrome.runtime.onInstalled.addListener((d) => {
   }).catch(() => {});
 });
 
-// --------------------------------------------- la build mini: senza mani
-// La build «Lettura e stampa» non ha pannello: non c'è un ⋯ da cui controllare,
-// né un tocco per applicare. Quindi guarda da sé — all'avvio del service worker
-// e ogni sei ore (chrome.alarms) — e, se c'è una versione nuova e il PC è libero
-// (la stessa guardia «stampa in corso»; non ci sono ordini qui), si aggiorna da
-// sola: `aggiorna()` tiene OGNI controllo (versione == VERSION.txt, stessa
-// chiave della build mini, cartella installata, aiutante confermato, host fisso,
-// mai a metà di una stampa). Dopo lo scambio, la ricarica — nessun avviso: sola
-// lettura, niente di non mandato.
-const AGG_MINI_ALLARME = "psassist-aggiorna-mini";
-const AGG_MINI_ORE = 6 * 60;   // minuti
-let aggMiniInCorso = false;   // avvio + allarme possono scattare insieme: una sola volta
-async function aggMiniAuto() {
-  if (!aggSolaLettura() || aggMiniInCorso) return;
-  aggMiniInCorso = true;
+// --------------------------------------------- da sé, senza mani
+// Tutte e due le build: all'avvio di Chrome e a ogni giro della sveglia (sei
+// ore), se c'è una versione nuova, si può aggiornare da qui e quella versione
+// non è andata male da poco, `aggiorna()` — con OGNI controllo (occupato,
+// versione == VERSION.txt, stessa chiave, cartella installata, aiutante
+// confermato, host fisso) e l'ultimo dentro la fila degli ordini. Occupato:
+// si riprova al giro dopo (all'avvio di Chrome, ogni 10 secondi per il primo
+// minuto: le schede ripristinate stanno ancora caricando e non rispondono).
+// Dopo lo scambio la ricarica; nelle schede già aperte la pillola «Ricarica
+// la pagina».
+const AGG_ALLARME = "psassist-aggiorna";
+let aggAutoInCorso = false;   // avvio + sveglia possono scattare insieme: una sola volta
+async function aggAuto(avvio = false) {
+  if (aggAutoInCorso) return null;
+  aggAutoInCorso = true;
   try {
     const rec = await aggControlla(true).catch(() => null);
-    if (!rec || !rec.nuova || !rec.puo) return;   // niente di nuovo, o non si aggiorna da qui
-    const r = await aggiorna().catch(() => null);
-    if (r && r.ricarica) setTimeout(() => chrome.runtime.reload(), 400);
+    if (!rec || !rec.nuova || !rec.puo) return null;   // niente di nuovo, o non si aggiorna da qui (il ⋯ lo dice)
+    const p = (await chrome.storage.local.get(AGG_PAUSA))[AGG_PAUSA];
+    if (p && p.v === rec.nuova && aggDaPoco(p.ts)) return null;   // andata male da poco: sei ore
+    let r = await aggiorna();
+    while (avvio && r && r.why === AGG_OCCUPATO && !r.scaricato && performance.now() < AGG_AVVIO - 10e3) {
+      await new Promise((res) => setTimeout(res, 10e3));
+      r = await aggiorna();
+    }
+    return r;
   } finally {
-    aggMiniInCorso = false;
+    aggAutoInCorso = false;
   }
 }
-chrome.runtime.onStartup?.addListener(() => { aggMiniAuto().catch(() => {}); });
-if (aggSolaLettura() && chrome.alarms) {
-  // solo se non c'è già: rifatta a ogni risveglio del service worker, la sveglia ripartiva da
-  // «fra 3 minuti» ogni volta — con un service worker che Chrome ferma ogni minuto non suonava mai
-  chrome.alarms.get(AGG_MINI_ALLARME).then((a) => a || chrome.alarms.create(AGG_MINI_ALLARME, { periodInMinutes: AGG_MINI_ORE, delayInMinutes: 3 })).catch(() => {});
-  chrome.alarms.onAlarm.addListener((a) => { if (a && a.name === AGG_MINI_ALLARME) aggMiniAuto().catch(() => {}); });
+chrome.runtime.onStartup?.addListener(() => { aggAuto(true).catch(() => {}); });
+if (chrome.alarms) {
+  // (solo se manca: rifatta a ogni risveglio del service worker ripartirebbe da «fra 3 minuti», e non suonerebbe mai)
+  chrome.alarms.get(AGG_ALLARME).then((a) => a || chrome.alarms.create(AGG_ALLARME, { periodInMinutes: AGG_ORE / 60e3, delayInMinutes: 3 })).catch(() => {});
+  chrome.alarms.clear("psassist-aggiorna-mini").catch(() => {});   // (quella della 3.85.2, solo della build mini)
+  chrome.alarms.onAlarm.addListener((a) => { if (a && a.name === AGG_ALLARME) aggAuto().catch(() => {}); });
 }

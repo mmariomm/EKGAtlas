@@ -49,22 +49,37 @@ l'intera pagina — nessuna estensione può impedirlo. Il pannello però **si ri
 quesito, esami selezionati, sezioni aperte e posizione tornano come li hai lasciati (per lo
 stesso paziente, nella stessa scheda), quindi in pratica non te ne accorgi.
 
-**Aggiornare a una nuova versione: ⋯ → «Aggiorna app».** Con la stampa automatica installata
-(`stampa\installa.cmd`, qui sotto) l'estensione si carica **una volta** da
-`%LOCALAPPDATA%\PSAssist\estensione` (ce la copia `installa.cmd`, e lo dice). Da lì: quando su
-GitHub c'è una versione più nuova, un puntino sul **⋯** e la voce **Aggiorna app** (la versione nel
-suggerimento). Un tocco: Chrome scarica lo zip, l'aiutante di Windows mette la cartella nuova al
-posto della vecchia (che resta in `estensione.prima`) e l'estensione si ricarica, senza riavviare
-Chrome e senza amministratore. Non mentre un ordine, una stampa o un ordine dal telefono è in corso
-(«Dopo l'ordine in corso»). Le schede già aperte mostrano **«Ricarica la pagina»**: un tocco, quando
-vuoi (la pagina non si ricarica mai da sola: lì può esserci un testo non mandato). Se la versione
-nuova non parte, doppio clic su `ripristina.cmd` in `%LOCALAPPDATA%\PSAssist\stampa` e ⟳ in
-`chrome://extensions`. Senza aiutante, o caricata da un'altra cartella, il ⋯ dice come fare; a mano
-resta il modo di sempre: sostituisci i file nella STESSA cartella e **Ricarica** (in fondo al ⋯,
-accanto alla versione), che non c'è mentre un giro di esami sta mandando.
-Per sapere se c'è una versione nuova PS Assist legge, una volta al giorno e aprendo il ⋯,
-`VERSION.txt` da `raw.githubusercontent.com` (e lo zip, solo al tocco): richieste senza cookie e
-senza dati, l'eccezione dichiarata nella regola 9.
+**Si aggiorna da sola** (dalla 3.85.3; prima solo con ⋯ → «Aggiorna app»). Con la stampa
+automatica installata (`stampa\installa.cmd`, qui sotto) l'estensione si carica **una volta** da
+`%LOCALAPPDATA%\PSAssist\estensione` (ce la copia `installa.cmd`, e lo dice). Da lì, all'avvio di
+Chrome e ogni sei ore, se su GitHub c'è una versione più nuova: Chrome scarica lo zip, lo controlla
+(stessa versione, stessa chiave), l'aiutante di Windows mette la cartella nuova al posto della
+vecchia (che resta in `estensione.prima`) e l'estensione si ricarica, senza riavviare Chrome e senza
+amministratore. Anche con il gestionale aperto: le schede già aperte mostrano **«Ricarica la
+pagina»**, un tocco quando vuoi (la pagina non si ricarica mai da sola: lì può esserci un testo non
+mandato).
+- **la ferma** un ordine in corso o in coda (anche dal telefono), una stampa o un foglio per la
+  stazione di stampa, un giro di esami in una scheda, una registrazione (anche quella automatica che
+  sta per salvarsi). Nel dubbio (una scheda non risponde) aspetta il giro dopo. Un ordine premuto
+  mentre l'aiutante scambia la cartella non parte: **«Non partita · niente inviato»**, si rifà dopo
+  la ricarica;
+- **subito prima dello scambio** rilegge `VERSION.txt`: se lì c'è ormai un'altra versione (quella di
+  prima ritirata, una correzione) non scambia;
+- **se va storto** (lo zip sbagliato, l'aiutante che dice di no o non risponde) quella versione
+  aspetta **sei ore**, mai un tentativo a ogni giro. Se l'aiutante non risponde non si ricarica
+  (potrebbe essere a metà della copia): dopo, gli chiede che cosa c'è nella cartella, e se è già la
+  nuova si ricarica e basta.
+
+A mano, subito: il puntino sul **⋯** e **Aggiorna app** (la versione nel suggerimento), con gli
+stessi controlli («Dopo l'ordine in corso»). Un PC ancora sulla 3.85.2 arriva alla 3.85.3 così, una
+volta; da lì in poi da sé. Se la versione nuova non parte, doppio clic su `ripristina.cmd` in
+`%LOCALAPPDATA%\PSAssist\stampa` e ⟳ in `chrome://extensions`. Senza aiutante, o caricata da
+un'altra cartella, non si aggiorna da sé e il ⋯ dice come fare; a mano resta il modo di sempre:
+sostituisci i file nella STESSA cartella e **Ricarica** (in fondo al ⋯, accanto alla versione), che
+non c'è mentre un giro di esami sta mandando.
+Per sapere se c'è una versione nuova PS Assist legge, all'avvio di Chrome, ogni sei ore e aprendo
+il ⋯, `VERSION.txt` da `raw.githubusercontent.com` (e lo zip, solo quando la applica): richieste
+senza cookie e senza dati, l'eccezione dichiarata nella regola 9.
 
 **Stampa automatica** (facoltativa, Windows, niente admin): etichette all'etichettatrice e il resto
 all'A4, senza dialogo. Prima si avvisa l'IT, poi si installa una volta dalla cartella `stampa`
@@ -139,10 +154,10 @@ ma con lo zip **`ps-assist-lettura.zip`**:
 4. Per farlo anche stazione di stampa dell'infermeria, la sua pagina «Stazione di stampa»
    (`stazione.html`): come per la build completa (vedi «Stazione di stampa»).
 
-**Si aggiorna da sola.** Non avendo un pannello, la build mini controlla GitHub all'avvio e ogni sei
-ore e applica da sé la versione nuova quando il PC è libero — scaricando il **suo** zip e con tutti i
-controlli di sicurezza (versione, **stessa chiave**, cartella installata, host fisso, mai a metà di
-una stampa). La sua pagina mostra «Aggiornato alla versione X · data».
+**Si aggiorna da sola**, come la build completa: all'avvio di Chrome e ogni sei ore applica da sé
+la versione nuova quando il PC è libero — scaricando il **suo** zip e con tutti i controlli di
+sicurezza (versione, **stessa chiave**, cartella installata, host fisso, mai a metà di una stampa).
+La sua pagina mostra «Aggiornato alla versione X · data».
 
 ---
 
@@ -2261,9 +2276,10 @@ nella tendina del gestionale») — poi **Prepara nel gestionale** (o Ctrl+Invio
    pazienti, vanno dal PC del medico a quello dell'infermeria passando dal ripetitore — escono
    dall'ospedale e ci tornano, cifrati da un capo all'altro; il ripetitore non li legge né li
    tiene. Solo con una stazione collegata e scelta («Stampa: Infermeria»).
-   **E una seconda, per gli aggiornamenti (⋯ → «Aggiorna app»):** il service worker legge
-   `ps-app/dist/VERSION.txt` da `raw.githubusercontent.com` (una volta al giorno e aprendo il ⋯) e,
-   solo al tocco del medico, `ps-assist-latest.zip` — due GET senza cookie, senza referrer e senza
+   **E una seconda, per gli aggiornamenti:** il service worker legge
+   `ps-app/dist/VERSION.txt` da `raw.githubusercontent.com` (all'avvio di Chrome, ogni sei ore e
+   aprendo il ⋯) e, quando applica una versione nuova (da sé, o con ⋯ → «Aggiorna app»),
+   `ps-assist-latest.zip` — due GET senza cookie, senza referrer e senza
    niente dell'ospedale (`aggiorna.js`). Lo zip va all'aiutante su questo PC, che controlla
    chiave e versione del manifest e scambia la cartella dell'estensione; mai con un ordine, una
    stampa o un giro in corso.
@@ -2575,7 +2591,7 @@ ps-app/
 ├── stampa/              ← la stampa automatica per Windows: installa.cmd, l'aiutante host.ps1 e SumatraPDF.exe (ufficiale 3.6.1, GPLv3, nello zip: installa.cmd non scarica più niente); ripristina.cmd
 ├── extension/ricetta-*  ← ⋯ → Ricetta SISS: ricetta-sw.js (service worker: la ricetta, la scheda, i preferiti),
 │                          ricetta-siss.js (nella scheda del Prescrittivo: compila e si ferma sull'Anteprima)
-├── extension/aggiorna*  ← ⋯ → «Aggiorna app»: aggiorna.js (service worker: VERSION.txt, lo zip, l'aiutante, la ricarica),
+├── extension/aggiorna*  ← l'aggiornamento, da sé e con ⋯ → «Aggiorna app»: aggiorna.js (service worker: VERSION.txt, lo zip, l'aiutante, la ricarica),
 │                          aggiornata.js (la pillola «Ricarica la pagina» nelle schede rimaste col pannello vecchio)
 ├── tools/verifica-build.mjs ← al rilascio: la build, lo zip e la versione committati sono quelli di adesso
 ├── esempi-gestionale/   ← pagine vere del gestionale, contenuti inventati (+ come)

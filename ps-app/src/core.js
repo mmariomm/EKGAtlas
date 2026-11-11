@@ -8760,6 +8760,14 @@
           onStop: () => this.segnala(null) });
         return false;
       }
+      // PS Assist si stava aggiornando: niente partito, e niente da mandare da qui (questa pagina sta per
+      // perdere l'estensione: la pillola «Ricarica la pagina»)
+      if (r.aggiorna) {
+        this.log(`${now()}  ordine non partito: PS Assist si stava aggiornando`);
+        this.segnala({ tag: "Non partita", testo: "niente inviato: ricarica la pagina e riprova", quesito: "PS Assist si stava aggiornando", tono: "err", paziente: chi,
+          onStop: () => this.segnala(null) });
+        return false;
+      }
       // niente scheda di sottofondo (non si apre, o la pagina non va): l'ordine lo manda questa pagina, come sempre
       this.log(`${now()}  scheda di sottofondo non disponibile (${r.why || "?"}): mando da questa pagina`);
       if (this.striscia && this.striscia.daOrdine) this.segnala(null);
@@ -17493,7 +17501,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       jobs: jobs.map(({ name, printer, url, breve }) => ({ name, printer, url, ...(breve ? { breve } : {}) })) };
     let r = { ok: false };
     for (let k = 0; k < 3 && !r.ok && !r.no; k++) r = await ask({ t: "ordineFogli", job });
-    if (r.no) return { ok: false, errore: "Ristampa non partita: la stampa automatica non è impostata sul PC" };
+    if (r.no) return { ok: false, errore: r.aggiorna ? `Ristampa non partita: ${r.why}` : "Ristampa non partita: la stampa automatica non è impostata sul PC" };
     if (!r.ok) return { ok: false, incerto: true, errore: "Non so se la stampa è partita: guarda la stampante prima di rifarla" };
     return { ok: true, dati: { ordini: [{ id: r.id || a.id, ep: p.ep, paziente: p.name, n: jobs.length }] }, registro: "ristampa di una richiesta di " + p.name };
   }
