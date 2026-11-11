@@ -3199,7 +3199,8 @@
   // (nessuna lettura riuscita), o il service worker l'ha rimandata per un motivo
   // del momento (un ordine, un carrello aperto). Una scheda dietro che si è
   // aperta e non ha letto non si riapre da sola: il telefono e il ⟳ ci riprovano.
-  const SMART_PIU_TARDI = new Set(["ordine in corso", "carrello aperto", "già in corso", "troppe letture in corso"]);
+  // («estensione»: il service worker che dormiva non ha risposto alla scheda appena aperta)
+  const SMART_PIU_TARDI = new Set(["ordine in corso", "carrello aperto", "già in corso", "troppe letture in corso", "estensione"]);
   const smartDaLeggere = (s = store.get(SMART_SYNC, null)) => !s || (!s.letta && SMART_PIU_TARDI.has(s.esito));
   const SMART_APERTO_MS = 1500;
   const SMART_GIRO = "smart.giro.v1";          // (nella scheda dietro) le schede della smart già lette
@@ -10100,7 +10101,14 @@
     // si ridisegna — ma non sotto un gesto in corso; ci si riprova fra poco.
     aggiornaDaFuori() {
       clearTimeout(this._fuoriT);
-      if (this.collapsed || !this.inPazienti()) return;
+      // (ridotto: solo la scritta delle novità sulla pill — visti altrove, sul telefono o in un'altra
+      // scheda, si spengono anche qui; il resto del pannello non si ridisegna)
+      if (this.collapsed) {
+        const v = this.root.querySelector("#expand .pnov");
+        if (v) { const t = this.pillNovita(); if (t) v.outerHTML = t; else v.remove(); }
+        return;
+      }
+      if (!this.inPazienti()) return;
       const occupato = this._stanzaPresa || this._stanzaMenu?.menu?.isConnected || this._df?.pop?.isConnected || this.stanzaEdit || this.menuAperto || this._carta
         || this.root.activeElement?.id === "pzcerca" || !!this.root.querySelector(".dfmod");   // (il campo del Da fare generale sopravvive al ridisegno: non ferma niente)
       if (occupato) { this._fuoriT = setTimeout(() => this.aggiornaDaFuori(), 3000); return; }
@@ -17685,7 +17693,14 @@
       if (ids.length) segnaVisti(p.ep, ids);
       if (a.valori) {
         const ora = Date.now(), fino = Math.min(ora, Number(a.fino) || 0);
-        scriviStato(p.ep, (s) => ({ ...s, valori: { nuovi: 0, fuori: 0, fuoriTot: 0 }, esitiVisto: ora, ...(fino > (s.valoriVisti || 0) ? { valoriVisti: fino } : {}) }));
+        // (una tabella letta sul PC dopo quella che il telefono ha mostrato: i suoi valori nuovi non li ha visti nessuno)
+        let dopo = false;
+        if (fino && hasExt()) {
+          const r = await ask({ t: "getStorico" });
+          const sc = scegliScheda((r && r.ok && r.indice) || [], String(p.pk || "").startsWith("cf:") ? p.pk.slice(3) : "", p.name, p.ep);
+          dopo = !!sc && (Number(sc.letto) || 0) > fino;
+        }
+        scriviStato(p.ep, (s) => ({ ...s, ...(dopo ? {} : { valori: { nuovi: 0, fuori: 0, fuoriTot: 0 } }), esitiVisto: ora, ...(fino > (s.valoriVisti || 0) ? { valoriVisti: fino } : {}) }));
       }
       if (!PANNELLO.root.activeElement) PANNELLO.render();
       return fatto({ ok: true, registro: `visti sul telefono: ${[ids.length ? (ids.length === 1 ? "un referto" : `${ids.length} referti`) : "", a.valori ? "gli esiti" : ""].filter(Boolean).join(" e ") || "niente"} di ${p.name}` });
@@ -18671,7 +18686,7 @@
         if (!panel.collapsed && ["richieste", "stampa"].includes(panel.view) && !(a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName))) panel.render();
         return;
       }
-      if (![NS + "patients.v1", NS + AREE, NS + SMART_SYNC, NS + DIMESSI, NS + STATO].includes(ev.key)) return;   // (STATO: una scheda dietro ha riletto un paziente)
+      if (![NS + "patients.v1", NS + AREE, NS + SMART_SYNC, NS + DIMESSI, NS + STATO, NS + "refVisti.v1"].includes(ev.key)) return;   // (STATO: una scheda dietro ha riletto un paziente; refVisti: visti sul telefono)
       if (ev.key === NS + DIMESSI) panel.mostraDimessi();
       panel.aggiornaDaFuori();
     });
@@ -18902,7 +18917,7 @@
     });
     window.addEventListener("storage", (ev) => {
       if (ev.key === NS + PROM || ev.key === NS + DF_GEN) return panel.promTick();   // un «Da fare» scritto in un'altra scheda: rifatto sul posto
-      if (![NS + "patients.v1", NS + AREE, NS + SMART_SYNC, NS + DIMESSI, NS + STATO].includes(ev.key)) return;   // (STATO: una scheda dietro ha riletto un paziente)
+      if (![NS + "patients.v1", NS + AREE, NS + SMART_SYNC, NS + DIMESSI, NS + STATO, NS + "refVisti.v1"].includes(ev.key)) return;   // (STATO: una scheda dietro ha riletto un paziente; refVisti: visti sul telefono)
       if (ev.key === NS + DIMESSI) panel.mostraDimessi();
       panel.aggiornaDaFuori();
     });

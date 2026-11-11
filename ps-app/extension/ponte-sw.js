@@ -926,11 +926,12 @@ async function ponteValoriApri(u, ep, modo) {
   // La navigazione persa per strada: dopo qualche secondo la scheda è ancora vuota — né arrivata né in
   // arrivo sul gestionale (come la scheda vuota di un ordine, in bg.js), e nessuna pagina ha chiesto
   // «chi sono?». Si rifà una volta (lo stesso gesto: la pagina non è mai arrivata), poi si aspetta come
-  // prima. Una pagina lenta è già in arrivo sul gestionale: quella si aspetta.
+  // prima. Una pagina lenta è già in arrivo sul gestionale: quella si aspetta — anche quando il browser,
+  // con la risposta trattenuta, non dice dove va (né url né pendingUrl) ma la scheda sta caricando.
   const w = pt.valori.get(t.id);
   if (w) w.persa = setTimeout(async () => {
     const x = await chrome.tabs.get(t.id).catch(() => null);
-    if (pt.valori.get(t.id) !== w || w.chiesto || !x || sulGestionale(x.url) || sulGestionale(x.pendingUrl)) return;
+    if (pt.valori.get(t.id) !== w || w.chiesto || !x || x.status === "loading" || sulGestionale(x.url) || sulGestionale(x.pendingUrl)) return;
     chrome.tabs.update(t.id, { url: u.href }).catch(() => {});
   }, PONTE_PERSA_MS);
   const esito = await promessa;

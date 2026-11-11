@@ -1414,7 +1414,8 @@ ecografie e visite c'è il PDF, non il testo, e il telefono lo dice.
 numeri: non è più «nuovo», né qui né nel pannello); gli Esiti con qualcosa di nuovo davanti per 3
 secondi (i valori «● N nuovi», o il pallino del tabellone) valgono come la finestra del PC aperta
 sugli Esiti: il pallino si spegne, «N nuovi» anche — i valori che il PC aveva già letto quando è
-stata scritta la tabella mostrata (`fino`); uno letto dopo resta nuovo. Solo la memoria
+stata scritta la tabella mostrata (`fino`); uno letto dopo resta nuovo, e «N nuovi» con lui. Le
+altre schede del gestionale se ne accorgono dalla memoria, anche con la pill ridotta. Solo la memoria
 dell'estensione, niente nel gestionale: si può anche dal PC di sola lettura.
 
 Lontano dal PC per qualche minuto, dal telefono: **i pazienti**, **gli esiti** di uno (con

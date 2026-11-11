@@ -690,16 +690,24 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
       }
       // (la smart è una pagina della stessa sessione, e cambia la sua richiesta «corrente»: mai
       // mentre un motore inserisce, né con un carrello aperto in una scheda — il medico che ordina a mano)
-      if (motoreAlLavoro(await ordLeggi())) return reply({ ok: false, why: "ordine in corso" });
-      if (await carrelloAperto()) return reply({ ok: false, why: "carrello aperto" });
-      await sottoControlla();
-      const vive = Object.entries(await chrome.storage.session.get(null)).filter(([k, s]) => k.startsWith("sotto:") && inCorso(s));
-      if (vive.some(([, s]) => s.cosa === "smart")) return reply({ ok: false, why: "già in corso" });
-      if (vive.length >= 3) return reply({ ok: false, why: "troppe letture in corso" });
-      const vuota = { url: "about:blank", active: false };
-      const t = await chrome.tabs.create({ ...vuota, openerTabId: da.id, index: da.index + 1, windowId: da.windowId })
-        .catch(() => chrome.tabs.create(vuota));
-      await sottoSet(t.id, { opener: da.id, cosa: "smart", ts: Date.now(), esito: "attesa" });
+      // Controllo e annotazione in un passo solo, nella fila degli ordini: due schede del gestionale che
+      // si caricano insieme non aprono due smart, e un motore non parte fra il controllo e la scheda.
+      const r = await inFilaOrd(async () => {
+        await motorePronto;
+        if (motoreAlLavoro(await ordLeggi())) return { ok: false, why: "ordine in corso" };
+        if (await carrelloAperto()) return { ok: false, why: "carrello aperto" };
+        await sottoControlla();
+        const vive = Object.entries(await chrome.storage.session.get(null)).filter(([k, s]) => k.startsWith("sotto:") && inCorso(s));
+        if (vive.some(([, s]) => s.cosa === "smart")) return { ok: false, why: "già in corso" };
+        if (vive.length >= 3) return { ok: false, why: "troppe letture in corso" };
+        const vuota = { url: "about:blank", active: false };
+        const t = await chrome.tabs.create({ ...vuota, openerTabId: da.id, index: da.index + 1, windowId: da.windowId })
+          .catch(() => chrome.tabs.create(vuota));
+        await sottoSet(t.id, { opener: da.id, cosa: "smart", ts: Date.now(), esito: "attesa" });
+        return { ok: true, t };
+      });
+      if (!r.ok) return reply(r);
+      const t = r.t;
       await chrome.tabs.update(t.id, { url: u.href });
       setTimeout(() => sottoControlla().catch(() => {}), SOTTO_MAX + 500);
       reply({ ok: true, tabId: t.id });

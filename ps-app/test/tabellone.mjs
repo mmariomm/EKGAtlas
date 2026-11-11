@@ -756,12 +756,18 @@ await blocco("Segue il gestionale: il link della pagina; si legge appena aperto 
   await page.waitForSelector("#psassist-host", { state: "attached" });   // (dopo l'accesso il pannello riparte ridotto)
   await page.clock.runFor(2000);
   check(await conta() === 7, `dopo i 2 minuti, la prima pagina ci riprova da sola (got ${await conta()})`);
+  // …e così se il service worker, addormentato, non aveva risposto («estensione»)
+  await page.evaluate(() => localStorage.setItem("psassist:smart.sync.v1", JSON.stringify({ ts: Date.now() - 10 * 60e3, fine: Date.now() - 10 * 60e3, esito: "estensione", n: 0 })));
+  await vai(URL_LISTA);
+  await page.waitForSelector("#psassist-host", { state: "attached" });
+  await page.clock.runFor(2000);
+  check(await conta() === 8, `il service worker non aveva risposto: la prima pagina ci riprova da sola (got ${await conta()})`);
   // …mentre una lettura dietro aperta e finita male («pagina») non si riapre da sola: lo fanno il telefono e il ⟳
   await page.evaluate(() => localStorage.setItem("psassist:smart.sync.v1", JSON.stringify({ ts: Date.now() - 10 * 60e3, fine: Date.now() - 10 * 60e3, esito: "pagina", n: 0 })));
   await vai(URL_LISTA);
   await page.waitForSelector("#psassist-host", { state: "attached" });   // (dopo l'accesso il pannello riparte ridotto)
   await page.clock.runFor(2000);
-  check(await conta() === 7, "una scheda dietro che non ha letto («pagina») non si riapre da sola a ogni pagina");
+  check(await conta() === 8, "una scheda dietro che non ha letto («pagina») non si riapre da sola a ogni pagina");
   // un link che non è quello della smart (un altro parametro): non si prende
   srv.s.link = "menuPsoSmart.do?MVPG=PsoPazientiSmart&PAZIENTI_FILTRO=X&s_ASSISTITO=ROSSI";
   await page.evaluate(() => localStorage.removeItem("psassist:smart.url.v1"));
