@@ -20,6 +20,11 @@
  * cartella temporanea rimasta, chrome.runtime.reload() e l'estensione nuova
  * che parte (e lo dice all'aiutante), la pillola «Ricarica la pagina» nella
  * scheda col pannello vecchio, e il tocco sulla pillola che la riapre.
+ * E mai in un giro: lo zip scaricato una volta per versione (anche col
+ * service worker che riparte), la sveglia che non si sposta, sei ore di pausa
+ * dopo un no; all'avvio del browser lo scambio con le schede aperte solo nel
+ * primo minuto e con lo zip già scaricato; l'aiutante che non risponde (forse
+ * a metà della copia): niente ricarica, poi «chi» e la ricarica senza rimandare lo zip.
  *   node test/ext-aggiorna.mjs
  */
 import { chromium } from "playwright";

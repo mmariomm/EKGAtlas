@@ -51,26 +51,33 @@ stesso paziente, nella stessa scheda), quindi in pratica non te ne accorgi.
 
 **Si aggiorna da sola, senza che tu tocchi niente.** Con la stampa automatica installata
 (`stampa\installa.cmd`, qui sotto) l'estensione si carica **una volta** da
-`%LOCALAPPDATA%\PSAssist\estensione` (ce la copia `installa.cmd`, e lo dice). Da lì il service
-worker guarda GitHub all'avvio e ogni sei ore; se c'è una versione più nuova, Chrome scarica lo zip,
-l'aiutante di Windows mette la cartella nuova al posto della vecchia (che resta in
-`estensione.prima`) e l'estensione si ricarica, senza riavviare Chrome e senza amministratore. Lo fa
-**solo quando è sicuro**, e se no riprova ogni quarto d'ora: mai con un ordine in corso o in coda
-(anche dal telefono), una stampa o un foglio che arriva sulla stazione di stampa, una registrazione,
-o un **testo non salvato** in una scheda del gestionale (una cartella, una dimissione riscritta, la
-terapia a metà, il pannello). Nel dubbio (una scheda non risponde) aspetta. Sulla build completa lo
-**scambio** avviene solo **senza schede del gestionale aperte** (se no ogni pannello resterebbe
-orfano a metà turno, con «Ricarica la pagina»): lo zip si scarica e si controlla comunque in silenzio,
-una volta, e lo scambio parte al primo giro (ogni quarto d'ora) a gestionale chiuso — o all'avvio di
-Chrome, subito (le schede ripristinate mostrano al massimo la pillola). La mini applica come prima. Non c'è né un puntino né
-«Aggiorna app» né «Ricarica»: niente da toccare. Le schede già aperte mostrano **«Ricarica la
+`%LOCALAPPDATA%\PSAssist\estensione` (ce la copia `installa.cmd`, e lo dice). Da lì:
+- **guarda** `VERSION.txt` su GitHub al più ogni sei ore;
+- **scarica** lo zip di una versione più nuova **una volta**, quando il PC non è occupato: lo
+  controlla (stessa versione, stessa chiave) e lo tiene sul PC;
+- **applica** (ci prova ogni quarto d'ora): l'aiutante di Windows mette la cartella nuova al posto
+  della vecchia (che resta in `estensione.prima`) e l'estensione si ricarica, senza riavviare Chrome
+  e senza amministratore. Sulla build completa solo **a gestionale chiuso** (nessuna scheda aperta:
+  se no il pannello resterebbe orfano a metà turno), o **all'avvio di Chrome**, nel primo minuto,
+  con lo zip già scaricato (le schede ripristinate mostrano al massimo la pillola). La mini non
+  aspetta le schede;
+- **la ferma** un ordine in corso o in coda (anche dal telefono), una stampa o un foglio che arriva
+  sulla stazione di stampa, una registrazione (anche quella automatica che sta per salvarsi), un
+  **testo non salvato** in una scheda del gestionale (una cartella, una dimissione riscritta, la
+  terapia a metà, il pannello). Nel dubbio (una scheda non risponde) aspetta;
+- **se va storto** (lo zip sbagliato, l'aiutante che dice di no o non risponde) quella versione
+  aspetta **sei ore**, mai un tentativo a ogni giro. Se l'aiutante non risponde non si ricarica
+  (potrebbe essere a metà della copia): dopo, gli chiede che cosa c'è nella cartella, e se è già la
+  nuova si ricarica e basta.
+
+Non c'è né un puntino né «Aggiorna app» né «Ricarica»: niente da toccare. Le schede già aperte mostrano **«Ricarica la
 pagina»**: un tocco, quando vuoi (la pagina non si ricarica mai da sola: lì può esserci un testo non
 mandato). Se la versione nuova non parte, doppio clic su `ripristina.cmd` in
 `%LOCALAPPDATA%\PSAssist\stampa` e ⟳ in `chrome://extensions`. Senza aiutante, o caricata da
 un'altra cartella, non si aggiorna da sé: il ⋯ lo dice, in fondo, e come rimediare (sostituire i file
 nella STESSA cartella e ⟳ in `chrome://extensions`).
-Per sapere se c'è una versione nuova PS Assist legge, ogni sei ore, `VERSION.txt` da
-`raw.githubusercontent.com` (e lo zip, solo quando lo applica): richieste senza cookie e senza dati,
+Per sapere se c'è una versione nuova PS Assist legge, al più ogni sei ore, `VERSION.txt` da
+`raw.githubusercontent.com` (e lo zip, una volta per versione): richieste senza cookie e senza dati,
 l'eccezione dichiarata nella regola 9.
 
 **Stampa automatica** (facoltativa, Windows, niente admin): etichette all'etichettatrice e il resto
@@ -1751,8 +1758,9 @@ telefono), li stampa sulle sue stampanti e dice com'è andata.
   né leggerci niente, e dopo la stampa non tiene niente del foglio. Nella sua pagina, «Ultimi
   fogli»: l'ora, etichette o A4, le pagine, com'è andata — mai un nome.
 - **Un puntino rosso sull'icona**, quasi invisibile (il badge più piccolo di Chrome: uno spazio),
-  solo quando serve: l'ultimo foglio non è stampato (fallito o esito sconosciuto) o l'aiutante di
-  stampa non risponde (lo guarda ogni mezz'ora). I fogli stampati bene non dicono niente: la carta
+  solo quando serve: un foglio non stampato (fallito o esito sconosciuto) dall'ultima occhiata,
+  anche se dopo ne sono usciti altri bene, o l'aiutante di stampa non risponde (lo guarda ogni
+  mezz'ora). I fogli stampati bene non dicono niente: la carta
   si vede. Si spegne aprendo la pagina della stazione o il popup. Nessuna notifica di Windows,
   nessun permesso in più. La build intera ha ora la sua icona (senza popup: un clic apre la
   stazione); l'icona va **fissata** nella barra (il puzzle) perché il puntino si veda. Nel popup
@@ -2308,8 +2316,8 @@ nella tendina del gestionale») — poi **Prepara nel gestionale** (o Ctrl+Invio
    dall'ospedale e ci tornano, cifrati da un capo all'altro; il ripetitore non li legge né li
    tiene. Solo con una stazione collegata e scelta («Stampa: Infermeria»).
    **E una seconda, per gli aggiornamenti (da sé):** il service worker legge
-   `ps-app/dist/VERSION.txt` da `raw.githubusercontent.com` (all'avvio e ogni sei ore) e,
-   solo quando è il momento di applicarlo, `ps-assist-latest.zip` — due GET senza cookie, senza
+   `ps-app/dist/VERSION.txt` da `raw.githubusercontent.com` (al più ogni sei ore) e, una volta
+   per ogni versione nuova, `ps-assist-latest.zip` — due GET senza cookie, senza
    referrer e senza niente dell'ospedale (`aggiorna.js`). Lo zip va all'aiutante su questo PC, che
    controlla chiave e versione del manifest e scambia la cartella dell'estensione; mai con un
    ordine, una stampa, una registrazione o un testo non salvato in corso.
