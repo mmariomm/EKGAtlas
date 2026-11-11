@@ -1019,6 +1019,9 @@ sezione("la cartella dal telefono: leggere, scrivere col «Conferma» della pagi
     `i cinque campi, e «Letto sul PC alle …» una volta (${c0.replace(/\s+/g, " ").slice(0, 160)})`);
   check(await valoreTel("ANAMNESI") === CART.campi.ANAMNESI && await valoreTel("FARMACI_ASSUNTI") === CART.campi.FARMACI_ASSUNTI && await valoreTel("ESAME_OBIETTIVO") === CART.campi.ESAME_OBIETTIVO,
     "con i testi della pagina del paziente sul PC");
+  // una verità sola per le allergie: con la cartella, la riga sotto il nome dice quello che dice il campo (l'elenco era di prima)
+  check(await finche(async () => await tel.locator(".alle").innerText().catch(() => "") === "Allergie: Nessuna BETALLERG nota", 8000) && await tel.locator(".alle.ros").count() === 1,
+    `aperta la cartella, sotto il nome le allergie del campo, non «non lette» (${await tel.locator(".alle").innerText().catch(() => "")})`);
   check(await roTel("ESAME_OBIETTIVO") && !(await roTel("ANAMNESI")) && !(await roTel("ALLERGIE")) && await tel.locator(".cc.ro").count() === 1,
     "l'esame obiettivo che la pagina dà di sola lettura (JPSOReadonly) si legge e basta, gli altri si scrivono");
   check(await tel.locator(".cta").count() === 0, "senza modifiche, niente «Salva»");
@@ -1095,6 +1098,9 @@ sezione("la cartella dal telefono: leggere, scrivere col «Conferma» della pagi
   await suPagina(doc, A.patientUrl);   // (il medico lascia stare: la pagina come il gestionale l'ha salvata)
   await salvaTel();
   check(await salvato() && CART.campi.ALLERGIE === "Penicillina BETALLERG" && CART.post.length === 3, "pagina pulita: lo stesso «Salva» adesso passa");
+  const anagPc = () => doc.evaluate(() => JSON.parse(localStorage.getItem("psassist:stato.v1") || "{}")["999001"]?.anag?.allergie?.testo || "").catch(() => "");
+  check(await finche(async () => await tel.locator(".alle").innerText().catch(() => "") === "Allergie: Penicillina BETALLERG" && await anagPc() === "Penicillina BETALLERG", 10000),
+    `salvate le allergie dal telefono: sotto il nome (e nel riepilogo della Terapia) il testo nuovo, e il PC sa lo stesso (${await tel.locator(".alle").innerText().catch(() => "")} · PC: ${await anagPc()})`);
 
   // l'esame obiettivo scrivibile, quando la pagina lo dà scrivibile — e se intanto non lo è più, no
   CART.eoRo = false;

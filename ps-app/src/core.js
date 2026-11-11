@@ -3828,6 +3828,12 @@
       return s;
     });
   }
+  // Le allergie (e l'«Attenzione») di una pagina del paziente letta adesso — riletta per il telefono, o appena
+  // salvata dal telefono —: la stessa verità per la riga sotto il nome e per il riepilogo della Terapia.
+  function segnaAnag(ep, doc) {
+    const all = allergiePagina(doc), att = attenzionePagina(doc);
+    if (ep && (all || att)) scriviStato(ep, (s) => { s.anag = { allergie: all, attenzione: att, ts: Date.now() }; return s; });
+  }
   // Gli esami appena messi in carrello da PS Assist, con il numero della richiesta.
   function segnaOrdineNostro(ep, rid, items) {
     const esami = (items || []).map((it) => {
@@ -17760,9 +17766,11 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
   }
   // Il comando `cartella`: l'ultima lettura (data dal service worker), o la
   // pagina del paziente riletta (solo lettura, e solo se è del suo episodio).
+  // Con la lettura, le allergie con le parole del PC (`ponteAllergie`): il telefono le mette sotto il nome e nel
+  // riepilogo della Terapia — una verità sola con il campo Allergie che mostra.
   async function ponteCartella(p, a) {
     const m = a.memo;
-    if (!a.rileggi && m && m.ep === p.ep && Array.isArray(m.campi)) return { ok: true, dati: m, registro: `cartella di ${p.name}` };
+    if (!a.rileggi && m && m.ep === p.ep && Array.isArray(m.campi)) return { ok: true, dati: { ...m, allergie: ponteAllergie(p.ep) }, registro: `cartella di ${p.name}` };
     const url = ponteUrlPaziente(p);
     if (!url) return { ok: false, errore: `Apri una volta ${p.name || "il paziente"} sul PC: serve la sua pagina` };
     const { doc, url: fin } = await fetchDoc(url, {});
@@ -17770,7 +17778,8 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     if (findEpisodeId(doc, fin) !== p.ep) return { ok: false, errore: "La pagina del paziente sul PC è di un altro episodio: non mostro niente" };
     const c = cartellaPagina(doc, p.ep);
     if (!c) return { ok: false, errore: "Nella pagina del paziente sul PC non c'è la cartella" };
-    return { ok: true, dati: c, nuova: true, registro: `cartella di ${p.name} (riletta)` };
+    segnaAnag(p.ep, doc);
+    return { ok: true, dati: { ...c, allergie: ponteAllergie(p.ep) }, nuova: true, registro: `cartella di ${p.name} (riletta)` };
   }
   // In una scheda del medico: c'è, per questo paziente, un testo cambiato e
   // non salvato in uno di quei campi? (rispetto a come la pagina l'ha caricato)
@@ -17831,8 +17840,10 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     }
     const f = formCartella(document, c.ep);
     const nomi = Object.keys(c.campi);
+    // (la pagina com'è adesso, con le sue allergie: le rileggono anche il telefono e la riga sotto il nome)
+    const rilette = () => { segnaAnag(c.ep, document); const l = cartellaPagina(document, c.ep); return l && { ...l, allergie: ponteAllergie(c.ep) }; };
     if (dopo) {
-      const letta = cartellaPagina(document, c.ep);
+      const letta = rilette();
       const verificati = Object.fromEntries(nomi.map((n) => {
         const x = letta.campi.find((y) => y.nome === n);
         return [n, !!x && normTesto(x.v) === normTesto(c.campi[n].dopo)];
@@ -17848,8 +17859,8 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       else if (normTesto(ta.value) !== normTesto(c.campi[n].prima)) cambiati.push(n);
     }
     // (niente scritto, niente cliccato: e la lettura fresca va al telefono)
-    if (chiusi.length) return fine({ ok: false, chiusi, testo: "non più modificabile", letta: cartellaPagina(document, c.ep) });
-    if (cambiati.length) return fine({ ok: false, cambiati, testo: "cambiato sul PC", letta: cartellaPagina(document, c.ep) });
+    if (chiusi.length) return fine({ ok: false, chiusi, testo: "non più modificabile", letta: rilette() });
+    if (cambiati.length) return fine({ ok: false, cambiati, testo: "cambiato sul PC", letta: rilette() });
     // il service worker lo annota PRIMA del clic: la pagina che torna si verifica, non si ricompila
     const via = await ask({ t: "ponteCartellaInvio" });
     if (!via || !via.ok) return;

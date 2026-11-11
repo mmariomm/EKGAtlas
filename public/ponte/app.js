@@ -691,6 +691,10 @@
   function cartellaDalPc(ep, c) {
     if (!c || !Array.isArray(c.campi)) return;
     S.cartelle.set(ep, c);
+    // le allergie della stessa lettura, con le parole del PC: sotto il nome e nel riepilogo della Terapia la
+    // stessa verità del campo Allergie qui sotto (un PC più vecchio non le manda: resta la riga dell'elenco)
+    const p = paziente(ep);
+    if (p && c.allergie && typeof c.allergie.t === "string" && c.allergie.t) p.allergie = { k: String(c.allergie.k || ""), t: c.allergie.t };
     const b = S.cbozze.get(ep);
     if (b) for (const [n, x] of b) { const v = c.campi.find((y) => y.nome === n); if (v && uguale(v.v, x.testo)) b.delete(n); }
   }

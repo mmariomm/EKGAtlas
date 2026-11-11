@@ -71,7 +71,8 @@ sessione. Vedi:
 - **Il paziente** — in testa il nome intero, l'età e il posto: «ROSSI MARIO · 77 anni · OBI 2» (su
   un episodio precedente lo dice sotto; due pazienti con lo stesso nome hanno il ⚠ e il segno che li
   distingue, come nell'elenco: «⚠ ROSSI MARIO · …9001 · 77 anni · OBI 2»). Sotto il nome, su ogni scheda, le **allergie** con le parole del PC («Allergie: nega», «non compilate»,
-  «non lette», o il testo, in rosso; anche nel riepilogo della Terapia) e il **Da fare** in una riga —
+  «non lette», o il testo, in rosso; anche nel riepilogo della Terapia — e rilette con la cartella: aperta,
+  riletta o salvata dal telefono, la riga dice quello che dice il campo Allergie) e il **Da fare** in una riga —
   «○ 11:30 ecg di controllo · +2» (senza voci, «○ + nota»): un tocco apre la lista del paziente con
   il campo «+ nota». Poi le schede **Richieste · Esiti · Cartella**, nell'ordine del PC (resta
   quella che hai scelto l'ultima volta; la prima volta gli Esiti), ognuna col suo colore: Richieste blu,
@@ -400,7 +401,9 @@ telefono aspetta 200 secondi, più del caso peggiore del PC.
 apre la pagina, con un iPhone associato, la scheda manda i cinque testi (come la pagina li ha
 caricati) al service worker, che li tiene in `storage.session` (`ponte.cartella`: in memoria, al
 massimo 40 pazienti, via a fine sessione); `cartella` dà quella lettura, o con `rileggi` la pagina
-riletta (una GET, come gli esiti). `cartellaSalva`, tutti o nessuno: prima ogni scheda del gestionale
+riletta (una GET, come gli esiti), sempre con `allergie` (le parole del PC: la riga sotto il nome). Ogni
+pagina letta — riletta, o ricaricata dopo un salvataggio — rinfresca anche le allergie che il PC sa del
+paziente (`anag`): una verità sola per il campo, la riga sotto il nome e il riepilogo della Terapia. `cartellaSalva`, tutti o nessuno: prima ogni scheda del gestionale
 dice se ha un testo non salvato nella cartella di quel paziente (se sì, no: il suo «Conferma»
 rimanderebbe il modulo intero coi testi vecchi); poi la pagina si apre in una scheda di sottofondo
 (`ponte.cartelle`, come «Aggiorna i valori», i testi solo nella memoria del service worker), che

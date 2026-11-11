@@ -1493,7 +1493,12 @@ function ponteDaPagina(msg, sender, reply) {
       if (nomi(msg.cambiati).length) esito.cambiati = nomi(msg.cambiati);
       if (nomi(msg.chiusi).length) esito.chiusi = nomi(msg.chiusi);
       if (w && msg.verificati && typeof msg.verificati === "object") esito.verificati = Object.fromEntries(Object.keys(w.campi).map((n) => [n, msg.verificati[n] === true]));
-      if (w && msg.letta && msg.letta.ep === w.ep && Array.isArray(msg.letta.campi)) esito.letta = { ep: w.ep, letto: ponteOra(), campi: msg.letta.campi };
+      if (w && msg.letta && msg.letta.ep === w.ep && Array.isArray(msg.letta.campi)) {
+        // (con le allergie della stessa pagina, con le parole del PC: per la riga sotto il nome sul telefono)
+        const all = msg.letta.allergie;
+        esito.letta = { ep: w.ep, letto: ponteOra(), campi: msg.letta.campi,
+          ...(all && ["nl", "nega", "ros", "nc"].includes(all.k) && typeof all.t === "string" ? { allergie: { k: all.k, t: all.t.slice(0, 420) } } : {}) };
+      }
       return { ok: await ponteCartellaFine(id, esito) };
     });
   }
