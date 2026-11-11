@@ -8734,12 +8734,14 @@
       if (gia && gia.doc) {
         // La pagina del paziente la elenca: era confermata, niente si preme.
         // Le sue etichette le ha già prese una scheda, dopo la Conferma che il
-        // carrello aveva smentito (conferme.v1: chi l'ha confermata a mano):
-        // niente si stampa, la Ristampa resta in fondo alle sue Richieste. Se
-        // no — nessuno le ha stampate: tolta da «Ignora», da una pagina che la
-        // elencava — si stampano adesso, una volta.
-        if (confermaDopo(rid, "stampata", p.premuta)) {
-          this.log(`${now()}  la pagina del paziente la elenca, e le sue etichette sono già state prese: era già confermata — niente premuto, niente stampato`);
+        // carrello aveva smentito (conferme.v1: chi l'ha confermata a mano) —
+        // o le prenderà: un'altra Conferma premuta dopo quella, la sua scheda
+        // ha la stampa di quel tocco (forse ancora in volo): niente si stampa,
+        // la Ristampa resta in fondo alle sue Richieste. Se no — nessuno le ha
+        // stampate: tolta da «Ignora», da una pagina che la elencava — si
+        // stampano adesso, una volta.
+        if (confermaDopo(rid, "stampata", p.premuta) || confermaDopo(rid, "premuta", p.premuta)) {
+          this.log(`${now()}  la pagina del paziente la elenca, e le sue etichette le ${confermaDopo(rid, "stampata", p.premuta) ? "ha già prese" : "prende"} la scheda della Conferma: era già confermata — niente premuto, niente stampato`);
           ricordaStampe(ep, printModel(gia.doc, gia.url), { gesto: L.gesto || L.id, rid });
           return this.consegnaLavoro({ tag: "Confermata", testo: "era già confermata: Ristampa in fondo alle sue Richieste", tono: "ok" }, null, "avviso");
         }

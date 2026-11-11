@@ -785,6 +785,50 @@ if (prova("«Conferma di nuovo» mentre la Conferma del medico è in volo: nient
   await doc2.close().catch(() => {});
   sess.dopoConferma = null; sess.confermaLenta = 0;
 }
+// «Conferma di nuovo» toccato, e subito dopo il medico preme a mano la
+// Conferma del gestionale sul carrello, in un'altra scheda: il server la
+// prende subito, la sua pagina arriva dopo 8 s. La scheda della riconferma
+// (il suo carrello lento, 2,5 s) trova la richiesta sulla pagina del paziente:
+// niente premuto, e niente stampato da lei — le etichette di quella Conferma
+// le stampa la scheda che l'ha premuta. «Confermata», e la Ristampa.
+if (prova("«Conferma di nuovo» toccato, poi il medico preme a mano: le etichette una volta, dalla scheda della sua Conferma")) {
+  const { prima, rid, rec0 } = await nonPartitaDaRifare();
+  check(!!prima && !!rec0, `«Non partita · Conferma di nuovo» (got «${prima}»)`);
+  const doc2 = await ctx.newPage();
+  await suPagina(doc2, rec0.consegna.url);
+  await sospendi(1500);
+  sess.dopoConferma = null;          // la Conferma del medico: presa subito dal server
+  sess.confermaLenta = 8000;         // ...ma la pagina dopo gli arriva fra 8 s
+  const re = new RegExp("RcsStampaEtichetteLISHMIMU\\.do\\?RICHIESTA_ID=" + rid);
+  const f0 = chiesti(A, re);
+  // la scheda della riconferma: il suo carrello arriva in 2,5 s
+  let lenti = 0;
+  const piano = async (r) => {
+    const q = r.request();
+    if (q.method() === "GET" && /RcsRichiestaPrestazioniRicercaErogatore/.test(q.url()) && lenti++ === 0) await sospendi(2500);
+    return r.fallback().catch(() => {});
+  };
+  await ctx.route(`${ORIGIN}/**`, piano);
+  const r2 = await tocca(rec0.id);   // prima il tocco su «Conferma di nuovo»
+  await sospendi(300);
+  const premuto = await doc2.evaluate(() => { const b = document.querySelector('input[type="submit"][name="Update"], input[type="submit"][name="Update1"]'); if (b) b.click(); return !!b; });
+  let recC = null;
+  await finche(async () => {
+    const rc = (await ordini()).find((x) => x.id === rec0.id + "c");
+    if (rc && !["coda", "avvio", "corre"].includes(rc.stato)) recC = rc;
+    return !!recC;
+  }, 30000);
+  await sospendi(14000);   // la pagina della Conferma del medico (8 s), e le sue etichette
+  recC = (await ordini()).find((x) => x.id === rec0.id + "c") || recC;
+  const et = (recC?.stampa?.jobs || []).filter((j) => re.test(j.url || ""));
+  check(premuto && !!(r2 && r2.ok) && conferme(A).length === 2, `due Conferme: quella ignorata e quella a mano — la riconferma non preme (got ${conferme(A).length})`);
+  check(!!recC && recC.pubblico?.titolo === "Confermata" && /Ristampa/.test(recC.pubblico?.testo || "") && !et.length,
+    `la riconferma: «Confermata», la Ristampa, niente da stampare da lei (got ${JSON.stringify(recC && [recC.stato, recC.pubblico, et.length])})`);
+  check(chiesti(A, re) - f0 === 1, `le etichette una volta, dalla scheda della Conferma a mano (got ${chiesti(A, re) - f0})`);
+  await ctx.unroute(`${ORIGIN}/**`, piano);
+  await doc2.close().catch(() => {});
+  sess.dopoConferma = null; sess.confermaLenta = 0;
+}
 if (prova("«Conferma di nuovo» con una Conferma premuta altrove che il service worker non ha saputo: la scheda guarda prima di premere")) {
   const { prima, rid, rec0 } = await nonPartitaDaRifare();
   check(!!prima && !!rec0, `«Non partita · Conferma di nuovo» (got «${prima}»)`);
