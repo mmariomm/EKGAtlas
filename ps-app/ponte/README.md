@@ -175,13 +175,17 @@ esami per ROSSI MARIO…»), e la pagina ⋯ → iPhone ha il registro del ponte
 chiuse, comandi, un altro telefono rifiutato).
 
 **La sessione finisce** dopo **3 minuti senza comandi del medico** (quello che l'app chiede da sé —
-rileggere l'elenco, gli ordini — non conta), con «Scollega» sul PC,
+rileggere l'elenco, gli ordini — non conta; un tocco o uno scorrere con l'app davanti sì, al più uno al
+minuto: `tocco`, che sul PC sposta l'orologio dei 3 minuti e basta — il telefono in mano non si chiude, uno
+lasciato lì sì), con «Scollega» sul PC,
 con la revoca, se l'estensione o il browser si riavviano, o se **una scheda del gestionale torna
 alla pagina d'accesso** (senza il gestionale il ponte non fa niente). Il telefono lo dice («Sessione
 chiusa · 3 minuti senza comandi», «Il gestionale sul PC è tornato alla pagina d'accesso») e cancella
 dalla sua memoria tutto quello che sapeva dei pazienti, avvisi compresi; **Riapri** ne apre un'altra
 con un tocco, senza QR. Chiusa per i 3 minuti, tornando sull'app (o se lo era già in sottofondo) se ne
-apre un'altra da sola, senza passare da «Sessione chiusa»: ricollegarsi è questione di un attimo. Se eri su un
+apre un'altra da sola, senza passare da «Sessione chiusa»: ricollegarsi è questione di un attimo. L'estensione
+del PC riavviata (Chrome, il PC che dorme, un aggiornamento) non la chiude nessuno: il telefono se ne accorge al
+primo messaggio e si ricollega da solo, senza «Sessione chiusa». In tutti e due i casi, se eri su un
 paziente, si riapre lì, sulla stessa scheda: del paziente resta in memoria (mai su disco) solo quale era e la
 scheda, e si riapre solo dopo che il PC ha risposto e se è ancora nel suo elenco. L'associazione resta: rientrato nel gestionale, o riaperto il browser del PC,
 il telefono riprende con la stessa chiave. **Revoca l'iPhone** (sulla pagina ⋯ → iPhone, due tocchi)
@@ -311,7 +315,8 @@ sul PC. Un saluto da solo non chiude la sessione che c'è: la sostituisce solo u
 ha parlato. Se il PC riceve dati per una sessione che non conosce (il service worker si è riavviato e
 le chiavi di sessione, che stavano solo in memoria, non ci sono più) risponde con un saluto «riparti»
 che porta il `nTel` dell'ultima sessione e la frase del perché: il telefono lo accetta solo se parla
-della *sua* sessione (ripetuto più tardi non chiude niente), chiude e offre «Riapri». La fine di una
+della *sua* sessione (ripetuto più tardi non chiude niente) e chiude; se il perché è il riavvio
+(`riavvio`), si ricollega da solo — nessuno l'ha chiusa —, se no offre «Riapri». La fine di una
 sessione porta la sua frase («Chiusa dal PC con «Scollega»»): il telefono la mostra così com'è.
 
 **Vivi o morti.** Tutte e due le parti battono: il PC ogni 20 secondi, il telefono ogni 20 secondi
@@ -356,7 +361,7 @@ ordine o un promemoria non passa poi alla scheda dopo (sarebbero due). Mai un si
 `aggiornaValori(ep)`, `richieste` (il catalogo; con una stazione di stampa collegata, `stampa: {stazione, dove}`), `ordina(ep, oid, esami, quesito, mio, nato, dest?)`, `nota(ep,
 testo)`, `promemoria(ep, testo)`, `fatto(ep, id)`, `cartella(ep, rileggi?)`, `cartellaSalva(ep, campi: {NOME:
 {prima, dopo}})`, `terapie(ep, rileggi?)`, `terapiaCerca(ep, q)`, `terapiaAggiungi(ep, rq, voce, visti)`, `accetta(k | ep, rq)`, `ristampe(ep)` (per richiesta anche `et` e `fo`: quante etichette e quanti fogli), `ristampa(ep, rid, oid, dest?, quali?)` (`quali`: `etichette` | `foglio` | `tutto`), `pdf(ep, ref, i)`, `stampa(rid, i, n, size, b)`, `stampaReferto(ep, ref, rid, dest?)`, `stazioneCollega(sta, nome)`,
-più `ciao`/`esci`/`ordini` per la sessione e lo stato degli ordini. Niente navigazione libera, niente script, niente appunti. L'ordine passa per
+più `ciao`/`esci`/`tocco`/`ordini` per la sessione e lo stato degli ordini. Niente navigazione libera, niente script, niente appunti. L'ordine passa per
 `ordineNuovo` come «Conferma e stampa», col numero `"tel" + oid` (l'`oid` lo fa il telefono quando
 arma «Conferma», `^[\w-]{8,24}$`: chiesto due volte, è un ordine solo — `ordiniVisti` in `bg.js`),
 con tutti i controlli del motore — episodio, richiesta, presidio, carrello identico alla ricevuta,

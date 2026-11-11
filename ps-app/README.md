@@ -1407,8 +1407,10 @@ che non può leggere niente: cifrato da un capo all'altro, nessun dato su nessun
   non si ripreme. Le regole: [Perché è robusto](#perché-è-robusto-regole-di-sicurezza-nel-codice), 22.
 - **Si vede sul PC**: finché il telefono è collegato, ogni scheda mostra **«iPhone collegato ·
   Scollega»** (la spia è ferma), e ogni comando va nel **Registro**. Dopo **3 minuti senza comandi** del medico la
-  sessione si chiude da sola; tornando sull'app si riapre da sola, sul paziente e sulla scheda dov'eri
-  (in memoria, mai su disco, dopo che il PC ha risposto).
+  sessione si chiude da sola — un tocco o uno scorrere col telefono in mano conta come un comando (al più
+  uno al minuto, `tocco`): mentre leggi non si chiude —; tornando sull'app si riapre da sola, sul paziente e sulla scheda dov'eri
+  (in memoria, mai su disco, dopo che il PC ha risposto). Così anche se l'estensione sul PC si riavvia: il
+  telefono si ricollega da solo, senza «Sessione chiusa».
 - **Registrazioni** (⋯ sul telefono): gli zip salvati sul PC (⋯ → Registrazioni), con quando, quanto, a mano o
   automatica e perché, il controllo — niente pazienti. **Scarica** lo porta sul telefono a pezzi, cifrato come
   tutto il resto (al più 100 MB), e lo tiene in memoria; poi **Condividi…** lo passa a iOS (all'app di Claude, a

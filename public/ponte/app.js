@@ -41,7 +41,7 @@
   const uguale = (a, b) => String(a ?? "").replace(/\s+/g, " ").trim() === String(b ?? "").replace(/\s+/g, " ").trim();
   const TRIAGE = { ROSSO: "rosso", ARANCIONE: "arancione", AZZURRO: "azzurro", VERDE: "verde", BIANCO: "bianco" };
   // Le chiusure decise qui; quelle del PC portano la loro frase.
-  const PERCHE = { inattivo: "3 minuti senza comandi", "chiusa dall'iPhone": "Chiusa da questo telefono", riavvio: "L'estensione sul PC si è riavviata" };
+  const PERCHE = { inattivo: "3 minuti senza comandi", "chiusa dall'iPhone": "Chiusa da questo telefono" };
   // dopo queste la chiave di questo telefono non apre più niente
   const FINITE = new Set(["nuova associazione", "revocata", "scaduta"]);
 
@@ -82,7 +82,7 @@
     pazienti: null, triage: null, aggiornato: 0, erroreLista: "", rinfresca: false, catalogo: null, esiti: new Map(), ristampe: new Map(), ristApri: null, ordini: new Map(), nascosti: new Set(),
     vista: { nome: "lista", ep: "" }, scheda: "esiti", dfFoglio: false, precAperti: false,
     sel: new Map(), bloccati: new Map(), aperti: new Set(),
-    riprendi: null,      // dopo i 3 minuti: { ep, scheda } dell'ultimo paziente — solo in memoria, mai su disco, e solo finché il PC non risponde
+    riprendi: null,      // dopo i 3 minuti (o il riavvio del PC): { ep, scheda } dell'ultimo paziente — solo in memoria, mai su disco, e solo finché il PC non risponde
     occupato: new Set(), vitAperti: "", promTesto: "", menu: false, arma: null, avviso: null,
     inviati: new Map(),  // ep → oid dell'ordine che sta andando al PC (il bottone aspetta)
     cartelle: new Map(), // ep → la cartella letta sul PC: { ep, letto, campi: [{ nome, v, ro }] }
@@ -464,9 +464,9 @@
     S.canale = null; S.saluto = null; S.nSessione = "";
     for (const a of S.attese.values()) { clearTimeout(a.t); a.no(new Error("Sessione chiusa")); }
     S.attese.clear();
-    // i 3 minuti senza comandi: del paziente dov'eri resta solo quale era e su che scheda (in memoria); lo si riapre
-    // quando il PC risponde, se è ancora nel suo elenco — dei suoi dati non resta niente
-    const rip = perche === "inattivo" && S.vista.nome === "paziente" ? { ep: S.vista.ep, scheda: S.scheda } : null;
+    // i 3 minuti senza comandi, o l'estensione del PC riavviata: del paziente dov'eri resta solo quale era e su che
+    // scheda (in memoria); lo si riapre quando il PC risponde, se è ancora nel suo elenco — dei suoi dati non resta niente
+    const rip = (perche === "inattivo" || perche === "riavvio") && S.vista.nome === "paziente" ? { ep: S.vista.ep, scheda: S.scheda } : null;
     svuota();
     S.riprendi = rip;
     S.perche = perche || "";
@@ -474,6 +474,9 @@
     if (FINITE.has(perche)) return dimentica("finita");   // la chiave non vale più
     zitto();
     S.fase = "chiusa"; S.menu = false;
+    // l'estensione sul PC si è riavviata (Chrome, il PC che dorme, un aggiornamento): nessuno l'ha chiusa, e il
+    // medico non deve saperlo — ci si ricollega da soli, sul paziente dov'eri
+    if (perche === "riavvio") return riapri();
     render();
   }
   // Il PC è di un altro telefono. La chiave del QR resta (serve a «Cancella e
@@ -2372,6 +2375,15 @@
   setInterval(() => {
     if (!scadenze() && S.fase === "pronta" && !document.activeElement?.id) render();   // i tempi dei promemoria
   }, 30e3);
+  // Il telefono in mano conta: un tocco o uno scorrere, con l'app davanti, è il medico che legge — un referto, i
+  // valori, la mappa — come un comando, al più uno al minuto (`tocco`: il PC sposta il suo orologio dei 3 minuti
+  // come per ogni comando, e non fa altro). Un telefono che nessuno tocca si chiude ai 3 minuti, come prima.
+  const TOCCO_OGNI = 60e3;
+  function tocco() {
+    if (document.visibilityState !== "visible" || S.fase !== "pronta" || !pronto() || Date.now() - S.ultimo < TOCCO_OGNI) return;
+    chiedi("tocco").catch(() => {});
+  }
+  for (const t of ["pointerdown", "touchstart", "keydown", "input", "scroll"]) document.addEventListener(t, tocco, { capture: true, passive: true });
 
   // Un QR nuovo inquadrato con l'app già aperta cambia solo il frammento: si
   // riparte da capo, e la partenza decide (anche se chiedere prima).

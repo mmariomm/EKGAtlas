@@ -428,7 +428,7 @@ const PONTE_DA_SE = new Set(["ciao", "ordini"]);
 // nota, posto, stazioneCollega…) cade quindi nel «Questo PC è in sola lettura».
 // È il primo muro, davanti alla scheda; il secondo è in content.js (ponteEsegui).
 const PONTE_LETTURA = new Set([
-  "ciao", "esci", "ordini",
+  "ciao", "esci", "ordini", "tocco",
   "pazienti", "triage", "mappa", "eo",
   "esiti", "aggiornaValori", "richieste", "cartella", "terapie",
   "pdf", "ristampe", "ristampa", "stampa",   // «stampa»: un PDF del telefono sull'A4 di QUESTO PC (non scrive nel gestionale)
@@ -479,6 +479,9 @@ async function ponteRisposta(s, d) {
     // nasconde quei controlli, ma lo stesso comando mandato grezzo è rifiutato.
     if (ponteSolaLettura() && !PONTE_LETTURA.has(d.cmd)) return { ok: false, errore: "Questo PC è in sola lettura", solaLettura: true };
     if (d.cmd === "ciao") return { ok: true, dati: { inattivoMin: PONTE_INATTIVO / 60e3, ...(await ponteChiSono()) } };
+    // il medico tocca o scorre il telefono (al più uno al minuto): conta come un comando — l'orologio dei 3
+    // minuti si è già spostato qui sopra (ponteComando) — e basta
+    if (d.cmd === "tocco") return { ok: true };
     if (d.cmd === "ordini") return { ok: true, dati: await ponteOrdiniTel() };
     if (d.cmd === "aggiornaValori") { const a = ponteArgomenti(d); return await ponteOffriPdf(s, await ponteAggiornaValori(a), a.ep); }
     if (d.cmd === "ordina") {

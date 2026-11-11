@@ -1995,6 +1995,23 @@ const orologio = () => sw.evaluate(() => { if (self.__oraVera) Date.now = self._
 // (12) il telefono è su un paziente, scheda Esiti: dopo i 3 minuti si riapre lì
 await tocca(tel, '.paz[data-ep="999001"]'); await aspettaTel(tel, /Richieste/, 10000);
 await tocca(tel, '[data-a="scheda"][data-s="esiti"]');
+// il telefono in mano: un tocco o uno scorrere (anche su niente) è il medico che legge — conta come un comando, al più uno al minuto
+{
+  await sospendi(500);
+  const ultimoPc = () => sw.evaluate(() => pt.sessione && pt.sessione.ultimo);
+  const u0 = await ultimoPc();
+  await tel.evaluate(() => { document.querySelector("main").dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })); window.dispatchEvent(new Event("scroll")); });
+  await sospendi(1200);
+  check(await ultimoPc() === u0, "un tocco subito dopo un comando: niente al PC (al più uno al minuto)");
+  // un minuto dopo, sul telefono: scorrere i valori (lo scroll, non un bottone) conta
+  await tel.evaluate(() => { const v = Date.now; window.__oraVera = v; Date.now = () => v() + 70e3; document.querySelector("main").dispatchEvent(new Event("scroll")); });
+  check(await finche(async () => (await ultimoPc()) > u0, 6000), "passato un minuto, scorrere col telefono in mano conta come un comando: anche il PC sposta il suo orologio dei 3 minuti");
+  const u1 = await ultimoPc();
+  await tel.evaluate(() => document.querySelector("main").dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })));
+  await sospendi(1200);
+  check(await ultimoPc() === u1, "…e un altro tocco subito dopo no");
+  await tel.evaluate(() => { Date.now = window.__oraVera; });
+}
 await avanti(2 * 60e3);
 check(!!(await statoPonte())?.sessione, "a 2 minuti la sessione c'è ancora");
 await avanti(4 * 60e3);
@@ -2076,6 +2093,10 @@ await tocca(tel, '[data-a="indietro"]').catch(() => {});
 // ===========================================================================
 sezione("il service worker si ferma e riparte");
 await aspettaTel(tel, /ROSSI MARIO/, 15000);
+await tocca(tel, '.paz[data-ep="999002"]');
+await aspettaTel(tel, /Richieste/, 10000);
+await tocca(tel, '[data-a="scheda"][data-s="cartella"]');
+await guardaChiusa();
 // (la pagina del ponte, aperta, lo sveglierebbe lei: devono farlo le schede del gestionale)
 check(!ctx.pages().some((p) => p.frames().some((f) => f.url().includes("/ponte.html"))), "(nessuna pagina del ponte aperta, né scheda né cornice)");
 await sw.evaluate(() => { self.__vecchio = true; });
@@ -2089,13 +2110,20 @@ const versioni = [];
 cdp.on("ServiceWorker.workerVersionUpdated", (e) => versioni.push(...e.versions));
 await cdp.send("ServiceWorker.enable");
 await finche(async () => versioni.some((v) => v.scriptURL.endsWith("bg.js") && v.runningStatus === "running"), 5000);
+const fermato = Date.now();
 const errStop = await cdp.send("ServiceWorker.stopWorker", { versionId: versioni.find((v) => v.scriptURL.endsWith("bg.js")).versionId }).then(() => "", (e) => e.message);
 await pag.close();
 check(!errStop && await finche(async () => relay.prese().pc === 0, 10000), `fermato il service worker, la sua presa sul ponte cade${errStop ? ` (${errStop})` : ""}`);
 check(await finche(async () => relay.prese().pc === 1, 45000), "le schede del gestionale lo svegliano, e si ricollega da solo al ponte (la chiave è rimasta)");
 sw = await swDi(ctx).catch(() => sw);
-check(!(await sw.evaluate(() => self.__vecchio).catch(() => true)) && !(await statoPonte())?.sessione, "è un service worker nuovo: la sessione di prima non c'è più, le sue chiavi stavano in memoria");
-check(/estensione sul PC si è riavviata/.test(await aspettaTel(tel, /Sessione chiusa/, 15000)), "il telefono lo scopre appena il PC torna sul ponte: «L'estensione sul PC si è riavviata»");
+// (il telefono si ricollega subito: una sessione, se c'è già, è una nuova)
+check(!(await sw.evaluate(() => self.__vecchio).catch(() => true)) && !((await statoPonte())?.sessione?.dal < fermato),
+  "è un service worker nuovo: la sessione di prima non c'è più, le sue chiavi stavano in memoria");
+// il telefono era su BIANCHI, scheda Cartella: se ne accorge appena il PC torna sul ponte, e si ricollega da solo lì —
+// «Sessione chiusa» non si vede nemmeno per un attimo (nessuno l'ha chiusa)
+check(await finche(async () => !!(await statoPonte())?.sessione && await tel.locator('.seg [data-s="cartella"].on').count() === 1 && /BIANCHI ANNA/.test(await tel.locator(".top").innerText().catch(() => "")), 20000)
+  && !(await tel.evaluate(() => window.__chiusa)) && await sw.evaluate(() => !self.__vecchio),
+  "l'estensione sul PC riavviata: il telefono si ricollega da solo, sullo stesso paziente e sulla stessa scheda, senza «Sessione chiusa»");
 // il «riparti» che l'ha chiusa, catturato per strada
 let riparti = null;
 for (const f of rete.dalPc.slice(dalPc0)) {
@@ -2103,11 +2131,13 @@ for (const f of rete.dalPc.slice(dalPc0)) {
   try { if ((await P.apri(CH1.salutoPc, new Uint8Array(f), P.TIPO.SALUTO_PC)).dati.riparti) riparti = f; } catch { /* altro */ }
 }
 check(!!riparti, "(il «riparti» del PC, catturato sulla strada)");
-await tocca(tel, '[data-a="riapri"]');
-check(/ROSSI MARIO/.test(await aspettaTel(tel, /ROSSI MARIO/, 15000)), "e riprende con un tocco");
+const dal1 = await sw.evaluate(() => pt.sessione && pt.sessione.dal);
 if (riparti) rete.prese.get(rete.ultima).ws.send(riparti);
 await sospendi(1500);
-check(!/Sessione chiusa/.test(await testoTel(tel)) && /ROSSI MARIO/.test(await testoTel(tel)), "quel «riparti» rimandato più tardi non chiude la sessione nuova");
+check(!(await tel.evaluate(() => window.__chiusa)) && /BIANCHI ANNA/.test(await testoTel(tel)) && await sw.evaluate(() => pt.sessione && pt.sessione.dal) === dal1,
+  "quel «riparti» rimandato più tardi non chiude la sessione nuova");
+await tocca(tel, '[data-a="indietro"]');
+await aspettaTel(tel, /ROSSI MARIO/, 15000);
 
 // ===========================================================================
 sezione("revoca, link che sostituiscono, scadenza, la pagina d'accesso");
@@ -2115,7 +2145,7 @@ const ponte2 = await ctx.newPage();
 await ponte2.goto(EXTURL("ponte.html"));
 await ponte2.waitForSelector("#revoca:not([hidden])");
 await ponte2.locator("#revoca").click();
-check(/Revoco\?/.test(await ponte2.locator("#revoca").innerText()), "«Revoca» chiede conferma");
+check(await finche(async () => /Revoco\?/.test(await ponte2.locator("#revoca").innerText()), 5000), "«Revoca» chiede conferma");
 await ponte2.locator("#revoca").click();
 check(/revocat/.test(await aspettaTel(tel, /revocat/, 10000)), "revocata: il telefono lo dice");
 check(await tel.evaluate(() => localStorage.length) === 0, "e dimentica la chiave");
