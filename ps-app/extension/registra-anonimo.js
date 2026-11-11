@@ -977,7 +977,11 @@
       if (!v) return v;
       if (credenziale(k) || VIEWER_SEGRETO.test(k) || tokenLike(v)) { conta.url++; return ""; }   // il gettone: via, del tutto
       if (/^[0-2](?:\.\d+){4,}$/.test(v)) return remapUid(v);
-      if (VIEWER_NOME.test(k)) { const nn = nomiDicom(v); conta.url++; return nn.length ? nomeDicomFinto(nn[0].comps) : "ESEMPIO"; }
+      if (VIEWER_NOME.test(k)) {
+        const nn = nomiDicom(v), nv = nomiVisti.get(norma(v));
+        if (nv && !nn.length) return nomeFinto(v.replace(/\s+/g, " ").trim(), nv.cat);
+        conta.url++; return nn.length ? nomeDicomFinto(nn[0].comps) : "ESEMPIO";
+      }
       if (VIEWER_ID.test(k)) return idViewer(v);
       if (VIEWER_CACHEBUSTER.test(k) && /^\d{1,16}$/.test(v)) return v.replace(/\d/g, "0");
       if (VIEWER_TECNICO.test(k) && /^[A-Za-z0-9./+:,_ -]{1,80}$/.test(v) && !/(?<!\d)\d{5,}(?!\d)/.test(v)) return v;
@@ -1085,6 +1089,9 @@
       if (/^(BLOBFIELD|WHERECONDITION)$/.test(K)) return remapCifre(v);
       if (/^\d{1,3}$/.test(v) || CODICI.has(v) || vocabolo(v)) return remapCifre(v);
       if (/^\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}/.test(v) || /^\d{4}-\d{2}-\d{2}/.test(v)) return date(v);
+      // una persona vista (s_ASSISTITO=ROSSI+MARIO): il suo nome finto, lo stesso delle pagine
+      const nv = nomiVisti.get(norma(v));
+      if (nv) return nomeFinto(v.replace(/\s+/g, " ").trim(), nv.cat);
       conta.url++;
       return "ESEMPIO";
     };

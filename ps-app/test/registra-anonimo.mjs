@@ -432,7 +432,18 @@ check(!nomi.includes("eviewer.json") && !/Visualizzatore di immagini/.test(riep)
   const fintoRossi = (/<h1>([^<]+)<\/h1>/.exec(rf.files["pagine/001-PsoEpisodioClinicoAmbulatorio.html"]) || [])[1];
   check(fintoRossi && rf.files["pagine/001-PsoEpisodioClinicoAmbulatorio.html"].includes(`Cartella di ${fintoRossi.split(" ").reverse().join(" ")} aperta`),
     `il nome girato diventa il nome finto girato (${fintoRossi})`);
-  check(/s_ASSISTITO=ESEMPIO&amp;NOME=ESEMPIO/.test(tf), "e nell'indirizzo il nome vero non c'è più");
+  // e nell'indirizzo (la ricerca per nome della lista Smart): il nome finto di quella persona, lo stesso della pagina
+  const nell = [1, 2, 3].map((i) => { const p = rf.files[`pagine/00${i}-PsoEpisodioClinicoAmbulatorio.html`] || "", f = ((/<h1>([^<]+)<\/h1>/.exec(p) || [])[1] || "").replace(/ /g, "+");
+    return [f, !!f && p.includes(`s_ASSISTITO=${f}&amp;NOME=${f}`)]; });
+  check(nell.every(([, ok]) => ok), `e nell'indirizzo il nome vero non c'è più: c'è il nome finto della stessa persona (${nell.map(([f]) => f).join(", ")})`);
+  // …anche nei moduli inviati, per un paziente che l'estensione conosce
+  const rq = anonimizza({ inizio: T3, origini: { gestionale: G }, nomi: ["GRECO OTTAVIO"], pagine: [pagA("150101", "ROSSI MARIO", 1)],
+    flusso: [{ metodo: "POST", url: `${G}/sa4pso/restrict/menuPsoEpisodio.do?ccsForm=Ricerca&MVPG=PsoPazientiSmart&s_ASSISTITO=GRECO+OTTAVIO`, tipo: "main_frame", scheda: 1,
+      inizio: T3 + 3000, fine: T3 + 3100, stato: 200, corpo: { s_ASSISTITO: ["GRECO OTTAVIO"], s_ALTRO: ["ROSSI"] } }],
+    testi: [{ nome: "registro.txt", testo: "08:00  cercato Greco Ottavio" }] }, { vocabolario, sfasamento: 30, diagnosi: true });
+  const rqf = JSON.parse(rq.files["flusso.json"]).richieste[0], fg = (/cercato (\S+ \S+)/.exec(rq.files["testi/registro.txt"]) || [])[1] || "";
+  check(fg && fg !== "Greco Ottavio" && rqf.corpo.s_ASSISTITO[0] === fg.toUpperCase() && rqf.url.endsWith(`s_ASSISTITO=${fg.toUpperCase().replace(" ", "+")}`) && rqf.corpo.s_ALTRO[0] === "ESEMPIO" && rq.gate.ok,
+    `nel modulo e nell'indirizzo del flusso lo stesso nome finto del Registro (${fg}); quello che non è una persona vista resta ESEMPIO`);
 }
 
 // -------------- date, numeri, telefoni e email scritti in un altro modo, in attributi e script
