@@ -904,7 +904,7 @@ richiesta da confermare.
   finestra Risultati c'è) non aspetta più: **«parziale 15:11»**, in grigio, **senza orologio** —
   i valori sono già in tabella. Gli orologi di ECG e immagini restano.
 - **Refertati**: una riga per referto, con data e ora, **una riga** di testo — le conclusioni se
-  ci sono, se no la prima frase del referto (mai il titolo o la riga dell'esame, né «Quesito: …») e «nuovo» finché non l'hai aperto. Il più recente **non ancora
+  ci sono, se no la prima frase del referto, anche scritto tutto in maiuscolo (mai il titolo o la riga dell'esame, né «Quesito: …») e «nuovo» finché non l'hai aperto. Il più recente **non ancora
   letto** che ha un testo (ECG, radiografia) è già **aperto**, finché non ne apri o chiudi uno
   tu. Un tocco apre il **testo lì
   sotto** (un secondo tocco lo richiude), con **⧉ Copia** (ora, esame e paziente in testa, per il

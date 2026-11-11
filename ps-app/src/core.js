@@ -1969,12 +1969,15 @@
       const dopo = r[i].replace(/^(?:conclusion[ei]|in conclusione|impressione(?:\s+diagnostica)?)\s*:?\s*/i, "");
       return unaRiga(dopo || r[i + 1] || "");
     }
-    // la riga dell'esame («69-35 RX TORACE (6979) 01/10/2026 10:51») o un titolo tutto maiuscolo
-    const titolo = (x) => /^\d+-\d+\s+\S.*\(\s*[A-Z0-9]+\s*\)\s+\d/i.test(x) || !/[a-zà-ù]/.test(x);
+    const parole = (x) => x.split(/\s+/).length;
+    // la riga dell'esame («69-35 RX TORACE (6979) 01/10/2026 10:51») o, tutto maiuscolo, il titolo
+    // dell'esame, l'intestazione del reparto o una riga corta. Una riga maiuscola di tre parole o
+    // più, se no, è il referto: molti li scrivono così («NON FOCOLAI BRONCOPNEUMONICI IN ATTO.»)
+    const titolo = (x) => /^\d+-\d+\s+\S.*\(\s*[A-Z0-9]+\s*\)\s+\d/i.test(x) || (!/[a-zà-ù]/.test(x) && (parole(x) < 3
+      || /^(?:RX|RADIOGRAFIA|TC|TAC|RM|RMN|ECOGRAFIA|ECOCOLORDOPPLER|ECG|ELETTROCARDIOGRAMMA|ANGIO-?TC|MAMMOGRAFIA|U\.\s?O|S\.\s?C|RADIOLOGIA|RADIODIAGNOSTICA|DIAGNOSTICA PER IMMAGINI|REPARTO|SERVIZIO|DIPARTIMENTO|STRUTTURA|UNIT[ÀA] OPERATIVA)\b/.test(x)));
     const meta = /^(?:quesito(?:\s+diagnostico)?|anamnesi|dati\s+clinici|notizie\s+cliniche|tecnica|metodica|indicazione|motivo|richiesta|esame|data|ora|paziente|medico|operatore|modalit[àa]|reparto|confronto|precedenti)(?![A-Za-zÀ-ÿ])[^:]{0,20}:/i;
     const intest = /ospedale|azienda|presidio|\bdott|\bdr\.|medico|paziente|\bnat[oa]\b|\bdata\b|pagina/i;
-    const corpo = r.filter((x) => /[a-zà-ù]/.test(x) && !titolo(x) && !meta.test(x));
-    const parole = (x) => x.split(/\s+/).length;
+    const corpo = r.filter((x) => !titolo(x) && !meta.test(x));
     return unaRiga(corpo.find((x) => parole(x) >= 4 && !intest.test(x))
       || corpo.find((x) => parole(x) >= 2 && !intest.test(x))
       || r.find((x) => !titolo(x)) || r[0] || "");

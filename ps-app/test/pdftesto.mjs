@@ -252,6 +252,10 @@ check(await ante(SENZA) === "Non focolai a carattere broncopneumonico.", "né il
 check(await ante(["RX TORACE", "Torace: nulla di rilevante.", "Conclusioni: quadro nei limiti."]) === "quadro nei limiti.", "le conclusioni, se ci sono, su una riga");
 check(await ante(["Conclusioni:", "Polmonite basale destra.", "Controllo in 7 giorni."]) === "Polmonite basale destra.", "«Conclusioni:» da sola: la riga dopo");
 check(await ante(["RX BACINO", "Torace: nulla di rilevante."]) === "Torace: nulla di rilevante.", "«Torace: …» è un reperto, non un'etichetta");
+check(await ante(["69-35 RX TORACE (6979) 01/10/2026 10:51", "NON FOCOLAI BRONCOPNEUMONICI IN ATTO.", "SENI COSTOFRENICI LIBERI."]) === "NON FOCOLAI BRONCOPNEUMONICI IN ATTO.",
+  "un referto tutto maiuscolo: la sua prima frase, non la riga dell'esame");
+check(await ante(["U.O.C. RADIOLOGIA DIAGNOSTICA", "RADIOGRAFIA TORACE 2 PROIEZIONI", "NON PNX.", "OMBRA CARDIACA NEI LIMITI."]) === "OMBRA CARDIACA NEI LIMITI.",
+  "in maiuscolo, né l'intestazione del reparto né il titolo dell'esame");
 
 console.log("\nil referto è di questo paziente?");
 const ROSSI = { cf: "SMPRSS80A01F205X", nome: "ROSSI MARIO", nascita: "01/01/1980" };
