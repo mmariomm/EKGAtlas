@@ -11892,8 +11892,9 @@
       await mettiInScheda(chiave, null, (vecchio) => {
         const base = vecchio || vuota;
         const referti = (base.referti || []).filter((r) => r.id !== e.id);
+        // (righe è già il testo che si mostra, refertoMostrato: «mostrato», e nessuno lo ritaglia)
         referti.unshift({ id: e.id, quando: e.when || "", titolo: shortLabel(e.label || ""),
-                          sistema: e.sistema || "", testo: righe.slice(0, 200).join("\n").slice(0, 20000) });
+                          sistema: e.sistema || "", testo: righe.slice(0, 200).join("\n").slice(0, 20000), mostrato: true });
         return { ...base, referti: referti.slice(0, 40), letto: Date.now() };
       });
     }
@@ -17131,10 +17132,12 @@
       // fiscale fosse noto sta nella scheda col suo nome.
       const perNome = "nome:" + normNome(p.name);
       const altra = perNome !== "nome:" && (!scelta || scelta.chiave !== perNome) && indice.some((v) => v.chiave === perNome) ? await leggi(perNome) : null;
-      // (un testo salvato prima del taglio, con l'intestazione dentro, si taglia anche qui)
+      // Il testo salvato è già quello che il PC mostra («mostrato»): non si ritaglia, o il
+      // telefono direbbe un'altra cosa. Solo un testo salvato prima del taglio, con
+      // l'intestazione dentro, si taglia — una volta, qui.
       for (const s of [altra, st]) for (const x of (s && s.referti) || []) if (x && x.id && x.testo) {
         const rif = referti.find((e) => e.id === x.id);
-        testi.set(x.id, rif && refertoTipo(rif) !== "ecg" ? refertoScrittoRx(String(x.testo).split("\n"), { nome: p.name || "" }).righe.join("\n") : x.testo);
+        testi.set(x.id, rif && refertoTipo(rif) !== "ecg" && !x.mostrato ? refertoScrittoRx(String(x.testo).split("\n"), { nome: p.name || "" }).righe.join("\n") : x.testo);
       }
     }
     const dati = st && st.righe && st.righe.length ? normalizzaStorico(st) : null;
@@ -17169,7 +17172,7 @@
       if (chiave) {
         await mettiInScheda(chiave, null, (vecchio) => {
           const base = vecchio || { paziente: { idMPI: "", cognome: "", nome: p.name || "" }, cf: cfImp, periodo: "", date: [], righe: [], scartate: [], letto: Date.now() };
-          const ref = [{ id: e.id, quando: e.when || "", titolo: shortLabel(e.label || ""), sistema: e.sistema || "", testo }, ...(base.referti || []).filter((r) => r.id !== e.id)];
+          const ref = [{ id: e.id, quando: e.when || "", titolo: shortLabel(e.label || ""), sistema: e.sistema || "", testo, mostrato: true }, ...(base.referti || []).filter((r) => r.id !== e.id)];
           return { ...base, referti: ref.slice(0, 40) };   // (l'ora dei valori resta la loro)
         }).catch(() => {});
       }

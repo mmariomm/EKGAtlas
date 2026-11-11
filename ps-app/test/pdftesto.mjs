@@ -228,6 +228,22 @@ for (const [nome, r, atteso] of [
 }
 const tutta =await prova((r) => refertoScrittoRx(r, { nome: "ROSSI MARIO" }).righe, ["Paziente: ROSSI MARIO", "Nato il 01/01/1980"]);
 check(tutta.length === 2, "se tutto sembrasse cornice, non si mostra niente di meno: resta com'era");
+// un secondo taglio non toglie più niente: lo stesso testo sul PC e, dalla scheda, sul telefono
+const FIRMA_IN_MEZZO = ["RX TORACE", "Opacità basale destra.", "Il Medico", "SENI LIBERI", "OMBRA CARDIACA NEI LIMITI", "NON PNX", "NON VERSAMENTO", "CUORE NORMALE", "Dott. Rossi"];
+const meta = await prova((r) => { const a = refertoScrittoRx(r, { nome: "VERDI LUCA" }).righe; return [a, refertoScrittoRx(a, { nome: "VERDI LUCA" }).righe]; }, FIRMA_IN_MEZZO);
+check(JSON.stringify(meta[0]) === JSON.stringify(FIRMA_IN_MEZZO.slice(0, 8)) && JSON.stringify(meta[1]) === JSON.stringify(meta[0]),
+  `una firma in mezzo: via solo quella in fondo, e tagliato di nuovo resta uguale (got: ${meta.map((x) => x.length).join(" → ")} righe)`);
+const CAMPIONI = [RIGHE, RIGHE_ESEMPIO, RIGHE_ALTRO, IDENT, CLINICA, MAIUSCOLA, RX1, RX2, RX2B, FIRMA_IN_MEZZO,
+  ["ECOGRAFIA ADDOME COMPLETO", "Fegato di dimensioni ed ecostruttura nei limiti.", "Conclusioni: ecografia addominale nei limiti."],
+  [...TESTA, ESAME_LAB, "OPERATORE 10"], [...TESTA, SEP, "Testo", SEP], [...TESTA, ESAME_RX, SEP, "Testo"], [...TESTA, ESAME_RX, ESAME_BA, SEP, "Testo", SEP],
+  ["RX BACINO", "Frattura della branca ileo-pubica destra.", "Dott. Bianchi", "FRATTURA COMPOMESSA", "CONTROLLO TC"],
+  ["RX TORACE", "PNX APICALE DESTRO.", "DOTT. ROSSI INFORMATO TELEFONICAMENTE", "DOTT. BIANCHI"], ["Struttura ossea regolare.", "Nessuna frattura."],
+  ["Paziente: ROSSI MARIO", "Nato il 01/01/1980"]];
+const stabili = await prova((tutti) => tutti.map((r) => {
+  const a = refertoScrittoRx(r, { nome: "ROSSI MARIO" }).righe;
+  return JSON.stringify(refertoScrittoRx(a, { nome: "ROSSI MARIO" }).righe) === JSON.stringify(a);
+}), CAMPIONI);
+check(stabili.every(Boolean), `tagliare due volte è tagliare una volta, su tutti i campioni (${stabili.filter(Boolean).length}/${CAMPIONI.length})`);
 
 console.log("\nla riga di anteprima di un referto");
 const ante = (r) => prova((q) => anteprimaReferto(q), r);
