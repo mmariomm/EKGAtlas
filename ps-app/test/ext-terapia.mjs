@@ -184,6 +184,7 @@ await ctx.route(`${ORIGIN}/**`, async (r) => {
   const terapie = (e) => { const p = e === ALTRO.ep || srv.nomeAltro ? ALTRO : PZ; return html(paginaTerapie({ ep: e, nome: p.name, triage: p.triage, salvate: srv.salvate[e] || [], coda: TENDINA + (srv.ritocca ? RITOCCA : "") })); };
   if (/Sa4JsonService\.do$/.test(u.pathname)) {
     srv.termini.push({ url: u.href, tipo: req.resourceType(), term: u.searchParams.get("term") || "" });
+    if (srv.tieni) await srv.tieni;   // (la tendina che non risponde ancora: la 25)
     const q = (u.searchParams.get("term") || "").toUpperCase();
     return r.fulfill({ status: 200, headers: { "content-type": "application/json" }, body: JSON.stringify(FARMACI.filter((f) => f.label.includes(q) && !(srv.senza && f.label.includes(srv.senza))).slice(0, 20)) }).catch(() => {});
   }
@@ -759,7 +760,7 @@ try {
   await tel.locator('.foglio .capo [data-a="tchiudi"]').click();
   ctx.off("page", conta23);
 
-  // ---- 24. la scheda tenuta finisce sulla pagina d'accesso (la sessione del gestionale scaduta): lasciata andare, senza errori
+  // (una ricerca dal telefono che lascia una scheda tenuta, ferma sulla pagina Terapia: quella scheda)
   const tenutaCerca = async (q) => {
     const nate = [];
     const conta = (p) => nate.push(p);
@@ -770,6 +771,53 @@ try {
     ctx.off("page", conta);
     return nate.find((p) => !p.isClosed() && /PsoEpisodioTerapieImposta/.test(p.url())) || null;
   };
+
+  // ---- 24. il medico entra nella scheda tenuta proprio mentre il telefono la riprende per una ricerca (nei due
+  // ordini): è sua — il lavoro non va lì (se ne apre un'altra), lei non si chiude, e diventa una pagina col pannello
+  const idTenuta = () => sw.evaluate(() => ([...pt.terapie].find(([, w]) => w.fermo) || [0])[0]);
+  // (il foglio «＋ Farmaco» chiuso: la ricerca dopo parte da un elenco vuoto, e la scheda tenuta è la sua)
+  const chiudiFoglioTel = async () => {
+    if (await tel.locator(".foglio .capo [data-a=\"tchiudi\"]").count()) await tel.locator('.foglio .capo [data-a="tchiudi"]').click().catch(() => {});
+    await finche(async () => !(await tel.locator(".foglio #tq").count()) && (await sw.evaluate(() => pt.terapie.size)) === 0, 8000);
+  };
+  for (const [come, prima, q] of [["entra, e subito il telefono la riprende", "vista", "ketor"], ["il telefono la riprende, e subito entra", "riusa", "parac"]]) {
+    await chiudiFoglioTel();
+    const tE = await tenutaCerca(q);
+    const idE = await idTenuta(), qE = srv.termini.length;
+    const rE = await sw.evaluate(async ({ id, prima }) => {
+      const job = { cosa: "cerca", q: "metoc" };
+      if (prima === "vista") { const v = ponteTerapiaVista(id); const r = await ponteTerapiaRiusa(id, "ROSSI MARIO", job); await v; return r; }
+      const r = ponteTerapiaRiusa(id, "ROSSI MARIO", job); await ponteTerapiaVista(id); return r;
+    }, { id: idE, prima });
+    await sospendi(1500);
+    check(!!tE && !!idE && rE === null && srv.termini.length === qE && !tE.isClosed() && await finche(async () => await tE.locator("#psassist-host").count() === 1, 8000)
+      && !(await sw.evaluate((id) => pt.terapie.has(id), idE)),
+      `${come}: il lavoro non va nella sua scheda (nessuna ricerca lì), lei resta aperta e diventa una pagina col pannello (${JSON.stringify(rE)})`);
+    await tE?.close();
+  }
+
+  // ---- 25. la scheda tenuta riprende una ricerca, il medico ci entra, e il PC la finisce per tempo (i 90 secondi)
+  // mentre la tendina non ha ancora risposto: la «Lasciata» arriva a metà lavoro e lì non conta. Finita la ricerca,
+  // il PC glielo dice (`lasciata`): diventa una pagina col pannello, non resta muta per sempre
+  await chiudiFoglioTel();
+  const tL = await tenutaCerca("panto");
+  const idL = await idTenuta(), qL = srv.termini.length;
+  let lascia;
+  srv.tieni = new Promise((r) => { lascia = r; });
+  await sw.evaluate((id) => { self.__rL = ponteTerapiaRiusa(id, "ROSSI MARIO", { cosa: "cerca", q: "ketor" }); return true; }, idL);
+  const partita = await finche(async () => srv.termini.length > qL, 10000);
+  await sw.evaluate((id) => ponteTerapiaVista(id), idL);
+  await sw.evaluate((id) => ponteTerapiaFine(id, { ok: false, testo: "la scheda non ha finito in tempo" }), idL);
+  await sospendi(500);
+  const muta = await tL?.locator("#psassist-host").count();
+  srv.tieni = null;
+  lascia();
+  check(!!tL && partita && muta === 0 && await finche(async () => await tL.locator("#psassist-host").count() === 1, 10000) && !tL.isClosed(),
+    `finita per tempo mentre il medico c'era entrato: finita la ricerca, la scheda diventa una pagina col pannello (prima ${muta})`);
+  await tL?.close();
+  await chiudiFoglioTel();
+
+  // ---- 26. la scheda tenuta finisce sulla pagina d'accesso (la sessione del gestionale scaduta): lasciata andare, senza errori
   const t24 = await tenutaCerca("metoc");
   const idT = await sw.evaluate(() => ([...pt.terapie].find(([, w]) => w.fermo) || [0])[0]);
   // quello che dice la scheda tenuta dalla pagina d'accesso: «fatto», senza un lavoro in corso

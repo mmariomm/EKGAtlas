@@ -1932,6 +1932,9 @@ function ordMessaggio(msg, sender, reply) {
     const l = await ordLeggi();
     const visti = (await chrome.storage.session.get(ORD_VISTI))[ORD_VISTI] || [];
     if (visti.includes(id)) return reply({ ok: true, id, ordini: l });
+    // PS Assist si sta aggiornando (lo scambio è deciso, la ricarica arriva: aggiorna.js): scritto
+    // adesso in storage.session, l'ordine sparirebbe con la ricarica senza dirlo. Non parte, e lo si dice.
+    if (typeof aggScambio !== "undefined" && aggScambio) return reply({ ok: false, no: true, aggiorna: true, why: "PS Assist si sta aggiornando: riprova fra un minuto" });
     const rec = {
       id, ep, paziente: corto(j.paziente, 60), n: Number(j.n) || 0, autoConfirm: !!j.autoConfirm, url: j.url,
       // laboratorio o radiologia: la riga «Rich Lab · 3/6», «Rich RX · 1/1» sotto la striscia
@@ -2422,7 +2425,8 @@ async function stampaMigra() {
   const s = o.stampa;
   if (!s || !("attiva" in s)) return;
   const { attiva, ...resto } = s;
-  if (attiva === false && !o["stazione.qui"]) { delete resto.etichette; delete resto.a4; }
+  const q = o["stazione.qui"];   // (una stazione vera: associata e non revocata, come per il puntino, stzPuntino)
+  if (attiva === false && !(q && q.conferma && !q.revoca)) { delete resto.etichette; delete resto.a4; }
   await chrome.storage.local.set({ stampa: resto });
 }
 stampaMigra().catch(() => {});

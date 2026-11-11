@@ -756,6 +756,14 @@ if (await prova("niente interruttore: la stampa automatica «spenta» di prima r
   const sta = (await memoria()).stampa || {};
   await sw.evaluate(() => chrome.storage.local.remove("stazione.qui"));
   check(!("attiva" in sta) && sta.etichette === ATTIVA.etichette && sta.a4 === ATTIVA.a4, `«spenta» su una stazione: l'interruttore se ne va, le stampanti restano (got ${JSON.stringify(sta)})`);
+  // (una stazione revocata, o associata a metà, non è una stazione: come per chiunque altro)
+  for (const [come, q] of [["revocata", { dal: Date.now(), conferma: true, revoca: Date.now() }], ["associata a metà", { dal: Date.now() }]]) {
+    await sw.evaluate(([s, x]) => chrome.storage.local.set({ stampa: s, "stazione.qui": x }), [{ ...ATTIVA, attiva: false }, q]);
+    await sw.evaluate(() => stampaMigra());
+    const st = (await memoria()).stampa || {};
+    await sw.evaluate(() => chrome.storage.local.remove("stazione.qui"));
+    check(!("attiva" in st) && !st.etichette && !st.a4, `«spenta» su una stazione ${come}: via l'interruttore e i nomi delle stampanti (got ${JSON.stringify(st)})`);
+  }
   await scelte({ ...ATTIVA, attiva: false, ruota: "no" });
   await sw.evaluate(() => stampaMigra());
   let m = (await memoria()).stampa || {};

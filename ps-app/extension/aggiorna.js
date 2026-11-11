@@ -33,11 +33,13 @@ const AGG_PAUSA = "aggiornaPausa";       // storage.local: { v, ts, why } — co
 const AGG_ZIP_MAX = 28 * 1024 * 1024;   // in base64 resta sotto i 40 MB che l'aiutante accetta
 const AGG_ATTESA = 180e3;                // l'aiutante apre lo zip e scambia la cartella
 const AGG_AVVIO = 60e3;                  // all'avvio del browser, lo scambio con le schede aperte: solo nel primo minuto
-let aggNato = Date.now();                // quando è partito questo service worker (i test lo spostano)
+let aggNato = 0;                         // la partenza di questo service worker, in performance.now() (non si sposta con
+                                         // l'orologio del PC: il minuto dell'avvio è un minuto vero; i test lo spostano)
 const AGG_APERTO = new Set(["coda", "avvio", "corre", "stampo", "stampa"]);   // come ORDINE_APERTO nel pannello
 const AGG_CARTELLA = "%LOCALAPPDATA%\\PSAssist\\estensione";
 const AGG_OCCUPATO = "Dopo l'ordine in corso";
 const AGG_SCHEDE = "Dopo la chiusura del gestionale";
+let aggScambio = false;                  // lo scambio è deciso: fino alla ricarica nessun ordine nuovo (ordineNuovo, bg.js)
 // La build è di sola lettura? Allora scarica il SUO zip (quello mini). La
 // versione (VERSION.txt) è unica per le due build, che escono insieme dallo
 // stesso `npm run dist`.
@@ -184,6 +186,7 @@ async function aggManifestDelloZip(buf) {
 // volta (un service worker nuovo non lo riscarica), si controlla e si tiene al
 // posto di ogni altro; per lo scambio si rilegge e si ricontrolla.
 const aggChiave = (v) => `${AGG_BASE}${aggZipNome()}?v=${encodeURIComponent(v)}`;
+const aggTenuto = (v) => caches.open(AGG_CACHE).then((c) => c.match(aggChiave(v))).catch(() => null);
 async function aggZipControlla(buf, v) {   // "" se va bene, se no perché
   try {
     if (buf.byteLength > AGG_ZIP_MAX) throw new Error("lo zip è troppo grande");
@@ -195,7 +198,7 @@ async function aggZipControlla(buf, v) {   // "" se va bene, se no perché
 }
 // { pronto: true } c'era già; { pronto: false } scaricato adesso, controllato e tenuto; { why } se no.
 async function aggZip(v) {
-  if (await caches.open(AGG_CACHE).then((c) => c.match(aggChiave(v))).catch(() => null)) return { pronto: true };
+  if (await aggTenuto(v)) return { pronto: true };
   let buf;
   try {
     const r = await aggPrendi(aggZipNome());
@@ -212,7 +215,7 @@ async function aggZip(v) {
 }
 // Per lo scambio: lo zip tenuto, riletto e ricontrollato. { buf }, o { why } (e lo zip va via).
 async function aggZipTenuto(v) {
-  const r = await caches.open(AGG_CACHE).then((c) => c.match(aggChiave(v))).catch(() => null);
+  const r = await aggTenuto(v);
   const buf = r ? await r.arrayBuffer().catch(() => null) : null;
   const why = buf ? await aggZipControlla(buf, v) : "Lo zip scaricato non c'è più.";
   if (why) { await caches.delete(AGG_CACHE).catch(() => {}); return { why }; }
@@ -231,15 +234,30 @@ async function aggiorna({ avvio = false } = {}) {
   const v = String(rec.nuova || "");
   if (!aggPiuNuova(v, aggMia())) return { ok: false, why: "È già l'ultima versione." };
   if (!rec.puo) return { ok: false, why: rec.come || "Non si aggiorna da qui." };
-  const z = await aggZip(v);
+  // Già nella cartella (lo scambio finito senza la risposta dell'aiutante: manca solo la ricarica)? Lo zip
+  // non serve: prima di scaricarlo (una volta per versione) si chiede all'aiutante che cosa c'è lì.
+  const z = (await aggTenuto(v)) || (await aggInstallata(v)).gia ? { pronto: true } : await aggZip(v);
   if (z.why) return aggNo(v, z.why);
   // Scaricato e controllato, in silenzio. Lo scambio, sulla build completa, solo senza schede del gestionale
   // aperte — o all'avvio del browser, con lo zip già pronto e nel primo minuto (anche nella fila, qui sotto).
-  const aspetta = async () => !aggSolaLettura() && !(avvio && z.pronto && Date.now() - aggNato < AGG_AVVIO) && !!(await aggSchede());
+  const aspetta = async () => !aggSolaLettura() && !(avvio && z.pronto && performance.now() - aggNato < AGG_AVVIO) && !!(await aggSchede());
   if (await aspetta()) return { ok: false, why: AGG_SCHEDE };
-  // l'aiutante, solo adesso che si scambia: che cosa c'è nella cartella (già la nuova: manca solo la ricarica)
+  // l'aiutante, di nuovo adesso che si scambia: che cosa c'è nella cartella (già la nuova: manca solo la ricarica)
   const i = await aggInstallata(v);
   if (!i.puo) return aggNo(v, `Non si aggiorna da qui: ${i.come}.`);
+  // Lo zip tenuto può aver aspettato ore il momento: VERSION.txt dice ancora v? Se no (ritirata, o c'è già
+  // una più nuova) niente scambio: lo zip va via, e quella di adesso si scarica al giro dopo. GitHub che non
+  // risponde: si aspetta, come dopo ogni guasto. (Una GET sola, solo qui: mai un giro dopo l'altro.)
+  if (!i.gia) {
+    let ora;
+    try { ora = await aggVersione(); } catch (e) { return aggNo(v, `Prima dello scambio: ${corto(e && e.message || e, 100)}`); }
+    if (ora !== v) {
+      await caches.delete(AGG_CACHE).catch(() => {});
+      const nuova = aggPiuNuova(ora, aggMia()) ? ora : "";
+      await chrome.storage.local.set({ aggiorna: { ts: Date.now(), nuova, puo: !!nuova, come: "" } });
+      return { ok: false, why: `Su GitHub adesso c'è la ${ora}, non la ${v}` };
+    }
+  }
   const t = i.gia ? {} : await aggZipTenuto(v);
   if (t.why) return aggNo(v, t.why);
   // L'ultimo controllo e lo scambio dentro la fila degli ordini: nessun ordine
@@ -247,19 +265,29 @@ async function aggiorna({ avvio = false } = {}) {
   return inFilaOrd(async () => {
     if (await aggOccupato()) return { ok: false, why: AGG_OCCUPATO };
     if (await aspetta()) return { ok: false, why: AGG_SCHEDE };   // (una scheda aperta intanto, o il minuto passato)
-    if (!i.gia) {
-      const h = await ospite({ t: "aggiorna", versione: v, zip: b64(t.buf) }, AGG_ATTESA);
-      // Nessuna risposta: l'aiutante può essere ancora a metà della copia, e la
-      // ricarica lo chiuderebbe lì (una cartella mezza vecchia e mezza nuova,
-      // che Chrome carica al prossimo avvio). Niente ricarica: la pausa, poi
-      // si chiede all'aiutante che cosa c'è nella cartella (qui sopra, `gia`).
-      if (h.ignoto) return aggNo(v, `L'aiutante non ha risposto: ${corto(h.why || "", 120)}`);
-      if (!h.ok) return aggNo(v, `Aggiornamento non riuscito: ${corto(h.why || "l'aiutante ha detto di no", 160)}`);
+    // Da qui alla ricarica nessun ordine nuovo parte (ordineNuovo, bg.js, dice «Non partita»): la
+    // ricarica svuota storage.session, e un ordine scritto lì sparirebbe senza dirlo.
+    aggScambio = true;
+    let fatto = false;
+    try {
+      if (!i.gia) {
+        const h = await ospite({ t: "aggiorna", versione: v, zip: b64(t.buf) }, AGG_ATTESA);
+        // Nessuna risposta: l'aiutante può essere ancora a metà della copia, e la
+        // ricarica lo chiuderebbe lì (una cartella mezza vecchia e mezza nuova,
+        // che Chrome carica al prossimo avvio). Niente ricarica: la pausa, poi
+        // si chiede all'aiutante che cosa c'è nella cartella (qui sopra, `gia`).
+        if (h.ignoto) return aggNo(v, `L'aiutante non ha risposto: ${corto(h.why || "", 120)}`);
+        if (!h.ok) return aggNo(v, `Aggiornamento non riuscito: ${corto(h.why || "l'aiutante ha detto di no", 160)}`);
+      }
+      await caches.delete(AGG_CACHE).catch(() => {});
+      await chrome.storage.local.remove(AGG_PAUSA).catch(() => {});
+      await chrome.storage.local.set({ aggiorna: { ts: 0, nuova: "", puo: false, come: "", fatto: v, quando: Date.now() } });
+      fatto = true;
+      setTimeout(() => chrome.runtime.reload(), 400);
+      return { ok: true, versione: v, ricarica: true };
+    } finally {
+      if (!fatto) aggScambio = false;   // (andata male: gli ordini ripartono, quello in fila compreso)
     }
-    await caches.delete(AGG_CACHE).catch(() => {});
-    await chrome.storage.local.remove(AGG_PAUSA).catch(() => {});
-    await chrome.storage.local.set({ aggiorna: { ts: 0, nuova: "", puo: false, come: "", fatto: v, quando: Date.now() } });
-    return { ok: true, versione: v, ricarica: true };
   });
 }
 
@@ -319,11 +347,10 @@ async function aggAuto(avvio = false) {
     let r = await aggiorna({ avvio }).catch(() => null);
     // all'avvio le schede ripristinate stanno ancora caricando e non rispondono (nel dubbio è
     // occupato): si riprova finché dura il primo minuto
-    while (avvio && r && r.why === AGG_OCCUPATO && Date.now() - aggNato < AGG_AVVIO - 10e3) {
+    while (avvio && r && r.why === AGG_OCCUPATO && performance.now() - aggNato < AGG_AVVIO - 10e3) {
       await new Promise((res) => setTimeout(res, 10e3));
       r = await aggiorna({ avvio }).catch(() => null);
     }
-    if (r && r.ricarica) setTimeout(() => chrome.runtime.reload(), 400);
   } finally {
     aggAutoInCorso = false;
   }

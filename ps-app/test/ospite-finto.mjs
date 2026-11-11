@@ -71,8 +71,10 @@ function aggiorna(m, cfg) {
     rmSync(prima, { recursive: true, force: true });
     renameSync(est, prima);
     try {
-      cpSync(nuova, est, { recursive: true });
+      // (manifest.json per ultimo, come host.ps1: «chi» dice la versione nuova solo a copia finita)
+      cpSync(nuova, est, { recursive: true, filter: (f) => f !== join(nuova, "manifest.json") });
       copyFileSync(join(prima, "installata.json"), join(est, "installata.json"));
+      copyFileSync(join(nuova, "manifest.json"), join(est, "manifest.json"));
     } catch (e) { rmSync(est, { recursive: true, force: true }); renameSync(prima, est); throw e; }
     const stampa = join(casa, "stampa");
     mkdirSync(stampa, { recursive: true });

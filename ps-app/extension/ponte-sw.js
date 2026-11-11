@@ -1342,13 +1342,14 @@ async function ponteTerapiaTenuta(ep) {
 // un lavoro nuovo alla scheda tenuta; null se non lo prende (allora se ne apre un'altra)
 async function ponteTerapiaRiusa(id, nome, job) {
   const w = pt.terapie.get(id);
-  if (!w || !w.fermo) return null;
+  if (!w || !w.fermo || w.vista) return null;   // (il medico ci sta entrando: è sua — ponteTerapiaVista)
   let risolvi;
   const promessa = new Promise((r) => { risolvi = r; });
   Object.assign(w, { nome, job, fase: job.cosa === "cerca" ? "pagina" : "rileggo", fermo: false, prima: [], risolvi });
-  await ponteTerapieCambia((v) => { v[id] = { ep: w.ep, ts: ponteOra() }; });
+  await ponteTerapieCambia((v) => { v[id] = { ep: w.ep, ts: ponteOra(), ...(w.vista || (v[id] && v[id].vista) ? { vista: true } : {}) }; });
   const tempo = setTimeout(() => ponteTerapiaFine(id, { ok: false, incerto: pt.terapie.get(id)?.fase === "inviato", testo: "la scheda non ha finito in tempo" }), PONTE_TERAPIA_MAX);
-  const r = await chrome.tabs.sendMessage(id, { t: "ponteTerapiaLavoro", lavoro: ponteTerapiaLavoro(w) }).catch(() => null);
+  // (entrato intanto: il lavoro non va alla sua scheda, se ne apre un'altra)
+  const r = w.vista ? null : await chrome.tabs.sendMessage(id, { t: "ponteTerapiaLavoro", lavoro: ponteTerapiaLavoro(w) }).catch(() => null);
   if (!r || !r.ok) {
     clearTimeout(tempo);
     if (pt.terapie.get(id) === w) { w.risolvi = null; await ponteTerapiaFine(id, { ok: false }); }
@@ -1763,7 +1764,11 @@ function ponteDaPagina(msg, sender, reply) {
       if (ok && cosa === "aggiungi") esito.riga = (ponteTerapiaPulita({ righe: [msg.riga] }) || { righe: [] }).righe[0] || null;
       // (una ricerca riuscita — il foglio «＋ Farmaco» è aperto sul telefono —: la scheda resta, ferma sulla pagina, per
       // il lavoro dopo; una lettura sola e un'aggiunta la chiudono)
-      return { ok: await ponteTerapiaFine(id, esito, ok && cosa === "cerca") };
+      const fatto = await ponteTerapiaFine(id, esito, ok && cosa === "cerca");
+      // Non la si tiene più: finita per tempo (o da ponteControlla) mentre lavorava, e non chiusa perché il medico
+      // c'era entrato. La «Lasciata» le è arrivata a metà lavoro, e lì non conta: glielo si dice adesso.
+      if (!fatto && !w) return { ok: false, lasciata: true };
+      return { ok: fatto };
     });
   }
   // la scheda di «Accetta in ambulatorio» ha la riga, e sta per cliccare la sua freccia:

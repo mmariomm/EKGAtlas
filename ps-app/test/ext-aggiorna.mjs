@@ -67,7 +67,7 @@ function zipDi(versione, { chiave } = {}) {
   execFileSync("zip", ["-q", "-r", z, "extension", "stampa"], { cwd: STAGE });
   return readFileSync(z);
 }
-const gh = { versione: MIA, zip: null, richieste: [] };
+const gh = { versione: MIA, zip: null, richieste: [], rotto: false };
 
 function chromiumPath() {
   for (const p of ["/opt/pw-browsers/chromium-1194/chrome-linux/chrome", "/opt/pw-browsers/chromium"]) {
@@ -122,7 +122,7 @@ await ctx.route("https://smarthealth.multimedica.it/**", async (r) => {
 await ctx.route("https://raw.githubusercontent.com/**", async (r) => {
   const u = r.request().url();
   gh.richieste.push({ url: u, cookie: r.request().headers().cookie || "" });
-  if (u.endsWith("/mmariomm/EKGAtlas/main/ps-app/dist/VERSION.txt")) return r.fulfill({ status: 200, contentType: "text/plain", body: gh.versione + "\n" });
+  if (u.endsWith("/mmariomm/EKGAtlas/main/ps-app/dist/VERSION.txt")) return gh.rotto ? r.fulfill({ status: 503, body: "no" }) : r.fulfill({ status: 200, contentType: "text/plain", body: gh.versione + "\n" });
   if (u.endsWith("/mmariomm/EKGAtlas/main/ps-app/dist/ps-assist-latest.zip") && gh.zip) return r.fulfill({ status: 200, contentType: "application/zip", body: gh.zip });
   return r.fulfill({ status: 404, body: "no" });
 });
@@ -365,29 +365,40 @@ console.log("\naggiorna: lo zip deve essere quello giusto");
   // all'avvio del browser lo scambio parte anche con le schede (ripristinate) aperte — ma solo con lo zip
   // già scaricato, e solo entro un minuto dalla partenza del service worker (dopo, il medico lavora)
   const z0 = zipScaricati();
-  await sw.evaluate(() => { aggNato = Date.now(); });
+  await sw.evaluate(() => { aggNato = performance.now(); });
   r = await sw.evaluate(() => aggiorna({ avvio: true }));
   check(!r.ok && r.why === "Dopo la chiusura del gestionale" && zipScaricati() === z0 + 1 && !lavori().some((x) => x.aggiorna),
     `all'avvio, ma lo zip non c'era ancora: si scarica, e lo scambio aspetta la chiusura del gestionale (got ${r.why}, zip ${zipScaricati() - z0})`);
-  await sw.evaluate(() => { aggNato = Date.now() - 61e3; });
+  await sw.evaluate(() => { aggNato = performance.now() - 61e3; });
   r = await sw.evaluate(() => aggiorna({ avvio: true }));
   check(!r.ok && r.why === "Dopo la chiusura del gestionale" && !lavori().some((x) => x.aggiorna),
     `all'avvio, con lo zip pronto, ma più di un minuto dopo la partenza: lo scambio aspetta (got ${r.why})`);
   // (il minuto che passa mentre si chiede all'aiutante che cosa c'è nella cartella: lo vede il controllo nella fila degli ordini)
-  await sw.evaluate(() => { aggNato = Date.now(); self.__inst = aggInstallata; aggInstallata = async (...a) => { const i = await self.__inst(...a); aggNato = Date.now() - 61e3; return i; }; });
+  await sw.evaluate(() => { aggNato = performance.now(); self.__inst = aggInstallata; aggInstallata = async (...a) => { const i = await self.__inst(...a); aggNato = performance.now() - 61e3; return i; }; });
   r = await sw.evaluate(() => aggiorna({ avvio: true }));
   await sw.evaluate(() => { aggInstallata = self.__inst; });
   check(!r.ok && r.why === "Dopo la chiusura del gestionale" && !lavori().some((x) => x.aggiorna),
     `…e se il minuto passa intanto, l'ultimo controllo prima dello scambio aspetta lo stesso (got ${r.why})`);
-  await sw.evaluate(() => { aggNato = Date.now(); });
+  await sw.evaluate(() => { aggNato = performance.now(); });
   r = await sw.evaluate(() => aggiorna({ avvio: true }));
   check(!r.ok && /Aggiornamento non riuscito: la cartella è in uso/.test(r.why) && !r.ricarica && zipScaricati() === z0 + 1,
     `all'avvio, con lo zip pronto, entro il minuto: lo scambio parte con la scheda aperta; l'aiutante dice di no: lo si dice, niente ricarica (got ${r.why})`);
+  // il minuto dell'avvio si conta dalla partenza del service worker, non con l'orologio del PC (che
+  // all'accensione Windows rimette): avanti di due ore appena partito non lo chiude, e un minuto dopo
+  // l'orologio indietro di due ore non lo tiene aperto
+  await sw.evaluate(() => chrome.storage.local.remove("aggiornaPausa"));
+  check(await riavviaSw(), "(il service worker appena ripartito)");
+  const conOrologio = (ms) => sw.evaluate((d) => { const v = Date.now; Date.now = () => v() + d; return aggiorna({ avvio: true }).finally(() => { Date.now = v; }); }, ms);
+  r = await conOrologio(2 * 3600e3);
+  check(/Aggiornamento non riuscito: la cartella è in uso/.test(r.why), `appena partito, l'orologio del PC avanti di due ore: è ancora il minuto dell'avvio (got ${r.why})`);
+  await sw.evaluate(() => { aggNato = performance.now() - 61e3; });
+  r = await conOrologio(-2 * 3600e3);
+  check(r.why === "Dopo la chiusura del gestionale", `un minuto dopo, l'orologio indietro di due ore: il minuto è finito (got ${r.why})`);
   // all'avvio le schede ripristinate stanno ancora caricando (qui: una che per qualche secondo non risponde):
   // nel dubbio è occupato, e si riprova finché dura il minuto
   azzeraLavori();
   await sw.evaluate(() => chrome.storage.local.remove("aggiornaPausa"));
-  await sw.evaluate(() => { aggNato = Date.now(); });
+  await sw.evaluate(() => { aggNato = performance.now(); });
   const carica = doc.evaluate(() => { const t0 = Date.now(); while (Date.now() - t0 < 4000); }).catch(() => {});
   await sospendi(200);
   await sw.evaluate(() => aggAuto(true));
@@ -395,6 +406,30 @@ console.log("\naggiorna: lo zip deve essere quello giusto");
   const allAvvio = lavori().filter((x) => x.aggiorna);
   check(allAvvio.length === 1 && !allAvvio[0].ok, `all'avvio, una scheda che non risponde ancora: si riprova nel minuto, e lo scambio parte (all'aiutante ${allAvvio.length})`);
   check(JSON.parse(readFileSync(join(EST, "manifest.json"), "utf8")).version === MIA && temporanei().length === 0, "la cartella è quella di prima, e niente di temporaneo resta");
+  // VERSION.txt riletto subito prima dello scambio: lo zip tenuto aspettava il momento (anche ore). Su GitHub
+  // adesso c'è un'altra versione (quella di prima ritirata, una correzione): niente scambio, lo zip via, la
+  // nuova da scaricare al giro normale. E GitHub che non risponde proprio lì: niente scambio, la pausa.
+  const tenuti = () => sw.evaluate(() => caches.open("psassist-aggiorna").then((c) => c.keys()).then((k) => k.length));
+  azzeraLavori();
+  await sw.evaluate(() => chrome.storage.local.remove("aggiornaPausa"));
+  check(await tenuti() === 1, `(lo zip della ${NUOVA} tenuto)`);
+  gh.versione = "99.1.1";
+  await sw.evaluate(() => { aggNato = performance.now(); });
+  r = await sw.evaluate(() => aggiorna({ avvio: true }));
+  const m3 = await memoria();
+  check(!r.ok && /99\.1\.1/.test(r.why) && !lavori().some((x) => x.aggiorna) && await tenuti() === 0 && m3?.nuova === "99.1.1" && m3?.puo === true && !(await pausa()),
+    `su GitHub adesso c'è la 99.1.1: niente scambio, lo zip della ${NUOVA} via, la 99.1.1 da scaricare al giro dopo (got ${r.why} · ${JSON.stringify(m3)})`);
+  gh.versione = NUOVA;
+  await dimentica();
+  await controlla();
+  await sw.evaluate(() => { aggNato = performance.now(); });
+  r = await sw.evaluate(() => aggiorna({ avvio: true }));   // (lo zip di nuovo: si scarica, lo scambio aspetta)
+  gh.rotto = true;
+  await sw.evaluate(() => { aggNato = performance.now(); });
+  r = await sw.evaluate(() => aggiorna({ avvio: true }));
+  gh.rotto = false;
+  check(!r.ok && !lavori().some((x) => x.aggiorna) && (await pausa())?.v === NUOVA && await tenuti() === 1,
+    `GitHub che non risponde subito prima dello scambio: niente scambio, la ${NUOVA} aspetta come dopo un guasto (got ${r.why})`);
   comportati();
 }
 
@@ -446,12 +481,12 @@ console.log("\naggiorna: da sé, quando è il momento");
   // l'aiutante dice di no: niente ricarica, e quella versione aspetta sei ore — né zip né aiutante a ogni giro
   comportati({ aggiornaNo: "la cartella è in uso" });
   azzeraLavori();
-  const zip2 = zipScaricati(), gh2 = gh.richieste.length;
+  const zip2 = zipScaricati();
   await sw.evaluate(() => aggAuto());
   const no1 = lavori().filter((x) => x.aggiorna);
   check(no1.length === 1 && !no1[0].ok && (await pausa())?.v === NUOVA && JSON.parse(readFileSync(join(EST, "manifest.json"), "utf8")).version === MIA,
     `l'aiutante dice di no: una volta, niente ricarica, la versione in pausa (got ${JSON.stringify(await pausa())})`);
-  const n1 = lavori().length;
+  const n1 = lavori().length, gh2 = gh.richieste.length;   // (VERSION.txt, riletto subito prima dello scambio)
   for (let k = 0; k < 3; k++) await sw.evaluate(() => aggAuto());
   check(lavori().length === n1 && zipScaricati() === zip2 && gh.richieste.length === gh2,
     `dopo il no, altri tre giri: niente all'aiutante, niente scaricato, niente rete (aiutante ${lavori().length - n1}, zip ${zipScaricati() - zip2})`);
@@ -540,6 +575,92 @@ console.log("\naggiorna: l'aiutante che non risponde (può essere a metà della 
   const v2 = nuovo ? await entro(nuovo.evaluate(() => chrome.runtime.getManifest().version), 5000) : "";
   check(v2 === PIU && lavori().filter((x) => x.aggiorna).length === 1 && lavori().slice(n1).some((x) => x.chi),
     `sei ore dopo, l'aiutante dice che nella cartella c'è già la ${PIU}: si ricarica, senza rimandargli lo zip (got ${v2 || "nessuna ricarica"}, zip all'aiutante ${lavori().filter((x) => x.aggiorna).length})`);
+  if (nuovo) sw = nuovo;
+  comportati();
+}
+
+console.log("\naggiorna: già nella cartella, lo zip non serve");
+{
+  // L'aiutante ha finito la copia della 99.3.0 senza che la risposta arrivasse (o la cartella è stata rifatta
+  // da installa.cmd), e lo zip qui non c'è più — su GitHub nemmeno: si chiede all'aiutante prima di
+  // scaricarlo, e si ricarica e basta.
+  const PIU = "99.3.0";
+  gh.versione = PIU;
+  gh.zip = null;
+  comportati();
+  azzeraLavori();
+  await dimentica();
+  await azzeraZip();
+  await doc.goto("about:blank");
+  await sw.evaluate(() => chrome.tabs.query({ url: "https://smarthealth.multimedica.it/*" }).then((t) => chrome.tabs.remove(t.map((x) => x.id))));
+  const m = manifestDi(EST);
+  writeFileSync(join(EST, "manifest.json"), JSON.stringify({ ...m, version: PIU }, null, 2));
+  const r = await controlla();
+  check(r.nuova === PIU && r.puo === true, `(la ${PIU} già nella cartella: si può, got ${JSON.stringify(r)})`);
+  const z0 = zipScaricati();
+  const nasce = ctx.waitForEvent("serviceworker", { timeout: 30000 }).catch(() => null);
+  await entro(sw.evaluate(() => { aggAuto().catch(() => {}); return true; }), 5000);
+  const nuovo = await nasce;
+  const v = nuovo ? await entro(nuovo.evaluate(() => chrome.runtime.getManifest().version), 5000) : "";
+  check(v === PIU && zipScaricati() === z0 && !lavori().some((x) => x.aggiorna),
+    `la ${PIU} già nella cartella: si ricarica, senza scaricare lo zip né mandarlo all'aiutante (got ${v || "nessuna ricarica"}, zip ${zipScaricati() - z0})`);
+  if (nuovo) sw = nuovo;
+}
+
+console.log("\naggiorna: un ordine premuto mentre l'aiutante scambia la cartella");
+{
+  // All'avvio del browser, con lo zip già scaricato e la scheda del medico aperta: lo scambio è nella fila
+  // degli ordini e aspetta l'aiutante (qui 5 secondi). Il medico preme «Conferma e stampa». La ricarica
+  // svuota storage.session: l'ordine non deve partire lì in mezzo e sparire senza dirlo — «Non partita»,
+  // niente inviato, nessuna scheda d'ordine, né prima né dopo la ricarica.
+  const PIU = "99.4.0";
+  gh.versione = PIU;
+  gh.zip = zipDi(PIU);
+  comportati();
+  azzeraLavori();
+  await dimentica();
+  await azzeraZip();
+  await controlla();
+  await doc.goto(A.patientUrl);
+  await doc.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
+  await sw.evaluate(() => { aggNato = performance.now(); });
+  const r0 = await sw.evaluate(() => aggiorna({ avvio: true }));
+  check(!r0.ok && r0.why === "Dopo la chiusura del gestionale", `(lo zip scaricato prima, lo scambio aspetta: ${r0.why})`);
+  // la richiesta pronta nel pannello (un campo di testo, non un testo da salvare): manca solo il tocco
+  await apriPannello();
+  if (!(await $panel(doc, "#q").count())) await $panel(doc, '[data-seg="richieste"]').click();
+  await $panel(doc, "#q").fill("dolore toracico");
+  await $panel(doc, '.opt[title*="TROPONINA"]').click();
+  // (le strisce della scheda del medico, una per una: la ricarica arriva subito dopo)
+  await doc.evaluate(() => {
+    window.__strisce = [];
+    setInterval(() => {
+      const r = document.getElementById("psassist-host")?.shadowRoot;
+      const t = (r?.querySelector(".pill.run")?.innerText || r?.querySelector(".gchip[data-riga]")?.dataset.riga || "").replace(/\s+/g, " ").trim();
+      if (t && window.__strisce[window.__strisce.length - 1] !== t) window.__strisce.push(t);
+    }, 25);
+  });
+  comportati({ lento: 5000 });
+  const prima = A.state.requests.length, schede = [];
+  const contaSchede = (p) => schede.push(p);
+  ctx.on("page", contaSchede);
+  await sw.evaluate(() => { aggNato = performance.now(); });
+  const nasce = ctx.waitForEvent("serviceworker", { timeout: 40000 }).catch(() => null);
+  await sw.evaluate(() => { aggAuto(true).catch(() => {}); return true; });
+  // lo scambio è nella fila e aspetta l'aiutante («chi» è passato, lo zip è da lui)
+  await finche(async () => lavori().some((x) => x.chi), 15000);
+  await sospendi(1500);
+  await $panel(doc, "#goconfirm").click();
+  const nuovo = await nasce;
+  const v = nuovo ? await entro(nuovo.evaluate(() => chrome.runtime.getManifest().version), 5000) : "";
+  await sospendi(3000);
+  ctx.off("page", contaSchede);
+  const strisce = await doc.evaluate(() => window.__strisce || []).catch(() => []);
+  const scritti = A.state.requests.slice(prima).filter((q) => q.method !== "GET");
+  check(v === PIU && lavori().filter((x) => x.aggiorna && x.ok).length === 1, `(lo scambio fatto, e la ricarica: ${v || "nessuna"})`);
+  check(strisce.some((t) => /Non partita/.test(t) && /ricarica la pagina e riprova/.test(t)),
+    `l'ordine premuto durante lo scambio: «Non partita», si rifà dopo la ricarica (got ${JSON.stringify(strisce)})`);
+  check(scritti.length === 0 && schede.length === 0, `…e davvero non partito: niente al gestionale, nessuna scheda d'ordine (got ${scritti.length} POST, ${schede.length} schede)`);
   if (nuovo) sw = nuovo;
   comportati();
 }
