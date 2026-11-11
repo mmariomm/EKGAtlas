@@ -34,7 +34,7 @@ const srcTutto = [
   "const hasExt = () => false; const ask = async () => ({ ok: false }); let pdfjsInArrivo = null;",
   src, grab("pdfjsPronto"), grab("righeDaPezzi"), grab("righeDritte"), "async " + grab("testoPdfjs"), "async " + grab("testoPdf"), grab("pdfDiag"),
   // di chi è un referto, il referto scritto di un ECG, quale PDF tenere, la fila degli scaricamenti
-  grab("impronta"), grab("identitaReferto"), grab("refertoScrittoEcg"), grab("refertoScrittoRx"), grab("scegliPdfReferto"), grab("codaLimitata"),
+  grab("impronta"), grab("identitaReferto"), grab("refertoScrittoEcg"), grab("refertoScrittoRx"), grab("righeSenzaCornice"), grab("anteprimaReferto"), grab("scegliPdfReferto"), grab("codaLimitata"),
 ].join("\n");
 
 function chromiumPath() {
@@ -191,12 +191,36 @@ check(rx2.righe.length === 4 && /RX TORACE/.test(rx2.righe[0]) && /^Torace/.test
 const RX2B = [...TESTA, "69-35 RX TORACE (6979) 01/10/2026 10:51", SEP, "Torace: nulla di rilevante.", SEP, "69-40 RX BACINO (6990) 01/10/2026 10:52", SEP, "Bacino: nessuna frattura.", SEP];
 const rx2b = await prova((r) => refertoScrittoRx(r), RX2B);
 check(rx2b.righe.length === 4 && /RX BACINO/.test(rx2b.righe[2]) && !rx2b.righe.some((r) => /OSPEDALE|ROSSI/.test(r)), "due esami, ognuno con i suoi trattini: lo stesso");
-for (const [nome, r] of [["senza trattini (laboratorio)", [...TESTA, "0-16 BILIRUBINA (450008) 28/09/26 10.06 28/09/26 10:06", "OPERATORE 10"]],
-  ["senza riga d'esame", [...TESTA, SEP, "Testo", SEP]], ["trattini dispari", [...TESTA, "69-35 RX TORACE (6979) 01/10/2026 10:51", SEP, "Testo"]],
-  ["esami e corpi che non tornano", [...TESTA, "69-35 RX TORACE (6979) 01/10/2026 10:51", "69-40 RX BACINO (6990) 01/10/2026 10:52", SEP, "Testo", SEP]]]) {
+// struttura non riconosciuta: non si taglia a corpo, ma le righe che sono certamente cornice se ne vanno
+const ESAME_LAB = "0-16 BILIRUBINA (450008) 28/09/26 10.06 28/09/26 10:06", ESAME_RX = "69-35 RX TORACE (6979) 01/10/2026 10:51", ESAME_BA = "69-40 RX BACINO (6990) 01/10/2026 10:52";
+for (const [nome, r, atteso] of [["senza trattini (laboratorio)", [...TESTA, ESAME_LAB, "OPERATORE 10"], [ESAME_LAB]],
+  ["senza riga d'esame", [...TESTA, SEP, "Testo", SEP], ["Testo"]], ["trattini dispari", [...TESTA, ESAME_RX, SEP, "Testo"], [ESAME_RX, "Testo"]],
+  ["esami e corpi che non tornano", [...TESTA, ESAME_RX, ESAME_BA, SEP, "Testo", SEP], [ESAME_RX, ESAME_BA, "Testo"]]]) {
   const x = await prova((q) => refertoScrittoRx(q), r);
-  check(!x.tagliato && x.righe.length === r.length, `struttura non riconosciuta (${nome}): si mostra tutto, come prima`);
+  check(!x.tagliato && JSON.stringify(x.righe) === JSON.stringify(atteso), `struttura non riconosciuta (${nome}): via anagrafica e trattini, resta il resto (got: ${JSON.stringify(x.righe)})`);
 }
+// i referti così come arrivano dal PDF (RIGHE: intestazione, quesito, titolo, corpo, firma): il nome, l'ospedale e il medico non ci sono più
+const SENZA = await prova((r) => refertoScrittoRx(r, { nome: "ROSSI MARIO" }).righe, RIGHE);
+check(JSON.stringify(SENZA) === JSON.stringify(["Quesito Diagnostico: dispnea", "RADIOGRAFIA TORACE 2 PROIEZIONI", "Non focolai a carattere broncopneumonico.", "Ombra cardiaca nei limiti. Seni costofrenici liberi."]),
+  `RX senza struttura: via l'intestazione e la firma, restano quesito, titolo e referto (got: ${JSON.stringify(SENZA)})`);
+const IDENT = ["RADIOLOGIA", "Paziente: ROSSI MARIO Nato il 01/01/1980 SMPRSS80A01F205X", "Cod. Fisc. SMPRSS80A01F205X", "Sesso: M", "Età: 45 anni", "Episodio 999001", "Rossi Mario",
+  "RADIOGRAFIA TORACE", "Opacità basale destra.", "Il Medico Dott. Mario Bianchi", "Pagina 1 di 1"];
+const identOut = await prova((r) => refertoScrittoRx(r, { nome: "ROSSI MARIO" }).righe, IDENT);
+check(JSON.stringify(identOut) === JSON.stringify(["RADIOGRAFIA TORACE", "Opacità basale destra."]), `nome, codice fiscale, sesso, età, episodio, firma e piè di pagina via (got: ${JSON.stringify(identOut)})`);
+// mai una riga clinica: parole che somigliano alla cornice, ma sono referto
+const CLINICA = ["RX TORACE", "Paziente collaborante.", "Paziente: non collaborante, in barella.", "Età non determinabile.", "Il medico curante è informato dei reperti.", "Si consiglia controllo.", "Sesso e età compatibili."];
+const clin = await prova((r) => refertoScrittoRx(r, { nome: "ROSSI MARIO" }).righe, CLINICA);
+check(JSON.stringify(clin) === JSON.stringify(CLINICA), `le righe cliniche che somigliano alla cornice restano tutte (got: ${JSON.stringify(clin)})`);
+const tutta = await prova((r) => refertoScrittoRx(r, { nome: "ROSSI MARIO" }).righe, ["Paziente: ROSSI MARIO", "Nato il 01/01/1980"]);
+check(tutta.length === 2, "se tutto sembrasse cornice, non si mostra niente di meno: resta com'era");
+
+console.log("\nla riga di anteprima di un referto");
+const ante = (r) => prova((q) => anteprimaReferto(q), r);
+check(await ante(["69-35 RX TORACE (6979) 01/10/2026 10:51", "Quadro polmonare nei limiti.", "Seni costofrenici liberi."]) === "Quadro polmonare nei limiti.", "mai la riga dell'esame: la prima frase del referto");
+check(await ante(SENZA) === "Non focolai a carattere broncopneumonico.", "né il titolo, né il quesito");
+check(await ante(["RX TORACE", "Torace: nulla di rilevante.", "Conclusioni: quadro nei limiti."]) === "quadro nei limiti.", "le conclusioni, se ci sono, su una riga");
+check(await ante(["Conclusioni:", "Polmonite basale destra.", "Controllo in 7 giorni."]) === "Polmonite basale destra.", "«Conclusioni:» da sola: la riga dopo");
+check(await ante(["RX BACINO", "Torace: nulla di rilevante."]) === "Torace: nulla di rilevante.", "«Torace: …» è un reperto, non un'etichetta");
 
 console.log("\nil referto è di questo paziente?");
 const ROSSI = { cf: "SMPRSS80A01F205X", nome: "ROSSI MARIO", nascita: "01/01/1980" };

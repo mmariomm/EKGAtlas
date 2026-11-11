@@ -15,7 +15,7 @@
  * (ponte-host.js, da ponte/host.txt): nessuna pagina lo cambia.
  *
  * La chiave sta in storage.local finché non la si revoca (Revoca, Nuovo QR, o
- * «Dimentica PC» sul telefono): nessuna scadenza, anche se il browser si chiude
+ * «Scollega» sul telefono): nessuna scadenza, anche se il browser si chiude
  * e si riapre. Il QR si rivede solo nei primi due minuti, il suo link vale per
  * il primo scambio solo pochi minuti, e solo finché nessun telefono è entrato; il primo che entra è
  * quello dell'associazione, e un altro telefono con lo stesso QR non entra.
@@ -38,7 +38,7 @@
 /* global PonteCripto, PONTE_HOST_FISSO, ordLeggi, sulGestionale, leggibileOrd, corto, KEY, REF_TTL, stampaScelte, stampaDalTel, stampaTelVista, regElenco, regPezzo, regZipVia, stazioneCollega */
 
 const PONTE_HOST_PROVA = "ponte.host";      // storage.local: solo per le prove, e solo verso questo PC
-const PONTE_COPPIA = "ponte.coppia";        // storage.local: { k, creata, usata, dev, nTel, cambiata?, errori?, blocco?, cambi? }
+const PONTE_COPPIA = "ponte.coppia";        // storage.local: { k, creata, usata, dev, nTel, cambiata?, cambi? }
 const PONTE_STATO = "ponte";                // storage.session: quello che le pagine mostrano
 const PONTE_ORDINI = "ponte.ordini";        // storage.session: gli ordini partiti dal telefono
 const PONTE_VALORI = "ponte.valori";        // storage.session: le schede aperte per «Aggiorna i valori»
@@ -56,21 +56,15 @@ const PONTE_ALTROVE_MS = 5e3;               // finita su un'altra pagina: tanto 
 const PONTE_PAGINE = { PsoPazienti: "la lista dei pazienti", PsoPazientiAmbulatorio: "la lista dei pazienti", PsoPazientiTriage: "la lista del triage",
   PsoEpisodioClinicoTriage: "la pagina del triage", PsoPsoImposta: "la scelta dell'area", PsoPazientiSmart: "la lista dell'ospedale" };
 const PONTE_CARTELLA_MAX = 60e3;            // salvare la cartella: aprire, controllare, «Conferma», rileggere
-const PONTE_TERAPIE = "ponte.terapie";      // storage.session: le schede aperte per la pagina Terapia (solo { ep, ts })
+const PONTE_TERAPIE = "ponte.terapie";      // storage.session: le schede aperte per la pagina Terapia (solo { ep, ts, fermo? })
 const PONTE_TERAPIA = "ponte.terapia";      // storage.session: l'ultima lettura delle terapie di ogni paziente (memoria, mai disco)
 const PONTE_TERAPIA_RQ = "ponte.terapia.rq"; // storage.session: le terapie mandate dal telefono, per numero: { fase, esito }
 const PONTE_TERAPIA_MAX = 90e3;             // la pagina Terapia: il paziente, il pulsante, la tendina, «Conferma», rileggere
+const PONTE_TERAPIA_FERMA = 2 * 60e3;       // la scheda della Terapia tenuta per il telefono: 2 minuti senza lavoro, e si chiude
 // i campi della cartella (modulo AmbulatorioPSO) che il telefono può chiedere di scrivere:
 // se lo sono davvero lo dice la pagina, campo per campo (readonly, disabled)
 const PONTE_CARTELLA_CAMPI = { ANAMNESI: "Anamnesi", MALATTIE_PREGRESSE: "Anamnesi remota", FARMACI_ASSUNTI: "Farmaci", ALLERGIE: "Allergie", ESAME_OBIETTIVO: "Esame obiettivo" };
 const PONTE_FRAME_MAX = (1 << 20) - 4096;   // il ripetitore non passa messaggi più grandi
-// «Cancella e riassocia» (dal telefono che trova il PC già associato): con questo
-// codice il telefono prende il posto di quello di prima. Il codice sta SOLO qui.
-// La vera protezione è la chiave del QR — senza, la richiesta nemmeno si apre:
-// il 93 evita solo un cambio per sbaglio. Sbagliato 5 volte, per 10 minuti niente cambi.
-const PONTE_CODICE_CAMBIO = "93";
-const PONTE_CAMBIO_ERRORI = 5;
-const PONTE_CAMBIO_BLOCCO = 10 * 60e3;
 // quanto si aspetta una scheda del gestionale, e il «pong» (i test li accorciano)
 const PONTE_ATTESA = { ordina: 25e3, ristampa: 25e3, ristampe: 30e3, esiti: 30e3, cartella: 30e3, altro: 10e3, pong: 10e3 };
 // Perché una sessione finisce: la frase, la stessa qui, sulla pagina iPhone e sul telefono.
@@ -243,7 +237,8 @@ async function ponteControlla() {
     if (ora - v.ts > PONTE_CARTELLA_MAX + 5e3) await ponteCartellaFine(Number(id), { ok: false, incerto: true, testo: "la scheda non ha finito in tempo" });
   }
   for (const [id, v] of Object.entries(await ponteTerapieTutte())) {
-    if (ora - v.ts > PONTE_TERAPIA_MAX + 5e3) await ponteTerapiaFine(Number(id), { ok: false, incerto: true, testo: "la scheda non ha finito in tempo" });
+    // (tenuta, senza lavoro: dopo 2 minuti si chiude — anche se il service worker è ripartito e non lo sa più)
+    if (v.fermo ? ora - v.ts > PONTE_TERAPIA_FERMA : ora - v.ts > PONTE_TERAPIA_MAX + 5e3) await ponteTerapiaFine(Number(id), { ok: false, incerto: !v.fermo, testo: "la scheda non ha finito in tempo" });
   }
   for (const [id, v] of Object.entries(await ponteAccetteTutte())) {
     if (ora - v.ts > PONTE_ACCETTA_MAX + 5e3) await ponteAccettaFine(Number(id), { ok: false, incerto: true, testo: "la scheda non ha finito in tempo" });
@@ -282,9 +277,9 @@ async function ponteSaluto(b) {
   if (!pt.coppia.dev && ponteOra() - pt.coppia.creata >= PONTE_QR_PRIMO + 60e3) return;
   // L'associazione è del primo telefono che è entrato: un altro, anche con lo
   // stesso QR, si sente dire di no (e il registro lo dice, una volta al minuto)
-  // — a meno che chieda «Cancella e riassocia» col codice giusto: allora è lui.
+  // — a meno che chieda «Usa questo telefono»: allora è lui.
   if (pt.coppia.dev && m.dev !== pt.coppia.dev) {
-    const no = typeof m.cambio === "string" ? await ponteCambio(m) : { no: "altro telefono" };
+    const no = m.cambio ? await ponteCambio(m) : { no: "altro telefono" };
     if (no) {
       if (no.no === "altro telefono" && ponteOra() - pt.rifiuto > 60e3) {
         pt.rifiuto = ponteOra();
@@ -301,30 +296,22 @@ async function ponteSaluto(b) {
   ponteManda(await PonteCripto.sigilla(pt.chiavi.salutoPc, PonteCripto.TIPO.SALUTO_PC, 0,
     { v: 1, n: PonteCripto.b64u(nPc), eco: m.n, ora: ponteOra() }));
 }
-// «Cancella e riassocia»: la richiesta è un saluto (cifrato con la chiave del QR:
-// senza, non si apre e non arriva qui) che porta il codice. Il codice si controlla
-// QUI, sul PC. Giusto: il telefono di prima esce come con «Revoca» e un'associazione
-// nuova — senza scadenza, come l'altra — e questo è il telefono dell'associazione.
-// Sbagliato: niente cambia; 5 sbagli e per 10 minuti non si cambia più.
+// «Usa questo telefono» (due tocchi sul telefono che trova il PC già associato):
+// la richiesta è un saluto con `cambio`, cifrato con la chiave del QR — senza, non
+// si apre e non arriva qui: la protezione è la chiave, non un codice da ricordare.
+// Il telefono di prima esce come con «Revoca» e un'associazione nuova — senza
+// scadenza, come l'altra — e questo è il telefono dell'associazione; il registro
+// del ponte e la pagina ⋯ → iPhone dicono «iPhone cambiato alle …».
 // Ritorna null se il cambio è fatto, se no la risposta da dare.
 async function ponteCambio(m) {
-  const c = pt.coppia, ora = ponteOra();
-  if (c.blocco && ora < c.blocco) return { no: "bloccato", fino: c.blocco };
+  const { errori, blocco, ...c } = pt.coppia, ora = ponteOra();   // (errori e blocco: i conti del codice di prima, via)
   // un saluto già visto (rimandato dal ripetitore) non vale una seconda volta
   const cambi = (Array.isArray(c.cambi) ? c.cambi : []).slice(-7);
   if (cambi.includes(m.n)) return { no: "altro telefono" };
   cambi.push(m.n);
-  if (m.cambio.trim() !== PONTE_CODICE_CAMBIO) {
-    const errori = (c.errori || 0) + 1, blocca = errori >= PONTE_CAMBIO_ERRORI;
-    await ponteScriviCoppia({ ...c, cambi, errori: blocca ? 0 : errori, blocco: blocca ? ora + PONTE_CAMBIO_BLOCCO : 0 });
-    ponteNota(blocca ? `Codice sbagliato ${PONTE_CAMBIO_ERRORI} volte da un altro telefono: niente cambi fino alle ${hhmmPonte(ora + PONTE_CAMBIO_BLOCCO)}`
-      : "Un altro telefono ha provato «Cancella e riassocia» con un codice sbagliato");
-    await ponteScriviStato();
-    return blocca ? { no: "bloccato", fino: ora + PONTE_CAMBIO_BLOCCO } : { no: "codice" };
-  }
   await ponteFine("cambiato");
-  await ponteScriviCoppia({ ...pt.coppia, cambi, dev: m.dev, usata: true, nTel: m.n, cambiata: ora, errori: 0, blocco: 0 });
-  ponteNota(`iPhone cambiato alle ${hhmmPonte(ora)}: un altro telefono ha preso il posto`);
+  await ponteScriviCoppia({ ...c, cambi, dev: m.dev, usata: true, nTel: m.n, cambiata: ora });
+  ponteNota(`iPhone cambiato alle ${hhmmPonte(ora)}: un altro telefono ha preso il posto («Usa questo telefono»)`);
   await ponteScriviStato();
   return null;
 }
@@ -382,6 +369,7 @@ async function ponteFine(perche) {
   if (!s) return;
   pt.sessione = null;
   await chrome.storage.session.remove([PONTE_CARTELLA, PONTE_TERAPIA]).catch(() => {});   // le cartelle e le terapie lette per il telefono: via con la sessione
+  await ponteTerapiaBasta().catch(() => {});   // (e la scheda della Terapia tenuta per il telefono)
   pt.fine = { perche, testo: ponteFrase(perche), ts: ponteOra() };
   ponteNota(`Sessione con l'iPhone chiusa — ${pt.fine.testo}`);
   try { ponteManda(await s.canale.cifra({ evento: "fine", perche, testo: pt.fine.testo })); } catch { /* la presa è giù: lo saprà dal «riparti» */ }
@@ -428,9 +416,9 @@ const PONTE_DA_SE = new Set(["ciao", "ordini"]);
 // nota, posto, stazioneCollega…) cade quindi nel «Questo PC è in sola lettura».
 // È il primo muro, davanti alla scheda; il secondo è in content.js (ponteEsegui).
 const PONTE_LETTURA = new Set([
-  "ciao", "esci", "ordini",
+  "ciao", "esci", "ordini", "tocco",
   "pazienti", "triage", "mappa", "eo",
-  "esiti", "aggiornaValori", "richieste", "cartella", "terapie",
+  "esiti", "aggiornaValori", "richieste", "cartella", "terapie", "terapiaFine",
   "pdf", "ristampe", "ristampa", "stampa",   // «stampa»: un PDF del telefono sull'A4 di QUESTO PC (non scrive nel gestionale)
   "stampaReferto",                            // un referto già salvato su questo PC, stampato (non scrive nel gestionale)
 ]);
@@ -479,6 +467,9 @@ async function ponteRisposta(s, d) {
     // nasconde quei controlli, ma lo stesso comando mandato grezzo è rifiutato.
     if (ponteSolaLettura() && !PONTE_LETTURA.has(d.cmd)) return { ok: false, errore: "Questo PC è in sola lettura", solaLettura: true };
     if (d.cmd === "ciao") return { ok: true, dati: { inattivoMin: PONTE_INATTIVO / 60e3, ...(await ponteChiSono()) } };
+    // il medico tocca o scorre il telefono (al più uno al minuto): conta come un comando — l'orologio dei 3
+    // minuti si è già spostato qui sopra (ponteComando) — e basta
+    if (d.cmd === "tocco") return { ok: true };
     if (d.cmd === "ordini") return { ok: true, dati: await ponteOrdiniTel() };
     if (d.cmd === "aggiornaValori") { const a = ponteArgomenti(d); return await ponteOffriPdf(s, await ponteAggiornaValori(a), a.ep); }
     if (d.cmd === "ordina") {
@@ -505,6 +496,7 @@ async function ponteRisposta(s, d) {
     if (d.cmd === "terapie") return await ponteTerapie(ponteArgomenti(d));
     if (d.cmd === "terapiaCerca") return await ponteTerapiaCerca(d);
     if (d.cmd === "terapiaAggiungi") return await ponteTerapiaAggiungi(d);
+    if (d.cmd === "terapiaFine") return await ponteTerapiaBasta();
     if (d.cmd === "accetta") return await ponteAccetta(d);
     // il QR di una stazione di stampa, inquadrato dal telefono: il PC la collega (stazione-sw.js)
     if (d.cmd === "stazioneCollega" && typeof stazioneCollega === "function") {
@@ -885,9 +877,9 @@ async function ponteLavoroDi(tabId) {
   if (c) return { ponteCartella: { ep: c.ep, fase: c.fase, campi: c.campi } };
   const a = (await ponteCartelleTutte())[tabId];
   if (a) return { ponteCartella: { ep: a.ep, fase: "perso" } };
-  // la scheda della Terapia: che cosa fare, e a che punto (dopo «Conferma» si guarda e basta)
+  // la scheda della Terapia: che cosa fare, e a che punto (dopo «Conferma» si guarda e basta; tenuta, aspetta)
   const w = pt.terapie.get(tabId);
-  if (w) return { ponteTerapia: { ep: w.ep, nome: w.nome, fase: w.fase, cosa: w.job.cosa, q: w.job.q, voce: w.job.voce, visti: w.job.visti, prima: w.prima } };
+  if (w) return { ponteTerapia: w.fermo ? { ep: w.ep, fase: "fermo" } : ponteTerapiaLavoro(w) };
   const b = (await ponteTerapieTutte())[tabId];
   if (b) return { ponteTerapia: { ep: b.ep, fase: "perso" } };
   // la scheda di «Accetta in ambulatorio»: chi, e a che punto (dopo il clic si guarda e basta)
@@ -972,7 +964,7 @@ async function ponteCartellaSalva(d) {
     ponteNota(`Cartella di ${paz} dal telefono: salvati ${ponteCartellaNomi(nomi)}`);
     await ponteScriviStato();
     await ponteCartellaMemoScrivi(a.ep, e.letta);
-    // le schede di quel paziente aperte sul PC: «Aggiornato dal telefono · Ricarica»
+    // le schede di quel paziente aperte sul PC sono di prima: si ricaricano (pulite), o fermano il loro «Conferma» (core.js)
     for (const t of await ponteSchede()) chrome.tabs.sendMessage(t.id, { t: "ponteCartellaAggiornata", ep: a.ep }).catch(() => {});
     return { ok: true, dati: { ...e.letta, salvati: nomi } };
   }
@@ -1196,18 +1188,66 @@ const ponteTerapieCambia = (fn) => (ponteFilaTerapie = ponteFilaTerapie.then(asy
   await chrome.storage.session.set({ [PONTE_TERAPIE]: v });
   return r;
 }).catch(() => null));
-// la scheda di sottofondo, come quella della cartella — una alla volta
+// la scheda di sottofondo, come quella della cartella — una alla volta. Finita
+// bene una lettura o una ricerca, resta ferma sulla pagina Terapia (`fermo`) e
+// il lavoro dopo la riusa: la ricerca lì dov'è (la tendina della pagina), una
+// lettura o un'aggiunta prima rileggono la pagina col suo pulsante «Prescrizione»
+// (una GET: lo stato di adesso, `visti` compreso, subito prima di scrivere).
+// Si chiude dopo un'aggiunta, a ogni dubbio, col foglio «＋ Farmaco» chiuso sul
+// telefono (`terapiaFine`), a fine sessione, per un altro paziente, e dopo 2
+// minuti senza lavoro. Una scheda in cui il medico è entrato non si riusa più.
 let ponteFilaTerapia = Promise.resolve();
 function ponteTerapiaSotto(url, ep, nome, job) {
   const p = ponteFilaTerapia.then(() => ponteTerapiaSottoOra(url, ep, nome, job));
   ponteFilaTerapia = p.catch(() => {});
   return p;
 }
+// che cosa deve fare la scheda (quello che risponde a «chi sono?», e il lavoro nuovo di una scheda tenuta)
+const ponteTerapiaLavoro = (w) => ({ ep: w.ep, nome: w.nome, fase: w.fase, cosa: w.job.cosa, q: w.job.q, voce: w.job.voce, visti: w.job.visti, prima: w.prima });
+// la scheda tenuta per questo paziente: ferma, ancora sulla sua pagina Terapia, e il medico non la sta guardando
+async function ponteTerapiaTenuta(ep) {
+  for (const [id, w] of pt.terapie) {
+    if (!w.fermo || w.ep !== ep) continue;
+    const t = await chrome.tabs.get(id).catch(() => null);
+    let suo = false;
+    try { suo = !!t && sulGestionale(t.url) && new URL(t.url).searchParams.get("MVPG") === "PsoEpisodioTerapieImposta" && new URL(t.url).searchParams.get("EPISODIO_ID") === ep; } catch { /* no */ }
+    if (t && suo && !t.active && !t.discarded) return id;
+  }
+  return 0;
+}
+// un lavoro nuovo alla scheda tenuta; null se non lo prende (allora se ne apre un'altra)
+async function ponteTerapiaRiusa(id, nome, job) {
+  const w = pt.terapie.get(id);
+  if (!w || !w.fermo) return null;
+  let risolvi;
+  const promessa = new Promise((r) => { risolvi = r; });
+  Object.assign(w, { nome, job, fase: job.cosa === "cerca" ? "pagina" : "rileggo", fermo: false, prima: [], risolvi });
+  await ponteTerapieCambia((v) => { v[id] = { ep: w.ep, ts: ponteOra() }; });
+  const tempo = setTimeout(() => ponteTerapiaFine(id, { ok: false, incerto: pt.terapie.get(id)?.fase === "inviato", testo: "la scheda non ha finito in tempo" }), PONTE_TERAPIA_MAX);
+  const r = await chrome.tabs.sendMessage(id, { t: "ponteTerapiaLavoro", lavoro: ponteTerapiaLavoro(w) }).catch(() => null);
+  if (!r || !r.ok) {
+    clearTimeout(tempo);
+    if (pt.terapie.get(id) === w) { w.risolvi = null; await ponteTerapiaFine(id, { ok: false }); }
+    return null;
+  }
+  const esito = await promessa;
+  clearTimeout(tempo);
+  return esito;
+}
+// la scheda tenuta non serve più (il foglio chiuso sul telefono, la sessione finita, un altro paziente): via;
+// una che lavora ancora, finito il lavoro, si chiude invece di restare
+async function ponteTerapiaBasta() {
+  for (const [id, w] of [...pt.terapie]) { if (w.fermo) await ponteTerapiaFine(id, { ok: false }); else w.basta = true; }
+  return { ok: true };
+}
 async function ponteTerapiaSottoOra(url, ep, nome, job) {
   let u;
   try { u = new URL(url); } catch { return { ok: false, testo: "indirizzo del paziente non valido" }; }
   if (!leggibileOrd(url) || u.searchParams.get("EPISODIO_ID") !== ep) return { ok: false, testo: "indirizzo del paziente inatteso" };
   if (typeof dopoIlMotore === "function") await dopoIlMotore();   // (mai una pagina del gestionale mentre un motore inserisce: bg.js)
+  const tenuta = await ponteTerapiaTenuta(ep);
+  if (tenuta) { const e = await ponteTerapiaRiusa(tenuta, nome, job); if (e) return e; }
+  await ponteTerapiaBasta();   // (una scheda sola: quella di un altro paziente, o non più buona, via)
   const davanti = (await ponteSchede())[0];
   const vuota = { url: "about:blank", active: false };
   const t = await chrome.tabs.create(davanti ? { ...vuota, windowId: davanti.windowId, index: davanti.index + 1 } : vuota)
@@ -1226,14 +1266,23 @@ async function ponteTerapiaSottoOra(url, ep, nome, job) {
   clearTimeout(tempo);
   return esito;
 }
-async function ponteTerapiaFine(id, esito) {
+// finita: la risposta a chi aspetta, e la scheda chiusa (se il medico non la sta guardando) — o, con `tieni`
+// (una lettura o una ricerca riuscite, sulla pagina Terapia), tenuta lì, ferma, per il lavoro dopo
+async function ponteTerapiaFine(id, esito, tieni = false) {
   const w = pt.terapie.get(id);
+  if (tieni && w && !w.basta) {
+    const risolvi = w.risolvi;
+    Object.assign(w, { fase: "fermo", fermo: true, job: null, risolvi: null, prima: [] });
+    await ponteTerapieCambia((v) => { v[id] = { ep: w.ep, ts: ponteOra(), fermo: true }; });
+    if (risolvi) risolvi(esito);
+    return true;
+  }
   pt.terapie.delete(id);
   const c = await ponteTerapieCambia((v) => { const c = v[id]; delete v[id]; return c; });
   if (!c && !w) return false;
   const t = await chrome.tabs.get(id).catch(() => null);
   if (t && !t.active) await chrome.tabs.remove(id).catch(() => {});
-  if (w) w.risolvi(esito);
+  if (w && w.risolvi) w.risolvi(esito);
   return true;
 }
 
@@ -1319,7 +1368,7 @@ async function ponteAccettaOra(chi, rq) {
   await ponteAccettaRqScrivi(rq, { fase: "corso" }).catch(() => {});
   const e = await ponteAccettaSotto(r.dati.url, { ep: r.dati.ep || "", k: r.dati.k || "", nome: r.dati.nome, area: r.dati.area || "", rq });
   if (e.ok) {
-    // le pagine di quel paziente aperte sul PC sono di prima: «Aggiornato dal telefono · Ricarica»
+    // le pagine di quel paziente aperte sul PC sono di prima: si ricaricano (pulite), o fermano il loro «Conferma» (core.js)
     for (const t of await ponteSchede()) chrome.tabs.sendMessage(t.id, { t: "ponteCartellaAggiornata", ep: e.ep }).catch(() => {});
     return fatto({ ok: true, dati: { ep: e.ep, nome: r.dati.nome, area: e.area } });
   }
@@ -1460,7 +1509,7 @@ function ponteDaPagina(msg, sender, reply) {
   // rientrati nel gestionale, il telefono riapre con un tocco, senza QR.
   if (msg.t === "ponteLogin" && gestionale) return fai(async () => { await ponteFine("login"); return { ok: true }; });
   // Chi è loggato nel gestionale su questo PC, letto dalla pagina dal content
-  // script: solo il nome, per la testata «Sola lettura · gestionale di …» del
+  // script: solo il nome, per il «Sola lettura · gestionale di …» (il 👁️ e il ⋯) del
   // telefono. Informazione, mai un blocco: non lega niente e non apre sessioni.
   if (msg.t === "ponteOperatore" && gestionale) {
     return fai(async () => {
@@ -1505,7 +1554,12 @@ function ponteDaPagina(msg, sender, reply) {
       if (nomi(msg.cambiati).length) esito.cambiati = nomi(msg.cambiati);
       if (nomi(msg.chiusi).length) esito.chiusi = nomi(msg.chiusi);
       if (w && msg.verificati && typeof msg.verificati === "object") esito.verificati = Object.fromEntries(Object.keys(w.campi).map((n) => [n, msg.verificati[n] === true]));
-      if (w && msg.letta && msg.letta.ep === w.ep && Array.isArray(msg.letta.campi)) esito.letta = { ep: w.ep, letto: ponteOra(), campi: msg.letta.campi };
+      if (w && msg.letta && msg.letta.ep === w.ep && Array.isArray(msg.letta.campi)) {
+        // (con le allergie della stessa pagina, con le parole del PC: per la riga sotto il nome sul telefono)
+        const all = msg.letta.allergie;
+        esito.letta = { ep: w.ep, letto: ponteOra(), campi: msg.letta.campi,
+          ...(all && ["nl", "nega", "ros", "nc"].includes(all.k) && typeof all.t === "string" ? { allergie: { k: all.k, t: all.t.slice(0, 420) } } : {}) };
+      }
       return { ok: await ponteCartellaFine(id, esito) };
     });
   }
@@ -1517,11 +1571,11 @@ function ponteDaPagina(msg, sender, reply) {
       return { ok: true };
     });
   }
-  // la scheda della Terapia sta per premere il pulsante «Terapia» del paziente
+  // la scheda della Terapia sta per premere il pulsante «Terapia» del paziente (o, tenuta, il «Prescrizione» della pagina)
   if (msg.t === "ponteTerapiaPagina" && gestionale) {
     return fai(async () => {
       const w = pt.terapie.get(sender.tab.id);
-      if (!w || w.fase !== "apro") return { ok: false };
+      if (!w || (w.fase !== "apro" && w.fase !== "rileggo")) return { ok: false };
       w.fase = "pagina";
       return { ok: true };
     });
@@ -1550,7 +1604,8 @@ function ponteDaPagina(msg, sender, reply) {
       if (l && l.ep === w.ep) esito.lettura = l;
       if (ok && cosa === "cerca") esito.voci = (Array.isArray(msg.voci) ? msg.voci : []).filter((x) => typeof x === "string").map((x) => x.slice(0, 200)).slice(0, 40);
       if (ok && cosa === "aggiungi") esito.riga = (ponteTerapiaPulita({ righe: [msg.riga] }) || { righe: [] }).righe[0] || null;
-      return { ok: await ponteTerapiaFine(id, esito) };
+      // (una lettura o una ricerca riuscite: la scheda resta, ferma sulla pagina, per il lavoro dopo; un'aggiunta la chiude)
+      return { ok: await ponteTerapiaFine(id, esito, ok && cosa !== "aggiungi") };
     });
   }
   // la scheda di «Accetta in ambulatorio» ha la riga, e sta per cliccare la sua freccia:

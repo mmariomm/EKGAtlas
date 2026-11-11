@@ -313,7 +313,7 @@ try {
   await $p('[data-terpref]:has-text("KETOROLAC")').click();
   check(await $p(".ricvoci .ricv").count() === 2 && !(await $p("#terprepara").isDisabled()), "scelti due farmaci: «Prepara nel gestionale» acceso — anche con le etichette di un altro ordine che aspettano");
   await $p("#menubtn").click();
-  check(await $p("#resetpaz").count() === 1 && await $p("#extreload").count() === 0, "e nel ⋯ «Dimentica i dati…» c'è; «Ricarica estensione» no, finché quelle etichette aspettano");
+  check(await $p("#resetpaz").count() === 1 && await $p("#extreload").count() === 0, "e nel ⋯ «Dimentica i dati…» c'è; «Ricarica» non c'è più");
   await $p("#menubtn").click();
   await sw.evaluate(() => chrome.storage.session.set({ ordini: [] }));
   await sospendi(300);
@@ -502,8 +502,11 @@ try {
   check(await finche(async () => (await tel.locator(".seg button").allInnerTexts()).join("|") === "Richieste|Esiti|Cartella|Terapia", 15000),
     `sul paziente, una quarta scheda «Terapia» (${(await tel.locator(".seg button").allInnerTexts()).join("|")})`);
 
-  // ---- 11. leggere: una scheda di sottofondo apre la Terapia col pulsante del paziente, legge, si chiude
-  const n0 = schede().length, p0 = srv.pagineTer.length, c0 = conferme();
+  // ---- 11. leggere: una scheda di sottofondo apre la Terapia col pulsante del paziente, legge, e resta (ferma) per il foglio
+  const n0 = schede().length, p0 = srv.pagineTer.length, c0 = conferme(), z0 = srv.pazienti;
+  const aperte = [];   // le schede che il PC apre per la Terapia, da qui alla fine della 13
+  const contaAperte = (p) => aperte.push(p);
+  ctx.on("page", contaAperte);
   await tel.locator('[data-a="scheda"][data-s="terapia"]').click();
   const t11 = await aspettaTel(/Letto sul PC alle \d\d:\d\d/);
   const righeTel = () => tel.locator(".ter .tt b").allInnerTexts();
@@ -512,7 +515,8 @@ try {
   check(/1 cpr · os · freq\. 8 · al bisogno/.test(t11) && /10:53/.test(t11), "una riga ciascuna: la dose, la via, la frequenza, al bisogno, e l'ora");
   check(srv.pagineTer.length === p0 + 1 && /MVPG=PsoEpisodioTerapieImposta&MODALITA=PRESCRIZIONE&EPISODIO_ID=700001&returnPage=PsoEpisodio$/.test(srv.pagineTer.at(-1)),
     `la pagina Terapia aperta dal pulsante del paziente, col suo indirizzo (${srv.pagineTer.at(-1)})`);
-  check(await finche(async () => schede().length === n0, 8000) && conferme() === c0, "la scheda di sottofondo si è chiusa; niente premuto");
+  await sospendi(800);
+  check(schede().length === n0 + 1 && conferme() === c0, "la scheda di sottofondo resta, ferma sulla pagina Terapia (per il «＋ Farmaco» dopo); niente premuto");
   const m11 = await memo();
   const chiavi = m11 && [Object.keys(m11).sort().join(), Object.keys(m11.righe[0] || {}).sort().join(), Object.keys(m11.opz || {}).sort().join()];
   check(!!m11 && chiavi[0] === "ep,letto,opz,righe" && chiavi[1] === "bisogno,continua,descr,dil,freq,ora,prog,qta,um,via" && chiavi[2] === "dil,um,via"
@@ -533,9 +537,9 @@ try {
   await tel.locator("#tq").fill("metoc");
   check(await finche(async () => await tel.locator('[data-a="tvoce"]').count() === 1, 30000) && await tel.locator('[data-a="tvoce"]').innerText() === "METOCLOPRAMIDE 10 MG/2 ML FL",
     "scritto «metoc»: le voci della tendina della pagina, cercate dal PC");
-  check(srv.termini.slice(q0).some((t) => t.term === "metoc" && t.tipo === "xhr") && srv.pagineTer.length === p12 + 1 && conferme() === c0,
-    `…la ricerca è la XHR della pagina, da una scheda aperta col pulsante del paziente (${srv.termini.slice(q0).map((t) => t.term).join(" | ")})`);
-  check(await finche(async () => schede().length === n0, 8000), "…che si richiude");
+  check(srv.termini.slice(q0).some((t) => t.term === "metoc" && t.tipo === "xhr") && srv.pagineTer.length === p12 && srv.pazienti === z0 + 1 && conferme() === c0,
+    `…la ricerca è la XHR della pagina, nella stessa scheda di sottofondo: nessuna pagina in più, né del paziente né Terapia (${srv.termini.slice(q0).map((t) => t.term).join(" | ")})`);
+  check(schede().length === n0 + 1 && aperte.length === 1, "…che resta aperta: una scheda sola");
   await tel.locator('[data-a="tvoce"]').click();
   await tel.waitForSelector("#tqta", { timeout: 5000 });
   check(await tel.locator(".tnome").innerText() === "METOCLOPRAMIDE 10 MG/2 ML FL" && await tel.locator("#tqta").inputValue() === "" && await tel.locator("#tdil").count() === 0
@@ -549,8 +553,8 @@ try {
     `il riepilogo, e «Conferma per ROSSI M.» (${riep.replace(/\n+/g, " / ")})`);
   await foto("3-riepilogo");
 
-  // ---- 13. Conferma: la pagina del PC fa il resto — un Conferma, la riga verificata
-  const s0 = srv.salvate[PZ.ep].length;
+  // ---- 13. Conferma: la pagina del PC fa il resto — un Conferma, la riga verificata (nella stessa scheda, riletta subito prima)
+  const s0 = srv.salvate[PZ.ep].length, p13 = srv.pagineTer.length;
   await tel.locator('[data-a="tconferma"]').click();
   check(/Confermo sul PC/.test(await tel.locator(".triep").innerText()), "mentre il PC lavora: «Confermo sul PC…»");
   check(/Confermata/.test(await aspettaEsito(/Confermata/)), "poi «✓ Confermata»");
@@ -560,6 +564,9 @@ try {
     && nuova.durata === "1" && srv.conferme.at(-1).serializzata && srv.conferme.at(-1).note === 0,
     `un solo «Conferma» (Update), TERAPIA_SERIALIZED composto dalla pagina, niente note: la riga è fra le terapie del server (${JSON.stringify(nuova)})`);
   check(await finche(async () => schede().length === n0, 8000), "la scheda di sottofondo si è chiusa");
+  check(aperte.length === 1 && srv.pazienti === z0 + 1 && srv.pagineTer.length === p13 + 1,
+    `leggere, cercare e aggiungere: una scheda sola (${aperte.length}), una pagina del paziente (${srv.pazienti - z0}); prima di scrivere la pagina Terapia riletta col suo pulsante, una volta (${srv.pagineTer.length - p13})`);
+  ctx.off("page", contaAperte);
   await tel.locator('.foglio .capo [data-a="tchiudi"]').click();
   check((await righeTel())[0] === "METOCLOPRAMIDE 10 MG/2 ML FL" && !(await tel.locator(".foglio").count()), "chiuso il foglio, la nuova terapia in cima alla lista (riletta dopo Conferma)");
   check(/Terapia di ROSSI MARIO dal telefono: confermata METOCLOPRAMIDE/.test(JSON.stringify(await sw.evaluate(() => chrome.storage.session.get("ponte").then((o) => o.ponte?.registro || []))) ),
@@ -623,12 +630,21 @@ try {
   check(/Non confermata: nella tendina ci sono più voci «SODIO CLORURO 0,9% 100 ML»: va scelta sul PC/.test(await dalTelefono("SODIO CLORURO")) && conferme() === c16,
     `due voci uguali nella tendina: «${await esito()}», niente premuto`);
   await chiudiFoglio();
+  await sospendi(500);
+  const n16 = schede().length;   // (le schede del medico, adesso: la pagina del paziente e quella della 14)
   await tel.locator('[data-a="tnuovo"]').click();
   await tel.locator("#tq").fill("sodio clor");
   check(await finche(async () => await tel.locator(".foglio .voce.no").count() === 1, 30000) && await tel.locator('[data-a="tvoce"]').count() === 0
     && /Più voci uguali nella tendina: si sceglie sul PC/.test(await tel.locator(".foglio .voce.no").innerText()), "e cercate dal telefono, le voci uguali non si scelgono: «si sceglie sul PC»");
+  check(schede().length === n16 + 1, "(dopo la ricerca la scheda resta, per la prossima)");
+  await tel.locator('.foglio .capo [data-a="tchiudi"]').click();
+  check(await finche(async () => schede().length === n16, 8000), "chiuso il foglio «＋ Farmaco» sul telefono: la scheda tenuta si chiude");
+  await tel.locator('[data-a="tnuovo"]').click();
   await tel.locator("#tq").fill("panto");
   await finche(async () => await tel.locator('[data-a="tvoce"]').count() === 1, 30000);
+  check(schede().length === n16 + 1, "(una ricerca nuova: una scheda nuova, tenuta)");
+  await sw.evaluate(() => { const v = Date.now; self.__oraVeraT = v; Date.now = () => v() + 2 * 60e3 + 30e3; return ponteControlla().finally(() => { Date.now = v; }); });
+  check(await finche(async () => schede().length === n16, 8000), "2 minuti senza lavoro: la scheda tenuta si chiude da sola");
   await tel.locator('[data-a="tvoce"]').click();
   await tel.locator("#tqta").fill("1");
   srv.senza = "PANTOPRAZOLO";   // (sparito dalla tendina, intanto)
