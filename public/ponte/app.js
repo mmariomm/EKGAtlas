@@ -116,7 +116,7 @@
   try { const m = localStorage.getItem(MODO); if (m === "mappa" || m === "dafare") S.modo = m; } catch { /* solo in memoria */ }
   function svuota() {
     S.pazienti = null; S.triage = null; S.mappa = null; S.mappaSel = ""; S.zoom = 1; S.eo = null; S.eoVecchio = false; S.eoSheet = false; S.eoQ = ""; if (S.eoAnnulla) clearTimeout(S.eoAnnulla.t); S.eoAnnulla = null; S.aggiornato = 0; S.erroreLista = ""; S.catalogo = null; S.esiti.clear(); S.ristampe.clear(); S.ordini.clear(); S.nascosti.clear();
-    S.legge.clear(); S.nonLetti.clear();   // (S.daSolo resta: i 10 minuti valgono anche dopo una sessione ricollegata)
+    S.legge.clear(); S.nonLetti.clear();   // (S.daSolo resta: i 10 minuti valgono anche dopo una sessione ricollegata allo stesso PC; cambiando PC lo svuota attivaPc)
     S.sel.clear(); S.bloccati.clear(); S.aperti.clear(); S.occupato.clear(); S.inviati.clear(); S.promTesto = ""; S.arma = null;
     S.dfFoglio = false; S.precAperti = false; S.riprendi = null;
     S.stampa = null; S.cartelle.clear(); S.cbozze.clear(); S.cstato.clear(); S.coda.clear();
@@ -213,7 +213,7 @@
     if (!p || p.id === (S.coppia && S.coppia.id)) { S.menu = false; return render(); }
     const ws = S.ws; S.ws = null; S.canale = null; S.saluto = null; S.nSessione = "";
     if (ws) try { ws.close(); } catch { /* già chiusa */ }
-    svuota(); zitto();
+    svuota(); S.daSolo.clear(); zitto();   // (altro PC, altra pagina: i 10 minuti dell'altro non contano)
     S.attivo = id; S.menu = false; S.classifica = false; salvaPcs();
     await parti(p);
   }
@@ -631,7 +631,7 @@
     caricaEsiti(ep, auto);
     if (S.scheda === "terapia" && !S.terapiaSi) S.scheda = "esiti";
     if (S.scheda === "cartella") caricaCartella(ep);
-    if (S.scheda === "terapia") caricaTerapie(ep);
+    if (S.scheda === "terapia" && !auto) caricaTerapie(ep);   // (riaperto da sé: niente lettura — c'è la copia, o «Tocca per leggere la terapia»)
     if (S.scheda === "richieste") caricaRistampe(ep);
     if (S.scheda === "richieste") caricaCatalogo();
   }
@@ -950,7 +950,7 @@
     S.occupato.add("valori" + ep); S.legge.set(ep, { modo, dal: Date.now() }); S.nonLetti.delete(ep); render();
     try {
       esitiArrivati(ep, await chiedi("aggiornaValori", modo ? { ep, modo } : { ep }, ATTESA_VALORI, !!modo));
-    } catch (e) { if (!modo) errore(e); else if (!e.offline) S.nonLetti.set(ep, e.message); }
+    } catch (e) { if (!modo) errore(e); else { if (!e.offline) S.nonLetti.set(ep, e.message); S.daSolo.delete(ep); } }   // (rifiutata o caduta: i 10 minuti non valgono, al prossimo tocco riprova)
     S.occupato.delete("valori" + ep); S.legge.delete(ep); render();
   }
   // Un referto PDF salvato sul PC: arriva a pezzi dalla stessa sessione
@@ -1895,6 +1895,7 @@
       const aperto = S.aperti.has(r.id);
       return `<div class="refw${["lab", "ecg", "img"].includes(r.tipo) ? " k-" + r.tipo : ""}"><button class="ref${r.pdf ? " conpdf" : ""}" data-a="referto" data-id="${esc(r.id)}" aria-expanded="${aperto}"><span class="r1"><span class="q">${esc(r.quando)}</span><span class="t">${esc(r.titolo)}</span>${r.nuovo ? `<span class="nuovo">nuovo</span>` : ""}</span>${
         aperto ? (r.testo ? `<div class="testo">${esc(r.testo)}</div>` : `<div class="manca">${r.lungo ? "Testo troppo lungo per il telefono: leggilo sul PC."
+          : r.senzaTesto && !r.pdf ? "PDF senza testo: aprilo sul PC."
           : r.soloPdf ? (r.pdf ? "Di TC, ecografie e visite c'è il PDF, non il testo: tocca «PDF»." : "Di TC, ecografie e visite c'è il PDF, non il testo: sul PC non è ancora salvato.")
           : legge ? "Lo leggo sul PC…" : "Testo non ancora letto sul PC: ↻ Rileggi lo prende."}</div>`) : ""}</button>${
         r.pdf ? `<button class="prn" data-a="stampaRef" data-id="${esc(r.id)}" aria-label="${esc(stampaNo() || "Stampa il referto")}" ${(S.stampa && !S.stampa.fine) || stampaNo() ? "disabled" : ""}>🖨️</button><button class="pdf" data-a="pdf" data-id="${esc(r.id)}" data-n="${Number(r.pdf) || 0}" ${S.occupato.has("pdf" + r.id) ? "disabled" : ""}>PDF</button>` : ""}</div>`;
@@ -2104,7 +2105,7 @@
   // ciascuna (il TERAPIA_PROG cresce; senza, l'ordine della pagina). Si legge e basta: si aggiunge con «＋ Farmaco».
   function vistaTerapia(p) {
     const l = S.terapie.get(p.ep), legge = S.occupato.has("terapie" + p.ep);
-    if (!l) return legge ? `<div class="carica"><div class="giro"></div></div>` : `<div class="vuoto">Terapia non letta.</div>`;
+    if (!l) return legge ? `<div class="carica"><div class="giro"></div></div>` : `<div class="vuoto"><button class="agg" data-a="trileggi">Tocca per leggere la terapia</button></div>`;
     const letto = `<small class="letti${Date.now() - l.letto > 60 * 60e3 ? " amb" : ""}">Letto sul PC ${alle(l.letto)}</small>`;
     const righe = l.righe.map((r, i) => ({ r, i })).sort((a, b) => (Number(b.r.prog) || 0) - (Number(a.r.prog) || 0) || b.i - a.i).map(({ r }) =>
       `<div class="ter"><span class="tt"><b>${esc(r.descr)}</b>${doseTer(r) ? ` <span>${esc(doseTer(r))}</span>` : ""}</span>${r.ora ? `<span class="to">${esc(r.ora)}</span>` : ""}</div>`).join("");

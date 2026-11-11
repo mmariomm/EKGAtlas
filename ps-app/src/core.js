@@ -2596,7 +2596,7 @@
         const r = segnaScheda(await ask({ t: "ordineMotore", id }));
         if (r.ok || (!r.occupato && (!r.perso || ++persi >= 3))) return true;
         if (r.occupato && Date.now() > fine) return false;
-        if (r.occupato && !detto && ui && ui.inCodaMotore) { detto = true; ui.inCodaMotore(true); }
+        if (r.occupato && !detto && ui && ui.inCodaMotore) { detto = true; ui.inCodaMotore(true, !!r.smart); }
         await sleep(1000);
       }
     } finally { if (detto) ui.inCodaMotore(false); }
@@ -8861,10 +8861,11 @@
       return false;
     }
     // Un giro che aspetta il suo turno (prendiMotore): lo dicono la striscia e il Registro.
-    inCodaMotore(on) {
+    inCodaMotore(on, smart = false) {
       if (on) {
-        this.log(`${now()}  un altro motore sta mandando esami: aspetto il turno, poi parto`);
-        this.segnala({ tag: "In coda", testo: "un altro ordine sta mandando esami: parto appena ha finito", tono: "run", paziente: this.runPatient || "", inCoda: true });
+        // (`smart`: ad aspettare non è un altro ordine ma la lista dei pazienti, letta dietro)
+        this.log(`${now()}  ${smart ? "la lista smart si sta leggendo" : "un altro motore sta mandando esami"}: aspetto il turno, poi parto`);
+        this.segnala({ tag: "In coda", testo: smart ? "leggo la lista dei pazienti, un attimo" : "un altro ordine sta mandando esami: parto appena ha finito", tono: "run", paziente: this.runPatient || "", inCoda: true });
       } else if (this.striscia && this.striscia.inCoda) this.segnala(null);
     }
     // Laboratorio e radiologia (il pacchetto «Dolore toracico» porta l'RX):
@@ -11857,7 +11858,9 @@
       const attesaLab = attese.filter((x) => x.tipo === "lab");
       // nessun prelievo, nessun referto di laboratorio, niente in attesa: col portale lo si dice (e
       // quando lo si è letto), e lo storico resta a un tocco nel ↻ in cima — non il bottone grande
-      const vuotoLab = !t && !attesaLab.length && !prelievi.length && !lab.length;
+      // (i referti di laboratorio della pagina contano anche se col portale refertiLab() è vuoto per scelta)
+      const vuotoLab = !t && !attesaLab.length && !prelievi.length && !lab.length
+        && !this.esiti.some((e) => e.kind === "referto" && refertoTipo(e) === "lab");
       const grande = puoiLeggere && !t && !au && !(conPortale && vuotoLab);
       // letti ma senza data e ora: il perché sta nel passaggio del mouse, non in due righe
       const infoSenzaData = senzaData.length ? `<span class="infochip" tabindex="0" title="${esc(
@@ -12956,7 +12959,12 @@
       const size = buf?.byteLength || 0;   // (prima del lettore: la copia letta, per chiRef)
       const letto = await testoPdf(buf);
       const righe = letto.righe;
-      if (!righe.length) return { vuoto: true, letto };
+      if (!righe.length) {
+        // Un PDF senza testo (una scansione): di chi è non si sa, quindi al telefono non va. La copia lo ricorda
+        // («vuoto»), così il telefono dice «aprilo sul PC» e non lo rilegge a ogni apertura degli esiti.
+        if (hasExt() && size) ask({ t: "chiRef", id: e.id, ep: this.episodeId, chi: "vuoto", size }).catch(() => {});
+        return { vuoto: true, letto };
+      }
       const id = identitaReferto(righe, this.identitaPaz());
       // Guardato di chi è, e non è di un altro: lo sa la copia salvata (chiRef: senza, al telefono non
       // va), e un «di un altro paziente» di prima — una copia vecchia — non vale più per questa.
@@ -17663,11 +17671,15 @@
     const chiave = p.pk || (normNome(p.name) ? "nome:" + normNome(p.name) : "");
     for (const e of referti) {
       const leggi = testoAuto(e) && !testi.has(e.id);
-      if (!salvati[e.id] || diAltro(e) || (!leggi && guardati[e.id])) continue;
+      if (!salvati[e.id] || diAltro(e) || guardati[e.id] === "vuoto" || (!leggi && guardati[e.id])) continue;
       const g = await ask({ t: "getRef", id: e.id, ep: p.ep }).catch(() => null);
       const buf = g && g.ok && g.data ? bufDaB64(g.data) : null, size = buf ? buf.byteLength : 0;
       const righe = buf ? ((await testoPdf(buf).catch(() => null)) || {}).righe || [] : [];
-      if (!righe.length) continue;
+      if (!righe.length) {
+        // senza testo: niente da confrontare. Fail-closed (al telefono niente PDF), e lo si ricorda sulla copia: non si rilegge a ogni «esiti»
+        if (size && !guardati[e.id] && (await ask({ t: "chiRef", id: e.id, ep: p.ep, chi: "vuoto", size }).catch(() => null))?.ok) guardati[e.id] = "vuoto";
+        continue;
+      }
       const esito = identitaReferto(righe, { cf: chi.cf, cfImp, nome: p.name || "", nascita: chi.nascita }).esito;
       if (esito === "altro") {
         altri.add(e.id);
@@ -17698,7 +17710,8 @@
       const sta = !!t && t.length <= resta;
       if (sta) resta -= t.length;
       return { id: e.id, quando: e.when, sistema: e.sistema, titolo: shortLabel(e.label), tipo: refertoTipo(e), testo: sta ? t : "", lungo: !!t && !sta,
-        ...(visti.has(e.id) ? {} : { nuovo: true }), ...(salvati[e.id] && guardati[e.id] && !diAltro(e) ? { pdf: true } : {}),
+        ...(visti.has(e.id) ? {} : { nuovo: true }), ...(salvati[e.id] && (guardati[e.id] === "ok" || guardati[e.id] === "nv") && !diAltro(e) ? { pdf: true } : {}),
+        ...(salvati[e.id] && guardati[e.id] === "vuoto" && !diAltro(e) ? { senzaTesto: true } : {}),
         ...(refertoTipo(e) !== "lab" && !testoAuto(e) ? { soloPdf: true } : {}) };   // (TC, ecografie, visite: il testo non si legge, c'è il PDF)
     });
     // Che cosa il PC legge da sé, adesso che il medico l'ha aperto sul telefono (il suo tocco è il gesto):
@@ -17899,7 +17912,7 @@
           const sc = scegliScheda((r && r.ok && r.indice) || [], String(p.pk || "").startsWith("cf:") ? p.pk.slice(3) : "", p.name, p.ep);
           dopo = !!sc && (Number(sc.letto) || 0) > fino;
         }
-        scriviStato(p.ep, (s) => ({ ...s, ...(dopo ? {} : { valori: { nuovi: 0, fuori: 0, fuoriTot: 0 } }), esitiVisto: ora, ...(fino > (s.valoriVisti || 0) ? { valoriVisti: fino } : {}) }));
+        scriviStato(p.ep, (s) => ({ ...s, ...(dopo ? {} : { valori: { nuovi: 0, fuori: 0, fuoriTot: 0 } }), esitiVisto: fino || ora, ...(fino > (s.valoriVisti || 0) ? { valoriVisti: fino } : {}) }));
       }
       if (!PANNELLO.root.activeElement) PANNELLO.render();
       return fatto({ ok: true, registro: `visti sul telefono: ${[ids.length ? (ids.length === 1 ? "un referto" : `${ids.length} referti`) : "", a.valori ? "gli esiti" : ""].filter(Boolean).join(" e ") || "niente"} di ${p.name}` });

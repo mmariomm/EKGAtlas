@@ -367,14 +367,13 @@ const sottoVive = async () => Object.entries(await chrome.storage.session.get(nu
 const carrelloAperto = async () => (await chrome.tabs.query({ url: "https://smarthealth.multimedica.it/sa4pso/*" }).catch(() => []))
   .some((t) => { try { return /^(Rcs|PsoRichiesta)/.test(new URL(t.url || t.pendingUrl || "").searchParams.get("MVPG") || ""); } catch { return false; } });
 // La lista smart che legge dietro, fra una sua scheda e l'altra: un motore che parte la aspetta, al
-// più SMART_ATTESA dalla sua partenza (quanto manca, 0 se non c'è) — partito a metà del suo giro, la
+// più SOTTO_MAX dalla sua partenza (la sua vita vera: oltre, sottoControlla la chiude) (quanto manca, 0 se non c'è) — partito a metà del suo giro, la
 // pagina dopo della smart cambierebbe la richiesta «corrente» sotto il primo inserimento (regola 19).
 // Lei, prima di ogni salto, chiede «smartAvanti»: con un motore chiesto o in coda si ferma lì.
-const SMART_ATTESA = 20e3;
 let smartCeduta = 0;   // quando un motore ha aspettato la smart l'ultima volta (in memoria: dura secondi)
 const smartVivaFinoA = async () => {
   const ora = Date.now();
-  return Math.max(0, ...(await sottoVive().catch(() => [])).filter(([, s]) => s.cosa === "smart").map(([, s]) => (s.ts || 0) + SMART_ATTESA - ora));
+  return Math.max(0, ...(await sottoVive().catch(() => [])).filter(([, s]) => s.cosa === "smart").map(([, s]) => (s.ts || 0) + SOTTO_MAX - ora));
 };
 // La scheda ha finito di caricare ma è RIMASTA sul gestionale: il link non ha
 // portato al portale (sessione scaduta, pagina d'errore). Inutile aspettare 30
@@ -392,9 +391,11 @@ chrome.tabs.onUpdated.addListener((id, info, tab) => {
   }, 4000);
 });
 chrome.tabs.onRemoved.addListener((id) => {
-  sottoGet(id).then((s) => inCorso(s) && sottoSet(id, {
-    ...s, fine: Date.now(), esito: s.esito === "lettura" ? (s.suo ? "letto" : "altro") : "chiusa",
-  })).catch(() => {});
+  sottoGet(id).then(async (s) => {
+    if (!inCorso(s)) return;
+    await sottoSet(id, { ...s, fine: Date.now(), esito: s.esito === "lettura" ? (s.suo ? "letto" : "altro") : "chiusa" });
+    if (s.cosa === "smart") ordSpingi();   // (la lista smart chiusa: un ordine che la aspettava parte adesso, non al timer)
+  }).catch(() => {});
 });
 
 chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
@@ -469,7 +470,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
     inFilaRef(async () => {
       const hit = (await chrome.storage.local.get(KEY(msg.id)))[KEY(msg.id)];
       const d = hit && typeof hit.data === "string" ? hit.data : "", byte = Math.floor(d.length * 3 / 4) - (d.endsWith("==") ? 2 : d.endsWith("=") ? 1 : 0);
-      if (!d || String(msg.ep || "") !== String(hit.ep || "") || !["ok", "nv"].includes(msg.chi) || byte !== msg.size) return reply({ ok: false });
+      if (!d || String(msg.ep || "") !== String(hit.ep || "") || !["ok", "nv", "vuoto"].includes(msg.chi) || byte !== msg.size) return reply({ ok: false });
+      // («vuoto»: il PDF non ha testo, di chi è non si sa — il telefono dice «aprilo sul PC»; ponteCopia lo rifiuta lo stesso. Non toglie un «ok»/«nv» già dato.)
+      if (msg.chi === "vuoto" && hit.chi) return reply({ ok: true });
       if (hit.chi !== msg.chi) await chrome.storage.local.set({ [KEY(msg.id)]: { ...hit, chi: msg.chi } });
       reply({ ok: true });
     }).catch(() => reply({ ok: false }));
@@ -2354,7 +2357,7 @@ function ordMessaggio(msg, sender, reply) {
     const l = await ordLeggi();
     if ((m && !mio) || l.some((x) => x.worker !== tab.id && (ATTIVI.has(x.stato) || daPrendere(x)))) return reply({ ok: false, occupato: true, scheda: tab.id });
     // (chi parte aspetta la lista smart che legge dietro: lei, al prossimo salto, si ferma — smartAvanti)
-    if (!mio && await smartVivaFinoA()) { smartCeduta = Date.now(); return reply({ ok: false, occupato: true, scheda: tab.id }); }
+    if (!mio && await smartVivaFinoA()) { smartCeduta = Date.now(); return reply({ ok: false, occupato: true, smart: true, scheda: tab.id }); }
     await motoreScrivi({ tab: tab.id, id, scade: Date.now() + MOTORE_SCADE });
     reply({ ok: true, scheda: tab.id });
   });

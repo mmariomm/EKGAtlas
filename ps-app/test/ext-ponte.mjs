@@ -917,7 +917,7 @@ const esitiDi = async (ep, re = /./) => {
   // (la scheda la si cerca per un poco: la richiesta trattenuta può arrivare prima che il browser segni dove va la scheda)
   let dietroR = 0;
   await finche(async () => (dietroR = await dietroSu("999001")) === 1, 5000);
-  // (una pagina lenta: trattenuta 8 secondi, oltre il controllo della navigazione persa — non si richiede)
+  // (una pagina lenta: trattenuta 8 secondi, oltre il controllo della navigazione persa — non si richiede; quella che si perde davvero: prova più sotto)
   await sospendi(Math.max(0, 8000 - (Date.now() - trattenuta)));
   const chieste = TRATTENUTE.slice(), pagR = new Set(chieste.map((x) => x.pg).filter(Boolean));
   const schedeR = dietroR === 1 ? "" : JSON.stringify(await sw.evaluate(async () => ({
@@ -974,6 +974,63 @@ const esitiDi = async (ep, re = /./) => {
   await sospendi(3000);
   check(pagineB().length === prima && !/Apro sul PC/.test(await testoTel(tel)), "riaperto: già aperto in questo turno, niente scheda nuova");
   ALLERGIE_B = false;
+}
+// Cambiare PC dal telefono: i 10 minuti del tocco su un paziente sono del PC di prima. Sull'altro, lo stesso
+// paziente non aperto in questo turno si apre con un tocco (qui l'«altro PC» è lo stesso PC con un altro nome in lista).
+{
+  const c0 = await chiaveTel(tel);
+  const clone = { ...c0, id: "ZZclone0001", nome: "Altro PC" };
+  const resetB = () => doc.evaluate(() => { const K = "psassist:patients.v1", l = JSON.parse(localStorage.getItem(K) || "[]"); for (const p of l) if (p.ep === "999002") Object.assign(p, { ts: 0, lista: Date.now() }); localStorage.setItem(K, JSON.stringify(l)); });
+  const aperteB = () => APERTE.filter((x) => /EPISODIO_ID=999002/.test(x.url)).length;
+  await resetB();
+  await tel.evaluate((v) => localStorage.setItem("psassist.ponte.pcs.v1", JSON.stringify({ v, attivo: v[0].id })), [c0, clone]);
+  await tel.reload();
+  await aspettaTel(tel, /ROSSI MARIO/, 20000);
+  const n0 = aperteB();
+  await tocca(tel, '.paz[data-ep="999002"]');
+  check(await finche(() => aperteB() === n0 + 1, 60000), "(PC A) un tocco su chi il PC non ha aperto in questo turno: lo apre dietro");
+  await aspettaTel(tel, /Allergie: PENICILLINA/, 150000);
+  await finche(async () => await dietroSu("999002") === 0, 30000);
+  await tocca(tel, '[data-a="indietro"]'); await aspettaTel(tel, /BIANCHI ANNA/);
+  await resetB();
+  await tocca(tel, '[data-a="menu"]');
+  await tocca(tel, '[data-a="pc"][data-id="ZZclone0001"]');
+  await aspettaTel(tel, /BIANCHI ANNA/, 30000);
+  const n1 = aperteB();
+  await tocca(tel, '.paz[data-ep="999002"]');
+  check(await finche(() => aperteB() === n1 + 1, 60000),
+    `passato all'altro PC, lo stesso tocco sullo stesso paziente lo apre: i 10 minuti dell'«apri» erano dell'altro PC (${aperteB() - n1} aperture)`);
+  await aspettaTel(tel, /Allergie: PENICILLINA/, 150000);
+  await finche(async () => await dietroSu("999002") === 0, 30000);
+  // La navigazione che si perde davvero (la scheda dietro resta vuota: il comando di andare alla pagina non ha portato da
+  // nessuna parte — qui il primo `tabs.update` verso il paziente è inghiottito): dopo qualche secondo la si rifà UNA volta, e
+  // la lettura va a buon fine. (Una pagina lenta ma in arrivo, più su, non si richiede.)
+  await tocca(tel, '[data-a="indietro"]'); await aspettaTel(tel, /BIANCHI ANNA/);
+  await resetB();
+  await tocca(tel, '[data-a="menu"]');
+  await tocca(tel, `[data-a="pc"][data-id="${c0.id}"]`);   // (di nuovo l'altro PC: i 10 minuti ripartono da capo)
+  await aspettaTel(tel, /BIANCHI ANNA/, 30000);
+  await sw.evaluate(() => {
+    const vero = chrome.tabs.update.bind(chrome.tabs);
+    self.__veroUpdate = chrome.tabs.update;
+    self.__perdi = 1;
+    chrome.tabs.update = (id, p, ...resto) => (self.__perdi > 0 && p && /EPISODIO_ID=999002/.test(p.url || "") ? (self.__perdi--, Promise.resolve({ id })) : vero(id, p, ...resto));
+  });
+  const n2 = aperteB();
+  await tocca(tel, '.paz[data-ep="999002"]');
+  const t2 = Date.now();
+  const rifatta = await finche(() => aperteB() === n2 + 1, 40000);
+  const dopo2 = Date.now() - t2;
+  const perso = await sw.evaluate(() => { const r = self.__perdi === 0; chrome.tabs.update = self.__veroUpdate; return r; });
+  await sospendi(8000);
+  check(perso && rifatta && aperteB() === n2 + 1, `una navigazione davvero persa: dopo qualche secondo la pagina del paziente si chiede di nuovo, una volta sola (${aperteB() - n2} richieste, dopo ${dopo2} ms)`);
+  check(await finche(async () => await dietroSu("999002") === 0, 60000), "…e la lettura finisce lo stesso: la scheda dietro si chiude");
+  // com'era: un PC solo in lista
+  await tel.evaluate((c) => localStorage.setItem("psassist.ponte.pcs.v1", JSON.stringify({ v: [c], attivo: c.id })), c0);
+  await tel.reload();
+  await aspettaTel(tel, /ROSSI MARIO/, 20000);
+  await tocca(tel, '.paz[data-ep="999002"]');   // (come prima del blocco: sul paziente)
+  await aspettaTel(tel, /Richieste/, 20000);
 }
 await doc.bringToFront();
 // sul PC il referto della radiografia si è letto da solo, aprendo il paziente: il suo testo ora viaggia anche verso il telefono
@@ -1045,13 +1102,37 @@ check(rxNuovoPrima && await finche(visteRx, 8000) && !(await nuovoRx()),
   }
 }
 {
+  // Un PDF senza testo (una scansione): di chi è non si sa, quindi al telefono non va (niente «PDF», fail-closed) — e il
+  // telefono lo dice, «aprilo sul PC», invece di «sul PC non è ancora salvato». La copia ricorda «vuoto»: non si rilegge.
+  const senza = Buffer.from("%PDF-1.4\n1 0 obj << /Type /Catalog >> endobj\n%%EOF\n");
+  await sw.evaluate(([k, ep, data]) => chrome.storage.local.set({ [k]: { ep, data, ts: Date.now() } }), ["ref:" + ID_RX, "999001", senza.toString("base64")]);
+  await sw.evaluate(() => chrome.storage.local.get("storicoArch").then((o) => { for (const r of Object.values(o.storicoArch || {})) r.referti = []; return chrome.storage.local.set(o); }));
+  const chiRx = () => sw.evaluate((k) => chrome.storage.local.get(k).then((o) => (o[k] || {}).chi || ""), "ref:" + ID_RX);
+  await esitiDi("999001", /RX TORACE/);
+  const pdfBtn = () => tel.locator('.refw:has(.ref:has-text("RX TORACE")) [data-a="pdf"]').count();
+  await finche(async () => (await chiRx()) === "vuoto", 15000);
+  await tocca(tel, '.ref:has-text("RX TORACE")');
+  // (se la riga era già aperta, il tocco l'ha chiusa: un secondo la riapre)
+  let tx = await aspettaTel(tel, /PDF senza testo: aprilo sul PC\./, 4000);
+  if (!tx) { await tocca(tel, '.ref:has-text("RX TORACE")'); tx = await aspettaTel(tel, /PDF senza testo: aprilo sul PC\./, 8000); }
+  check(/PDF senza testo: aprilo sul PC\./.test(tx) && !/sul PC non è ancora salvato/.test(tx) && await pdfBtn() === 0,
+    `un PDF senza testo: niente «PDF» sul telefono (fail-closed), che dice «PDF senza testo: aprilo sul PC.» (${tx.replace(/\s+/g, " ").slice(0, 200)})`);
+  check(await chiRx() === "vuoto", "…e la copia ricorda «vuoto»: non si rilegge a ogni apertura degli esiti");
+  const copia = await sw.evaluate(() => ponteCopia("999001", "dddd4444-0000-0000-0000-000000000004"));
+  check(copia === null, "…e ponteCopia lo rifiuta comunque: nessun byte al telefono");
+  // com'era per i controlli dopo
+  const TR = "_".repeat(37);
+  const pdfRis2 = refertoRxPdf(["OSPEDALE ZQINTESTA", "69-140 RX TORACE (A6900) 22/08/2026 03:10", TR, "Torace ZQCORPO nei limiti.", TR]);
+  await sw.evaluate(([k, ep, data]) => chrome.storage.local.set({ [k]: { ep, data, ts: Date.now() } }), ["ref:" + ID_RX, "999001", pdfRis2.toString("base64")]);
+}
+{
   // «● 2 nuovi» davanti sul telefono per qualche secondo vale come la finestra del PC aperta sugli Esiti:
   // il pallino del tabellone e «N nuovi» si spengono anche sul PC (la memoria dell'estensione, niente nel gestionale)
   const statoR = () => doc.evaluate(() => JSON.parse(localStorage.getItem("psassist:stato.v1") || "{}")["999001"] || {});
   await doc.evaluate(() => { const K = "psassist:stato.v1", S = JSON.parse(localStorage.getItem(K) || "{}"); S["999001"] = { ...(S["999001"] || {}), valori: { nuovi: 2, fuori: 1, fuoriTot: 1 }, esitiVisto: 0 }; localStorage.setItem(K, JSON.stringify(S)); });
   const t0 = Date.now();
   const es = await esitiDi("999001", /● 2 nuovi/);
-  const visti = await finche(async () => { const s = await statoR(); return s.valori?.nuovi === 0 && s.valori?.fuori === 0 && s.esitiVisto >= t0 && s.valoriVisti > 0; }, 15000);
+  const visti = await finche(async () => { const s = await statoR(); return s.valori?.nuovi === 0 && s.valori?.fuori === 0 && s.esitiVisto > 0 && s.esitiVisto === s.valoriVisti && s.esitiVisto <= Date.now(); }, 15000);
   check(/● 2 nuovi/.test(es) && visti && await finche(async () => !/● 2 nuovi/.test(await testoTel(tel)), 5000) && /visti sul telefono: gli esiti di ROSSI MARIO/.test(await registroPonte()),
     `«● 2 nuovi» guardati sul telefono: visti anche sul PC — il pallino e «N nuovi» si spengono, qui e là; nel Registro (${JSON.stringify((await statoR()).valori)})`);
   // …ma una tabella letta sul PC dopo quella che il telefono ha mostrato (`fino`): quei valori nuovi non li ha visti nessuno
