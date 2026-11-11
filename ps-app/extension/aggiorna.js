@@ -245,6 +245,19 @@ async function aggiorna({ avvio = false } = {}) {
   // l'aiutante, di nuovo adesso che si scambia: che cosa c'è nella cartella (già la nuova: manca solo la ricarica)
   const i = await aggInstallata(v);
   if (!i.puo) return aggNo(v, `Non si aggiorna da qui: ${i.come}.`);
+  // Lo zip tenuto può aver aspettato ore il momento: VERSION.txt dice ancora v? Se no (ritirata, o c'è già
+  // una più nuova) niente scambio: lo zip va via, e quella di adesso si scarica al giro dopo. GitHub che non
+  // risponde: si aspetta, come dopo ogni guasto. (Una GET sola, solo qui: mai un giro dopo l'altro.)
+  if (!i.gia) {
+    let ora;
+    try { ora = await aggVersione(); } catch (e) { return aggNo(v, `Prima dello scambio: ${corto(e && e.message || e, 100)}`); }
+    if (ora !== v) {
+      await caches.delete(AGG_CACHE).catch(() => {});
+      const nuova = aggPiuNuova(ora, aggMia()) ? ora : "";
+      await chrome.storage.local.set({ aggiorna: { ts: Date.now(), nuova, puo: !!nuova, come: "" } });
+      return { ok: false, why: `Su GitHub adesso c'è la ${ora}, non la ${v}` };
+    }
+  }
   const t = i.gia ? {} : await aggZipTenuto(v);
   if (t.why) return aggNo(v, t.why);
   // L'ultimo controllo e lo scambio dentro la fila degli ordini: nessun ordine

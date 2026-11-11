@@ -67,7 +67,7 @@ function zipDi(versione, { chiave } = {}) {
   execFileSync("zip", ["-q", "-r", z, "extension", "stampa"], { cwd: STAGE });
   return readFileSync(z);
 }
-const gh = { versione: MIA, zip: null, richieste: [] };
+const gh = { versione: MIA, zip: null, richieste: [], rotto: false };
 
 function chromiumPath() {
   for (const p of ["/opt/pw-browsers/chromium-1194/chrome-linux/chrome", "/opt/pw-browsers/chromium"]) {
@@ -122,7 +122,7 @@ await ctx.route("https://smarthealth.multimedica.it/**", async (r) => {
 await ctx.route("https://raw.githubusercontent.com/**", async (r) => {
   const u = r.request().url();
   gh.richieste.push({ url: u, cookie: r.request().headers().cookie || "" });
-  if (u.endsWith("/mmariomm/EKGAtlas/main/ps-app/dist/VERSION.txt")) return r.fulfill({ status: 200, contentType: "text/plain", body: gh.versione + "\n" });
+  if (u.endsWith("/mmariomm/EKGAtlas/main/ps-app/dist/VERSION.txt")) return gh.rotto ? r.fulfill({ status: 503, body: "no" }) : r.fulfill({ status: 200, contentType: "text/plain", body: gh.versione + "\n" });
   if (u.endsWith("/mmariomm/EKGAtlas/main/ps-app/dist/ps-assist-latest.zip") && gh.zip) return r.fulfill({ status: 200, contentType: "application/zip", body: gh.zip });
   return r.fulfill({ status: 404, body: "no" });
 });
@@ -406,6 +406,30 @@ console.log("\naggiorna: lo zip deve essere quello giusto");
   const allAvvio = lavori().filter((x) => x.aggiorna);
   check(allAvvio.length === 1 && !allAvvio[0].ok, `all'avvio, una scheda che non risponde ancora: si riprova nel minuto, e lo scambio parte (all'aiutante ${allAvvio.length})`);
   check(JSON.parse(readFileSync(join(EST, "manifest.json"), "utf8")).version === MIA && temporanei().length === 0, "la cartella è quella di prima, e niente di temporaneo resta");
+  // VERSION.txt riletto subito prima dello scambio: lo zip tenuto aspettava il momento (anche ore). Su GitHub
+  // adesso c'è un'altra versione (quella di prima ritirata, una correzione): niente scambio, lo zip via, la
+  // nuova da scaricare al giro normale. E GitHub che non risponde proprio lì: niente scambio, la pausa.
+  const tenuti = () => sw.evaluate(() => caches.open("psassist-aggiorna").then((c) => c.keys()).then((k) => k.length));
+  azzeraLavori();
+  await sw.evaluate(() => chrome.storage.local.remove("aggiornaPausa"));
+  check(await tenuti() === 1, `(lo zip della ${NUOVA} tenuto)`);
+  gh.versione = "99.1.1";
+  await sw.evaluate(() => { aggNato = performance.now(); });
+  r = await sw.evaluate(() => aggiorna({ avvio: true }));
+  const m3 = await memoria();
+  check(!r.ok && /99\.1\.1/.test(r.why) && !lavori().some((x) => x.aggiorna) && await tenuti() === 0 && m3?.nuova === "99.1.1" && m3?.puo === true && !(await pausa()),
+    `su GitHub adesso c'è la 99.1.1: niente scambio, lo zip della ${NUOVA} via, la 99.1.1 da scaricare al giro dopo (got ${r.why} · ${JSON.stringify(m3)})`);
+  gh.versione = NUOVA;
+  await dimentica();
+  await controlla();
+  await sw.evaluate(() => { aggNato = performance.now(); });
+  r = await sw.evaluate(() => aggiorna({ avvio: true }));   // (lo zip di nuovo: si scarica, lo scambio aspetta)
+  gh.rotto = true;
+  await sw.evaluate(() => { aggNato = performance.now(); });
+  r = await sw.evaluate(() => aggiorna({ avvio: true }));
+  gh.rotto = false;
+  check(!r.ok && !lavori().some((x) => x.aggiorna) && (await pausa())?.v === NUOVA && await tenuti() === 1,
+    `GitHub che non risponde subito prima dello scambio: niente scambio, la ${NUOVA} aspetta come dopo un guasto (got ${r.why})`);
   comportati();
 }
 
@@ -457,12 +481,12 @@ console.log("\naggiorna: da sé, quando è il momento");
   // l'aiutante dice di no: niente ricarica, e quella versione aspetta sei ore — né zip né aiutante a ogni giro
   comportati({ aggiornaNo: "la cartella è in uso" });
   azzeraLavori();
-  const zip2 = zipScaricati(), gh2 = gh.richieste.length;
+  const zip2 = zipScaricati();
   await sw.evaluate(() => aggAuto());
   const no1 = lavori().filter((x) => x.aggiorna);
   check(no1.length === 1 && !no1[0].ok && (await pausa())?.v === NUOVA && JSON.parse(readFileSync(join(EST, "manifest.json"), "utf8")).version === MIA,
     `l'aiutante dice di no: una volta, niente ricarica, la versione in pausa (got ${JSON.stringify(await pausa())})`);
-  const n1 = lavori().length;
+  const n1 = lavori().length, gh2 = gh.richieste.length;   // (VERSION.txt, riletto subito prima dello scambio)
   for (let k = 0; k < 3; k++) await sw.evaluate(() => aggAuto());
   check(lavori().length === n1 && zipScaricati() === zip2 && gh.richieste.length === gh2,
     `dopo il no, altri tre giri: niente all'aiutante, niente scaricato, niente rete (aiutante ${lavori().length - n1}, zip ${zipScaricati() - zip2})`);

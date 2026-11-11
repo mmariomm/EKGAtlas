@@ -66,6 +66,8 @@ stesso paziente, nella stessa scheda), quindi in pratica non te ne accorgi.
   **testo non salvato** in una scheda del gestionale (una cartella, una dimissione riscritta, la
   terapia a metà, il pannello). Nel dubbio (una scheda non risponde) aspetta. Un ordine premuto
   mentre l'aiutante scambia la cartella non parte: **«Non partita»**, si rifà dopo la ricarica;
+- **subito prima dello scambio** rilegge `VERSION.txt`: se lì c'è ormai un'altra versione (quella di
+  prima ritirata, una correzione) non scambia, butta lo zip e scarica quella al giro dopo;
 - **se va storto** (lo zip sbagliato, l'aiutante che dice di no o non risponde) quella versione
   aspetta **sei ore**, mai un tentativo a ogni giro. Se l'aiutante non risponde non si ricarica
   (potrebbe essere a metà della copia): dopo, gli chiede che cosa c'è nella cartella, e se è già la
@@ -2436,7 +2438,8 @@ nella tendina del gestionale») — poi **Prepara nel gestionale** (o Ctrl+Invio
    dall'ospedale e ci tornano, cifrati da un capo all'altro; il ripetitore non li legge né li
    tiene. Solo con una stazione collegata e scelta («Stampa: Infermeria»).
    **E una seconda, per gli aggiornamenti (da sé):** il service worker legge
-   `ps-app/dist/VERSION.txt` da `raw.githubusercontent.com` (al più ogni sei ore) e, una volta
+   `ps-app/dist/VERSION.txt` da `raw.githubusercontent.com` (al più ogni sei ore, e di nuovo subito
+   prima di applicare) e, una volta
    per ogni versione nuova, `ps-assist-latest.zip` — due GET senza cookie, senza
    referrer e senza niente dell'ospedale (`aggiorna.js`). Lo zip va all'aiutante su questo PC, che
    controlla chiave e versione del manifest e scambia la cartella dell'estensione; mai con un
