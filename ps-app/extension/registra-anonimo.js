@@ -1528,8 +1528,8 @@
     const MAIUSCOLE_RE = /(?<![A-Za-zÀ-ÿ'’])[A-ZÀ-Ù][A-ZÀ-Ù'’]+(?:[ \t]+[A-ZÀ-Ù][A-ZÀ-Ù'’]+){1,3}(?![A-Za-zÀ-ÿ'’])/g;
     const MARKUP_RE = /<!--[\s\S]*?-->|<(script|style)\b[^>]*>[\s\S]*?<\/\1\s*>|<[!?/]?[A-Za-z][^<>]*>/gi;
     const diagnosi = (x) => /^diagnosi/i.test(String(x.nome || ""));
-    // fn sul testo fuori dal markup; il markup resta com'è, byte per byte
-    const fuoriDalMarkup = (s, fn) => { let out = "", i = 0; for (const m of s.matchAll(MARKUP_RE)) { out += fn(s.slice(i, m.index)) + m[0]; i = m.index + m[0].length; } return out + fn(s.slice(i)); };
+    // fn sul testo fuori dal markup; il markup resta com'è, byte per byte (o passa da fnM)
+    const fuoriDalMarkup = (s, fn, fnM = (m) => m) => { let out = "", i = 0; for (const m of s.matchAll(MARKUP_RE)) { out += fn(s.slice(i, m.index)) + fnM(m[0]); i = m.index + m[0].length; } return out + fn(s.slice(i)); };
     const PARTICELLE = new Set(["DEL", "DELLA", "DELLE", "DELLO", "DEI", "DEGLI", "DAL", "DALLA", "DALLE", "DALLO", "VAN", "VON", "SAN", "SANTA", "SANTO", "MAC"]);
     // un COGNOME NOME in mezzo a una riga: nessuna parola del programma, del catalogo, delle pagine di esempio, clinica
     const nomeNeiTesti = (t) => {
@@ -1739,12 +1739,14 @@
       conta.liberi++; contaDentro(q);
       return p.replace(q, sintetico(q));
     }).join(" · "));
+    // (nel markup di una diagnosi una parola sola, senza spazi: un attributo resta un attributo)
     const MARCHI_TESTI = MARCHI.filter((re) => !/PS Assist|connesso/i.test(re.source)).map((re) => new RegExp(re.source, "gi"));
-    const marchiFinti = (riga) => MARCHI_TESTI.reduce((t, re) => t.replace(re, (m) => (conta.testo++, /diritti|AFC|java/i.test(m) ? "software di esempio" : "OSPEDALE ESEMPIO")), riga);
+    const marchiFinti = (s, tag = false) => MARCHI_TESTI.reduce((t, re) => t.replace(re, (m) => (conta.testo++, tag ? "esempio" : /diritti|AFC|java/i.test(m) ? "software di esempio" : "OSPEDALE ESEMPIO")), s);
     testiLiberi.forEach((x, i) => {
       const base = String(x.nome || "testo.txt").replace(/[^\w.-]/g, "_").replace(/\.{2,}/g, ".").replace(/^\./, "_").slice(0, 60) || "testo.txt";
       const nome = files[`testi/${base}`] != null ? `testi/${i + 1}-${base}` : `testi/${base}`;
-      files[nome] = String(x.testo).split(/\r?\n/).map((riga) => marchiFinti(motivi(promemoriaFinto(riga).replace(URL_IN_TESTO, (u) => anonUrl(u, "flusso"))))).join("\n");
+      const t = String(x.testo).split(/\r?\n/).map((riga) => motivi(promemoriaFinto(riga).replace(URL_IN_TESTO, (u) => anonUrl(u, "flusso")))).join("\n");
+      files[nome] = fuoriDalMarkup(t, (s) => marchiFinti(s), (m) => marchiFinti(m, true));
     });
 
     // ------------------------------------------ terza passata: ripulire

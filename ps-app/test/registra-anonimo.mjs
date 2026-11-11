@@ -557,6 +557,11 @@ check(!nomi.includes("eviewer.json") && !/Visualizzatore di immagini/.test(riep)
     `il testo dei promemoria è inventato, l'ora e il «tra …» restano (${t6.split("\n").filter((x) => /promemoria/.test(x)).join(" | ")})`);
   check(!/MULTIMEDICA|IRCCS|Smarthealth/i.test(t6) && /OSPEDALE ESEMPIO/.test(t6), `l'ospedale e il fornitore in una pagina citata: quelli d'esempio (${t6.split("\n").pop()})`);
   check(r6.gate.ok, `e il cancello passa (${r6.gate.punti}: ${JSON.stringify(r6.gate.dove)})`);
+  // …e nel markup di una diagnosi una parola sola: un attributo senza virgolette resta un attributo
+  const marcato = `<TABLE><TR><TD TITLE="Multimedica IRCCS"><IMG SRC=/img/multimedica.gif ALT=MULTIMEDICA BORDER=0>Gruppo MultiMedica</TD></TR></TABLE>`;
+  const d6 = (anonimizza({ inizio: T6, origini: { gestionale: G }, pagine: [], testi: [{ nome: "diagnosi-1.txt", testo: `---\n${marcato}` }] }, { vocabolario, sfasamento: 30 }).files["testi/diagnosi-1.txt"] || "").split("\n")[1] || "";
+  const attr = (h) => RegistraAnonimo.pezzi(h).filter((x) => x.k === "tag").map((x) => `${x.nome}:${x.attrs.map((a) => a.k).join(",")}`).join(" ");
+  check(!/multimedica|irccs/i.test(d6) && attr(d6) === attr(marcato) && d6.includes("Gruppo OSPEDALE ESEMPIO"), `l'ospedale nel markup della diagnosi: gli stessi tag e attributi (${d6})`);
   const r7 = anonimizza({ inizio: T6, origini: { gestionale: G }, pagine: [pag], testi: [{ nome: "registro.txt", testo: registro }] },
     { vocabolario, sfasamento: 30, diagnosi: true, aggiungi: { "pagine/099-piantata.html": "<p>referto 4567890</p>" } });
   check(!r7.gate.ok && r7.gate.dove["pagine/099-piantata.html"]?.identificativo === 1, `e il cancello cerca quel numero ovunque (${JSON.stringify(r7.gate.dove)})`);
