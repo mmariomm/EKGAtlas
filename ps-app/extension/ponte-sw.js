@@ -888,6 +888,7 @@ async function ponteSchede() {
 // un promemoria non si rimanda alla scheda dopo: quella di prima può averlo
 // fatto, e sarebbero due.
 const PONTE_UNA_VOLTA = new Set(["ordina", "ristampa", "promemoria", "dfAggiungi"]);
+const PONTE_AGGIORNATA_MS = 12 * 3600e3;   // dopo un aggiornamento, le schede ancora da ricaricare (un turno)
 async function ponteSuScheda(cmd, args) {
   const tempo = PONTE_ATTESA[cmd] || PONTE_ATTESA.altro;
   const schede = await ponteSchede();
@@ -903,6 +904,14 @@ async function ponteSuScheda(cmd, args) {
   if (incerto.incerto && (cmd === "promemoria" || cmd === "dfAggiungi")) return { ok: false, errore: "Il gestionale sul PC tarda: guarda i promemoria prima di rifarlo", incerto: true };
   if (no.has("login")) return { ok: false, errore: "Gestionale da riaprire: sul PC la sessione è scaduta", sessione: true, ...incerto };
   if (no.has("pannello") && !incerto.incerto) return { ok: false, errore: "Sul PC apri la lista del pronto soccorso o un paziente, nel gestionale" };
+  // Nessuna scheda risponde, e PS Assist si è aggiornato da poco (aggiorna.js): nelle schede aperte
+  // prima c'è il pannello vecchio, che non parla più con l'estensione finché la pagina non si ricarica.
+  if ([...no].every((x) => x === "assente")) {
+    const u = (await chrome.storage.local.get("aggiornaUltima").catch(() => ({}))).aggiornaUltima;
+    if (u && ponteOra() - (u.quando || 0) < PONTE_AGGIORNATA_MS) {
+      return { ok: false, errore: ponteSolaLettura() ? "PS Assist si è aggiornato: sul PC ricarica la pagina del gestionale" : "PS Assist si è aggiornato: sul PC tocca «Ricarica la pagina»" };
+    }
+  }
   return { ok: false, errore: "Il gestionale sul PC non risponde: ricarica la sua pagina", ...incerto };
 }
 

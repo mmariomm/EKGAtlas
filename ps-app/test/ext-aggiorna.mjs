@@ -18,11 +18,13 @@
  * che parte (e lo dice all'aiutante), la pillola «Ricarica la pagina» nella
  * scheda col pannello vecchio, e il tocco sulla pillola che la riapre.
  * Da sé (3.85.3, anche la build completa): la sveglia ogni sei ore; mai con un
- * ordine o una registrazione in corso; VERSION.txt riletta subito prima dello
+ * ordine, una registrazione o un comando del telefono in corso, né col telefono
+ * in uso; VERSION.txt riletta subito prima dello
  * scambio; una prova andata male aspetta sei ore, senza riscaricare lo zip;
  * l'aiutante che non risponde: niente ricarica, e dopo «già nella cartella»
  * (solo la ricarica, niente zip); la sveglia che suona con la scheda del
- * gestionale aperta: aggiornata, e la pillola; un ordine premuto mentre
+ * gestionale aperta: aggiornata, e la pillola (il telefono, intanto: «sul PC
+ * tocca Ricarica la pagina»); un ordine premuto mentre
  * l'aiutante scambia la cartella: «Non partita · niente inviato», mai perso in
  * silenzio né mandato due volte.
  *   node test/ext-aggiorna.mjs
@@ -352,6 +354,27 @@ console.log("\naggiorna: da sé, mai a metà di qualcosa");
   r = await daSe();
   check(!!r && r.why === "Dopo la registrazione in corso", `una registrazione che aspetta di salvarsi: nemmeno (got ${JSON.stringify(r)})`);
   await sw.evaluate(() => chrome.storage.session.remove("registra.incidente"));
+  // il telefono: da sé non mentre il medico lo usa (dopo la ricarica le schede aperte non gli rispondono più)
+  const TEL = "Dopo il comando dall'iPhone in corso";
+  const telefono = (x) => sw.evaluate((y) => {
+    pt.sessione = y.sessione ? { canale: null, dal: Date.now(), ultimo: Date.now(), n: 1 } : null;
+    pt.fine = y.finita ? { perche: "inattivo", testo: "", ts: Date.now() - y.finita } : null;
+  }, x);
+  await telefono({ sessione: true });
+  r = await daSe();
+  check(!!r && r.why === TEL, `una sessione col telefono aperta: la sveglia non aggiorna (got ${JSON.stringify(r)})`);
+  check((await sw.evaluate(() => aggOccupato())) === "", "…a mano sì (il medico è al PC: vede «Ricarica la pagina»)");
+  await telefono({ finita: 5 * 60e3 });
+  r = await daSe();
+  check(!!r && r.why === TEL, `la sessione finita da 5 minuti: nemmeno (got ${JSON.stringify(r)})`);
+  await telefono({ finita: 11 * 60e3 });
+  check((await sw.evaluate(() => aggOccupato(true))) === "", "finita da più di 10 minuti: si può");
+  await telefono({});
+  // un comando del telefono che lavora in una scheda di sottofondo (la cartella): né da sé né a mano
+  await sw.evaluate(() => chrome.storage.session.set({ "ponte.cartelle": { 4242: { ep: "1", ts: Date.now() } } }));
+  r = await sw.evaluate(() => aggiorna());
+  check(!r.ok && r.why === TEL, `la cartella che il telefono sta salvando: nemmeno a mano (got ${JSON.stringify(r)})`);
+  await sw.evaluate(() => chrome.storage.session.remove("ponte.cartelle"));
   check(zipChiesti() === z0 && !scambi() && (await versioneSw()) === NUOVA,
     "niente zip scaricato, niente all'aiutante, la versione è quella di prima");
 }
@@ -439,6 +462,11 @@ console.log("\naggiorna: da sé, con la scheda del gestionale aperta");
     `la sveglia: aggiornata da sé alla ${NUOVA3}, con la scheda del gestionale aperta (got ${v || "nessun service worker nuovo"})`);
   const pill = await finche(() => pillola(doc), 15000);
   check(pill === "PS Assist aggiornata · Ricarica la pagina", `nella scheda aperta la pillola «Ricarica la pagina» (got «${pill}»)`);
+  // il telefono, intanto: la scheda col pannello vecchio non gli risponde più, e lo si dice
+  const SI = "PS Assist si è aggiornato: sul PC tocca «Ricarica la pagina»";
+  const tel = nuovo ? await finche(async () => { const e = (await nuovo.evaluate(() => ponteSuScheda("pazienti", {}))).errore; return e === SI ? e : null; }, 10000)
+    || (await nuovo.evaluate(() => ponteSuScheda("pazienti", {})).catch((e) => ({ errore: String(e) }))).errore : "";
+  check(tel === SI, `un comando dal telefono, prima di «Ricarica la pagina»: «${SI}» (got «${tel}»)`);
   if (nuovo) { sw = nuovo; await svegliaLontana(); }
   if (pill) await riapriDallaPillola(doc);
 }

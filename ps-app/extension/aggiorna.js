@@ -17,13 +17,15 @@
  * chrome.runtime.reload(), dalla fila degli ordini (un ordine premuto intanto:
  * «Non partita», mai sparito con la ricarica). Solo se l'estensione gira
  * da quella cartella (installa.cmd ci mette `installata.json`, e l'aiutante
- * dice che versione c'è dentro); mai con un ordine, una stampa, un giro o una
- * registrazione in corso. Andata male (lo zip, l'aiutante che dice di no o non
+ * dice che versione c'è dentro); mai con un ordine, una stampa, un giro, un
+ * comando dal telefono o una registrazione in corso, e da sé nemmeno col
+ * telefono in uso (dopo la ricarica le schede aperte non gli rispondono più,
+ * finché il medico non le ricarica). Andata male (lo zip, l'aiutante che dice di no o non
  * risponde): da sé quella versione aspetta sei ore (`aggiornaPausa`), mai un
  * giro dopo l'altro. In storage.local, `aggiorna` = { ts, nuova, puo, come }:
  * lo legge il pannello.
  */
-/* global SA4, ordLeggi, inFilaOrd, ospite, corto, b64, motoreDiScheda, stz, regPronto, regAttiva, regStato, regSalvando, REG_INC */
+/* global SA4, ordLeggi, inFilaOrd, ospite, corto, b64, motoreDiScheda, stz, regPronto, regAttiva, regStato, regSalvando, REG_INC, pt, ponteValoriTutti, ponteCartelleTutte, ponteTerapieTutte, ponteAccetteTutte */
 
 const AGG_BASE = "https://raw.githubusercontent.com/mmariomm/EKGAtlas/main/ps-app/dist/";
 const AGG_GIORNO = 24 * 3600e3;
@@ -39,6 +41,9 @@ const AGG_CARTELLA = "%LOCALAPPDATA%\\PSAssist\\estensione";
 const AGG_AVVIO = 60e3;
 const AGG_OCCUPATO = "Dopo l'ordine in corso";
 const AGG_REGISTRA = "Dopo la registrazione in corso";
+const AGG_TELEFONO = "Dopo il comando dall'iPhone in corso";
+// da sé, non mentre il medico usa il telefono: dopo la ricarica le schede aperte non gli rispondono più
+const AGG_TELEFONO_MS = 10 * 60e3;
 let aggScambio = false;                  // lo scambio è deciso: fino alla ricarica nessun ordine nuovo, nessuna stampa nuova (bg.js)
 // La build è di sola lettura? Allora scarica il SUO zip (quello mini). La
 // versione (VERSION.txt) è unica per le due build, che escono insieme dallo
@@ -99,15 +104,22 @@ async function aggControlla(ora) {
 
 // Non è il momento: un ordine (anche dal telefono) in corso o in coda, una
 // stampa, un giro in una scheda del medico (il suo appunto, o il presidio di
-// chi sta mandando), un foglio per la stazione di stampa; una registrazione
-// in corso, che si sta salvando, o quella automatica che aspetta il suo minuto
-// (REG_INC). Nel dubbio — una scheda che non risponde in tempo — è occupato.
-// Non contano le schede scartate da Chrome o non caricate, e quelle dei PDF
-// delle stampe (lì il pannello non nasce). "" se è libero; se no, perché.
+// chi sta mandando), un foglio per la stazione di stampa; un comando del
+// telefono che lavora in una scheda di sottofondo (valori, cartella, terapia,
+// accettazione); da sé (`auto`) anche una sessione col telefono aperta o finita
+// da meno di 10 minuti; una registrazione in corso, che si sta salvando, o
+// quella automatica che aspetta il suo minuto (REG_INC). Nel dubbio — una
+// scheda che non risponde in tempo — è occupato. Non contano le schede
+// scartate da Chrome o non caricate, e quelle dei PDF delle stampe (lì il
+// pannello non nasce). "" se è libero; se no, perché.
 const aggPdf = (t) => (chrome.runtime.getManifest().content_scripts?.[0]?.exclude_matches || []).some((m) => String(t.url || "").startsWith(m.replace(/\*$/, "")));
-async function aggOccupato() {
+async function aggOccupato(auto = false) {
   if ((await ordLeggi()).some((x) => AGG_APERTO.has(x.stato)) || motoreDiScheda()) return AGG_OCCUPATO;   // (anche il motore di una scheda)
   if (typeof stz !== "undefined" && (stz.stampa.size || stz.inCorso.size)) return AGG_OCCUPATO;
+  try {
+    if (typeof pt !== "undefined" && (pt.inVolo.size || (auto && (pt.sessione || pt.attesa || (pt.fine && Date.now() - pt.fine.ts < AGG_TELEFONO_MS))))) return AGG_TELEFONO;
+    for (const tutti of [ponteValoriTutti, ponteCartelleTutte, ponteTerapieTutte, ponteAccetteTutte]) if (Object.keys(await tutti()).length) return AGG_TELEFONO;
+  } catch { /* il ponte non è partito: niente dal telefono */ }
   try {
     await regPronto;
     if (regAttiva() || (regStato && regStato.stato === "fermo" && !regStato.errore && regSalvando(regStato))
@@ -165,10 +177,10 @@ async function aggNo(v, why) {
   return { ok: false, why };
 }
 
-// Applica la versione nuova: il tocco su «Aggiorna app», o da sé (aggAuto).
+// Applica la versione nuova: il tocco su «Aggiorna app», o da sé (aggAuto, `auto`).
 // { ok, versione, ricarica } (la ricarica è già chiamata) o { ok: false, why }.
-async function aggiorna() {
-  const occupato = await aggOccupato();
+async function aggiorna(auto = false) {
+  const occupato = await aggOccupato(auto);
   if (occupato) return { ok: false, why: occupato };
   let v;
   try { v = await aggVersione(); } catch (e) { return { ok: false, why: `Non trovo la versione nuova: ${corto(e && e.message || e, 100)}` }; }
@@ -192,7 +204,7 @@ async function aggiorna() {
   // L'ultimo controllo, lo scambio e la ricarica dentro la fila degli ordini:
   // nessun ordine parte in mezzo.
   return inFilaOrd(async () => {
-    const ancora = await aggOccupato();
+    const ancora = await aggOccupato(auto);
     if (ancora) return { ok: false, why: ancora, scaricato: !i.gia };   // (lo zip c'era: all'avvio non si riscarica)
     // Subito prima dello scambio, VERSION.txt dice ancora v? Se no (ritirata, o c'è già una più nuova)
     // niente scambio, e quella di adesso si prova al giro dopo. GitHub che non risponde: la pausa.
@@ -291,10 +303,10 @@ async function aggAuto(avvio = false) {
     if (!rec || !rec.nuova || !rec.puo) return null;   // niente di nuovo, o non si aggiorna da qui (il ⋯ lo dice)
     const p = (await chrome.storage.local.get(AGG_PAUSA))[AGG_PAUSA];
     if (p && p.v === rec.nuova && aggDaPoco(p.ts)) return null;   // andata male da poco: sei ore
-    let r = await aggiorna();
+    let r = await aggiorna(true);
     while (avvio && r && r.why === AGG_OCCUPATO && !r.scaricato && performance.now() < AGG_AVVIO - 10e3) {
       await new Promise((res) => setTimeout(res, 10e3));
-      r = await aggiorna();
+      r = await aggiorna(true);
     }
     return r;
   } finally {

@@ -57,10 +57,13 @@ Chrome e ogni sei ore, se su GitHub c'è una versione più nuova: Chrome scarica
 vecchia (che resta in `estensione.prima`) e l'estensione si ricarica, senza riavviare Chrome e senza
 amministratore. Anche con il gestionale aperto: le schede già aperte mostrano **«Ricarica la
 pagina»**, un tocco quando vuoi (la pagina non si ricarica mai da sola: lì può esserci un testo non
-mandato).
+mandato). Fino a quel tocco quelle schede non rispondono al telefono, che lo dice: «PS Assist si è
+aggiornato: sul PC tocca «Ricarica la pagina»».
 - **la ferma** un ordine in corso o in coda (anche dal telefono), una stampa o un foglio per la
-  stazione di stampa, un giro di esami in una scheda, una registrazione (anche quella automatica che
-  sta per salvarsi). Nel dubbio (una scheda non risponde) aspetta il giro dopo. Un ordine premuto
+  stazione di stampa, un giro di esami in una scheda, un comando del telefono che lavora in una
+  scheda (valori, cartella, terapia, accettazione), una registrazione (anche quella automatica che
+  sta per salvarsi); da sé, anche il telefono in uso (una sessione aperta o finita da meno di 10
+  minuti). Nel dubbio (una scheda non risponde) aspetta il giro dopo. Un ordine premuto
   mentre l'aiutante scambia la cartella non parte: **«Non partita · niente inviato»**, si rifà dopo
   la ricarica;
 - **subito prima dello scambio** rilegge `VERSION.txt`: se lì c'è ormai un'altra versione (quella di
