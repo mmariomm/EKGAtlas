@@ -923,11 +923,14 @@ if (prova("la Conferma ignorata ma il carrello senza la sua Conferma: le attese,
 // preme di nuovo; e nemmeno il primo, se un'altra Conferma per la stessa
 // richiesta è partita nell'ultimo minuto (da un'altra scheda) e non ha ancora
 // la sua prova: «Una Conferma è già partita: guarda le sue richieste».
+// (le Conferme annotate dalle prove di prima: ogni prova ha un simulatore nuovo, con gli stessi numeri di richiesta)
+const senzaConferme = (p) => p.evaluate(() => localStorage.removeItem("psassist:conferme.v1"));
 // (solo carrello: la richiesta resta da confermare, il suo carrello aperto nella scheda del medico con la ricevuta)
 async function soloCarrello() {
   await daCapo();
   await suPagina(doc, A.patientUrl);
   await nienteSmart(doc);
+  await senzaConferme(doc);
   const nasce = nuovaPagina();
   await ordina(doc, ["TROPONINA"], { solo: true });
   await nasce;
@@ -957,6 +960,7 @@ if (prova("«Conferma e stampa» sulla riga, la Conferma lenta (14 s): la riga n
   await daCapo();
   await suPagina(doc, A.patientUrl);
   await nienteSmart(doc);
+  await senzaConferme(doc);
   const nasce = nuovaPagina();
   await ordina(doc, ["TROPONINA"], { solo: true });
   await nasce;
