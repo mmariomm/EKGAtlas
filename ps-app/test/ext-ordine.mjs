@@ -128,7 +128,10 @@ const azzeraStampe = (p) => p.evaluate(() => localStorage.setItem("__psaStampe",
 const strisce = (p) => p.evaluate(() => JSON.parse(sessionStorage.getItem("__psaStrisce") || "[]"));
 const striscia = async (page, re, timeout = 30000) => {
   const h = await page.waitForFunction((src) => {
-    const t = (document.getElementById("psassist-host")?.shadowRoot?.querySelector(".pill.run")?.innerText || document.getElementById("psassist-host")?.shadowRoot?.querySelector(".gchip")?.dataset.riga || "").replace(/\s+/g, " ").trim();
+    const r = document.getElementById("psassist-host")?.shadowRoot;
+    const t = (r?.querySelector(".pill.run")?.innerText || r?.querySelector(".gchip[data-riga]")?.dataset.riga || "").replace(/\s+/g, " ").trim();
+    // un ordine finito di un altro paziente è un segno nella pill: un tocco lo apre (lo farebbe il medico)
+    if (!t) { r?.querySelector("#expand .segno")?.click(); r?.querySelector("#gchipsegno")?.click(); }
     return new RegExp(src).test(t) ? t : false;
   }, re.source, { timeout });
   return h.jsonValue();
@@ -148,7 +151,7 @@ async function finche(fn, timeout = 30000) {
 // il pannello si apre dalla pill (si arriva dal gestionale), poi Richieste
 async function ordina(page, esami, { quesito = "dolore toracico", solo = false } = {}) {
   if (!(await $panel(page, ".card").count())) {
-    await $panel(page, "#expand").click();
+    await $panel(page, "#expand").click({ position: { x: 12, y: 8 } });
     await page.waitForSelector("#psassist-host .card", { timeout: 8000 });
   }
   if (!(await $panel(page, "#q").count())) await $panel(page, '[data-seg="richieste"]').click();
@@ -439,6 +442,15 @@ if (prova("l'errore arriva nella tua scheda, col resoconto intero — e «Svuota
   await ordina(doc, ["CREATININEMIA", "EMOCROMOCITOMETRICO", "TROPONINA"], { quesito: "febbre" });
   const w1 = await nasce;
   await suPagina(doc, B.patientUrl);
+  // Sulla pagina di BIANCHI l'ordine di ROSSI non è andato: non una striscia che
+  // prende il posto della pill di BIANCHI, ma un segno «✕ ROSSI M.» dentro la pill
+  const segnoErr = await doc.waitForFunction(() => {
+    const s = document.getElementById("psassist-host")?.shadowRoot?.querySelector("#expand .segno.err");
+    return s ? s.textContent.replace(/\s+/g, " ").trim() : false;
+  }, null, { timeout: 40000 }).then((h) => h.jsonValue()).catch(() => "");
+  check(segnoErr === "✕ ROSSI M." && (await $panel(doc, ".pill.run").count()) === 0 && /BIANCHI/.test(await $panel(doc, "#expand").innerText()),
+    `l'ordine non partito di un altro paziente: «✕ ROSSI M.» nella pill di BIANCHI, niente striscia (got: ${segnoErr || "niente"})`);
+  await $panel(doc, "#expand .segno").click();   // un tocco sul segno: l'esito
   const rossa = await striscia(doc, /ROSSI MARIO.*(non mandat|Errore)/, 40000).catch(() => "");
   check(/TROPONINA US: non mandato/.test(rossa) && /apri il carrello → Riprova/.test(rossa) && !/oggi si chiama/.test(rossa) && (await $panel(doc, ".pill.run.err").count()) === 1,
     `la striscia del medico è rossa e comincia da cosa fare: «TROPONINA US: non mandato · apri il carrello → Riprova» — il perché sta nel resoconto (got: ${rossa || "niente"})`);
@@ -768,6 +780,9 @@ if (prova("una scheda d'ordine zitta — si chiede se c'è, e la coda aspetta"))
   await $panel(doc, STOP).click();
   check(await aspettaChiusa(w, 8000), "⏹ su una scheda che non risponde: la chiude");
   await silenzia([]);
+  // (il secondo ordine, di BIANCHI, ha la striscia: l'esito di ROSSI è il bottoncino «✕ ROSSI M.» accanto — un tocco lo apre)
+  await doc.waitForSelector("#psassist-host #strsegno, #psassist-host #gchipsegno, #psassist-host #expand .segno", { timeout: 10000 }).catch(() => {});
+  await doc.evaluate(() => { const r = document.getElementById("psassist-host")?.shadowRoot; (r?.querySelector("#strsegno, #gchipsegno") || r?.querySelector("#expand .segno"))?.click(); });
   const chiusa = await striscia(doc, /Scheda chiusa/, 10000).catch(() => "");
   check(/non mandat/.test(chiusa) && /Da controllare: EMOCROMO/.test(chiusa), `chiusa: quello in volo da controllare, il resto non mandato (got: ${chiusa || "niente"})`);
   // e solo adesso parte BIANCHI
@@ -1289,7 +1304,7 @@ if (prova("a pannello aperto l'ordine si vede nel chip, e le letture dicono che 
   check(!/invio|creo|controllo|confermo/i.test(riga), `mentre gira, solo chi e a che esame: niente passi nella riga (got: ${riga})`);
   await shot(doc, "15a-chip");
   await suPagina(doc, B.patientUrl);
-  await $panel(doc, "#expand").click();
+  await $panel(doc, "#expand").click({ position: { x: 12, y: 8 } });
   await doc.waitForSelector("#psassist-host .card", { timeout: 8000 });
   if (!(await $panel(doc, '[data-seg="esiti"].on').count())) await $panel(doc, '[data-seg="esiti"]').click();
   const leggi = $panel(doc, "#risall");
@@ -1317,7 +1332,7 @@ if (prova("la richiesta di un ordine ancora aperto non è «da confermare»")) {
   const metti = (stato) => sw.evaluate((st) => chrome.storage.session.set({ ordini: [{ id: "finto1", stato: st, rid: "699001", ep: "999001", paziente: "ROSSI MARIO", n: 2,
     ts: Date.now(), agg: Date.now(), vista: { badge: "esame 2 di 2", tono: "run", ferma: true, prog: [1, 2] }, pubblico: { tono: "run", titolo: "esame 2 di 2", testo: "" } }] }), stato);
   await metti("corre");
-  await $panel(doc, "#expand").click();
+  await $panel(doc, "#expand").click({ position: { x: 12, y: 8 } });
   await doc.waitForSelector("#psassist-host .card", { timeout: 8000 });
   await $panel(doc, '[data-seg="richieste"]').click();
   await doc.waitForTimeout(300);
@@ -1573,6 +1588,9 @@ if (prova("⏹ su una scheda d'ordine che aspetta — l'ordine finisce, la coda 
   const bottone = await tastoStop(doc);
   check(bottone === "⏹", `e ⏹ c'è (got «${bottone}» · ${JSON.stringify((await ordini()).map((x) => [x.paziente, x.stato, x.vista && x.vista.tag]))})`);
   await $panel(doc, STOP).click();
+  // (fermato, l'esito di ROSSI è un segno accanto alla striscia di BIANCHI, che intanto parte: un tocco lo apre)
+  await doc.waitForSelector("#psassist-host #strsegno, #psassist-host #gchipsegno, #psassist-host #expand .segno", { timeout: 10000 }).catch(() => {});
+  await doc.evaluate(() => { const r = document.getElementById("psassist-host")?.shadowRoot; (r?.querySelector("#strsegno, #gchipsegno") || r?.querySelector("#expand .segno"))?.click(); });
   const fermo = await striscia(doc, /ROSSI MARIO.*Interrotto/, 15000).catch(() => "");
   check(!!fermo && conferme(A).length === 0, `⏹: «Interrotto», niente confermato (got: ${fermo || "niente"})`);
   {

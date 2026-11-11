@@ -634,6 +634,13 @@ lette stanno in `sessionStorage` (`smart.giro.v1`) e muoiono con lei.
    ferma tutto. **Esc** non ferma mai il giro, nemmeno col pannello aperto (lascerebbe un
    carrello a metà): riduce il pannello, come ovunque; si ferma col **⏹**. Se intanto sei sulla scheda di un altro paziente la striscia diventa **ambra** e
    lo scrive: gli esami restano quelli di chi li hai ordinati.
+   **Un ordine finito di un altro paziente non prende il posto della tua pill.** Sulla pagina di
+   BIANCHI, l'ordine finito di ROSSI resta un **segno piccolo dentro la pill** — «✓ ROSSI M.»
+   (fatto), «⚠» (da guardare), «✕» (non partito), scelto dal tono dell'esito, non dalle parole —;
+   un tocco lo apre come striscia intera, col suo ⏹/✕/«Ristampa». Il mouse sulla pill la apre come
+   sempre (a finestra aperta il segno è un chip in intestazione). Sulla pagina dello stesso
+   paziente, e per un ordine che gira, è in coda o aspetta un tocco per le etichette, la striscia
+   resta intera.
    **Con l'estensione il giro va in una scheda di sottofondo.** «Conferma e stampa» (e «solo
    carrello») non mandano gli esami dalla tua scheda: l'estensione apre **una seconda scheda,
    accanto e dietro**, sulla pagina vera del paziente — lo stesso indirizzo da cui il giro
@@ -848,6 +855,12 @@ col suo colore sul bordo e nel titolo (il rosso resta **solo** dei valori fuori 
 ciò che aspetta; il blu dei comandi e di «nuovo»). Il Lab per primo, a tutta larghezza; sotto ECG
 e Imaging, affiancati se c'è posto.
 
+**La pill dice cosa c'è di nuovo**, senza un gesto: sulla pagina di un paziente, ridotta, accanto al
+nome una scritta corta — il primo valore nuovo fuori range (i più gravi per primi) o, senza, il
+referto nuovo (ECG e immagini prima), e quanti sono: «Hb 8,0↓ · 1 nuovo», «RX TORACE · nuovo». Gli
+stessi conti della riga in cima agli Esiti; niente di nuovo, niente scritta. Legge solo quello che
+il pannello ha già: dalla pill non parte nessuna lettura.
+
 **Aprire un paziente** porta sugli **Esiti se ha qualcosa da guardare** — valori, referti in
 pagina o già letti — e sulle **Richieste se non ha ancora niente** (gli Esiti vuoti non servono).
 Vale per la pagina appena aperta e per «apri» dalla lista, dalla mappa o da un promemoria.
@@ -875,8 +888,9 @@ da solo al più **due volte**, dopo 2 e dopo 10 minuti (i valori anche quando la
 pagina cambia); un tocco o un bottone ci provano sempre; un PDF che si è rivelato di un altro
 paziente da solo non si riprende più (↺ fa ripartire i referti da capo). Il laboratorio a metà,
 con la pagina aperta, si ricontrolla ogni 10 minuti **solo mentre la guardi** (tornandoci, se ne
-sono passati 10), e dopo due ricontrolli senza niente di nuovo smette: lo rifà aprire gli Esiti. Mentre lavora, accanto a **↻** c'è solo un discreto **«↓ 2»** — quanti ne restano —
-e nient'altro. Non parte mai nella scheda di un ordine, del Ponte, di un giro ripreso o con una
+sono passati 10), e dopo due ricontrolli senza niente di nuovo smette: lo rifà aprire gli Esiti. Mentre lavora, accanto a **↻** c'è un discreto **«↓ 2»** — quanti ne restano —, e se il Lab
+non ha ancora una tabella dice **«Leggo i valori…»**; se non c'è proprio niente da leggere (né
+prelievi né referti di laboratorio), **«Nessun esame di laboratorio»**. Non parte mai nella scheda di un ordine, del Ponte, di un giro ripreso o con una
 richiesta da confermare.
 
 - **In cima, una riga**: i valori **fuori range** dell'ultimo prelievo di ciascun esame, i più
@@ -891,8 +905,8 @@ richiesta da confermare.
   richiesto 13:10`). Un esame di laboratorio i cui valori **hanno cominciato ad arrivare** (la
   finestra Risultati c'è) non aspetta più: **«parziale 15:11»**, in grigio, **senza orologio** —
   i valori sono già in tabella. Gli orologi di ECG e immagini restano.
-- **Refertati**: una riga per referto, con data e ora, la prima frase che dice qualcosa
-  (le conclusioni, se ci sono) e «nuovo» finché non l'hai aperto. Il più recente **non ancora
+- **Refertati**: una riga per referto, con data e ora, **una riga** di testo — le conclusioni se
+  ci sono, se no la prima frase del referto (mai il titolo o la riga dell'esame, né «Quesito: …») e «nuovo» finché non l'hai aperto. Il più recente **non ancora
   letto** che ha un testo (ECG, radiografia) è già **aperto**, finché non ne apri o chiudi uno
   tu. Un tocco apre il **testo lì
   sotto** (un secondo tocco lo richiude), con **⧉ Copia** (ora, esame e paziente in testa, per il
@@ -906,7 +920,11 @@ richiesta da confermare.
   «Solo il tracciato della macchina». Di una **radiografia** si mostrano la riga dell'esame (titolo,
   data e ora) e il referto fra le due righe di trattini, mai l'anagrafica in testa, la modalità,
   l'operatore o il piè di pagina (stesso taglio sul PC, sul telefono e nella copia); se la struttura
-  del PDF non è riconosciuta si mostra tutto, com'era. Gli altri documenti (consulenze…) stanno in **Altri
+  del PDF non è riconosciuta non si taglia a corpo, ma se ne vanno le righe che sono **certamente**
+  cornice — nome e dati anagrafici del paziente (nato il, codice fiscale, sesso, età, episodio),
+  intestazione di ospedale e reparto in testa, «Il Medico … / Dott. …» e il piè di pagina in coda,
+  i trattini — e **mai una riga di cui non si è sicuri** (il quesito, il titolo e ogni riga
+  clinica restano; se tutto sembrasse cornice, resta tutto). Gli altri documenti (consulenze…) stanno in **Altri
   documenti**, e si aprono nella loro scheda.
 - **Di chi è il referto**: prima di mostrare un testo, il codice fiscale scritto nel PDF (o nome e
   data di nascita) si confronta col paziente. Fra i PDF che il portale mostra, quello rimasto
@@ -1144,12 +1162,13 @@ si legge l'analita sbagliato. Quindi:
   ma ogni altro campione resta scritto nella sigla (`U-Emoglobina` → **`U·Hb`**, `Lcr-Glucosio` →
   `LCR·Glu`). L'emoglobina delle urine non diventerà mai `Hb`;
 - un nome fuori elenco è **scritto per esteso** e **sottolineato a puntini**, mai abbreviato a caso;
-- in cima compare una riga ambra: *«2 nomi non in elenco: scritti per esteso · 1 riga non letta»*,
-  e **quali** apre l'elenco esatto, con nome e valore di quello che non è stato letto;
+- niente riga ambra sullo schermo: il dettaglio — **quali** nomi non sono in elenco e **quali righe
+  non sono state lette**, con nome e valore — sta nel **Registro**, una volta per ogni
+  cambiamento;
 - una riga che il lettore rifiuta (niente data, niente range, niente stato: di solito è
-  un'intestazione) **non sparisce**: viene contata e mostrata lì dentro. Se è un esame vero lo vedi
-  e apri la finestra nativa. Lo stesso vale nello Storico per una riga che non sta in colonna
-  (meno celle dell'intestazione): non viene indovinata, viene dichiarata.
+  un'intestazione) **non sparisce**: finisce nel Registro, col suo valore. Se è un esame vero lo
+  trovi lì e apri la finestra nativa. Lo stesso vale nello Storico per una riga che non sta in
+  colonna (meno celle dell'intestazione): non viene indovinata, viene dichiarata.
 
 Vale sia per i valori di un prelievo sia per la tabella dello Storico.
 
