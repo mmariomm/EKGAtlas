@@ -455,6 +455,10 @@ if (await prova("la forma del pannello si sceglie in Impostazioni, e la scheda l
   check(!!c2, `di nuovo Al passaggio: la finestra torna al centro (got ${JSON.stringify(c2 || await colonna())})`);
   await shot(pan, "impostazioni-pannello");
   await pan.close();
+  // com'era prima, per le prove qui sotto: nessuna forma scelta, e la finestra a destra (quella che
+  // mette l'init script, se manca): Al passaggio al centro, il mouse «via» delle prove le starebbe sopra
+  await sw.evaluate(() => chrome.storage.local.remove("forma"));
+  await doc.evaluate(() => { localStorage.removeItem("psassist:forma.v1"); localStorage.removeItem("psassist:win.v1"); });
 }
 
 // ---- 3. i fogli vanno da soli alla loro stampante -------------------------
