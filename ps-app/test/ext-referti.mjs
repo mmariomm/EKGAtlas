@@ -39,7 +39,7 @@ const rigaRef = (sis, id, quando, nome) => `<tr><td class="AFCDataTD" title="${n
 const rigaRis = (id, quando, nome) => rigaRef("HL7RIS", id, quando, nome);
 // righe in più che la pagina del paziente mostra da un certo momento (ECG nuovi,
 // un referto del laboratorio, una finestra Risultati)
-let extra = [], extraLab = [], extraRis = [];
+let extra = [], extraLab = [], extraRis = [], extraEco = [];
 const rigaRis2 = (id) => `<tr><td class="AFCDataTD" title="0-320 EMOCROMOCITOMETRICO URGENTE (POCT1502)"><a class="AFCDataLink" href="#" title="Visualizza Risultati" onclick="window.open('/sa4rcs/restrict/RcsAccessiRisultatiElenco.do?RCS_ACCESSO_ID=${id}','*TEST00001','height=500,width=800');"><img alt="risultati"></a>
   <input type="hidden" name="DATA_ORD" value="2026-08-23 07:28:00.0"></td></tr>`;
 {
@@ -52,7 +52,7 @@ const rigaRis2 = (id) => `<tr><td class="AFCDataTD" title="0-320 EMOCROMOCITOMET
           rigaRis("eeee5555-0000-0000-0000-000000000005", "2026-08-22 04:20:00.0", "69-210 ECOGRAFIA ADDOME (A6921)")}${
           extra.map((x) => rigaRef("HL7AMB", x.id, x.quando, "8-6 ELETTROCARDIOGRAMMA (84)")).join("")}${
           extraLab.map((id) => rigaRef("HL7LIS", id, "2026-08-22 08:00:00.0", "0-320 EMOCROMOCITOMETRICO URGENTE (POCT1502)")).join("")}${
-          extraRis.map(rigaRis2).join("")}`), "latin1") }
+          extraRis.map(rigaRis2).join("")}${extraEco.map((id) => rigaRis(id, "2026-08-22 05:00:00.0", "69-211 ECOGRAFIA COLLO (A6922)")).join("")}`), "latin1") }
       : out;
   };
 }
@@ -86,7 +86,7 @@ const route = async (r) => {
     v.a = Date.now();
     // l'ecografia con un font vero (Helvetica): il visore la deve disegnare
     // un ECG il cui PDF è intestato a un altro paziente: l'errore grave
-    if (v.id && v.id.startsWith("ffff9999")) {
+    if (v.id && /^ffff(9999|8888)/.test(v.id)) {
       mock.handle({ method: req.method(), url: req.url(), bodyBuffer: req.postDataBuffer() });
       return r.fulfill({ status: 200, headers: { "content-type": "application/pdf" }, body: pdfSemplice(RIGHE_ALTRO) });
     }
@@ -322,6 +322,53 @@ const errori = async () => { const [s] = ctx.serviceWorkers(); return (await s.e
   await finito(pI);
   await senzaCopie(pI);   // il «Salva» a mano, qui sotto, parte senza copie
   await pI.close();
+}
+
+// …e poi ↻ Rileggi: il PDF si riprende e si riguarda di chi è — resta segnato (in questa scheda e per
+// tutte), la copia non resta, e al telefono non va mai: né da questa scheda né da un'altra, che il
+// segno della scheda non ce l'ha. Anche un'ecografia, di cui il testo non si legge.
+{
+  const ECG_ALTRO = "ffff9999-0000-0000-0000-000000000099", ECO_ALTRO = "ffff8888-0000-0000-0000-000000000088", ALTRI = [ECG_ALTRO, ECO_ALTRO];
+  const ep = new URL(mock.patientUrl).searchParams.get("EPISODIO_ID");
+  const [sw] = ctx.serviceWorkers();
+  const schede = () => sw.evaluate(() => chrome.tabs.query({}).then((l) => l.map((t) => t.id)));
+  const nuova = async () => {
+    const prima = await schede(), p = await ctx.newPage();
+    await p.goto(mock.patientUrl);
+    await p.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
+    return { p, id: (await schede()).find((x) => !prima.includes(x)) };
+  };
+  const segnati = (p) => p.evaluate(([ep, ids]) => ids.filter((id) => ((JSON.parse(localStorage.getItem("psassist:autoFalliti.v1") || "{}") || {})[ep] || {})[id]?.altro), [ep, ALTRI]);
+  // il telefono chiede gli esiti a una scheda precisa, come il ponte: che cosa gli offrirebbe
+  const alTelefono = (id) => sw.evaluate(async ([id, ep, ids]) => {
+    const r = await chrome.tabs.sendMessage(id, { t: "ponteEsegui", cmd: "esiti", args: { ep } }).catch((e) => ({ errore: String(e) }));
+    const copie = await Promise.all(ids.map((x) => ponteCopia(ep, x)));
+    return { ok: !!r?.ok, pdf: ((r?.dati?.referti) || []).filter((x) => ids.includes(x.id) && x.pdf).map((x) => x.id), copie: copie.filter(Boolean).length };
+  }, [id, ep, ALTRI]);
+  extra = [{ id: ECG_ALTRO, quando: "2026-08-22 06:30:00.0" }]; extraEco = [ECO_ALTRO];
+  voli = [];
+  const A = await nuova();
+  await A.p.waitForFunction(([ep, ids]) => ids.every((id) => ((JSON.parse(localStorage.getItem("psassist:autoFalliti.v1") || "{}") || {})[ep] || {})[id]?.altro), [ep, ALTRI], { timeout: 60000 }).catch(() => {});
+  await finito(A.p);
+  check((await segnati(A.p)).length === 2, `aperto il paziente: l'ECG e l'ecografia di un altro paziente segnati (got ${(await segnati(A.p)).join(", ") || "nessuno"})`);
+  // ↻ Rileggi: si riprendono (una volta ciascuno) e si riguardano
+  const giri = () => voli.filter((v) => ALTRI.includes(v.id) && v.a).length;
+  const g0 = giri();
+  await A.p.locator("#psassist-host #risall").click();
+  for (let i = 0; i < 120 && giri() < g0 + 2; i++) await A.p.waitForTimeout(500);
+  await A.p.waitForFunction(() => !/referti \d/.test(document.getElementById("psassist-host").shadowRoot.querySelector("#risall")?.textContent || ""), null, { timeout: 30000 }).catch(() => {});
+  await A.p.waitForTimeout(2500);
+  const grave = await A.p.locator(`#psassist-host [data-esito="${ECG_ALTRO}"] .wuex.grave`).count();
+  check(giri() === g0 + 2 && (await segnati(A.p)).length === 2 && grave === 1,
+    `↻ Rileggi li riprende e restano segnati di un altro paziente (scaricati ${giri() - g0} · segnati ${(await segnati(A.p)).join(", ") || "nessuno"} · errore grave sulla riga ${grave})`);
+  const B = await nuova();
+  await finito(B.p);
+  const daA = await alTelefono(A.id), daB = await alTelefono(B.id);
+  check(daA.ok && daB.ok && !daA.pdf.length && !daB.pdf.length && !daA.copie && !daB.copie,
+    `al telefono nessuno dei due PDF, né da questa scheda né da un'altra (got ${JSON.stringify({ daA, daB })})`);
+  extra = []; extraEco = [];
+  await senzaCopie(A.p); await senzaCopie(B.p);
+  await A.p.close(); await B.p.close();
 }
 
 // Un bottone solo per rileggere: «↻ Rileggi» in cima agli Esiti, o — finché non c'è una tabella —

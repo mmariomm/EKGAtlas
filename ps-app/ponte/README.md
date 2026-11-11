@@ -90,9 +90,11 @@ sessione. Vedi:
   sessione cifrata, li ricompone controllando la misura e il «%PDF», e lo apre nel visore del
   telefono da un `blob:` in memoria — mai su disco (né localStorage, né Cache, né IndexedDB), mai da
   un indirizzo di rete, mai nel service worker dell'app; il blob si revoca a finestra chiusa, al PDF
-  dopo, uscendo. Il PC offre solo copie salvate per lo stesso episodio che il pannello non ha segnato
-  come di un altro paziente (è leggendole che lo si scopre, e la copia si toglie) — anche di una TC o di una visita, il cui testo non si legge —, e dà solo
-  quelle offerte nella sessione. Oltre 15 MB: «PDF troppo grande: aprilo sul PC».
+  dopo, uscendo. Il PC offre solo copie salvate per lo stesso episodio di cui si è guardato di chi
+  sono (`chi` sulla copia, da qualunque scheda: una copia ripresa nasce senza) e che non sono di un
+  altro paziente (è leggendole che lo si scopre, e la copia si toglie) — anche di una TC o di una
+  visita, il cui testo non si legge: una mai guardata la guardano gli esiti stessi, dalla copia —, e
+  dà solo quelle offerte nella sessione (`ponteCopia` rifiuta le altre). Oltre 15 MB: «PDF troppo grande: aprilo sul PC».
 - **Richieste** — il quesito (i tre pacchetti in testa, e i quesiti che sul PC hanno imparato il loro pacchetto), i profili e gli esami, in pillole che vanno
   a capo (alte almeno 44 pt; scelto = pieno). Accanto al nome di un esame, come nelle Richieste del PC e con
   le stesse parole: **«✓ 11:40»** le richieste già tornate (verde), **«40′»** quella in attesa (ambra, rosso
@@ -396,10 +398,10 @@ del paziente (`patients.v1`, `eta`): dalla testata della scheda («17/05/1949 (7
 codice fiscale; il numero, mai la data. Gli esiti leggono una volta la pagina del paziente (solo
 lettura, e solo se è del suo episodio) e la sua scheda clinica scelta con la stessa regola d'identità del pannello,
 con l'ora in cui il PC l'ha letta; i testi dei referti si prendono per numero di referto, quello della
-pagina di quel paziente. Un ECG o una radiografia salvati (la copia la tiene il service worker) ma col
-testo mai letto — la pagina che l'aveva chiesto se n'era già andata — si leggono lì, dalla copia, con
-lo stesso controllo di chi è del pannello (di un altro paziente: niente testo, niente PDF), e il testo
-va nella scheda del paziente. «Aggiorna i valori» risponde quando la sua scheda ha finito — valori e
+pagina di quel paziente. Un referto salvato (la copia la tiene il service worker) ma mai guardato —
+la pagina che l'aveva chiesto se n'era già andata — si guarda lì, dalla copia, con lo stesso controllo
+di chi è del pannello (di un altro paziente: niente testo, niente PDF, e la copia via); di un ECG o di
+una radiografia il testo va nella scheda del paziente. «Aggiorna i valori» risponde quando la sua scheda ha finito — valori e
 referti —, o allo scadere con i valori letti. «Aggiorna i valori» annota la sua scheda di sottofondo in `storage.session`
 (`ponte.valori`): anche se il service worker si ferma a metà, la si riconosce, scade e si chiude. La
 scheda vuota finisce di nascere (al più 2 secondi) prima di andare sulla pagina: partita subito, il

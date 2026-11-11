@@ -932,7 +932,7 @@ richiesta da confermare.
   sua ora — `K 5.9↑ · Hb 9.1↓ · Trop 48↑ (12 alle 11:40) · 3 nuovi` —; oltre i sei, «+N». **«N
   nuovi»** conta i valori cambiati dall'ultima lettura e i referti mai aperti: un tocco li segna
   visti. A destra, da solo, **↻ Rileggi**: i valori, poi i referti non ancora salvati (anche quelli
-  che da soli non sono riusciti); mentre lavora dice a che punto è («↻ 1/2…», «↻ referti 2/5…»).
+  che da soli non sono riusciti, e quelli di un altro paziente: ripresi, si riguarda di chi sono); mentre lavora dice a che punto è («↻ 1/2…», «↻ referti 2/5…»).
   Niente altro: Salva, ↺ e Diagnosi non ci sono più (i referti si salvano da soli, si dimentica
   con ⋯ → Dimentica i dati…, la diagnosi va nelle Registrazioni).
 - **In attesa**: in ogni sezione, ciò che è stato chiesto e non è ancora refertato — dalle righe
@@ -1073,7 +1073,9 @@ o una richiesta in attesa.
   immagini, visite e consulenze, **mai il laboratorio** — **due alla volta al massimo**, con una
   breve pausa a caso prima di ognuno, gli altri in fila («in fila» sulla loro riga). Di **ECG e
   radiografie** legge subito il testo; di **TC, ecografie, RM, visite** guarda solo **di chi è**
-  (un PDF intestato a un altro paziente non resta) e lo lascia al visore. Quelli già salvati non
+  (un PDF intestato a un altro paziente non resta, e resta segnato per tutte le schede finché una copia
+  ripresa non si rivela sua) e lo lascia al visore. Al telefono va solo una copia di cui si è guardato
+  di chi è (`chiRef`: lo sa la copia stessa; una ripresa nasce senza). Quelli già salvati non
   si riscaricano. **Il testo di ECG e radiografie già salvati si legge sempre**, appena apri gli
   Esiti, dalla copia su questo computer: nessuna richiesta.
   Le copie si dimenticano con **⋯ → Dimentica i dati…**, o scadono da sole. Un referto che non si lascia

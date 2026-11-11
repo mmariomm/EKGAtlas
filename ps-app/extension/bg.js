@@ -461,20 +461,36 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
     return true;
   }
 
+  // Di chi è la copia salvata: la pagina l'ha guardato (identitaReferto) e non è di un altro paziente
+  // («ok», o «nv»: senza un'intestazione da confrontare). Sta con la copia: una copia salvata di nuovo
+  // nasce senza, e al telefono non va finché qualcuno non l'ha guardata (ponteCopia). (`size`: i byte
+  // della copia che è stata letta — un'altra salvata intanto resta da guardare.)
+  if (msg.t === "chiRef") {
+    inFilaRef(async () => {
+      const hit = (await chrome.storage.local.get(KEY(msg.id)))[KEY(msg.id)];
+      const d = hit && typeof hit.data === "string" ? hit.data : "", byte = Math.floor(d.length * 3 / 4) - (d.endsWith("==") ? 2 : d.endsWith("=") ? 1 : 0);
+      if (!d || String(msg.ep || "") !== String(hit.ep || "") || !["ok", "nv"].includes(msg.chi) || byte !== msg.size) return reply({ ok: false });
+      if (hit.chi !== msg.chi) await chrome.storage.local.set({ [KEY(msg.id)]: { ...hit, chi: msg.chi } });
+      reply({ ok: true });
+    }).catch(() => reply({ ok: false }));
+    return true;
+  }
+
   if (msg.t === "listRef") {
     (async () => {
       await prune();
       // si leggono solo quelli chiesti (senza elenco: quelli dell'indice)
       const ids = Array.isArray(msg.ids) ? msg.ids.map(String).slice(0, 500) : Object.keys(await refIndice());
       const o = ids.length ? await chrome.storage.local.get(ids.map(KEY)) : {};
-      const out = {};
+      const out = {}, chi = {};
       for (const id of ids) {
         const rec = o[KEY(id)];
         if (!rec || Date.now() - (rec.ts || 0) > REF_TTL) continue;
         if (String(msg.ep || "") !== String(rec.ep || "")) continue;   // e solo questo episodio
         out[id] = rec.size || 1;
+        if (rec.chi) chi[id] = rec.chi;
       }
-      reply({ ok: true, cached: out });
+      reply({ ok: true, cached: out, chi });
     })().catch(() => reply({ ok: false }));
     return true;
   }

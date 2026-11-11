@@ -12856,10 +12856,17 @@
       this.segnala({ tag: "Errore grave", testo: GRAVE_ALTRO, tono: "err", paziente: this.nomePaziente() || "", ...this.avvisoVisto() });
     }
     async leggiTesto(e, buf, { soloIdentita = false } = {}) {
+      const size = buf?.byteLength || 0;   // (prima del lettore: la copia letta, per chiRef)
       const letto = await testoPdf(buf);
       const righe = letto.righe;
       if (!righe.length) return { vuoto: true, letto };
       const id = identitaReferto(righe, this.identitaPaz());
+      // Guardato di chi è, e non è di un altro: lo sa la copia salvata (chiRef: senza, al telefono non
+      // va), e un «di un altro paziente» di prima — una copia vecchia — non vale più per questa.
+      if (id.esito !== "altro") {
+        if (fallito(this.episodeId, e.id)?.altro) togliFallito(this.episodeId, e.id);
+        if (hasExt() && size) ask({ t: "chiRef", id: e.id, ep: this.episodeId, chi: id.esito === "ok" ? "ok" : "nv", size }).catch(() => {});
+      }
       if (id.esito === "altro") {
         tabStore.set(this.txtKey(e.id), { ts: Date.now(), altro: true });
         segnaFallito(this.episodeId, e.id, { altro: true });   // (da solo non si riprende più)
@@ -12873,7 +12880,8 @@
         return { altro: true, letto };
       }
       if (soloIdentita) {
-        if (!tabStore.get(this.txtKey(e.id), null)) tabStore.set(this.txtKey(e.id), { ts: Date.now(), soloId: true });
+        const t0 = tabStore.get(this.txtKey(e.id), null);
+        if (!t0 || t0.altro) tabStore.set(this.txtKey(e.id), { ts: Date.now(), soloId: true });
         this.log(`${now()}  ${shortLabel(e.label)}: salvato, si apre nel visore (${id.esito === "ok" ? `intestazione verificata: ${id.via}` : "intestazione non verificata"})`);
         return { soloId: true, letto };
       }
@@ -12913,7 +12921,9 @@
         this.refBusy = { ...(this.refBusy || {}), [e.id]: true };
         this.render();
         const r = await fn();
-        if (r && r.salvato) togliFallito(this.episodeId, e.id);   // preso: niente più da riprovare
+        // preso: niente più da riprovare — tranne «di un altro paziente», che lo toglie solo la
+        // lettura di questa copia (leggiTesto), mai il fatto di averla presa
+        if (r && r.salvato && !fallito(this.episodeId, e.id)?.altro) togliFallito(this.episodeId, e.id);
         return r;
       }).finally(() => this.refCoda.delete(e.id));
     }
@@ -13000,8 +13010,10 @@
             return;
           }
           this.refBusy[e.id] = false;
-          // di chi è, sempre; il testo solo di ECG e radiografie
-          if (!tabStore.get(this.txtKey(e.id), null)) await this.leggiTesto(e, r.buf, { soloIdentita: !testoAuto(e) }).catch(() => null);
+          // di chi è, sempre; il testo solo di ECG e radiografie (segnato di un altro paziente: questa
+          // copia è nuova, si riguarda — il segno resta finché una lettura non dice altro)
+          const t = tabStore.get(this.txtKey(e.id), null);
+          if (!t || t.altro) await this.leggiTesto(e, r.buf, { soloIdentita: !testoAuto(e) }).catch(() => null);
         }, (err) => { if (err === LASCIATO) this.refBusy[e.id] = false; else this.refertoRotto(e, err); }).finally(() => {
           if (this._salva) this._salva.fatti++;
           this.render();
@@ -13166,7 +13178,7 @@
         const r = await this.inFila(e, () => this.scaricaReferto(e));
         this.refBusy[e.id] = false;
         this.render();
-        if (!(await this.vediReferto(e, r.buf))) return this.openReferto(e.id);
+        if (!(await this.vediReferto(e, r.buf, true))) return this.openReferto(e.id);
       } catch (err) {
         this.refertoRotto(e, err);
         this.render();
@@ -14005,9 +14017,11 @@
 
     // Un referto salvato si apre nel visore dell'estensione, dalla copia su
     // questo computer: anche senza testo, mai di un altro paziente.
-    async vediReferto(e, buf) {
+    // (`nuova`: una copia appena presa — segnata di un altro paziente, si riguarda di chi è: il segno
+    // resta finché una lettura non dice altro; una copia di prima segnata così non si apre)
+    async vediReferto(e, buf, nuova = false) {
       let t = this.testoDi(e);
-      if (!t) {
+      if (!t || (nuova && t.stato === "altro")) {
         const l = await this.leggiTesto(e, buf, { soloIdentita: !testoAuto(e) }).catch(() => null);
         t = l && l.altro ? { stato: "altro" } : this.testoDi(e);
       }
@@ -17413,28 +17427,47 @@
     const dati = st && st.righe && st.righe.length ? normalizzaStorico(st) : null;
     const tabella = dati && dati.righe.length ? ponteTabella(dati) : null;
     let resta = 400000;   // il telefono riceve un messaggio solo, mai oltre 1 MB
-    // Il PDF si offre al telefono se c'è la copia salvata per questo episodio
-    // e non è segnata come di un altro paziente (anche senza testo: TC, visite)
-    const salvati = hasExt() && referti.length ? ((await ask({ t: "listRef", ep: p.ep, ids: referti.map((e) => e.id) }).catch(() => null)) || {}).cached || {} : {};
+    // Il PDF si offre al telefono solo se c'è la copia salvata per questo
+    // episodio e si è guardato di chi è (`chi`, con la copia: vale da ogni
+    // scheda) senza trovarla di un altro paziente — anche senza testo: TC,
+    // visite. Mai guardata, o di un altro: niente PDF (e ponteCopia, nel
+    // service worker, lo rifiuta lo stesso).
+    const lr = hasExt() && referti.length ? (await ask({ t: "listRef", ep: p.ep, ids: referti.map((e) => e.id) }).catch(() => null)) || {} : {};
+    const salvati = lr.cached || {}, guardati = { ...(lr.chi || {}) };
     const cfImp = String(p.pk || "").startsWith("cf:") ? p.pk.slice(3) : "";
     const altri = new Set();
+    // («di un altro paziente»: in questa scheda, o in autoFalliti.v1 — lo stesso per tutte le schede)
     const diAltro = (e) => {
       const t = tabStore.get(`reftxt.${p.ep}.${e.id}`, null);
-      return altri.has(e.id) || (!!t && (!!t.altro || (Array.isArray(t.righe) && identitaReferto(t.righe, { cf: "", cfImp, nome: p.name || "", nascita: "" }).esito === "altro")));
+      return altri.has(e.id) || !!fallito(p.ep, e.id)?.altro
+        || (!!t && (!!t.altro || (Array.isArray(t.righe) && identitaReferto(t.righe, { cf: "", cfImp, nome: p.name || "", nascita: "" }).esito === "altro")));
     };
-    // Un ECG o una radiografia salvati su questo PC ma col testo mai letto: il
-    // PDF lo salva la scheda del portale (il service worker), il testo lo legge
-    // la pagina che l'ha chiesto — e se il medico è già passato a un'altra
-    // pagina, non lo legge nessuno. Lo si legge qui, dalla copia (nessuna
-    // richiesta), con lo stesso controllo di chi è del pannello, e va nella
-    // scheda del paziente: la prossima volta è già lì.
+    // Un PDF salvato su questo PC ma mai guardato: il PDF lo salva la scheda
+    // del portale (il service worker), lo guarda la pagina che l'ha chiesto —
+    // e se il medico è già passato a un'altra pagina, non lo guarda nessuno.
+    // Lo si guarda qui, dalla copia (nessuna richiesta), con lo stesso
+    // controllo di chi è del pannello; di un ECG o di una radiografia il testo
+    // va nella scheda del paziente: la prossima volta è già lì.
     const chiave = p.pk || (normNome(p.name) ? "nome:" + normNome(p.name) : "");
     for (const e of referti) {
-      if (testi.has(e.id) || !testoAuto(e) || !salvati[e.id] || diAltro(e)) continue;
+      const leggi = testoAuto(e) && !testi.has(e.id);
+      if (!salvati[e.id] || diAltro(e) || (!leggi && guardati[e.id])) continue;
       const g = await ask({ t: "getRef", id: e.id, ep: p.ep }).catch(() => null);
-      const righe = g && g.ok && g.data ? ((await testoPdf(bufDaB64(g.data)).catch(() => null)) || {}).righe || [] : [];
+      const buf = g && g.ok && g.data ? bufDaB64(g.data) : null, size = buf ? buf.byteLength : 0;
+      const righe = buf ? ((await testoPdf(buf).catch(() => null)) || {}).righe || [] : [];
       if (!righe.length) continue;
-      if (identitaReferto(righe, { cf: chi.cf, cfImp, nome: p.name || "", nascita: chi.nascita }).esito === "altro") { altri.add(e.id); continue; }
+      const esito = identitaReferto(righe, { cf: chi.cf, cfImp, nome: p.name || "", nascita: chi.nascita }).esito;
+      if (esito === "altro") {
+        altri.add(e.id);
+        segnaFallito(p.ep, e.id, { altro: true });
+        await ask({ t: "delRef", id: e.id, ep: p.ep }).catch(() => {});
+        continue;
+      }
+      if (!guardati[e.id]) {
+        const v = esito === "ok" ? "ok" : "nv";
+        if ((await ask({ t: "chiRef", id: e.id, ep: p.ep, chi: v, size }).catch(() => null))?.ok) guardati[e.id] = v;
+      }
+      if (!leggi) continue;
       const mostra = refertoMostrato(e, righe, { nome: p.name || "" });
       if (!mostra.length) continue;
       const testo = mostra.slice(0, 200).join("\n").slice(0, 20000);
@@ -17453,7 +17486,7 @@
       const sta = !!t && t.length <= resta;
       if (sta) resta -= t.length;
       return { id: e.id, quando: e.when, sistema: e.sistema, titolo: shortLabel(e.label), tipo: refertoTipo(e), testo: sta ? t : "", lungo: !!t && !sta,
-        ...(visti.has(e.id) ? {} : { nuovo: true }), ...(salvati[e.id] && !diAltro(e) ? { pdf: true } : {}),
+        ...(visti.has(e.id) ? {} : { nuovo: true }), ...(salvati[e.id] && guardati[e.id] && !diAltro(e) ? { pdf: true } : {}),
         ...(refertoTipo(e) !== "lab" && !testoAuto(e) ? { soloPdf: true } : {}) };   // (TC, ecografie, visite: il testo non si legge, c'è il PDF)
     });
     // Che cosa il PC legge da sé, adesso che il medico l'ha aperto sul telefono (il suo tocco è il gesto):

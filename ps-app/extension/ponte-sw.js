@@ -540,10 +540,12 @@ async function ponteRisposta(s, d) {
 // solo quelli offerti in questa sessione.
 const PONTE_PDF_MAX = 15e6;                  // oltre, «aprilo sul PC»
 const PONTE_PDF_PEZZO = 4 * 130000;          // caratteri base64 per risposta (≈ 390 KB): multiplo di 4
+// (solo una copia di cui si è guardato di chi è, e non è di un altro paziente: `chi`, bg.js chiRef)
 async function ponteCopia(ep, id) {
   if (!ep || typeof id !== "string") return null;
   const hit = (await chrome.storage.local.get(KEY(id)))[KEY(id)];
   if (!hit || typeof hit.data !== "string" || !/^JVBERi/.test(hit.data) || String(hit.ep || "") !== String(ep)) return null;
+  if (hit.chi !== "ok" && hit.chi !== "nv") return null;
   if (Date.now() - (hit.ts || 0) > REF_TTL) return null;
   return hit.data;
 }
