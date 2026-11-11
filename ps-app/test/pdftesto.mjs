@@ -226,6 +226,19 @@ for (const [nome, r, atteso] of [
   const x = await prova((q) => refertoScrittoRx(q, { nome: "VERDI LUCA" }).righe, r);
   check(JSON.stringify(x) === JSON.stringify(atteso || r), `${nome}: resta (got: ${JSON.stringify(x)})`);
 }
+// …e dopo un titolo conta solo un nome: un participio, un verbo, una preposizione, GUARDIA o PS dicono
+// che la riga è referto (resta lei, e con lei la firma sopra)
+const COMUNICAZIONI = [
+  ["RX TORACE", "NON FOCOLAI IN ATTO.", "MEDICO DI GUARDIA CONSULTATO"],
+  ["RX TORACE", "SI SEGNALA PNX APICALE DESTRO.", "DOTT. BIANCHI VISIONATO"],
+  ["RX TORACE", "SI SEGNALA PNX APICALE DESTRO.", "DR. ROSSI PRESENTE ALL'ESAME"],
+  ["RX TORACE", "SI SEGNALA PNX.", "Dott. Bianchi", "MEDICO DI PS PRESENTE"],
+  ["RX TORACE", "Frattura composta.", "Prof. Bianchi Riferisce Dolore"],
+];
+for (const r of COMUNICAZIONI) {
+  const x = await prova((q) => refertoScrittoRx(q, { nome: "VERDI LUCA" }).righe, r);
+  check(JSON.stringify(x) === JSON.stringify(r), `«${r[r.length - 1]}» dopo il referto: resta (got: ${JSON.stringify(x)})`);
+}
 const tutta =await prova((r) => refertoScrittoRx(r, { nome: "ROSSI MARIO" }).righe, ["Paziente: ROSSI MARIO", "Nato il 01/01/1980"]);
 check(tutta.length === 2, "se tutto sembrasse cornice, non si mostra niente di meno: resta com'era");
 // un secondo taglio non toglie più niente: lo stesso testo sul PC e, dalla scheda, sul telefono
@@ -233,7 +246,7 @@ const FIRMA_IN_MEZZO = ["RX TORACE", "Opacità basale destra.", "Il Medico", "SE
 const meta = await prova((r) => { const a = refertoScrittoRx(r, { nome: "VERDI LUCA" }).righe; return [a, refertoScrittoRx(a, { nome: "VERDI LUCA" }).righe]; }, FIRMA_IN_MEZZO);
 check(JSON.stringify(meta[0]) === JSON.stringify(FIRMA_IN_MEZZO.slice(0, 8)) && JSON.stringify(meta[1]) === JSON.stringify(meta[0]),
   `una firma in mezzo: via solo quella in fondo, e tagliato di nuovo resta uguale (got: ${meta.map((x) => x.length).join(" → ")} righe)`);
-const CAMPIONI = [RIGHE, RIGHE_ESEMPIO, RIGHE_ALTRO, IDENT, CLINICA, MAIUSCOLA, RX1, RX2, RX2B, FIRMA_IN_MEZZO,
+const CAMPIONI = [RIGHE, RIGHE_ESEMPIO, RIGHE_ALTRO, IDENT, CLINICA, MAIUSCOLA, RX1, RX2, RX2B, FIRMA_IN_MEZZO, ...COMUNICAZIONI,
   ["ECOGRAFIA ADDOME COMPLETO", "Fegato di dimensioni ed ecostruttura nei limiti.", "Conclusioni: ecografia addominale nei limiti."],
   [...TESTA, ESAME_LAB, "OPERATORE 10"], [...TESTA, SEP, "Testo", SEP], [...TESTA, ESAME_RX, SEP, "Testo"], [...TESTA, ESAME_RX, ESAME_BA, SEP, "Testo", SEP],
   ["RX BACINO", "Frattura della branca ileo-pubica destra.", "Dott. Bianchi", "FRATTURA COMPOMESSA", "CONTROLLO TC"],

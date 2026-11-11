@@ -16134,14 +16134,16 @@
   function righeSenzaCornice(tutte, paz) {
     const CF = /\b[A-Z]{6}[0-9LMNPQRSTUV]{2}[A-Z][0-9LMNPQRSTUV]{2}[A-Z][0-9LMNPQRSTUV]{3}[A-Z]\b/;
     const DATA = /\b\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}\b/;
-    const PARTICELLE = new Set(["a", "il", "di", "de", "del", "della", "dal", "da", "la", "lo", "in", "van", "von", "dei", "degli", "e"]);
-    // il nome dopo un titolo di firma («Dott.», «Il Medico»): poche parole, ognuna con
-    // l'iniziale maiuscola (o una particella) — mai le parole di una comunicazione
-    // («DOTT. ROSSI INFORMATO TELEFONICAMENTE», «MEDICO CURANTE AVVISATO» sono referto)
+    // il nome dopo un titolo di firma («Dott.», «Il Medico»): al più quattro parole, ognuna con
+    // l'iniziale maiuscola e nessuna che non sia un nome — mai le parole di una comunicazione
+    // («DOTT. ROSSI INFORMATO TELEFONICAMENTE», «MEDICO DI GUARDIA CONSULTATO», «DR. ROSSI PRESENTE
+    // ALL'ESAME» sono referto): un participio, un aggettivo o un verbo (…ato, …ente, …isce, …ano), una
+    // preposizione, GUARDIA, PS, REPARTO. Nel dubbio la riga resta: al più si vede una firma.
     const nomeDi = (t) => {
       const w = String(t).replace(/[.,]/g, " ").split(/\s+/).filter(Boolean);
-      return w.length >= 1 && w.length <= 6 && w.every((x) => /^[A-ZÀ-Ü][A-Za-zÀ-ÿ'’-]*$/.test(x) || PARTICELLE.has(x.toLowerCase())) && w.some((x) => /^[A-ZÀ-Ü]/.test(x))
-        && !w.some((x) => /^(?:informat|avvisat|avvertit|contattat|comunicat|chiamat|allertat|sentit|curant)|mente$/i.test(x));
+      return w.length >= 1 && w.length <= 4 && w.every((x) => /^[A-ZÀ-Ü][A-Za-zÀ-ÿ-]*$/.test(x))
+        && !w.some((x) => /^(?:informat|avvisat|avvertit|contattat|comunicat|chiamat|allertat|sentit|curant)|mente$|(?:at|it|ut)[oaie]$|[ae]nte$|isce$|ano$|ono$/i.test(x)
+          || /^(?:di|del|dell[aoe]|dei|degli|da|dal|dall[aoe]|dai|dagli|al|all[aoe]|ai|agli|in|nel|nell[aoe]|nei|negli|per|con|su|sul|sull[aoe]|tra|fra|a|e|ed|guardia|ps|reparto)$/i.test(x));
     };
     const norm = (t) => String(t || "").toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^A-Z0-9 ]+/g, " ").trim().replace(/\s+/g, " ");
     const mie = norm(paz && paz.nome).split(" ").filter((x) => x.length >= 2);
