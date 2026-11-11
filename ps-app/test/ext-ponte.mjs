@@ -193,6 +193,18 @@ async function suPagina(p, url) {
   await p.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
 }
 const registroPc = (p) => p.evaluate(() => Object.entries(sessionStorage).filter(([k]) => /^psassist:log\./.test(k)).map(([, v]) => (JSON.parse(v).lines || []).join("\n")).join("\n"));
+// le righe arrivate nel Registro dopo `prima` (il Registro tiene le ultime 200: contarle non basta, una nuova
+// in fondo ne fa uscire una in cima)
+const registroRighe = (p) => p.evaluate(() => Object.fromEntries(Object.entries(sessionStorage).filter(([k]) => /^psassist:log\./.test(k)).map(([k, v]) => [k, JSON.parse(v).lines || []])));
+const righeDopo = (prima, dopo) => Object.entries(dopo).flatMap(([k, d]) => {
+  const p = prima[k] || [];
+  for (let n = 0; n <= d.length; n++) {
+    const resto = d.slice(0, d.length - n);
+    if (resto.length <= p.length && resto.every((x, i) => x === p[p.length - resto.length + i])) return d.slice(d.length - n);
+  }
+  return d;
+});
+const lunghezze = (r) => Object.entries(r).map(([k, l]) => `${k.replace("psassist:", "")} ${l.length}`).join(", ");
 
 // ---- il telefono: un altro browser, in formato iPhone ---------------------
 // (gli stessi PSA_CHROMIUM_ARGS del PC: con /dev/shm piccolo, senza --disable-dev-shm-usage il telefono si schianta aprendo i PDF)
@@ -890,10 +902,14 @@ const esitiDi = async (ep, re = /./) => {
   check(!sotto.length, `un titolo lungo va a capo, mai sotto «nuovo» (${JSON.stringify(sotto)})`);
   await shot(tel, "esiti-laboratorio");
   await finche(() => TRATTENUTE.length > 0, 30000);   // (la scheda dietro nasce quando tocca a lei: una alla volta, dopo quello che il PC sta già facendo)
-  const chieste = TRATTENUTE.slice(), pagR = new Set(chieste.map((x) => x.pg).filter(Boolean)), dietroR = await dietroSu("999001");
+  // (la scheda la si cerca per un poco: la richiesta trattenuta può arrivare prima che il browser segni dove va la scheda)
+  let dietroR = 0;
+  await finche(async () => (dietroR = await dietroSu("999001")) === 1, 5000);
+  const chieste = TRATTENUTE.slice(), pagR = new Set(chieste.map((x) => x.pg).filter(Boolean));
+  const schedeR = dietroR === 1 ? "" : JSON.stringify(await sw.evaluate(() => chrome.tabs.query({}).then((l) => l.map((t) => [t.id, t.active, (t.pendingUrl || "").slice(-40), (t.url || "").slice(-40)]))));
   lasciaRossi();
   check(chieste.length >= 1 && dietroR === 1 && !pagR.has(doc) && pagR.size <= 1 && chieste.every((x) => /EPISODIO_ID=999001/.test(x.url)),
-    `…in una scheda dietro, sul PC (non quella del medico): la sua pagina (${chieste.length} richieste, ${dietroR} schede dietro)`);
+    `…in una scheda dietro, sul PC (non quella del medico): la sua pagina (${chieste.length} richieste, ${dietroR} schede dietro${schedeR && " — " + schedeR})`);
   const pronta = await aspettaTel(tel, /Letti sul PC alle \d\d:\d\d/, 150000);
   check(/Hb/.test(pronta) && !/Leggo i valori nuovi/.test(pronta) && await finche(async () => await dietroSu("999001") === 0, 20000),
     `…e la tabella arriva da sola, la scheda dietro si chiude: zero tocchi (${(pronta.match(/Letti[^\n]*/) || ["niente"])[0]})`);
@@ -2111,18 +2127,17 @@ await tel.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
 check(await finche(async () => relay.entrate().tel > prese1, 14000), "nessun «pong» entro 10 secondi: il telefono rifà la presa");
 check(/ROSSI MARIO/.test(await aspettaTel(tel, /ROSSI MARIO/, 10000)), "e l'elenco resta");
 // tornati sull'app: l'elenco si rilegge da solo
-const lettiPrima = ((await registroPc(doc)).match(/iPhone · elenco dei pazienti/g) || []).length;
+const lettiPrima = await registroRighe(doc);
 await tel.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
-check(await finche(async () => ((await registroPc(doc)).match(/iPhone · elenco dei pazienti/g) || []).length > lettiPrima, 10000),
-  "tornati sull'app, l'elenco si rilegge da solo");
+check(await finche(async () => righeDopo(lettiPrima, await registroRighe(doc)).some((x) => /iPhone · elenco dei pazienti/.test(x)), 10000),
+  `tornati sull'app, l'elenco si rilegge da solo (registro: ${lunghezze(await registroRighe(doc))}; ultime: ${JSON.stringify(righeDopo(lettiPrima, await registroRighe(doc)).slice(-4))})`);
 // …e sulla pagina di un paziente, i suoi esiti (un referto arrivato intanto), senza contare come un comando del medico
 await tocca(tel, '.paz[data-ep="999001"]');
 await aspettaTel(tel, /Rileggi/, 15000);
 await sospendi(800);
-const esitiLetti = async () => ((await registroPc(doc)).match(/iPhone · esiti di ROSSI MARIO/g) || []).length;
-const esiti0 = await esitiLetti(), ultimo0 = await sw.evaluate(() => pt.sessione && pt.sessione.ultimo);
+const esiti0 = await registroRighe(doc), ultimo0 = await sw.evaluate(() => pt.sessione && pt.sessione.ultimo);
 await tel.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
-check(await finche(async () => (await esitiLetti()) > esiti0, 10000), "tornati sull'app sulla pagina di un paziente, i suoi esiti si rileggono da soli");
+check(await finche(async () => righeDopo(esiti0, await registroRighe(doc)).some((x) => /iPhone · esiti di ROSSI MARIO/.test(x)), 10000), "tornati sull'app sulla pagina di un paziente, i suoi esiti si rileggono da soli");
 check(await sw.evaluate(() => pt.sessione && pt.sessione.ultimo) === ultimo0, "e non tengono aperta la sessione: li chiede l'app, non il medico");
 await tocca(tel, '[data-a="indietro"]');
 await aspettaTel(tel, /ROSSI MARIO/, 10000);
