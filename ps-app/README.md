@@ -1686,7 +1686,8 @@ Windows), con **Stampa una pagina di prova** per ciascuna. Da lì:
 - **Niente interruttore**: scelte le due stampanti, con l'aiutante, la stampa è automatica. Il
   dialogo del browser è il ripiego: senza aiutante, senza una delle due stampanti, o col preferito
   (bookmarklet), tutto è esattamente com'era — il dialogo, «Stampa finita». (Chi l'aveva spenta
-  dal ⋯ di prima la ritrova automatica: la scelta vecchia se ne va dalla memoria.) Le stampanti si
+  dal ⋯ di prima resta col dialogo: con la scelta vecchia se ne vanno i nomi delle due stampanti,
+  finché non le risceglie; una stazione dell'infermeria le tiene.) Le stampanti si
   scelgono solo in **Impostazioni**; dove stampano gli ordini, **Stampa su**, solo nel ⋯.
 - **In Windows non resta acceso niente.** Nessun programma che gira, nessuna icona: Chrome avvia
   l'aiutante solo per il secondo in cui stampa un foglio, e l'aiutante esce appena ha risposto.
