@@ -164,11 +164,17 @@ const csalva = await tel.locator('[data-a="csalva"]').count();
 const scrivibili = await tel.evaluate(() => [...document.querySelectorAll(".cc textarea")].filter((t) => !t.readOnly).length);
 check(csalva === 0, "nella Cartella non c'è «Salva» (sola lettura)");
 check(scrivibili === 0, "…e i campi della cartella sono di sola lettura");
-// nel menu: niente «Collega stampante»/«Registrazioni» (scritture); «Stampa PDF» resta
+// nel menu: niente «Registrazioni» (scritture); «Stampa PDF» resta, e «📷 Scansiona il QR» c'è anche qui (per aggiungere il PC completo)
 await tel.locator('[data-a="menu"]').click().catch(() => {});
 await sospendi(300);
 const menu = await tel.locator(".menu").innerText().catch(() => "");
-check(!/Collega stampante|Registrazioni/.test(menu) && /Stampa PDF|Chiudi sessione/.test(menu), "nel menu niente «Collega stampante» né «Registrazioni»; «Stampa PDF» resta");
+check(!/Registrazioni/.test(menu) && /Stampa PDF/.test(menu) && await tel.locator('.menu [data-a="scansiona"]').innerText().catch(() => "") === "📷 Scansiona il QR",
+  `nel menu niente «Registrazioni»; «Stampa PDF» resta, e «📷 Scansiona il QR» c'è anche su un PC di sola lettura (${menu.replace(/\n+/g, " · ")})`);
+await tel.locator('[data-a="menu"]').click().catch(() => {});
+// il QR di una stazione di stampa, inquadrato con il PC di sola lettura attivo: la carta dice di passare al PC completo, niente «Collega»
+await tel.evaluate(() => { location.hash = `sta=${"A".repeat(87)}.${"B".repeat(22)}.${Date.now() + 600e3}&nome=Infermeria`; });
+const cartaSta = await finche(async () => /sola lettura: la stampante si collega al PC completo/.test(await tel.locator(".stcarta").innerText().catch(() => "")), 8000);
+check(cartaSta && await tel.locator('[data-a="stacollega"]').count() === 0, "il QR di una stazione con un PC di sola lettura: «la stampante si collega al PC completo», niente «Collega»");
 
 await telCtx.close().catch(() => {});
 await telBrowser.close().catch(() => {});

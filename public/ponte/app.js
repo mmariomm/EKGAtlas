@@ -1093,6 +1093,9 @@
   }
 
   // ------------------------------------------------- il QR, inquadrato qui
+  // «📷 Scansiona il QR», sempre nel ⋯ (anche su un PC di sola lettura) e sulle
+  // schermate senza un'associazione buona: un QR solo per tutto — il QR dice
+  // che cos'è (un PC completo, un PC di sola lettura, una stazione di stampa).
   // L'app della schermata Home dell'iPhone ha una memoria sua, separata da
   // Safari: il QR inquadrato con la Fotocamera si apre in Safari, e la chiave
   // qui non arriva. Così si inquadra anche da qui: la fotocamera nella pagina,
@@ -1128,8 +1131,11 @@
     k.set(st.s); k.set(st.pub, st.s.length);
     // (l'orologio della stazione non è questo: un minuto di margine; lo decide il PC)
     const scaduta = st.scade + 60e3 < Date.now();
-    S.stazione = { sta: st.sta, nome: st.nome, codice: await P.codice(k), fase: !S.coppia ? "senza" : scaduta ? "errore" : "chiedi",
-      testo: scaduta ? "QR scaduto: sulla stazione ne compare uno nuovo, inquadra quello" : "" };
+    // (un PC di sola lettura non collega stampanti: lo fa il PC completo — il PC rifiuterebbe comunque)
+    const lettura = !!S.coppia && solaLettura();
+    S.stazione = { sta: st.sta, nome: st.nome, codice: await P.codice(k), fase: !S.coppia ? "senza" : scaduta || lettura ? "errore" : "chiedi",
+      testo: scaduta ? "QR scaduto: sulla stazione ne compare uno nuovo, inquadra quello"
+        : lettura ? "Questo PC è di sola lettura: la stampante si collega al PC completo. Passa a quello nel ⋯ e inquadra di nuovo il QR" : "" };
     S.menu = false;
     render();
   }
@@ -1420,7 +1426,7 @@
         ${staDi() ? `<div class="stdove" role="group" aria-label="Stampa su"><span>Stampa su</span>${[["qui", "💻 PC"], ["stazione", "🖨️ " + staDi()]].map(([k, t]) =>
           `<button type="button" data-a="doveTel" data-d="${k}" class="${doveTel() === k ? "on" : ""}" aria-pressed="${doveTel() === k}">${esc(t)}</button>`).join("")}</div>` : ""}
         <button data-a="stampaPdf">${em("📄")}Stampa PDF${staDi() ? ` · ${esc(doveTel() === "stazione" ? staDi() : "PC")}` : ""}</button>
-        ${solaLettura() ? "" : `<button data-a="scansiona">${em("🖨️")}Collega stampante</button>`}
+        <button data-a="scansiona">${em("📷")}Scansiona il QR</button>
         ${solaLettura() ? "" : `<button data-a="registrazioni"><span class="em rec" aria-hidden="true">●</span> Registrazioni</button>`}
         <button data-a="esci">${em("🚪")}Chiudi sessione</button>
         <button class="via" data-a="dimentica">${em("🗑️")}Dimentica ${S.pcs.length >= 2 ? "questo PC" : "PC"}</button>

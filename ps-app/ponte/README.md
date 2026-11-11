@@ -30,9 +30,11 @@ codice sbagliato dice «Codice sbagliato» e non cambia niente. Sul PC la pagina
 telefono è entrato; dopo, «Associa» ne fa uno nuovo (e il telefono di prima esce). Conviene
 aggiungerlo alla schermata Home (Condividi → Aggiungi alla schermata Home): l'icona riapre il pannello.
 
-Il QR si inquadra anche **dall'app**: senza un'associazione buona (nessuna, QR scaduto, chiusa, revocata,
-o un altro telefono al suo posto, e accanto a «Riprova» quando il PC non risponde) c'è **«Scansiona il
-QR»**, che apre la fotocamera nella pagina. Serve
+Il QR si inquadra anche **dall'app**: **⋯ → 📷 Scansiona il QR**, sempre (anche su un PC di sola lettura),
+e senza un'associazione buona (nessuna, QR scaduto, chiusa, revocata, o un altro telefono al suo posto,
+e accanto a «Riprova» quando il PC non risponde) un bottone **«Scansiona il QR»**: apre la fotocamera
+nella pagina. Un QR solo per tutto: il QR dice che cos'è — un PC completo, un PC di sola lettura, una
+stazione di stampa. Serve
 all'app della schermata Home, che ha una memoria sua: il QR letto con la Fotocamera si apre in Safari,
 e lì la chiave non arriva. Senza fotocamera: «Fotocamera non disponibile: inquadra il QR con la
 Fotocamera dell'iPhone».
@@ -136,8 +138,9 @@ sessione. Vedi:
   la prima voce aperta senza ora (scritta cambia quella, o ne fa una in cima; vuota la toglie), i
   promemoria le voci aperte con l'ora. **✓ Fatto** aspetta 5 secondi, con **Annulla**, prima di
   spuntarlo sul PC.
-- **Collega stampante** (⋯) — inquadra il QR di una [stazione di stampa](#la-stazione-di-stampa):
-  una carta con il suo nome e il codice, **Collega**, «Collegata al PC». Sopra «Conferma e stampa»,
+- **Scansiona il QR** (⋯) — il QR di una [stazione di stampa](#la-stazione-di-stampa):
+  una carta con il suo nome e il codice, **Collega**, «Collegata al PC» (con un PC di sola lettura
+  attivo, la carta dice di passare al PC completo: è lui che stampa). Sopra «Conferma e stampa»,
   poi, «Stampa: PC · Infermeria» (la scelta del PC, cambiabile per un ordine).
 - **Richieste fatte** (in fondo alle Richieste) — tutte le richieste che la pagina del paziente sa
   stampare, anche quelle non fatte da PS Assist, ognuna con **Ristampa**: etichette e foglio, dove

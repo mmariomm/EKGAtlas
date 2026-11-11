@@ -2782,6 +2782,15 @@ sezione("«Scansiona il QR» dentro l'app");
     "inquadrato dentro l'app il QR nuovo del PC: la chiave nuova, e l'elenco (il frammento non resta nell'indirizzo)");
   check(Number(await dentro.p.evaluate(() => sessionStorage.getItem("__spenta"))) >= 1, "letto il codice, la fotocamera si spegne");
   await shot(dentro.p, "tel-qr-4-elenco");
+  // 4. associato: nel ⋯ «📷 Scansiona il QR», sempre — un lettore solo per un PC, un PC di sola lettura, una stazione
+  await tocca(dentro.p, '[data-a="menu"]');
+  check(await dentro.p.locator('.menu [data-a="scansiona"]').innerText() === "📷 Scansiona il QR" && !/Collega stampante/.test(await dentro.p.locator(".menu").innerText()),
+    "associato, nel ⋯: «📷 Scansiona il QR» (non più «Collega stampante»)");
+  await shot(dentro.p, "tel-qr-5-menu");
+  await tocca(dentro.p, '.menu [data-a="scansiona"]');
+  check(await finche(() => dentro.p.evaluate(() => !!document.querySelector(".scan video")), 10000), "…apre la stessa fotocamera");
+  check(/ROSSI MARIO/.test(await aspettaTel(dentro.p, /ROSSI MARIO/, 25000)) && (await chiaveTel(dentro.p))?.k === K4 && await dentro.p.locator(".scan").count() === 0,
+    "e lo stesso QR del PC, inquadrato di nuovo: lo stesso PC, la stessa chiave, l'elenco");
   await dentro.b.close();
   await pqr.close();
   rmSync(VID, { force: true });

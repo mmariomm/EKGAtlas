@@ -263,7 +263,7 @@ await nudoCtx.close();
 sezione("il QR della stazione, inquadrato dal telefono: «Collega»");
 await tocca('[data-a="menu"]');
 await shot(tel, "tel-menu");
-check(await tel.locator('.menu [data-a="scansiona"]').innerText() === "🖨️ Collega stampante", "⋯ sul telefono: «🖨️ Collega stampante»");
+check(await tel.locator('.menu [data-a="scansiona"]').innerText() === "📷 Scansiona il QR", "⋯ sul telefono: «📷 Scansiona il QR» (un QR solo per tutto: anche la stazione)");
 await tocca('.menu [data-a="scansiona"]');
 const carta = await aspettaTel(/Collegala al PC/, 15000);
 check(/Stazione di stampa/.test(carta) && /Infermeria/.test(carta) && carta.includes(codiceQr) && await tel.locator('[data-a="stacollega"]').count() === 1,
