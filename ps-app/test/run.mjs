@@ -5611,6 +5611,30 @@ async function scenarioLabVuotoPortale(browser) {
   await context.close();
 }
 
+// …ma se la pagina HA referti di laboratorio (HL7LIS) e il portale non dà la tabella, il Lab NON dice
+// «Nessun esame di laboratorio» e il bottone «Carica i valori» resta.
+async function scenarioLabConRefertiPortale(browser) {
+  const scen = "lab con referti, portale senza tabella";
+  const mock = createMock({});
+  const { context, page } = await newPage(browser, mock);
+  await context.addInitScript(() => {
+    const r = (m) => (m.t === "apriStoricoSotto" ? { ok: true, tabId: 7 } : m.t === "esitoSotto" ? { ok: true, esito: "letto", esami: 0, prelievi: 0 } : { ok: false });
+    window.chrome = { runtime: { id: "finta", sendMessage(m, cb) { if (typeof cb === "function") setTimeout(() => cb(r(m)), 20); } } };
+  });
+  await page.goto(mock.patientUrl);
+  await page.waitForSelector("#psassist-host", { state: "attached" });
+  await $panel(page, '[data-seg="esiti"]').click();
+  await page.waitForSelector("#psassist-host .wulab", { state: "attached", timeout: 15000 });
+  // il caricamento da solo (finto: non trova niente) finisce; poi si guarda il Lab
+  await page.waitForFunction(() => !/Leggo i valori/.test(document.getElementById("psassist-host").shadowRoot.querySelector(".wulab")?.textContent || "x"), null, { timeout: 15000 }).catch(() => {});
+  const lab = (await $panel(page, ".wulab").innerText().catch(() => "")).replace(/\s+/g, " ");
+  const bottone = await $panel(page, ".wulab #risall").count();
+  // (il bottone grande c'è, o — se il caricamento da solo non è finito — il «↓ N» che lo sostituisce)
+  check(scen, !/Nessun esame di laboratorio/.test(lab) && (bottone === 1 || /↓ \d/.test(lab)),
+    `con referti di laboratorio nella pagina il Lab non dice «Nessun esame» e resta da caricare (got: ${lab} · bottone ${bottone})`);
+  await context.close();
+}
+
 // Un nome che il pannello non conosce, e una riga che non sa leggere, devono
 // diventare un avviso: mai un buco che il medico scopre da solo.
 async function scenarioNomiInattesi(browser) {
@@ -8173,6 +8197,7 @@ const scenarios = [
   ["referto RX letto come testo", scenarioRefertoTesto],
   ["lab vuoto", scenarioLabVuoto],
   ["lab vuoto col portale", scenarioLabVuotoPortale],
+  ["lab con referti, portale senza tabella", scenarioLabConRefertiPortale],
   ["nomi inattesi e righe non lette", scenarioNomiInattesi],
   ["via il cronometro e i riferimenti: niente voci, i tempi dimenticati", scenarioTempi],
   ["da fare: una lista per paziente, i promemoria dentro, il post-it sulla riga", scenarioPromemoria],

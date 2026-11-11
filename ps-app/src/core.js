@@ -11806,7 +11806,9 @@
       const attesaLab = attese.filter((x) => x.tipo === "lab");
       // nessun prelievo, nessun referto di laboratorio, niente in attesa: col portale lo si dice (e
       // quando lo si è letto), e lo storico resta a un tocco nel ↻ in cima — non il bottone grande
-      const vuotoLab = !t && !attesaLab.length && !prelievi.length && !lab.length;
+      // (i referti di laboratorio della pagina contano anche se col portale refertiLab() è vuoto per scelta)
+      const vuotoLab = !t && !attesaLab.length && !prelievi.length && !lab.length
+        && !this.esiti.some((e) => e.kind === "referto" && refertoTipo(e) === "lab");
       const grande = puoiLeggere && !t && !au && !(conPortale && vuotoLab);
       // letti ma senza data e ora: il perché sta nel passaggio del mouse, non in due righe
       const infoSenzaData = senzaData.length ? `<span class="infochip" tabindex="0" title="${esc(
