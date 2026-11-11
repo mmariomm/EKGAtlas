@@ -11763,15 +11763,18 @@
         : primaLettura ? `Legge i valori${conPortale ? ": lo storico del portale — tutti i prelievi, refertati e no — in una scheda di sottofondo, e le finestre Risultati del gestionale se serve" : " dal gestionale, un prelievo alla volta"}${
           daLeggere && !conPortale ? ` (${daLeggere} ${daLeggere === 1 ? "prelievo ancora da leggere" : "prelievi ancora da leggere"})` : ""}`
         : "Rilegge i prelievi ancora aperti, uno alla volta, poi riprende i referti non ancora salvati";
-      const grande = puoiLeggere && !t && !au;
+      // in attesa, dal diario della pagina: ciò che è stato chiesto e non è ancora refertato
+      const attese = richiesteInAttesa(document);
+      const attesaLab = attese.filter((x) => x.tipo === "lab");
+      // nessun prelievo, nessun referto di laboratorio, niente in attesa: col portale lo si dice (e
+      // quando lo si è letto), e lo storico resta a un tocco nel ↻ in cima — non il bottone grande
+      const vuotoLab = !t && !attesaLab.length && !prelievi.length && !lab.length;
+      const grande = puoiLeggere && !t && !au && !(conPortale && vuotoLab);
       // letti ma senza data e ora: il perché sta nel passaggio del mouse, non in due righe
       const infoSenzaData = senzaData.length ? `<span class="infochip" tabindex="0" title="${esc(
         `Di ${senzaData.length === 1 ? "un prelievo" : `${senzaData.length} prelievi`} la pagina non dà data e ora, né nel campo nascosto né nella riga: ${
           senzaData.length === 1 ? "è la colonna" : "sono le colonne"} ?, in fondo a destra (${senzaData.map((e) => shortLabel(e.label)).join(", ")}). I valori ci sono tutti; il Registro dice cosa c'era scritto al posto dell'ora.`)}">? ${
         senzaData.length === 1 ? "1 senza ora" : `${senzaData.length} senza ora`}</span>` : "";
-      // in attesa, dal diario della pagina: ciò che è stato chiesto e non è ancora refertato
-      const attese = richiesteInAttesa(document);
-      const attesaLab = attese.filter((x) => x.tipo === "lab");
       // Un esame di laboratorio i cui valori hanno cominciato ad arrivare non
       // aspetta più: «parziale 15:11», senza orologio che corre (i valori sono
       // già in tabella). L'orologio resta a ciò che non ha ancora niente.
@@ -11787,7 +11790,10 @@
           </div>`;
       };
       // niente valori, solo referti di laboratorio: la loro lista sta nella scheda Lab, non in fondo
-      const soloReferti = !t && !grande && !attesaLab.length && !prelievi.length && !conPortale;
+      // (col portale: solo senza niente di laboratorio, e non mentre lo si legge)
+      const legge = !!(ra || sotto || (au && !au.labFatto));
+      const soloReferti = !t && !grande && !attesaLab.length && !prelievi.length && (!conPortale || (vuotoLab && !legge));
+      const lettoLab = conPortale && soloReferti ? this.storico?.letto || this._labLetto || 0 : 0;
       const valori = `
         <section class="sec wusec wulab" aria-label="Laboratorio">
           <div class="lbl wuh"><span class="wut"${t ? ` title="Tocca un valore per segnarlo: giallo, poi arancio, poi via"` : ""}>Lab</span>${t ? `<span class="wucnt"> (${righeTabella(st.righe).length} esami · ${t.nCol} prelievi)</span>` : ""}
@@ -11806,7 +11812,7 @@
           ${this.storico && (this.storico.periodo || this.storico.paziente?.idMPI) ? `<div class="hint">Storico del portale di <b>${esc(chi || "—")}</b> · identità confermata <b>${esc(this.storicoVia || "dal nome")}</b>.</div>`
             : this.storicoAltri ? `<div class="hint">Storico del portale di <b>${esc(this.storicoAltri)}</b>, non di questo paziente: non mostrato.</div>`
             : this.storicoDaConfermare ? `<div class="hint" title="Il codice fiscale sta nella finestra Risultati">Storico del portale con questo nome: serve il codice fiscale, <b>⭳ Carica i valori</b>.</div>` : ""}
-          ${soloReferti ? (lab.length ? "@@LAB@@" : `<div class="wuvuoto">Nessun esame di laboratorio</div>`) : ""}
+          ${soloReferti ? (lab.length ? "@@LAB@@" : `<div class="wuvuoto">Nessun esame di laboratorio${lettoLab ? ` · letto ${hhmm(lettoLab)}` : ""}</div>`) : ""}
         </section>`;
 
       // ---- ECG e Imaging: i referti, uno per riga; il testo si apre lì sotto
@@ -12748,6 +12754,7 @@
         if (s && s.esito === "letto") {
           this.log(`${now()}  storico del portale letto in sottofondo: ${s.esami} esami · ${s.prelievi} prelievi`);
           this.notaPortale = "";
+          this._labLetto = Date.now();   // (letto, anche senza niente: il Lab vuoto dice quando)
           await this.caricaStorico();
         } else {
           const perche = {

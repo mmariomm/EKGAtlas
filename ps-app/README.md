@@ -924,7 +924,9 @@ paziente da solo non si riprende più (un tocco, in quella scheda, ne ridice l'e
 con la pagina aperta, si ricontrolla ogni 10 minuti **solo mentre la guardi** (tornandoci, se ne
 sono passati 10), e dopo due ricontrolli senza niente di nuovo smette: lo rifà aprire gli Esiti. Mentre lavora, accanto a **↻** c'è un discreto **«↓ 2»** — quanti ne restano —, e se il Lab
 non ha ancora una tabella dice **«Leggo i valori…»**; se non c'è proprio niente da leggere (né
-prelievi né referti di laboratorio), **«Nessun esame di laboratorio»**. Non parte mai nella scheda di un ordine, del Ponte, di un giro ripreso o con una
+prelievi né referti di laboratorio), **«Nessun esame di laboratorio»** — anche col portale: lo storico resta un
+tocco nel ↻ in cima (non il bottone grande), e dopo una lettura che non ha trovato niente dice quando («· letto
+14:32»). Non parte mai nella scheda di un ordine, del Ponte, di un giro ripreso o con una
 richiesta da confermare.
 
 - **In cima, una riga**: i valori **fuori range** dell'ultimo prelievo di ciascun esame, i più

@@ -5579,6 +5579,33 @@ async function scenarioLabVuoto(browser) {
   check(scen, /Nessun esame di laboratorio/.test(lab), `il Lab senza prelievi né referti dice «Nessun esame di laboratorio» (got: ${lab})`);
   await context.close();
 }
+// …anche con l'estensione e il link dello storico del portale: lo dice, lo storico resta un tocco nel ↻ in
+// cima (non il bottone grande), e dopo una lettura che non ha trovato niente, quando l'ha letto.
+async function scenarioLabVuotoPortale(browser) {
+  const scen = "lab vuoto col portale";
+  const mock = conPagina(createMock({}), (html) => html.replace(/REFERTO_SISTEMA=HL7LIS/g, "REFERTO_SISTEMA=HL7CONS"));
+  const { context, page } = await newPage(browser, mock);
+  // il service worker per finta: lo storico del portale si apre e si legge, e non c'è niente
+  await context.addInitScript(() => {
+    const r = (m) => (m.t === "apriStoricoSotto" ? { ok: true, tabId: 7 } : m.t === "esitoSotto" ? { ok: true, esito: "letto", esami: 0, prelievi: 0 } : { ok: false });
+    window.chrome = { runtime: { id: "finta", sendMessage(m, cb) { if (typeof cb === "function") setTimeout(() => cb(r(m)), 20); } } };
+  });
+  await page.goto(mock.patientUrl);
+  await page.waitForSelector("#psassist-host", { state: "attached" });
+  await $panel(page, '[data-seg="esiti"]').click();
+  await page.waitForSelector("#psassist-host .wulab", { state: "attached", timeout: 15000 });
+  const lab = (await $panel(page, ".wulab").innerText().catch(() => "")).replace(/\s+/g, " ");
+  const grande = await $panel(page, ".wulab .grande").count(), su = await $panel(page, ".wutools #risall").count();
+  check(scen, /Nessun esame di laboratorio/.test(lab) && !grande && su === 1,
+    `col portale, il Lab senza niente di laboratorio dice «Nessun esame di laboratorio», e lo storico resta nel ↻ in cima (got: ${lab} · bottone grande ${grande} · in cima ${su})`);
+  await $panel(page, ".wutools #risall").click();
+  const letto = await page.waitForFunction(() => {
+    const t = document.getElementById("psassist-host").shadowRoot.querySelector(".wulab .wuvuoto")?.textContent || "";
+    return /letto \d\d:\d\d/.test(t) ? t : false;
+  }, null, { timeout: 15000 }).then((h) => h.jsonValue()).catch(() => "");
+  check(scen, /^Nessun esame di laboratorio · letto \d\d:\d\d$/.test(letto.trim()), `letto lo storico senza trovare niente: «Nessun esame di laboratorio · letto 14:32» (got: ${letto || "niente"})`);
+  await context.close();
+}
 
 // Un nome che il pannello non conosce, e una riga che non sa leggere, devono
 // diventare un avviso: mai un buco che il medico scopre da solo.
@@ -8141,6 +8168,7 @@ const scenarios = [
   ["valori nuovi e aggiornati dopo il refresh", scenarioNuoviValori],
   ["referto RX letto come testo", scenarioRefertoTesto],
   ["lab vuoto", scenarioLabVuoto],
+  ["lab vuoto col portale", scenarioLabVuotoPortale],
   ["nomi inattesi e righe non lette", scenarioNomiInattesi],
   ["via il cronometro e i riferimenti: niente voci, i tempi dimenticati", scenarioTempi],
   ["da fare: una lista per paziente, i promemoria dentro, il post-it sulla riga", scenarioPromemoria],
