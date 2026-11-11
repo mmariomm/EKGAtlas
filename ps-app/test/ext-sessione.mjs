@@ -593,6 +593,21 @@ if (prova("la Conferma ignorata ma il carrello senza la sua Conferma: le attese,
   sess.dopoConferma = null;
 }
 
+// I fogli letti dopo un ordine (stampeFresche.v1: numeri, indirizzi, nomi di
+// esami) scadono in 12 ore: se ne vanno all'avvio di una pagina, anche se
+// nessuno scrive più — non solo alla prossima scrittura.
+if (prova("i fogli letti dopo un ordine scadono: all'avvio di una pagina se ne vanno, anche se nessuno scrive più")) {
+  await daCapo();
+  await suPagina(doc, A.patientUrl);
+  await doc.evaluate(() => localStorage.setItem("psassist:stampeFresche.v1", JSON.stringify({
+    999001: { ts: Date.now() - 13 * 3600e3, map: { 1: {} } }, 999002: { ts: Date.now(), map: {} } })));
+  await suPagina(doc, A.patientUrl);
+  const leggi = () => doc.evaluate(() => localStorage.getItem("psassist:stampeFresche.v1") || "");
+  await finche(async () => { const s = await leggi(); return !!s && !/"999001"/.test(s); }, 5000);
+  const l = await leggi();
+  check(!/"999001"/.test(l) && /"999002"/.test(l), `scaduti da 13 ore: via all'avvio; quelli di adesso restano (got ${l})`);
+}
+
 // ---- 2d. prima le etichette ------------------------------------------------
 // Senza la stampa automatica le etichette le stampa la scheda del medico, col
 // dialogo. Prima, il secondo ordine dello stesso tocco (Urgenze, dopo il POC)

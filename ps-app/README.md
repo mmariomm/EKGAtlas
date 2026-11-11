@@ -1592,8 +1592,10 @@ paziente; una pagina dove la scheda resta più di 3 secondi vale come sempre. **
 il pannello ha mandato esami (o che ha aperto lui), confermate dal pannello o col bottone del
 gestionale. Una richiesta fatta tutta a mano nel gestionale, confermata col suo bottone, non
 stampa niente da sola. Dalla pagina paziente puoi **ristampare qualsiasi richiesta**: in fondo alle
-Richieste **Ristampa** rifà l'ultimo ordine — la richiesta più recente e quelle di pochi minuti
-prima (fino a quattro: POC, laboratorio, RX dello stesso tocco), etichette prima —, e **Altre…**
+Richieste **Ristampa** rifà l'ultimo ordine — la richiesta più recente e le altre dello stesso tocco
+su Conferma, come le ha annotate la scheda dell'ordine (fino a quattro: POC, laboratorio, RX; mai a
+occhio dall'ora — un'aggiunta di tre minuti dopo è un altro ordine —, e senza annotazione la più recente
+sola), etichette prima —, e **Altre…**
 apre la sezione Stampa: ogni richiesta della pagina — **anche quelle non fatte dall'estensione** —
 con **data e ora**, la **lista compatta degli esami** e il suo **«Ristampa»** (etichette e foglio
 di quella richiesta). Con la stampa automatica, senza dialogo.

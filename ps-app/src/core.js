@@ -1038,14 +1038,16 @@
     return nomiCorti([...all.flatMap((j) => j.filter((x) => x.printer === "etichettatrice")), ...all.flatMap((j) => j.filter((x) => x.printer !== "etichettatrice"))]);
   };
   // «Ristampa»: l'ultimo ordine intero — la richiesta più recente, e con lei
-  // quelle di pochi minuti prima: le richieste dello stesso tocco su Conferma
-  // (una per erogatore: POC, laboratorio, RX). Al più quattro.
-  const ULTIMA_INSIEME = 5 * 60e3;
-  function ultimeRichieste(map) {
+  // le altre dello STESSO tocco su Conferma (una per erogatore: POC,
+  // laboratorio, RX), come le ha annotate la scheda dell'ordine (ricordaGesto).
+  // Mai a occhio, dall'ora: una richiesta di tre minuti prima può essere un
+  // altro ordine. Senza l'annotazione, la più recente sola. Al più quattro.
+  function ultimeRichieste(map, ep = "") {
     const l = richiesteStampabili(map);
     if (!l.length) return [];
-    const t0 = printMeta(map, l[0]).ts;
-    return [l[0], ...l.slice(1, 4).filter((r) => { const t = printMeta(map, r).ts; return t0 && t && t0 - t <= ULTIMA_INSIEME; })];
+    const f = ep ? stampeVive()[String(ep)] : null;
+    const gruppo = f && f.gesti ? Object.values(f.gesti).find((rids) => Array.isArray(rids) && rids.includes(String(l[0]))) : null;
+    return gruppo ? l.filter((r) => gruppo.includes(String(r))).slice(0, 4) : [l[0]];
   }
   // Compact description of what a richiesta will print, e.g. "2× etichette + 2× liste".
   function printLabelFor(map, rid) {
@@ -11506,7 +11508,7 @@
       // una per una (la sezione Stampa).
       let ristampa = "";
       if (this.pageType === "patient" && this.epDiQuesta()) {
-        const map = stampePaziente(this.epDiQuesta()), ult = ultimeRichieste(map), altre = richiesteStampabili(map).length > ult.length;
+        const map = stampePaziente(this.epDiQuesta()), ult = ultimeRichieste(map, this.epDiQuesta()), altre = richiesteStampabili(map).length > ult.length;
         if (ult.length) ristampa = `<div class="rpiede"><button class="lnk ultima" id="stultima" title="Etichette e fogli di nuovo, di tutto l'ultimo ordine: ${
           esc(ult.map((r) => printMeta(map, r).when || "richiesta " + r).join(" e "))}${perChi ? ` — ${esc(perChi)}` : ""}">${icoIn("etichetta")}Ristampa</button>${
           altre ? ` <button class="lnk ultima" id="stampaltre" title="Le richieste di prima, una per una">Altre…</button>` : ""}</div>`;
@@ -15033,7 +15035,7 @@
       $("#stampaltre")?.addEventListener("click", () => this.setView("stampa"));
       $("#stultima")?.addEventListener("click", () => {
         const map = stampePaziente(this.epDiQuesta());
-        const ids = ultimeRichieste(map);
+        const ids = ultimeRichieste(map, this.epDiQuesta());
         avviaStampa(fogliDi(map, ids), { panel: this, title: `${ids.length > 1 ? "Richieste" : "Richiesta"} ${ids.join(" e ")}.`,
           ep: this.episodeId, paziente: this.nomePaziente(), url: location.href, jobId: `rist-${ids.join("-")}-${Math.floor(Date.now() / 2000)}` });
       });
@@ -16800,7 +16802,7 @@
     // qui, come sempre (con la stampa automatica, anche lei dal service worker).
     if (LAVORO && String(flag.episodeId || here) === String(LAVORO.ep)) {
       tabStore.set("print.v1", null);
-      ricordaStampe(here, map);   // (la pagina del medico non si ricarica: i fogli nuovi li vede da qui)
+      ricordaStampe(here, map, { gesto: LAVORO.gesto || LAVORO.id, rids: ids });   // (la pagina del medico non si ricarica: i fogli nuovi li vede da qui; e quali sono di questo tocco)
       if (panel) panel._lavoroChiuso = true;   // da qui la scheda non racconta più niente: l'ordine è delle etichette
       consegnaFogli(panel, LAVORO.id, jobs, fine);
       panel?.segnala({ tag: "Confermata", testo: "Etichette pronte: si stampano dove sei", tono: "ok" });
@@ -16898,7 +16900,7 @@
       const prova = await provaConferma(rid, ep, { patientUrl: (L.piano && L.piano.patientUrl) || "", panel, carrello: listUrl, subito });
       if (LAVORO !== L || (panel && panel._lavoroChiuso)) return;
       if (prova && prova.doc && maybeAutoPrint(panel, prova.doc, prova.url)) return;
-      if (prova && prova.doc) { ricordaStampe(ep, printModel(prova.doc, prova.url)); return fine({ tag: "Confermata", testo: "etichette dalla sua pagina, Stampa", tono: "ok" }); }
+      if (prova && prova.doc) { ricordaStampe(ep, printModel(prova.doc, prova.url), { gesto: L.gesto || L.id, rid }); return fine({ tag: "Confermata", testo: "etichette dalla sua pagina, Stampa", tono: "ok" }); }
       if (prova && prova.nonPartita) {
         // Il gestionale non l'ha presa (il suo carrello lo dice). Mai una
         // seconda Conferma da sola: «Conferma di nuovo» è un tocco del medico,
@@ -16934,19 +16936,38 @@
   // esami, ✓ e ⏳) lo scrive già leggiStatoPagina. L'«Aggiorna» del gestionale
   // resta quello che è: un tocco tuo.
   const STAMPE_FRESCHE = "stampeFresche.v1", STAMPE_FRESCHE_TTL = 12 * 3600e3;
-  function ricordaStampe(ep, map) {
+  // (`chi`: la richiesta e il tocco su Conferma da cui viene — `gesti`, per
+  // episodio: quali richieste sono lo stesso ordine, perché «Ristampa» le rifaccia insieme)
+  const stampeVive = () => {
+    const l = store.get(STAMPE_FRESCHE, {}) || {};
+    return Object.fromEntries(Object.entries(l).filter(([, x]) => x && Date.now() - (x.ts || 0) < STAMPE_FRESCHE_TTL).slice(-30));
+  };
+  function ricordaStampe(ep, map, chi = null) {
     if (!ep || !map || typeof map !== "object") return;
     try {
-      const l = store.get(STAMPE_FRESCHE, {}) || {};
-      const vive = Object.fromEntries(Object.entries(l).filter(([k, x]) => k !== String(ep) && x && Date.now() - (x.ts || 0) < STAMPE_FRESCHE_TTL).slice(-30));
-      store.set(STAMPE_FRESCHE, { ...vive, [String(ep)]: { ts: Date.now(), map } });
+      const vive = stampeVive(), prima = vive[String(ep)] || {};
+      const gesti = { ...(prima.gesti || {}) };
+      const rids = chi ? (Array.isArray(chi.rids) ? chi.rids : [chi.rid]).filter(Boolean).map(String) : [];
+      if (chi && chi.gesto && rids.length) gesti[String(chi.gesto)] = [...new Set([...(gesti[String(chi.gesto)] || []), ...rids])].slice(-6);
+      const tieni = Object.fromEntries(Object.entries(gesti).slice(-10));
+      store.set(STAMPE_FRESCHE, { ...vive, [String(ep)]: { ts: Date.now(), map, gesti: tieni } });
     } catch { /* memoria piena: resta la pagina com'è */ }
   }
   // i fogli che la pagina del paziente elenca: quelli letti dopo di lei, se ci sono
+  // (scaduti, non valgono nemmeno a leggerli)
   function stampePaziente(ep, doc = document, url = location.href) {
     const viva = printModel(doc, url);
-    const f = ep ? (store.get(STAMPE_FRESCHE, {}) || {})[String(ep)] : null;
+    const f = ep ? stampeVive()[String(ep)] : null;
     return f && f.map && f.ts > performance.timeOrigin && doc === document ? f.map : viva;
+  }
+  // all'avvio: quelli scaduti se ne vanno (anche se nessuno scrive più)
+  function potaStampe() {
+    try {
+      const l = store.get(STAMPE_FRESCHE, null);
+      if (!l) return;
+      const vive = stampeVive();
+      if (Object.keys(vive).length !== Object.keys(l).length) store.set(STAMPE_FRESCHE, vive);
+    } catch { /* niente */ }
   }
 
   // Le etichette di un ordine fatto in sottofondo arrivano qui, dalla scheda
@@ -18379,6 +18400,7 @@
     if (!eTerapie()) tabStore.del(TERAPIA);   // il giro della terapia vive solo di pagina delle terapie in pagina delle terapie
     LAVORO = chi && chi.lavoro ? chi.lavoro : null;
     if (LAVORO) annotaDurataConferma();   // (la prima pagina dopo il clic su Conferma: quanto ci ha messo)
+    potaStampe();   // (i fogli letti dopo un ordine, scaduti: via, anche se nessuno scrive più)
     segnaScheda(chi);
     PONTE_VALORI = chi && chi.ponteValori ? chi.ponteValori : null;
     PONTE_CARTELLA = chi && chi.ponteCartella ? chi.ponteCartella : null;
