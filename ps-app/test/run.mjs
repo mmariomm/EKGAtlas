@@ -5669,9 +5669,12 @@ async function scenarioDaFareInCima(browser) {
   // ridotto a una barra (per conto suo: il Da fare dei Pazienti non cambia)
   await $panel(page, ".tdcard.solo #tdtog").click();
   await page.waitForTimeout(150);
-  const ridotto = await page.evaluate(() => { const c = document.getElementById("psassist-host").shadowRoot.querySelector(".tdcard.solo"); return c ? { chiusa: c.classList.contains("chiusa"), voci: c.querySelectorAll(".tdi").length } : null; });
+  const ridotto = await page.evaluate(() => { const r = document.getElementById("psassist-host").shadowRoot, c = r.querySelector(".tdcard.solo");
+    return c ? { chiusa: c.classList.contains("chiusa"), voci: c.querySelectorAll(".tdi").length, testa: r.querySelector(".hdpaz .dfic")?.className || "" } : null; });
   check(scen, ridotto?.chiusa && ridotto.voci === 0 && (await page.evaluate(() => localStorage.getItem("psassist:tabellone.dafare.v1"))) === null,
     `ridotto: una barra «Da fare 2», e il Da fare dei Pazienti resta com'è (got: ${JSON.stringify(ridotto)})`);
+  check(scen, !/\bdfprima\b/.test(b1.testa) && /\bdfprima\b/.test(ridotto?.testa || ""),
+    `«Da fare» una volta sola: col blocco aperto l'intestazione dice solo quante; ridotto il blocco, la prima voce (got: ${b1.testa} → ${ridotto?.testa})`);
   await $panel(page, ".tdcard.solo #tdtog").click();
   // senza voci: niente blocco
   await page.evaluate(() => localStorage.setItem("psassist:dafare.v1", JSON.stringify({})));
@@ -5720,6 +5723,9 @@ async function scenarioPromemoria(browser) {
   // ---- nel browser, con l'orologio finto alle 10 di mattina
   const mock = createMock({});
   const { context, page } = await newPage(browser, mock);
+  // (il blocco Da fare in cima alla scheda, ridotto a una barra: qui si guarda l'icona dell'intestazione,
+  // che col blocco aperto dice solo quante — vedi sotto, e «da fare in cima»)
+  await context.addInitScript(() => { try { if (!localStorage.getItem("psassist:paziente.dafare.v1")) localStorage.setItem("psassist:paziente.dafare.v1", JSON.stringify({ chiusa: true })); } catch { /* niente */ } });
   await page.clock.install({ time: new Date(2026, 9, 5, 10, 0) });
   const apri = async () => {
     await page.waitForSelector("#psassist-host #expand, #psassist-host .card", { state: "attached" });
@@ -5876,7 +5882,15 @@ async function scenarioPromemoria(browser) {
   const righeNota = async (sel) => ((await $panel(page, `${sel}:not([hidden])`).count()) ? (await $panel(page, `${sel} .dfr`).allInnerTexts()).map((t) => t.replace(/\s+/g, " ").trim()) : []);
   const testa = { strisce: await $panel(page, ".card .dfnota").count(), t: await testoIcona(".hd"), prima: (await $panel(page, ".hd .dfic .dfict").innerText().catch(() => "")).trim() };
   check(scen, testa.strisce === 0 && testa.prima === "chiamare la figlia stasera" && testa.t === "chiamare la figlia stasera +1",
-    `aperta la finestra: niente striscia, l'intestazione dice la prima voce e «+1» (got: ${JSON.stringify(testa)})`);
+    `aperta la finestra, col blocco in cima ridotto: niente striscia, l'intestazione dice la prima voce e «+1» (got: ${JSON.stringify(testa)})`);
+  // il blocco aperto: le voci sono lì, e l'intestazione dice solo quante (la stessa riga non si legge due volte)
+  await $panel(page, ".tdcard.solo #tdtog").click();
+  await page.waitForTimeout(150);
+  const testa0 = { blocco: await $panel(page, ".tdcard.solo:not(.chiusa)").count(), t: await testoIcona(".hd"), prima: await $panel(page, ".hd .dfic .dfict").count() };
+  check(scen, testa0.blocco === 1 && testa0.t === "2" && testa0.prima === 0,
+    `col blocco aperto in cima: nell'intestazione solo l'icona e «2», non la stessa riga una seconda volta (got: ${JSON.stringify(testa0)})`);
+  await $panel(page, ".tdcard.solo #tdtog").click();
+  await page.waitForTimeout(150);
   await $panel(page, "#collapse").click();
   const nr = await righeNota(".dfnota");
   const posto = await page.evaluate(() => {

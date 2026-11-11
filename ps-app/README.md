@@ -474,7 +474,7 @@ spunta** e la voce è fatta: barrata, resta al suo posto **5 minuti** (un altro 
 se ne va (o subito, col cestino). L'ordine lo decidi tu: si **trascina** dalla maniglia ⋮⋮ (col mouse o col dito), o da
 tastiera **Alt+↑ / Alt+↓** sulla spunta. La maniglia, **+15′** e ✕ compaiono passandoci sopra (o col
 fuoco; al tocco ci sono sempre). La **prima voce aperta** è il post-it: si legge nelle aree
-della stanza (nella riga del tabellone c'è solo quante sono). L'icona dice **quante** sono aperte (nell'intestazione della finestra, la **prima** e «+N»; ambra o rossa, la voce che scade col tempo che manca, come la pill: «⏰ −6m tropo») e cambia colore quando un promemoria si avvicina:
+della stanza (nella riga del tabellone c'è solo quante sono). L'icona dice **quante** sono aperte (nell'intestazione della finestra, col blocco in cima ridotto, la **prima** e «+N»; ambra o rossa, la voce che scade col tempo che manca, come la pill: «⏰ −6m tropo»; col blocco aperto, solo quante: le voci sono lì sotto) e cambia colore quando un promemoria si avvicina:
 **ambra dai 15 minuti prima**, **rossa quando l'ora è passata** (con un bagliore lento solo nei primi 10 minuti, poi fermo; fermo anche se il
 sistema chiede meno movimento); il passaggio del mouse le dice tutte. **Esc**, o un clic fuori, la
 chiude: non c'è niente da salvare, ogni gesto è già salvato.
@@ -1065,7 +1065,9 @@ Non c'è più un campo a parte: la nota è la **prima voce di Da fare** (vedi *P
 che si legge sulla riga. Sulla pagina di un paziente le sue cose da fare sono **sempre in vista**,
 senza un tocco, in un posto solo: ridotto il pannello in un foglietto giallo sotto la pill — al più
 tre righe (la prima è la nota), poi «+N»; un tocco apre la lista al suo posto —, aperta la finestra
-nell'icona **Da fare** dell'intestazione, accanto al nome: la prima voce e «+N». Se non ha niente da
+nel blocco **Da fare** in cima alla scheda, e nell'icona dell'intestazione, accanto al nome, solo
+quante sono (una volta sola: la stessa riga non si legge due volte; col blocco ridotto, l'icona dice
+la prima voce e «+N»). Se non ha niente da
 fare, niente. Quelle scritte prima sono diventate voci da sole, sul paziente
 giusto: per codice fiscale, o per nome solo se in elenco non c'è un omonimo — una nota di chi non è
 in elenco aspetta lì finché scade.

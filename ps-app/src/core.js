@@ -11950,7 +11950,10 @@
     // un promemoria si avvicina o è passato (ambra, rossa), dice quello, col
     // tempo che manca, come la pill: «⏰ −6m tropo +2».
     dfIcona(ep, tutti = dfTutti(), dove = "lista", ora = Date.now()) {
-      const aperte = dfAperte(ep, tutti), n = aperte.length, testa = dove === "testa" && n > 0;
+      // (con il suo blocco Da fare aperto in cima alla scheda, l'intestazione dice solo l'icona e
+      // quante: la stessa riga non si legge due volte, una sopra l'altra)
+      const blocco = dove === "testa" && this._tdSolo === ep && !store.get(TD_PAZ, null)?.chiusa;
+      const aperte = dfAperte(ep, tutti), n = aperte.length, testa = dove === "testa" && n > 0 && !blocco;
       const prossimo = aperte.filter((x) => x.t != null).sort((a, b) => a.t - b.t)[0];
       const b = prossimo ? promBanda(prossimo.t, ora) : "";
       const riga = (x) => (x.t != null ? promRiga(x, ora) : x.testo);
