@@ -2371,7 +2371,8 @@ nella tendina del gestionale») — poi **Prepara nel gestionale** (o Ctrl+Invio
    legge la pagina del paziente (GET, mai un invio) e, se non la elenca ancora, la si rilegge
    dopo 2, 4 e 8 secondi — il LIS può metterci un po' a registrarla: se la elenca, è
    confermata e i fogli si prendono da lì. Solo sulla **strada veloce** — la Conferma tornata in
-   meno di 1,5 secondi (`CONFERMA_SOSPETTA`), misurata nella scheda di un ordine — e se la prima
+   meno di 1,5 secondi (`CONFERMA_SOSPETTA`), misurata nella scheda di un ordine dall'ora della
+   risposta (`responseStart`: se il browser non la dà, la durata non c'è e la strada è la lenta) — e se la prima
    lettura non la elenca, si legge anche il carrello di quella richiesta (GET dell'elenco,
    `carrelloFermo`): con tutti gli esami della ricevuta e il **suo** bottone Conferma, il
    gestionale non l'ha presa — «Non partita», subito. Altrimenti il carrello non si legge

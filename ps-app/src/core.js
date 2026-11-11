@@ -15361,13 +15361,16 @@
   }
   // Quanto ha messo la Conferma (dal clic alla risposta), annotato dalla prima
   // pagina che arriva dopo: solo per decidere QUANDO guardare il carrello.
-  function annotaDurataConferma() {
+  // Senza l'ora della risposta (`responseStart`) non si sa: la durata resta
+  // null, la strada lenta — mai «tornata subito» per un numero che manca.
+  function annotaDurataConferma(n = null) {
     const p = tabStore.get("print.v1", null);
     if (!p || p.durata != null || !(p.ts > 0)) return;
     let arrivo = 0;
     try {
-      const n = performance.getEntriesByType("navigation")[0];
-      arrivo = performance.timeOrigin + (n && n.responseStart > 0 ? n.responseStart : 0);
+      n = n || performance.getEntriesByType("navigation")[0];
+      if (!n || !(n.responseStart > 0)) return;
+      arrivo = performance.timeOrigin + n.responseStart;
     } catch { return; }
     if (arrivo >= p.ts) tabStore.set("print.v1", { ...p, durata: Math.round(arrivo - p.ts) });
   }

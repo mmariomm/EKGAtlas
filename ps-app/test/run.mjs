@@ -24,13 +24,14 @@ if (SHOTS) mkdirSync(SHOTS, { recursive: true });
 // Una funzione pura presa dal sorgente com'è (come in valori.mjs): una tabella
 // di casi non ha bisogno del browser.
 const SORGENTE = readFileSync(join(root, "src/core.js"), "utf8");
-function prendi(nome) {
+// (`dove`: quello che la funzione prende dal resto del file, finto)
+function prendi(nome, dove = {}) {
   const i = SORGENTE.indexOf(`function ${nome}(`);
   if (i < 0) throw new Error("non trovata: " + nome);
   let livello = 0;
   for (let k = SORGENTE.indexOf("{", i); k < SORGENTE.length; k++) {
     if (SORGENTE[k] === "{") livello++;
-    else if (SORGENTE[k] === "}" && !--livello) return new Function(`${SORGENTE.slice(i, k + 1)}\nreturn ${nome};`)();
+    else if (SORGENTE[k] === "}" && !--livello) return new Function(...Object.keys(dove), `${SORGENTE.slice(i, k + 1)}\nreturn ${nome};`)(...Object.values(dove));
   }
   throw new Error("incompleta: " + nome);
 }
@@ -3256,6 +3257,21 @@ async function scenarioStampaUltima(browser) {
   check(scen, confermate === 2 && h.length === 3 && /1 di 3 — Etichette/.test(h[0]) && h.some((x) => /Lista esami/.test(x)) && h.some((x) => /Richiesta radiologia/.test(x)),
     `confermate qui insieme, laboratorio e RX: «Ristampa» le rifà tutt'e due, prima le etichette (got ${confermate} confermate · ${h.join(" | ")})`);
   await b.context.close();
+}
+
+// Quanto ha messo la Conferma decide solo QUANDO guardare il carrello (sotto
+// 1,5 s, subito). Senza l'ora della risposta non si sa: la durata resta vuota,
+// e vuota è la strada lenta — mai «tornata subito» perché manca un numero.
+async function scenarioDurataConferma() {
+  const scen = "durata-conferma";
+  const mem = new Map();
+  const tabStore = { get: (k, d) => (mem.has(k) ? mem.get(k) : d), set: (k, v) => { mem.set(k, v); return true; } };
+  const annota = prendi("annotaDurataConferma", { tabStore });
+  const t0 = performance.timeOrigin;
+  const caso = (nav, ts) => { mem.set("print.v1", { ids: ["1"], ts }); annota(nav); return mem.get("print.v1").durata; };
+  check(scen, caso({ responseStart: 2500 }, t0) === 2500, "con l'ora della risposta: quanto ci ha messo");
+  check(scen, caso({ responseStart: 0 }, t0 - 100) === undefined && caso(null, t0 - 100) === undefined,
+    `senza l'ora della risposta (o senza la voce della navigazione): nessuna durata, la strada lenta — mai «0,1 s» (got ${caso({ responseStart: 0 }, t0 - 100)})`);
 }
 
 async function scenarioPrintHardViewer(browser) {
@@ -8126,6 +8142,7 @@ const scenarios = [
   ["manual add on exam page", scenarioExamPageManual],
   ["richiesta tutta a mano: la Conferma del gestionale non stampa", scenarioConfermaTuttaAMano],
   ["stampa l'ultima richiesta", scenarioStampaUltima],
+  ["durata della Conferma: senza l'ora della risposta, la strada lenta", scenarioDurataConferma],
   ["wrong resource refused", scenarioWrongResourceRefused],
   ["missing quesito refused", scenarioMissingQuesito],
   ["quesito RX distinto", scenarioQuesitoRx],
