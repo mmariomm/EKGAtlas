@@ -1895,6 +1895,7 @@
       const aperto = S.aperti.has(r.id);
       return `<div class="refw${["lab", "ecg", "img"].includes(r.tipo) ? " k-" + r.tipo : ""}"><button class="ref${r.pdf ? " conpdf" : ""}" data-a="referto" data-id="${esc(r.id)}" aria-expanded="${aperto}"><span class="r1"><span class="q">${esc(r.quando)}</span><span class="t">${esc(r.titolo)}</span>${r.nuovo ? `<span class="nuovo">nuovo</span>` : ""}</span>${
         aperto ? (r.testo ? `<div class="testo">${esc(r.testo)}</div>` : `<div class="manca">${r.lungo ? "Testo troppo lungo per il telefono: leggilo sul PC."
+          : r.senzaTesto && !r.pdf ? "PDF senza testo: aprilo sul PC."
           : r.soloPdf ? (r.pdf ? "Di TC, ecografie e visite c'è il PDF, non il testo: tocca «PDF»." : "Di TC, ecografie e visite c'è il PDF, non il testo: sul PC non è ancora salvato.")
           : legge ? "Lo leggo sul PC…" : "Testo non ancora letto sul PC: ↻ Rileggi lo prende."}</div>`) : ""}</button>${
         r.pdf ? `<button class="prn" data-a="stampaRef" data-id="${esc(r.id)}" aria-label="${esc(stampaNo() || "Stampa il referto")}" ${(S.stampa && !S.stampa.fine) || stampaNo() ? "disabled" : ""}>🖨️</button><button class="pdf" data-a="pdf" data-id="${esc(r.id)}" data-n="${Number(r.pdf) || 0}" ${S.occupato.has("pdf" + r.id) ? "disabled" : ""}>PDF</button>` : ""}</div>`;

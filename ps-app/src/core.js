@@ -12907,7 +12907,12 @@
       const size = buf?.byteLength || 0;   // (prima del lettore: la copia letta, per chiRef)
       const letto = await testoPdf(buf);
       const righe = letto.righe;
-      if (!righe.length) return { vuoto: true, letto };
+      if (!righe.length) {
+        // Un PDF senza testo (una scansione): di chi è non si sa, quindi al telefono non va. La copia lo ricorda
+        // («vuoto»), così il telefono dice «aprilo sul PC» e non lo rilegge a ogni apertura degli esiti.
+        if (hasExt() && size) ask({ t: "chiRef", id: e.id, ep: this.episodeId, chi: "vuoto", size }).catch(() => {});
+        return { vuoto: true, letto };
+      }
       const id = identitaReferto(righe, this.identitaPaz());
       // Guardato di chi è, e non è di un altro: lo sa la copia salvata (chiRef: senza, al telefono non
       // va), e un «di un altro paziente» di prima — una copia vecchia — non vale più per questa.
@@ -17529,11 +17534,15 @@
     const chiave = p.pk || (normNome(p.name) ? "nome:" + normNome(p.name) : "");
     for (const e of referti) {
       const leggi = testoAuto(e) && !testi.has(e.id);
-      if (!salvati[e.id] || diAltro(e) || (!leggi && guardati[e.id])) continue;
+      if (!salvati[e.id] || diAltro(e) || guardati[e.id] === "vuoto" || (!leggi && guardati[e.id])) continue;
       const g = await ask({ t: "getRef", id: e.id, ep: p.ep }).catch(() => null);
       const buf = g && g.ok && g.data ? bufDaB64(g.data) : null, size = buf ? buf.byteLength : 0;
       const righe = buf ? ((await testoPdf(buf).catch(() => null)) || {}).righe || [] : [];
-      if (!righe.length) continue;
+      if (!righe.length) {
+        // senza testo: niente da confrontare. Fail-closed (al telefono niente PDF), e lo si ricorda sulla copia: non si rilegge a ogni «esiti»
+        if (size && !guardati[e.id] && (await ask({ t: "chiRef", id: e.id, ep: p.ep, chi: "vuoto", size }).catch(() => null))?.ok) guardati[e.id] = "vuoto";
+        continue;
+      }
       const esito = identitaReferto(righe, { cf: chi.cf, cfImp, nome: p.name || "", nascita: chi.nascita }).esito;
       if (esito === "altro") {
         altri.add(e.id);
@@ -17564,7 +17573,8 @@
       const sta = !!t && t.length <= resta;
       if (sta) resta -= t.length;
       return { id: e.id, quando: e.when, sistema: e.sistema, titolo: shortLabel(e.label), tipo: refertoTipo(e), testo: sta ? t : "", lungo: !!t && !sta,
-        ...(visti.has(e.id) ? {} : { nuovo: true }), ...(salvati[e.id] && guardati[e.id] && !diAltro(e) ? { pdf: true } : {}),
+        ...(visti.has(e.id) ? {} : { nuovo: true }), ...(salvati[e.id] && (guardati[e.id] === "ok" || guardati[e.id] === "nv") && !diAltro(e) ? { pdf: true } : {}),
+        ...(salvati[e.id] && guardati[e.id] === "vuoto" && !diAltro(e) ? { senzaTesto: true } : {}),
         ...(refertoTipo(e) !== "lab" && !testoAuto(e) ? { soloPdf: true } : {}) };   // (TC, ecografie, visite: il testo non si legge, c'è il PDF)
     });
     // Che cosa il PC legge da sé, adesso che il medico l'ha aperto sul telefono (il suo tocco è il gesto):

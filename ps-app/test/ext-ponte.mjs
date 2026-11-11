@@ -1102,6 +1102,30 @@ check(rxNuovoPrima && await finche(visteRx, 8000) && !(await nuovoRx()),
   }
 }
 {
+  // Un PDF senza testo (una scansione): di chi è non si sa, quindi al telefono non va (niente «PDF», fail-closed) — e il
+  // telefono lo dice, «aprilo sul PC», invece di «sul PC non è ancora salvato». La copia ricorda «vuoto»: non si rilegge.
+  const senza = Buffer.from("%PDF-1.4\n1 0 obj << /Type /Catalog >> endobj\n%%EOF\n");
+  await sw.evaluate(([k, ep, data]) => chrome.storage.local.set({ [k]: { ep, data, ts: Date.now() } }), ["ref:" + ID_RX, "999001", senza.toString("base64")]);
+  await sw.evaluate(() => chrome.storage.local.get("storicoArch").then((o) => { for (const r of Object.values(o.storicoArch || {})) r.referti = []; return chrome.storage.local.set(o); }));
+  const chiRx = () => sw.evaluate((k) => chrome.storage.local.get(k).then((o) => (o[k] || {}).chi || ""), "ref:" + ID_RX);
+  await esitiDi("999001", /RX TORACE/);
+  const pdfBtn = () => tel.locator('.refw:has(.ref:has-text("RX TORACE")) [data-a="pdf"]').count();
+  await finche(async () => (await chiRx()) === "vuoto", 15000);
+  await tocca(tel, '.ref:has-text("RX TORACE")');
+  // (se la riga era già aperta, il tocco l'ha chiusa: un secondo la riapre)
+  let tx = await aspettaTel(tel, /PDF senza testo: aprilo sul PC\./, 4000);
+  if (!tx) { await tocca(tel, '.ref:has-text("RX TORACE")'); tx = await aspettaTel(tel, /PDF senza testo: aprilo sul PC\./, 8000); }
+  check(/PDF senza testo: aprilo sul PC\./.test(tx) && !/sul PC non è ancora salvato/.test(tx) && await pdfBtn() === 0,
+    `un PDF senza testo: niente «PDF» sul telefono (fail-closed), che dice «PDF senza testo: aprilo sul PC.» (${tx.replace(/\s+/g, " ").slice(0, 200)})`);
+  check(await chiRx() === "vuoto", "…e la copia ricorda «vuoto»: non si rilegge a ogni apertura degli esiti");
+  const copia = await sw.evaluate(() => ponteCopia("999001", "dddd4444-0000-0000-0000-000000000004"));
+  check(copia === null, "…e ponteCopia lo rifiuta comunque: nessun byte al telefono");
+  // com'era per i controlli dopo
+  const TR = "_".repeat(37);
+  const pdfRis2 = refertoRxPdf(["OSPEDALE ZQINTESTA", "69-140 RX TORACE (A6900) 22/08/2026 03:10", TR, "Torace ZQCORPO nei limiti.", TR]);
+  await sw.evaluate(([k, ep, data]) => chrome.storage.local.set({ [k]: { ep, data, ts: Date.now() } }), ["ref:" + ID_RX, "999001", pdfRis2.toString("base64")]);
+}
+{
   // «● 2 nuovi» davanti sul telefono per qualche secondo vale come la finestra del PC aperta sugli Esiti:
   // il pallino del tabellone e «N nuovi» si spengono anche sul PC (la memoria dell'estensione, niente nel gestionale)
   const statoR = () => doc.evaluate(() => JSON.parse(localStorage.getItem("psassist:stato.v1") || "{}")["999001"] || {});

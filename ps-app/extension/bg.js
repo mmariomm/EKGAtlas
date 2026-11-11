@@ -469,7 +469,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
     inFilaRef(async () => {
       const hit = (await chrome.storage.local.get(KEY(msg.id)))[KEY(msg.id)];
       const d = hit && typeof hit.data === "string" ? hit.data : "", byte = Math.floor(d.length * 3 / 4) - (d.endsWith("==") ? 2 : d.endsWith("=") ? 1 : 0);
-      if (!d || String(msg.ep || "") !== String(hit.ep || "") || !["ok", "nv"].includes(msg.chi) || byte !== msg.size) return reply({ ok: false });
+      if (!d || String(msg.ep || "") !== String(hit.ep || "") || !["ok", "nv", "vuoto"].includes(msg.chi) || byte !== msg.size) return reply({ ok: false });
+      // («vuoto»: il PDF non ha testo, di chi è non si sa — il telefono dice «aprilo sul PC»; ponteCopia lo rifiuta lo stesso. Non toglie un «ok»/«nv» già dato.)
+      if (msg.chi === "vuoto" && hit.chi) return reply({ ok: true });
       if (hit.chi !== msg.chi) await chrome.storage.local.set({ [KEY(msg.id)]: { ...hit, chi: msg.chi } });
       reply({ ok: true });
     }).catch(() => reply({ ok: false }));
