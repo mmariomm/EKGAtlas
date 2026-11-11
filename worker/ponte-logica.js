@@ -22,12 +22,12 @@ export const PONTE = {
   alMinuto: 1200,             // messaggi per minuto per presa, oltre si chiude
   // Una presa che tace da 75 secondi (tre battiti persi: i client ne mandano
   // uno ogni 20, e senza «pong» in 10 si rifanno da soli) è morta: non conta
-  // più per chi c'è, e si ritira quando qualcuno entra. Nessuna sveglia apposta.
+  // più per chi c'è (di chi entra si ritirano solo le vecchie del suo ruolo). Nessuna sveglia apposta.
   inattivoMs: 75e3,
   // le prese ritirate che Cloudflare non ha ancora buttato: oltre queste, le più
   // vecchie si chiudono davvero (solo un tetto: un client che si rifà ogni
   // minuto e mezzo ne lascia una ventina finché le connessioni cadono)
-  ritirateMax: 64,
+  ritirateMax: 1000,
 };
 export const PING = "ping";
 export const PONG = "pong";
@@ -102,12 +102,9 @@ export class Stanza {
   muta(p, st, ora) { return ora - Math.max(st.ultimo || 0, this.io.battito(p) || 0) > PONTE.inattivoMs; }
   entra(presa, ruolo, ora) {
     const tutte = this.io.tutte().filter((p) => p !== presa);
-    // le prese mute dell'altra parte: chi entra non le prende per vive
-    // (l'avviso andrebbe solo alle vecchie del suo ruolo, che se ne vanno qui sotto)
-    for (const p of tutte) {
-      const st = this.io.leggi(p);
-      if (st && !st.via && st.ruolo !== ruolo && this.muta(p, st, ora)) this.ritira(p, st, 4002, false, ora);
-    }
+    // (le prese dell'altra parte restano com'erano: una muta può essere solo addormentata —
+    // un PC in sospensione, il telefono in tasca — e quando batte di nuovo deve trovarsi ancora
+    // in stanza; ritirarla senza dirglielo la lascerebbe sorda per sempre, chiuderla costa)
     this.io.scrivi(presa, { ruolo, ...nuovoConto(ora) });
     // TUTTE le altre dello stesso ruolo, non solo la prima: chi si rifà non ne
     // lascia indietro. Il telefono che si sente ancora (un'altra scheda, un

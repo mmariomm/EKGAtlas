@@ -200,8 +200,9 @@ check(PONTE.inattivoMs === 75e3 && !("prossimaSveglia" in L) && !/sveglia/i.test
   check(!io.inviati.some(([n, d]) => n === "tel" && d === '{"pari":false}') && io.inviati.some(([n, d]) => n === "tel" && d === '{"pari":true}'),
     "il telefono non vede mai «non c'è più nessuno»: solo «c'è»");
 }
-// Il telefono morto senza dirlo (iOS che lo sospende, una rete che cade): chi
-// tace da 75 secondi non conta più, e il PC che entra non lo prende per vivo.
+// Il telefono muto (iOS che lo sospende, un PC in sospensione): chi entra dall'altra parte
+// NON lo ritira e non gli manda chiusure. Quando batte di nuovo è ancora in stanza, e i
+// messaggi passano (ritirarlo senza dirglielo lo lascerebbe sordo per sempre).
 {
   const { io, nuova, st } = finto();
   const tel = nuova("tel"), pc = nuova("pc");
@@ -209,15 +210,11 @@ check(PONTE.inattivoMs === 75e3 && !("prossimaSveglia" in L) && !/sveglia/i.test
   tel.battito = 10e3;
   const dopo = 10e3 + PONTE.inattivoMs + 1;
   st.entra(pc, "pc", dopo);
-  check(tel.st.via === 4002 && !io.chiusi.length && io.inviati.at(-1)[0] === "pc" && io.inviati.at(-1)[1] === '{"pari":false}',
-    "il PC entra 75 s dopo l'ultimo battito del telefono: il telefono è ritirato (senza chiusure sulla rete), e al PC «non c'è nessuno»");
+  check(!tel.st.via && !io.chiusi.length && io.inviati.at(-1)[0] === "tel" && io.inviati.at(-1)[1] === '{"pari":true}',
+    "il PC entra 75 s dopo l'ultimo battito del telefono: il telefono resta in stanza (nessuna chiusura), e sa che il PC c'è");
+  io.inviati.length = 0;
   st.messaggio(tel, new Uint8Array([9]), dopo + 1);
-  check(JSON.stringify(io.chiusi) === JSON.stringify([["tel", 4002, "inattiva"]]), "il telefono torna e parla: la chiusura (4002) gli arriva adesso, e si ricollega");
-  const mai = nuova("mai");
-  mai.st = { ruolo: "tel", inizio: 0, n: 0, ultimo: 0 };   // (non ha mai battuto: non si sa se è morta)
-  const pc2 = nuova("pc2");
-  st.entra(pc2, "pc", dopo + 2);
-  check(io.chiusi.some(([n, c]) => n === "mai" && c === 4002), "una presa muta che non ha mai battuto si chiude davvero (4002): se è viva, lo sa");
+  check(!io.chiusi.length && io.inviati.some(([n]) => n === "pc"), "il telefono torna e parla: il messaggio arriva al PC, nessuna chiusura");
 }
 // Il client della 3.85.2 sui PC dove Chrome ferma il service worker: si rifà
 // ogni ~85 secondi, e la presa vecchia muore — con la chiusura che arriva, o
@@ -246,12 +243,13 @@ for (const muore of ["con la chiusura", "senza dirlo"]) {
   check(!io.chiusi.length && risvegli <= 1 + 2 * n && vista === n,
     `3.85.2 che si rifà ogni 85 s per un giorno, la presa vecchia che muore ${muore}: ${n} entrate, ${risvegli} risvegli del Durable Object (entrate e uscite, nessuna sveglia), 0 chiusure mandate a prese morte (prima: una a ogni entrata), la stazione vista ogni volta che c'è${muore === "senza dirlo" ? `; ritirate in attesa che Cloudflare le butti: ${lasciate}` : ""}`);
 }
-// Se Cloudflare non buttasse mai le prese morte: al più 64 ritirate, le più vecchie si chiudono
+// Se Cloudflare non buttasse mai le prese morte: al più ritirateMax ritirate, le più vecchie si chiudono
 {
   const { io, nuova, st } = finto();
   for (let i = 0; i < 100; i++) { const p = nuova("pc" + i); st.entra(p, "pc", i * 85e3); p.battito = i * 85e3 + 20e3; }
   const ritirate = io.prese.filter((p) => p.st?.via && !p.st.chiusa).length;
-  check(ritirate === PONTE.ritirateMax && io.chiusi.length === 100 - 1 - PONTE.ritirateMax && io.chiusi.every(([n]) => Number(n.slice(2)) < 100 - 1 - PONTE.ritirateMax + 1),
+  const tetto = Math.min(99, PONTE.ritirateMax);
+  check(ritirate === tetto && io.chiusi.length === 99 - tetto && PONTE.ritirateMax >= 1000,
     `100 prese del PC mai buttate: ${ritirate} ritirate al più, le ${io.chiusi.length} più vecchie chiuse davvero`);
 }
 check(!("eco" in L) && !("intestazioniSalute" in L) && !/eco|salute/i.test(Object.keys(PONTE).join()),
