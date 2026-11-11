@@ -91,8 +91,10 @@ async function aggControlla() {
 // che gira in una scheda del medico (il suo appunto, o il presidio di chi sta
 // mandando); un foglio sulla stazione di stampa; una registrazione; un testo
 // non salvato in una scheda del gestionale (una cartella, una dimissione, la
-// terapia, il pannello). Nel dubbio (la scheda non risponde in tempo) è
-// occupato: si riprova fra poco.
+// terapia, il pannello). Nel dubbio (la scheda non risponde in tempo, o non si
+// lascia leggere) è occupato: si riprova fra poco. Non contano le schede
+// scartate da Chrome e quelle dei PDF delle stampe (lì il pannello non nasce).
+const aggPdf = (t) => (chrome.runtime.getManifest().content_scripts?.[0]?.exclude_matches || []).some((m) => String(t.url || "").startsWith(m.replace(/\*$/, "")));
 async function aggOccupato() {
   if ((await ordLeggi()).some((x) => AGG_APERTO.has(x.stato)) || motoreDiScheda()) return true;   // (anche il motore di una scheda)
   if (typeof stz !== "undefined" && (stz.stampa.size || stz.inCorso.size)) return true;          // (un foglio per la stazione che arriva o stampa)
@@ -100,7 +102,7 @@ async function aggOccupato() {
   if ((typeof regAttiva === "function" && regAttiva()) || (typeof regStato !== "undefined" && regStato && regStato.stato === "fermo" && !regStato.errore && regSalvando(regStato))) return true;
   const schede = await chrome.tabs.query({ url: SA4 + "/*" }).catch(() => []);
   for (const t of schede) {
-    if (t.discarded) continue;
+    if (t.discarded || aggPdf(t)) continue;
     const r = await Promise.race([
       chrome.scripting.executeScript({
         target: { tabId: t.id }, injectImmediately: true, args: [10 * 60e3, 25e3],
@@ -126,7 +128,7 @@ async function aggOccupato() {
       }).catch(() => null),
       new Promise((res) => setTimeout(() => res(null), 3000)),
     ]);
-    if (r && r[0] && r[0].result) return true;
+    if (!r || !r[0] || r[0].result !== false) return true;   // (libera solo se lo dice: un «no» esplicito)
   }
   return false;
 }
@@ -139,9 +141,8 @@ async function aggOccupato() {
 // subito: le schede ripristinate al massimo mostrano la pillola.
 async function aggSchede() {
   const cs = chrome.runtime.getManifest().content_scripts?.[0] || {};
-  const senza = (cs.exclude_matches || []).map((m) => m.replace(/\*$/, ""));
   const schede = await chrome.tabs.query({ url: cs.matches || [SA4 + "/sa4pso/*"] });
-  return schede.filter((t) => !t.discarded && !senza.some((x) => String(t.url || "").startsWith(x))).length;
+  return schede.filter((t) => !t.discarded && !aggPdf(t)).length;
 }
 
 // Il manifest dentro lo zip (extension/manifest.json): il registro centrale,

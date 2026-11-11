@@ -303,6 +303,32 @@ console.log("\naggiorna: mai a metà di qualcosa");
   await sw.evaluate(() => stz.inCorso.delete("prova"));
   r = await sw.evaluate(() => aggOccupato());
   check(r === false, `tutto finito: libero (got ${r})`);
+  // nel dubbio aspetta: una scheda del gestionale che non risponde in tempo (la pagina ferma), o che
+  // non si lascia leggere (una pagina d'errore), è occupata; quella di un PDF delle stampe non conta
+  const ferma = doc.evaluate(() => { const t0 = Date.now(); while (Date.now() - t0 < 5000); }).catch(() => {});
+  await sospendi(300);
+  r = await sw.evaluate(() => aggOccupato());
+  check(r === true, `una scheda del gestionale che non risponde in tempo: occupato (got ${r})`);
+  await ferma;
+  // (una scheda che non si lascia leggere — una pagina d'errore, un documento che Chrome non apre agli script:
+  // qui executeScript che fallisce per quella scheda)
+  const nonLeggibile = (url) => sw.evaluate((u) => chrome.tabs.query({ url: u }).then((ts) => {
+    const ids = new Set(ts.map((t) => t.id));
+    self.__exe = self.__exe || chrome.scripting.executeScript;
+    chrome.scripting.executeScript = (o) => (ids.has(o.target.tabId) ? Promise.reject(new Error("Frame with ID 0 is showing error page")) : self.__exe.call(chrome.scripting, o));
+  }), url);
+  const leggibili = () => sw.evaluate(() => { if (self.__exe) chrome.scripting.executeScript = self.__exe; });
+  await nonLeggibile(`${A.ORIGIN}/sa4pso/*`);
+  r = await sw.evaluate(() => aggOccupato());
+  await leggibili();
+  check(r === true, `una scheda del gestionale che non si lascia leggere: occupato (got ${r})`);
+  const pdf = await ctx.newPage();
+  await pdf.goto(`${A.ORIGIN}/jasperserverSAN/stampa.pdf`).catch(() => {});
+  await nonLeggibile(`${A.ORIGIN}/jasperserverSAN/*`);
+  r = await sw.evaluate(() => aggOccupato());
+  await leggibili();
+  check(r === false, `una scheda dei PDF delle stampe (lì il pannello non nasce) non conta (got ${r})`);
+  await pdf.close();
   check(!lavori().some((x) => x.aggiorna) && zipScaricati() === prima0, "niente zip scaricato, niente all'aiutante");
   await doc.evaluate(() => document.getElementById("prova-cartella")?.remove());
 }
