@@ -208,6 +208,8 @@ check(err.length >= 1, `e il registro degli errori di quei minuti (${err.length}
 const regTxt = leggi("testi/registro.txt"), diaTxt = leggi("testi/diagnosi-1.txt");
 check(/── scheda 1 ──/.test(regTxt) && /esam/.test(regTxt) && !/ROSSI|999001|febbre/.test(regTxt),
   `e il Registro dei pannelli di quei minuti, anonimizzato (testi/registro.txt: ${regTxt.split("\n").length} righe; ${(/[^\n]*esam[^\n]*/.exec(regTxt) || ["—"])[0].slice(0, 90)})`);
+// (i nomi corti degli esami del pannello, in maiuscolo in mezzo a una riga, non sono persone: restano)
+check(/TROPONINA US/.test(regTxt), `nel Registro gli esami restano col loro nome: «TROPONINA US», non un nome inventato (${(/[^\n]*TROPONINA US[^\n]*/.exec(regTxt) || ["—"])[0].slice(0, 90)})`);
 check(/referto RX TORACE/.test(diaTxt) && /<iframe/.test(diaTxt) && !/ROSSI|MARIO/.test(diaTxt),
   `e la diagnosi del documento che non si è lasciato leggere, anonimizzata (testi/diagnosi-1.txt: ${diaTxt.replace(/\s+/g, " ").slice(0, 120)})`);
 const tutto = readdirSync(dir, { recursive: true }).filter((f) => statSync(join(dir, String(f))).isFile()).map((f) => leggi(String(f))).join("\n");
