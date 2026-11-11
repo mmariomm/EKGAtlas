@@ -866,6 +866,15 @@ function ponteValoriSotto(url, ep, modo = "") {
   ponteValoriLetture.set(ep, job);
   return job.promessa;
 }
+// La scheda vuota appena creata: finché non è «complete», al più 2 secondi (poi si parte lo stesso),
+// e finché il lavoro è ancora suo (`viva`).
+async function ponteSchedaNata(id, viva = () => true, max = 2000) {
+  for (const fine = Date.now() + max; Date.now() < fine && viva();) {
+    const x = await chrome.tabs.get(id).catch(() => null);
+    if (!x || x.status === "complete") return;
+    await attendi(25);
+  }
+}
 async function ponteValoriApri(u, ep, modo) {
   // (mai una pagina del gestionale mentre un motore inserisce esami: bg.js)
   if (typeof dopoIlMotore === "function") await dopoIlMotore();
@@ -878,6 +887,11 @@ async function ponteValoriApri(u, ep, modo) {
   pt.valori.set(t.id, { ep, risolvi, promessa, url: u.href, giri: 0 });
   // annotata PRIMA di andare sulla pagina: così la risposta a «chi sono?» c'è già
   await ponteValoriCambia((v) => { v[t.id] = { ep, ts: ponteOra(), ...(modo ? { modo } : {}) }; });
+  // e la scheda vuota finisce di nascere prima di partire: partita subito, il browser spesso non dice
+  // dove sta andando (pendingUrl) mentre la pagina arriva, e il controllo della navigazione persa, qui
+  // sotto, la crederebbe persa — e chiederebbe la pagina del paziente una seconda volta
+  await ponteSchedaNata(t.id, () => pt.valori.has(t.id));
+  if (!pt.valori.has(t.id)) return promessa;   // (chiusa mentre nasceva: niente pagina)
   // (allo scadere coi valori già letti e i referti ancora a metà: i valori, e la scheda si chiude;
   // una del ⟳ ha meno tempo — dietro di lei può aspettare il telefono)
   const tempo = setTimeout(() => ponteValoriFine(t.id, pt.valori.get(t.id)?.letti || { ok: false, testo: "i valori non sono arrivati in tempo" }),

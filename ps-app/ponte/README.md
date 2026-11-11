@@ -395,8 +395,10 @@ testo mai letto — la pagina che l'aveva chiesto se n'era già andata — si le
 lo stesso controllo di chi è del pannello (di un altro paziente: niente testo, niente PDF), e il testo
 va nella scheda del paziente. «Aggiorna i valori» risponde quando la sua scheda ha finito — valori e
 referti —, o allo scadere con i valori letti. «Aggiorna i valori» annota la sua scheda di sottofondo in `storage.session`
-(`ponte.valori`): anche se il service worker si ferma a metà, la si riconosce, scade e si chiude. Una
-scheda ancora vuota dopo 6 secondi — né arrivata né in arrivo sul gestionale, e nessuna pagina ha
+(`ponte.valori`): anche se il service worker si ferma a metà, la si riconosce, scade e si chiude. La
+scheda vuota finisce di nascere (al più 2 secondi) prima di andare sulla pagina: partita subito, il
+browser spesso non dice dove sta andando mentre la pagina arriva, e una pagina lenta sembrerebbe persa
+— chiesta due volte. Una scheda ancora vuota dopo 6 secondi — né arrivata né in arrivo sul gestionale, e nessuna pagina ha
 chiesto «chi sono?», come la scheda vuota di un ordine: la navigazione si è persa per strada — si
 rimanda all'indirizzo del paziente una volta (lo stesso gesto: la pagina non era mai arrivata). Il
 telefono aspetta 260 secondi, più del caso peggiore del PC (anche in fila dietro una pagina del ⟳ del
