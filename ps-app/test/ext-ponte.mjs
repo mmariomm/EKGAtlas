@@ -2086,10 +2086,14 @@ rete.muta = rete.ultima;
 await tel.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));   // tornati sull'app: si prova subito la presa
 check(await finche(async () => relay.entrate().tel > prese1, 14000), "nessun «pong» entro 10 secondi: il telefono rifà la presa");
 check(/ROSSI MARIO/.test(await aspettaTel(tel, /ROSSI MARIO/, 10000)), "e l'elenco resta");
-// tornati sull'app: l'elenco si rilegge da solo
-const lettiPrima = ((await registroPc(doc)).match(/iPhone · elenco dei pazienti/g) || []).length;
+// tornati sull'app: l'elenco si rilegge da solo (contato sul PC, al comando: il Registro del pannello tiene le
+// ultime 200 righe, e pieno non cresce più — contarci le righe non dice se ne è arrivata una nuova)
+await sw.evaluate(() => {
+  self.__elenchi = 0;
+  if (!self.__suScheda) { self.__suScheda = ponteSuScheda; ponteSuScheda = (c, ...a) => { if (c === "pazienti") self.__elenchi++; return self.__suScheda(c, ...a); }; }
+});
 await tel.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
-check(await finche(async () => ((await registroPc(doc)).match(/iPhone · elenco dei pazienti/g) || []).length > lettiPrima, 10000),
+check(await finche(async () => (await sw.evaluate(() => self.__elenchi)) > 0, 10000),
   "tornati sull'app, l'elenco si rilegge da solo");
 // …e sulla pagina di un paziente, i suoi esiti (un referto arrivato intanto), senza contare come un comando del medico
 await tocca(tel, '.paz[data-ep="999001"]');
