@@ -245,8 +245,10 @@ function Aggiorna($d, [string]$zip64) {
     catch { $rinominata = $false; Copy-Item -LiteralPath $EST -Destination $prima -Recurse }
     try {
       if ($rinominata) { $null = New-Item -ItemType Directory -Path $EST }
-      Get-ChildItem -LiteralPath $nuova | Copy-Item -Destination $EST -Recurse -Force
+      # manifest.json per ultimo: «chi» dice la versione nuova solo a copia finita (prima, la vecchia o niente)
+      Get-ChildItem -LiteralPath $nuova | Where-Object { $_.Name -ne 'manifest.json' } | Copy-Item -Destination $EST -Recurse -Force
       Copy-Item -LiteralPath (Join-Path $prima 'installata.json') -Destination $EST -Force
+      Copy-Item -LiteralPath (Join-Path $nuova 'manifest.json') -Destination $EST -Force
     } catch {
       # a metà: torna quella di prima
       if ($rinominata) { Remove-Item -LiteralPath $EST -Recurse -Force -ErrorAction SilentlyContinue; Rename-Item -LiteralPath $prima -NewName 'estensione' }
