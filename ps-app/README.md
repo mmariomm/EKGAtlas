@@ -634,8 +634,10 @@ lette stanno in `sessionStorage` (`smart.giro.v1`) e muoiono con lei.
    lo scrive: gli esami restano quelli di chi li hai ordinati.
    **Un ordine finito di un altro paziente non prende il posto della tua pill.** Sulla pagina di
    BIANCHI, l'ordine finito di ROSSI resta un **segno piccolo dentro la pill** — «✓ ROSSI M.»
-   (fatto), «⚠» (da guardare), «✕» (non partito), scelto dal tono dell'esito, non dalle parole —;
-   un tocco lo apre come striscia intera, col suo ⏹/✕/«Ristampa». Il mouse sulla pill la apre come
+   («Confermata», o una stampa che non è un ordine), «⚠» (da guardare: anche un carrello pronto da
+   confermare), «✕» (non partito) —, con «+1» se gli ordini finiti di altri pazienti sono due;
+   un tocco lo apre come striscia intera, col suo ⏹/✕/«Ristampa», anche con un altro ordine che gira
+   (resta accanto anche a una striscia di questa scheda che non è di un ordine). Il mouse sulla pill la apre come
    sempre (a finestra aperta il segno è un chip in intestazione). Sulla pagina dello stesso
    paziente, e per un ordine che gira, è in coda o aspetta un tocco per le etichette, la striscia
    resta intera.

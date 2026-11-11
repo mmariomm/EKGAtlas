@@ -8009,7 +8009,7 @@
       const s = this.segnoOrdine;
       if (!s || this.runState || this.striscia) return "";
       const ico = s.tono === "err" ? "✕" : s.tono === "warn" ? "⚠" : "✓";
-      return `<span class="segno ${esc(s.tono)}" data-segno="1" title="${esc(s.titolo)} — tocca per aprirlo">${ico} ${esc(s.chi)}</span>`;
+      return `<span class="segno ${esc(s.tono)}" data-segno="1" title="${esc(s.titolo)} — tocca per aprirlo">${ico} ${esc(s.chi)}${s.n > 1 ? ` +${s.n - 1}` : ""}</span>`;
     }
     // A pannello aperto, quello che succede fuori dalla finestra — l'ordine in
     // sottofondo, la stampa, un errore, una ricetta — è un chip in
@@ -8048,18 +8048,20 @@
         s && s.righe && s.righe.length ? `<span class="gchiprighe">${this.righeHtml(s.righe)}</span>` : ""}`;
     }
     // accanto a una striscia (o al suo chip) il segno è un bottoncino, come gli avvisi piegati
+    // (accanto a una striscia che non è di un ordine — una stampa, un errore di questa scheda — il segno resta lo stesso)
     segnoBtnHtml(id) {
-      const g = this.striscia && this.striscia.segno;
+      const s = this.striscia;
+      const g = s && (s.segno || (!s.daOrdine ? this.segnoOrdine : null));
       if (!g) return "";
       const t = `${g.titolo} — tocca per aprirlo`;
-      return `<button class="pieg ${esc(g.tono)}" id="${id}" title="${esc(t)}" aria-label="${esc(t)}">${g.tono === "err" ? "✕" : g.tono === "warn" ? "⚠" : "✓"} ${esc(g.chi)}</button>`;
+      return `<button class="pieg ${esc(g.tono)}" id="${id}" title="${esc(t)}" aria-label="${esc(t)}">${g.tono === "err" ? "✕" : g.tono === "warn" ? "⚠" : "✓"} ${esc(g.chi)}${g.n > 1 ? ` +${g.n - 1}` : ""}</button>`;
     }
     // a finestra aperta il segno di un ordine finito (di un altro paziente) è un chip piccolo in intestazione
     segnoChip() {
       const s = this.segnoOrdine;
       if (!s || this.runState) return "";
       const ico = s.tono === "err" ? "✕" : s.tono === "warn" ? "⚠" : "✓";
-      return `<span class="gchip ${esc(s.tono)}" role="status" title="${esc(s.titolo)}"><button class="gcorpo" id="gchipsegno" title="${esc(s.titolo)} — tocca per aprirlo"><span class="gtick">${ico}</span><span class="gt"><b>${esc(s.chi)}</b></span></button></span>`;
+      return `<span class="gchip ${esc(s.tono)}" role="status" title="${esc(s.titolo)}"><button class="gcorpo" id="gchipsegno" title="${esc(s.titolo)} — tocca per aprirlo"><span class="gtick">${ico}</span><span class="gt"><b>${esc(s.chi)}</b>${s.n > 1 ? ` +${s.n - 1}` : ""}</span></button></span>`;
     }
     // gli avvisi di prima (un errore, un ordine da guardare) mentre un altro
     // ordine gira: piegati in un «!1» rosso accanto alla striscia; un tocco li mostra
@@ -8844,15 +8846,24 @@
       if (this._segnoAperto && !this.ordini.some((x) => x.id === this._segnoAperto)) this._segnoAperto = null;
       const altrove = (x) => !!qui && !!x.ep && String(x.ep) !== String(qui) && !gira(x) && x.stato !== "coda" && x.stato !== "stampa" && x.id !== this._segnoAperto;
       const l = vivi.filter((x) => !altrove(x));
-      const segnoDi = vivi.filter(altrove).sort((a, b) => grado(a) - grado(b) || (b.agg || 0) - (a.agg || 0))[0];
-      const segno = segnoDi ? { id: segnoDi.id, chi: nomeCorto(segnoDi.paziente || ""),
-        tono: (segnoDi.pubblico || {}).tono === "err" ? "err" : (segnoDi.pubblico || {}).tono === "warn" ? "warn" : "ok",
-        titolo: [segnoDi.paziente, (segnoDi.pubblico || {}).titolo, (segnoDi.pubblico || {}).testo].filter(Boolean).join(" · ") } : null;
+      const altri = vivi.filter(altrove).sort((a, b) => grado(a) - grado(b) || (b.agg || 0) - (a.agg || 0));
+      const segnoDi = altri[0];
+      // (✓ solo per un ordine «Confermata», o per una stampa che non è un ordine
+      // — una ristampa, un consenso —: un carrello pronto, «solo carrello», non è fatto)
+      const tonoSegno = (x) => {
+        const p = x.pubblico || {};
+        if (p.tono === "err" || p.tono === "warn") return p.tono;
+        return (x.stampa && x.stampa.tag === "Stampa") || p.titolo === "Confermata" ? "ok" : "warn";
+      };
+      const segno = segnoDi ? { id: segnoDi.id, chi: nomeCorto(segnoDi.paziente || ""), tono: tonoSegno(segnoDi), n: altri.length,
+        titolo: [segnoDi.paziente, (segnoDi.pubblico || {}).titolo, (segnoDi.pubblico || {}).testo].filter(Boolean).join(" · ") + (altri.length > 1 ? ` (e altri ${altri.length - 1})` : "") } : null;
       this.segnaSegno(segno);
       const avviso = (x) => grado(x) <= 1 && !gira(x) && x.stato !== "stampa";
       if (this._mostraAvviso && !l.some((x) => x.id === this._mostraAvviso && avviso(x))) this._mostraAvviso = null;
-      const piegati = l.some(gira) ? l.filter((x) => avviso(x) && x.id !== this._mostraAvviso) : [];
-      const fuoco = [...l].filter((x) => !piegati.includes(x)).sort((a, b) => grado(a) - grado(b) || (b.agg || 0) - (a.agg || 0))[0];
+      // (il segno toccato è la striscia: mai piegato, mai coperto da un altro)
+      const aperto = this._segnoAperto ? l.find((x) => x.id === this._segnoAperto) : null;
+      const piegati = l.some(gira) ? l.filter((x) => avviso(x) && x.id !== this._mostraAvviso && x !== aperto) : [];
+      const fuoco = aperto || [...l].filter((x) => !piegati.includes(x)).sort((a, b) => grado(a) - grado(b) || (b.agg || 0) - (a.agg || 0))[0];
       clearTimeout(this._tOk);
       const scadono = [fuoco, segnoDi].filter((x) => x && grado(x) === 6).map((x) => OK_STRISCIA - (Date.now() - (x.agg || 0)) + 500);
       if (scadono.length) this._tOk = setTimeout(() => this.stripOrdine(), Math.min(...scadono));
