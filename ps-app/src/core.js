@@ -2589,6 +2589,10 @@
   const PATIENTS_MAX = 150;
   // l'ultima volta che l'hai visto: aperto, o nella lista della sua area
   const vistoTs = (p) => Math.max(p?.ts || 0, p?.lista || 0);
+  // aperto in questo turno (dodici ore): dal PC, o col tocco sul telefono. Solo
+  // di questi il PC rilegge la pagina da sé (il ⟳ del tabellone, gli esiti sul telefono)
+  const TURNO_MS = 12 * 3600e3;
+  const apertoNelTurno = (p, ora = Date.now()) => !!p?.ts && ora - p.ts < TURNO_MS;
 
   function tuttiPazienti() {
     const list = store.get("patients.v1", []);
@@ -3422,6 +3426,20 @@
     const r = await ask({ t: "smartSotto", url: u });
     if (!r || !r.ok) store.set(SMART_SYNC, { ...(store.get(SMART_SYNC, {}) || {}), fine: Date.now(), esito: (r && r.why) || "estensione" });
     return r || { ok: false };
+  }
+  // Il ⟳ del tabellone, oltre alla smart: chi il medico ha aperto in questo
+  // turno si rilegge dietro, un paziente alla volta, come aprendolo — la sua
+  // pagina (Lab · ECG · RX, il «nuovo»), i valori se il laboratorio è cambiato —
+  // dal suo indirizzo, quello che il gestionale ha dato. Lo fa il service worker
+  // (ponte-sw.js), mai mentre un motore manda esami. Chi non è stato aperto in
+  // questo turno resta com'è la lista: nessuna pagina aperta senza il medico.
+  function rileggiAperti(m) {
+    if (!hasExt() || TABELLONE) return 0;
+    const ora = Date.now();
+    const l = knownPatients().filter((p) => apertoNelTurno(p, ora) && !m.info.get(p.ep)?.prec && ponteUrlPaziente(p))
+      .sort((a, b) => (b.ts || 0) - (a.ts || 0)).slice(0, 40).map((p) => ({ ep: p.ep, url: ponteUrlPaziente(p) }));
+    if (l.length) ask({ t: "ponteTabellone", pazienti: l }).catch(() => {});
+    return l.length;
   }
 
   // la chiave della scheda clinica, annotata quando la conosciamo, così
@@ -10707,10 +10725,13 @@
         const b = e.currentTarget;
         b.classList.add("gira");
         const r = await smartSync(true);
-        if (r && r.ok) return;
+        const n = rileggiAperti(this.pazModello()) || Number(r?.dietro) || 0;   // (nel tabellone in una scheda sua lo fa la scheda del gestionale, e lo dice)
+        const dietro = n ? `rileggo dietro ${n === 1 ? "il paziente aperto" : `i ${n} pazienti aperti`} in questo turno, uno alla volta` : "";
+        if (r && r.ok) { if (dietro) { this.message = { ok: dietro[0].toUpperCase() + dietro.slice(1) }; this.render(); } return; }
         b.classList.remove("gira");
-        const perche = { "nessun link": "La lista smart non si è ancora vista: aprila una volta dalla lista dell'area", "in corso": "La lista smart si sta già rileggendo" }[r?.why];
-        this.message = perche || `Lista smart non riletta${r?.why ? `: ${r.why}` : ""}`;
+        const perche = { "nessun link": "La lista smart non si è ancora vista: aprila una volta dalla lista dell'area", "in corso": "La lista smart si sta già rileggendo",
+          "ordine in corso": "La lista smart dopo l'ordine: un ordine sta mandando esami", "carrello aperto": "La lista smart dopo: c'è un carrello aperto in una scheda del gestionale" }[r?.why];
+        this.message = [perche || `Lista smart non riletta${r?.why ? `: ${r.why}` : ""}`, dietro].filter(Boolean).join(" · ");
         this.render();
       });
       const box = $(".pzunita"), map = $(".stmap");
@@ -12142,6 +12163,10 @@
     chiavePaz() {
       const cf = this.cfEpisodio();
       if (cf) return "cf:" + cf;
+      // (i valori letti in un'altra scheda — una dietro: il telefono, il ⟳ — hanno già segnato la chiave
+      // dell'episodio col codice fiscale: questa scheda la usa, e non la riporta al nome)
+      const pk = String(tuttiPazienti().find((p) => p.ep === this.episodeId)?.pk || "");
+      if (this.episodeId && pk.startsWith("cf:")) return pk;
       const n = normNome(this.nomePaziente());
       return n ? "nome:" + n : "";
     }
@@ -12991,7 +13016,8 @@
     // minuti. Mai mentre un ordine si prepara, parte, si conferma o stampa (di
     // qualunque paziente): aspetta e riprende da sé. Si ferma se il medico
     // lascia il paziente.
-    async autoCarica({ esiti = false } = {}) {
+    // (`referti: false`: solo i valori — il ⟳ del tabellone, che rilegge dietro chi è stato aperto: lo stato e il laboratorio, niente PDF)
+    async autoCarica({ esiti = false, referti = true } = {}) {
       const ep = this.epDiQuesta();
       if (!hasExt() || !ep || this._auto || this._salva || this._refreshAll || this._sotto) return;
       if (this.ordineInCorso()) return this.autoDopoOrdine(esiti);
@@ -13007,7 +13033,7 @@
       const ricontrolla = esiti && aMeta && ora - (prima.parz || 0) >= PARZ_MS;
       // (quello che non è riuscito si riprova da solo solo più tardi: riprovaDaSolo)
       const leggiLab = (cambiato || ricontrolla) && riprovaDaSolo(ep, "lab", firma);
-      const daSalvare = this.refertiMostrati().filter((e) => !(this.refCache || {})[e.id] && riprovaDaSolo(ep, e.id));
+      const daSalvare = !referti ? [] : this.refertiMostrati().filter((e) => !(this.refCache || {})[e.id] && riprovaDaSolo(ep, e.id));
       if (!leggiLab && !daSalvare.length) return;
       for (const k of Object.keys(tutti)) if (ora - (tutti[k]?.ts || 0) > 24 * 3600e3) delete tutti[k];
       // la firma del laboratorio si scrive solo a lettura riuscita (qui sotto):
@@ -13039,7 +13065,7 @@
           }
         }
         au.labFatto = true;
-        if (!ferma()) await this.caricaReferti({ ferma, aspetta, auto: true });
+        if (!ferma() && referti) await this.caricaReferti({ ferma, aspetta, auto: true });
       } finally {
         window.removeEventListener("pagehide", via);
         if (this._auto === au) this._auto = null;
@@ -17145,6 +17171,12 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       ${ICO_TEL}<span>Aggiornato dal telefono</span><button type="button" id="ponterica">Ricarica</button></div>` : "");
 
   const pontePaziente = (ep) => tuttiPazienti().find((p) => p.ep === ep) || null;
+  // Chi il PC conosce solo dalla lista smart non ha ancora un indirizzo della sua pagina: lo dà la riga
+  // della lista della sua area (mai costruito), e l'area la cambia il medico, sul PC — mai da qui dietro.
+  const senzaPagina = (p) => {
+    const k = areeLeggi().membri[p?.ep]?.k;
+    return `Il PC conosce ${p?.name || "questo paziente"} solo dalla lista smart: apri una volta la lista ${k ? `«${titoloArea(k, areeLeggi().viste[k]?.label)}»` : "della sua area"} nel gestionale`;
+  };
   // l'indirizzo della sua pagina, come il gestionale l'ha dato: solo da leggere, e di quell'episodio
   const ponteUrlPaziente = (p) => (p && leggibilePagina(p.url) && param(p.url, "EPISODIO_ID") === p.ep
     && /\/menuPsoEpisodio\.do$/i.test(new URL(p.url).pathname) ? p.url : "");
@@ -17324,15 +17356,18 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
   // col testo di quelli già letti.
   async function ponteEsiti(p) {
     const url = ponteUrlPaziente(p);
-    let referti = [], nota = "";
+    let referti = [], nota = "", pagina = null;
     const chi = { cf: "", nascita: "" };   // dal riquadro della sua pagina: di chi è un referto
     if (url) {
       try {
         const { doc, url: fin } = await fetchDoc(url, {});
         if (classify(doc) === "login") return { ok: false, errore: "Gestionale da riaprire: sul PC la sessione è scaduta", sessione: true };
         if (findEpisodeId(doc, fin) !== p.ep) return { ok: false, errore: "La pagina del paziente sul PC è di un altro episodio: non mostro niente" };
-        referti = esitiModel(doc, fin).filter((e) => e.kind === "referto");
+        const es = esitiModel(doc, fin);
+        referti = es.filter((e) => e.kind === "referto");
         Object.assign(chi, { cf: cfInRiquadro(doc), nascita: nascitaInPagina(doc) });
+        // il laboratorio della pagina, come lo guarda l'apertura sul PC (autoCarica): c'è, e la sua firma
+        pagina = { lab: es.some((e) => !e.storico && (e.kind === "valori" || refertoTipo(e) === "lab")), aMeta: es.some((e) => e.kind === "valori" && !e.storico), firma: firmaLab(doc, fin) };
       } catch (e) { nota = `Referti non letti: ${e?.head || e?.message || e}`; }
     }
     let st = null;
@@ -17398,13 +17433,32 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       const sta = !!t && t.length <= resta;
       if (sta) resta -= t.length;
       return { id: e.id, quando: e.when, sistema: e.sistema, titolo: shortLabel(e.label), tipo: refertoTipo(e), testo: sta ? t : "", lungo: !!t && !sta,
-        ...(visti.has(e.id) ? {} : { nuovo: true }), ...(salvati[e.id] && !diAltro(e) ? { pdf: true } : {}) };
+        ...(visti.has(e.id) ? {} : { nuovo: true }), ...(salvati[e.id] && !diAltro(e) ? { pdf: true } : {}),
+        ...(refertoTipo(e) !== "lab" && !testoAuto(e) ? { soloPdf: true } : {}) };   // (TC, ecografie, visite: il testo non si legge, c'è il PDF)
     });
+    // Che cosa il PC legge da sé, adesso che il medico l'ha aperto sul telefono (il suo tocco è il gesto):
+    // «apri» — in questo turno il PC non l'ha ancora aperto: la sua pagina dietro, come un clic sulla lista
+    // (chi è, le allergie, la cartella, i valori, i referti); «nuovi» — come aprendo gli Esiti sul PC
+    // (autoCarica): la firma del laboratorio della pagina non è quella già letta (mai letto, o cambiata),
+    // o un laboratorio a metà non si ricontrolla da 10 minuti; o un referto non è ancora salvato. Lo chiede
+    // il telefono, con «aggiornaValori»; quello che da solo non è riuscito si riprova più tardi (riprovaDaSolo).
+    // (un episodio precedente si guarda e basta: niente si legge da sé)
+    const riga = pontePazienti().find((x) => x.ep === p.ep) || null;   // (le allergie, lo stato: dopo una lettura sono nuovi)
+    let leggi = "";
+    if (pagina && !riga?.prec) {
+      const prima = (store.get(AUTO_CARICA, {}) || {})[p.ep] || {};
+      const lab = pagina.lab && (pagina.firma !== prima.lab || (pagina.aMeta && Date.now() - (prima.parz || 0) >= PARZ_MS)) && riprovaDaSolo(p.ep, "lab", pagina.firma);
+      const ref = referti.some((e) => refertoTipo(e) !== "lab" && !salvati[e.id] && riprovaDaSolo(p.ep, e.id));
+      leggi = !apertoNelTurno(p) ? "apri" : lab || ref ? "nuovi" : "";
+    }
     // quando il PC li ha letti: sul telefono si vede quanto sono vecchi
-    // (`mai`: il PC non ha mai aperto la sua pagina — niente di salvato, e niente da rileggere)
-    // (come sul PC: i valori nuovi dall'ultima volta che il medico li ha guardati, e i referti non ancora aperti)
+    // (`mai`: il PC non ha la sua pagina — lo conosce solo dalla lista smart: niente di salvato, niente da leggere)
+    // (come sul PC: i valori nuovi dall'ultima volta che il medico li ha guardati, e i referti non ancora aperti;
+    // `nuovo`: il pallino del tabellone — qualcosa è tornato da quando qualcuno ha guardato i suoi Esiti)
     const nuoviVal = tabella ? Number(statoDi(p.ep)?.valori?.nuovi) || 0 : 0;
-    return { ok: true, dati: { ep: p.ep, paziente: p.name, tabella, letto: tabella ? Number(st.letto) || 0 : 0, referti: lista, nota, ...(nuoviVal ? { valoriNuovi: nuoviVal } : {}), ...(url ? {} : { mai: true }) }, registro: `esiti di ${p.name}` };
+    return { ok: true, dati: { ep: p.ep, paziente: p.name, tabella, letto: tabella ? Number(st.letto) || 0 : 0, referti: lista, nota, ...(nuoviVal ? { valoriNuovi: nuoviVal } : {}),
+      ...(url ? {} : { mai: true }), ...(pagina ? { lab: pagina.lab } : {}), ...(leggi ? { leggi } : {}), ...(leggi && motoreOvunque() ? { dopoOrdine: true } : {}),
+      ...(statoEsami(statoDi(p.ep))?.nuovo ? { nuovo: true } : {}), ...(riga ? { riga } : {}) }, registro: `esiti di ${p.name}` };
   }
   // L'ordine: lo stesso giro di «Conferma e stampa», dato alla scheda di
   // sottofondo dalla pagina del paziente — tutti i controlli di sempre. Il
@@ -17562,7 +17616,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     if (cmd === "esiti") return fatto(await ponteEsiti(p));
     if (cmd === "aggiornaValori") {
       const url = ponteUrlPaziente(p);
-      if (!url) return { ok: false, errore: `Apri una volta ${p.name || "il paziente"} sul PC: serve la sua pagina` };
+      if (!url) return { ok: false, errore: senzaPagina(p) };
       return fatto({ ok: true, dati: { url, paziente: p.name }, registro: `aggiorna i valori di ${p.name}` });
     }
     // La nota del telefono è la prima voce aperta senza ora di «Da fare»:
@@ -17658,12 +17712,21 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       setInterval(() => { if (PONTE_STATO && PONTE_STATO.accoppiato) ask({ t: "ponteSveglia" }); }, 30e3);
     } catch { /* niente estensione */ }
   }
-  // La scheda aperta dal ponte per «Aggiorna i valori»: il «⭳ Carica i valori»
-  // di sempre, e poi lo dice al service worker (che la chiude).
+  // La scheda aperta dietro sulla pagina di un paziente (ponteValoriSotto, in
+  // ponte-sw.js): legge, poi lo dice al service worker (che la chiude). `modo`:
+  //   ""           «↻ Rileggi» sul telefono: il «⭳ Carica i valori» di sempre, poi i referti non ancora salvati;
+  //   "auto"       lo stesso, partito da sé (gli esiti sul telefono: il laboratorio della pagina è cambiato,
+  //                o un referto non è salvato) — quello che non riesce si riprova solo più tardi (riprovaDaSolo);
+  //   "apri"       il tocco sul telefono su chi il PC non ha ancora aperto in questo turno: prima quello che
+  //                fa un clic sulla lista (chi è, l'età, la cartella), poi come «auto»;
+  //   "tabellone"  il ⟳ del tabellone: lo stato della pagina, e i valori se il laboratorio è cambiato
+  //                (autoCarica, senza i PDF dei referti: quelli li prende chi apre il paziente).
+  // Lo stato della pagina (Lab · ECG · RX, le allergie, i parametri) l'ha già letto la partenza della
+  // scheda. Solo «apri» conta come «visto adesso»: è il medico che l'ha aperto, dal telefono.
   async function ponteValoriQui(panel) {
-    const v = PONTE_VALORI;
+    const v = PONTE_VALORI, modo = v.modo || "", daSe = modo === "auto" || modo === "apri";
     let esito;
-    if (!panel || panel.pageType !== "patient" || panel.episodeId !== v.ep || !panel.nomePaziente()) {
+    if (!panel || panel.pageType !== "patient" || panel.episodeId !== v.ep || !panel.nomePaziente() || eListaArea(document, location.href)) {
       // Non è (ancora) la pagina del paziente: il gestionale a volte passa da
       // un'altra pagina prima (la lista, un passaggio). Lo si dice al service
       // worker, che aspetta la pagina dopo, o riapre l'indirizzo una volta.
@@ -17676,15 +17739,36 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       return;
     } else {
       try {
-        panel.log(`${now()}  ── iPhone: «Aggiorna i valori» per ${panel.nomePaziente()} ──`);
-        await panel.caricaValori();
-        // i valori ci sono (lo si dice: allo scadere, il telefono ha almeno
-        // quelli); poi i referti (RX, ECG, TC…) non ancora salvati, uno alla
-        // volta finché c'è tempo — e il telefono ha tutto con una risposta sola
-        ask({ t: "ponteValoriLetti", ok: true, testo: "letti" }).catch(() => {});
-        const fine = Date.now() + 90e3;
-        await panel.caricaReferti({ ferma: () => Date.now() > fine }).catch(() => {});
-        esito = { ok: true, testo: "letti" };
+        const ep = v.ep, nome = panel.nomePaziente();
+        if (modo === "apri") {
+          const an = anagraficaPagina(document);
+          rememberPatient(ep, nomeInPagina(), location.href, triageDi(document), an.eta, an.sesso, improntaNascita(nascitaInPagina(document)));
+          cartellaLettaQui(ep);
+        }
+        if (modo === "tabellone") {
+          panel.log(`${now()}  ── ⟳ del tabellone: ${nome}, riletto dietro ──`);
+          await panel.autoCarica({ referti: false }).catch(() => null);
+          esito = { ok: true, testo: "riletto" };
+        } else {
+          panel.log(`${now()}  ── iPhone: ${modo === "apri" ? "aperto dal telefono" : modo === "auto" ? "i valori nuovi, da soli" : "«Aggiorna i valori»"} per ${nome} ──`);
+          const firma = firmaLab(document, location.href);
+          const lab = panel.esiti.some((e) => !e.storico && (e.kind === "valori" || refertoTipo(e) === "lab"));
+          const letto = await panel.caricaValori();
+          // come all'apertura sul PC: la firma del laboratorio letto, così nessuno lo rilegge da solo
+          if (letto) {
+            const t = store.get(AUTO_CARICA, {}) || {};
+            t[ep] = { ...(t[ep] || {}), ts: Date.now(), lab: firma, parz: Date.now() };
+            store.set(AUTO_CARICA, t);
+            togliFallito(ep, "lab");
+          } else if (daSe && lab) segnaFallito(ep, "lab", { firma });
+          // i valori ci sono (lo si dice: allo scadere, il telefono ha almeno
+          // quelli); poi i referti (RX, ECG, TC…) non ancora salvati, uno alla
+          // volta finché c'è tempo — e il telefono ha tutto con una risposta sola
+          ask({ t: "ponteValoriLetti", ok: true, testo: "letti" }).catch(() => {});
+          const fine = Date.now() + 90e3;
+          await panel.caricaReferti({ ferma: () => Date.now() > fine, ...(daSe ? { auto: true } : {}) }).catch(() => {});
+          esito = { ok: true, testo: "letti" };
+        }
       } catch (e) { esito = { ok: false, testo: `non letti: ${e?.head || e?.message || e}` }; }
     }
     ask({ t: "ponteValoriFatto", ...esito });
@@ -18113,7 +18197,10 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       panel.aggiornaDaFuori();
       return { ok: true };
     }
-    if (m.cosa === "sync") return smartSync(true);
+    if (m.cosa === "sync") {
+      const r = await smartSync(true);
+      return { ...(r || { ok: false }), dietro: rileggiAperti(panel.pazModello()) };   // (il ⟳ del tabellone: anche chi è stato aperto in questo turno)
+    }
     if (m.cosa !== "apri" && m.cosa !== "area") return { ok: false, why: "domanda sconosciuta" };
     // aprire un paziente cambia pagina: mai sotto un ordine che parte, mai sotto le dita di chi scrive
     if (panel.giroQui()) return { ok: false, why: "in quella scheda del gestionale sta partendo un ordine: aspetta che finisca" };
@@ -18438,7 +18525,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     // (la smart non si rilegge a tempo: appena aperto il gestionale, aprendo l'app sull'iPhone, e col ⟳)
     window.addEventListener("storage", (ev) => {
       if (ev.key === NS + PROM || ev.key === NS + DF_GEN) return panel.promTick();   // un «Da fare» scritto in un'altra scheda: rifatto sul posto
-      if (![NS + "patients.v1", NS + AREE, NS + SMART_SYNC, NS + DIMESSI].includes(ev.key)) return;
+      if (![NS + "patients.v1", NS + AREE, NS + SMART_SYNC, NS + DIMESSI, NS + STATO].includes(ev.key)) return;   // (STATO: una scheda dietro ha riletto un paziente)
       if (ev.key === NS + DIMESSI) panel.mostraDimessi();
       panel.aggiornaDaFuori();
     });
@@ -18673,7 +18760,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     });
     window.addEventListener("storage", (ev) => {
       if (ev.key === NS + PROM || ev.key === NS + DF_GEN) return panel.promTick();   // un «Da fare» scritto in un'altra scheda: rifatto sul posto
-      if (![NS + "patients.v1", NS + AREE, NS + SMART_SYNC, NS + DIMESSI].includes(ev.key)) return;
+      if (![NS + "patients.v1", NS + AREE, NS + SMART_SYNC, NS + DIMESSI, NS + STATO].includes(ev.key)) return;   // (STATO: una scheda dietro ha riletto un paziente)
       if (ev.key === NS + DIMESSI) panel.mostraDimessi();
       panel.aggiornaDaFuori();
     });

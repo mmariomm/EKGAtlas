@@ -52,7 +52,9 @@ const PONTE_QR_MAX = 2 * 60e3;              // il QR si rivede solo per poco
 const PONTE_QR_PRIMO = 5 * 60e3;            // e il suo link vale per il primo scambio solo per poco (e una volta sola)
 const PONTE_SALUTO_MAX = 2 * 60e3;          // un saluto senza seguito si dimentica
 const PONTE_VALORI_MAX = 150e3;             // «Aggiorna i valori» non aspetta di più
+const PONTE_TABELLONE_MAX = 60e3;           // …e una pagina riletta col ⟳ del tabellone (dietro, il telefono può aspettare)
 const PONTE_ALTROVE_MS = 5e3;               // finita su un'altra pagina: tanto si aspetta quella dopo
+const PONTE_PERSA_MS = 6e3;                 // una scheda dei valori ancora vuota, mai arrivata sul gestionale: la navigazione è persa (come AVVIO_VUOTA del motore)
 const PONTE_PAGINE = { PsoPazienti: "la lista dei pazienti", PsoPazientiAmbulatorio: "la lista dei pazienti", PsoPazientiTriage: "la lista del triage",
   PsoEpisodioClinicoTriage: "la pagina del triage", PsoPsoImposta: "la scelta dell'area", PsoPazientiSmart: "la lista dell'ospedale" };
 const PONTE_CARTELLA_MAX = 60e3;            // salvare la cartella: aprire, controllare, «Conferma», rileggere
@@ -416,6 +418,8 @@ function ponteArgomenti(d) {
   if (d.quali === "etichette" || d.quali === "foglio" || d.quali === "tutto") a.quali = d.quali;
   if ("si" in d) a.si = !!d.si;
   if (typeof d.dove === "string" && /^(tray|(letto|area):[\w.-]{1,40})(@\w{1,8})?$/.test(d.dove)) a.dove = d.dove;
+  // (i valori letti da sé: «auto», o «apri» — un paziente che il PC non ha ancora aperto in questo turno)
+  if (d.modo === "auto" || d.modo === "apri") a.modo = d.modo;
   return a;
 }
 // quelli che l'app manda da sé: non sono il medico, non tengono aperta la sessione
@@ -813,11 +817,14 @@ async function ponteSuScheda(cmd, args) {
 // che il gestionale stesso ha dato —, che si chiude da sola. Poi gli esiti
 // rifatti da capo. La scheda è annotata in storage.session: anche se il
 // service worker si ferma a metà, la si riconosce, scade e si chiude.
+// `modo` (dal telefono): «auto» — partito da sé, perché gli esiti dicevano che
+// il PC ha qualcosa di nuovo da leggere; «apri» — il tocco su un paziente che il
+// PC non ha ancora aperto in questo turno: la sua pagina dietro, come un clic.
 async function ponteAggiornaValori(a) {
   const r = await ponteSuScheda("aggiornaValori", a);
   if (!r.ok) return r;
   if (r.registro) ponteNota(r.registro);
-  const fatto = await ponteValoriSotto(r.dati.url, a.ep);
+  const fatto = await ponteValoriSotto(r.dati.url, a.ep, a.modo || "");
   ponteNota(`Valori di ${corto(r.dati.paziente, 40) || "un paziente"}: ${fatto.testo}`);
   await ponteScriviStato();
   if (!fatto.ok) return { ok: false, errore: `Valori non aggiornati: ${fatto.testo}` };
@@ -834,13 +841,35 @@ const ponteValoriCambia = (fn) => (ponteFilaValori = ponteFilaValori.then(async 
   await chrome.storage.session.set({ [PONTE_VALORI]: v });
   return r;
 }).catch(() => null));
-async function ponteValoriSotto(url, ep) {
+// La pagina di un paziente in una scheda dietro, che legge e si chiude
+// (ponteValoriQui in content.js). `modo`: "" (↻ Rileggi), "auto", "apri" (dal
+// telefono), "tabellone" (il ⟳). UNA scheda alla volta, per tutto il browser:
+// la prossima nasce quando quella di prima ha finito; lo stesso paziente
+// chiesto due volte è una lettura sola (in fila, un modo del telefono prende il
+// posto di quello del tabellone: è il medico che aspetta).
+let ponteFilaSotto = Promise.resolve();
+const ponteValoriLetture = new Map();   // ep → { modo, partita, promessa }: in fila, o in lettura
+const PONTE_MODO_FORZA = { tabellone: 0, auto: 1, "": 2, apri: 3 };
+function ponteValoriSotto(url, ep, modo = "") {
   let u;
-  try { u = new URL(url); } catch { return { ok: false, testo: "indirizzo del paziente non valido" }; }
+  try { u = new URL(url); } catch { return Promise.resolve({ ok: false, testo: "indirizzo del paziente non valido" }); }
   if (!leggibileOrd(url) || u.searchParams.get("EPISODIO_ID") !== ep) {
-    return { ok: false, testo: "indirizzo del paziente inatteso" };
+    return Promise.resolve({ ok: false, testo: "indirizzo del paziente inatteso" });
   }
-  for (const v of pt.valori.values()) if (v.ep === ep) return v.promessa;   // già in lettura
+  const gia = ponteValoriLetture.get(ep);
+  if (gia) {
+    if (!gia.partita && (PONTE_MODO_FORZA[modo] ?? 2) > (PONTE_MODO_FORZA[gia.modo] ?? 2)) gia.modo = modo;
+    return gia.promessa;
+  }
+  const job = { modo, partita: false };
+  const parti = () => { job.partita = true; return ponteValoriApri(u, ep, job.modo); };
+  job.promessa = (ponteFilaSotto = ponteFilaSotto.then(parti, parti))
+    .catch((e) => ({ ok: false, testo: `la scheda dei valori non si apre (${corto(e && e.message || e, 60)})` }))
+    .finally(() => { if (ponteValoriLetture.get(ep) === job) ponteValoriLetture.delete(ep); });
+  ponteValoriLetture.set(ep, job);
+  return job.promessa;
+}
+async function ponteValoriApri(u, ep, modo) {
   // (mai una pagina del gestionale mentre un motore inserisce esami: bg.js)
   if (typeof dopoIlMotore === "function") await dopoIlMotore();
   const davanti = (await ponteSchede())[0];
@@ -851,14 +880,26 @@ async function ponteValoriSotto(url, ep) {
   const promessa = new Promise((r) => { risolvi = r; });
   pt.valori.set(t.id, { ep, risolvi, promessa, url: u.href, giri: 0 });
   // annotata PRIMA di andare sulla pagina: così la risposta a «chi sono?» c'è già
-  await ponteValoriCambia((v) => { v[t.id] = { ep, ts: ponteOra() }; });
-  // (allo scadere coi valori già letti e i referti ancora a metà: i valori, e la scheda si chiude)
-  const tempo = setTimeout(() => ponteValoriFine(t.id, pt.valori.get(t.id)?.letti || { ok: false, testo: "i valori non sono arrivati in tempo" }), PONTE_VALORI_MAX);
+  await ponteValoriCambia((v) => { v[t.id] = { ep, ts: ponteOra(), ...(modo ? { modo } : {}) }; });
+  // (allo scadere coi valori già letti e i referti ancora a metà: i valori, e la scheda si chiude;
+  // una del ⟳ ha meno tempo — dietro di lei può aspettare il telefono)
+  const tempo = setTimeout(() => ponteValoriFine(t.id, pt.valori.get(t.id)?.letti || { ok: false, testo: "i valori non sono arrivati in tempo" }),
+    modo === "tabellone" ? PONTE_TABELLONE_MAX : PONTE_VALORI_MAX);
   try {
     await chrome.tabs.update(t.id, { url: u.href, autoDiscardable: false });
   } catch {
     ponteValoriFine(t.id, { ok: false, testo: "la scheda dei valori non si apre" });
   }
+  // La navigazione persa per strada: dopo qualche secondo la scheda è ancora vuota — né arrivata né in
+  // arrivo sul gestionale (come la scheda vuota di un ordine, in bg.js), e nessuna pagina ha chiesto
+  // «chi sono?». Si rifà una volta (lo stesso gesto: la pagina non è mai arrivata), poi si aspetta come
+  // prima. Una pagina lenta è già in arrivo sul gestionale: quella si aspetta.
+  const w = pt.valori.get(t.id);
+  if (w) w.persa = setTimeout(async () => {
+    const x = await chrome.tabs.get(t.id).catch(() => null);
+    if (pt.valori.get(t.id) !== w || w.chiesto || !x || sulGestionale(x.url) || sulGestionale(x.pendingUrl)) return;
+    chrome.tabs.update(t.id, { url: u.href }).catch(() => {});
+  }, PONTE_PERSA_MS);
   const esito = await promessa;
   clearTimeout(tempo);   // (finita: col «fatto», chiusa, altrove — o è stato lui)
   return esito;
@@ -867,7 +908,7 @@ async function ponteValoriSotto(url, ep) {
 // medico non la sta guardando), e la risposta a chi aspetta
 async function ponteValoriFine(id, esito) {
   const w = pt.valori.get(id);
-  if (w) clearTimeout(w.attesa);
+  if (w) { clearTimeout(w.attesa); clearTimeout(w.persa); }
   pt.valori.delete(id);
   const c = await ponteValoriCambia((v) => { const c = v[id]; delete v[id]; return c; });
   if (!c && !w) return false;
@@ -876,10 +917,29 @@ async function ponteValoriFine(id, esito) {
   if (w) w.risolvi(esito);
   return true;
 }
+// Il giro del ⟳ del tabellone: un paziente alla volta, come aprendolo (la scheda
+// dietro, modo «tabellone»). Prima di ognuno si aspetta il motore, e la lista
+// smart che lo stesso ⟳ sta leggendo (una scheda dietro alla volta); se un ordine
+// è ancora al lavoro dopo l'attesa, il giro si ferma lì — un altro ⟳ lo rifà.
+let ponteGiroTabellone = null;
+const PONTE_SMART_ATTESA = 45e3;
+async function ponteTabelloneGiro(l) {
+  for (const x of l) {
+    for (const fine = ponteOra() + PONTE_SMART_ATTESA; ponteOra() < fine && typeof sottoVive === "function"
+      && (await sottoVive().catch(() => [])).some(([, s]) => s.cosa === "smart");) await attendi(500);
+    if (typeof dopoIlMotore === "function") await dopoIlMotore();
+    if (typeof motoreAlLavoro === "function" && motoreAlLavoro(await ordLeggi().catch(() => []))) return;
+    await ponteValoriSotto(x.url, x.ep, "tabellone");
+  }
+}
 // bg.js lo chiede quando una scheda domanda «chi sono?»
 async function ponteLavoroDi(tabId) {
   const v = (await ponteValoriTutti())[tabId];
-  if (v) return { ponteValori: { ep: v.ep } };
+  if (v) {
+    const w = pt.valori.get(tabId);
+    if (w) w.chiesto = true;   // (la pagina è arrivata: non è una navigazione persa)
+    return { ponteValori: { ep: v.ep, ...(v.modo ? { modo: v.modo } : {}) } };
+  }
   // la scheda della cartella: che cosa salvare (o, se il service worker ha perso il lavoro, niente)
   const c = pt.cartelle.get(tabId);
   if (c) return { ponteCartella: { ep: c.ep, fase: c.fase, campi: c.campi } };
@@ -1620,6 +1680,19 @@ function ponteDaPagina(msg, sender, reply) {
   }
   if (msg.t === "ponteValoriFatto" && gestionale) {
     return fai(async () => ({ ok: await ponteValoriFine(sender.tab.id, { ok: !!msg.ok, testo: corto(msg.testo, 120) || (msg.ok ? "letti" : "non letti") }) }));
+  }
+  // Il ⟳ del tabellone: chi il medico ha aperto in questo turno (l'elenco lo fa la sua scheda, con gli
+  // indirizzi che il gestionale ha dato) si rilegge dietro, uno alla volta. Un giro solo per volta.
+  if (msg.t === "ponteTabellone" && gestionale) {
+    return fai(async () => {
+      if (ponteGiroTabellone) return { ok: false, why: "già in corso" };
+      const buono = (x) => { try { return new URL(x.url).searchParams.get("EPISODIO_ID") === x.ep; } catch { return false; } };
+      const l = (Array.isArray(msg.pazienti) ? msg.pazienti : []).filter((x) => x && typeof x.ep === "string" && /^[\w.-]{1,40}$/.test(x.ep)
+        && typeof x.url === "string" && leggibileOrd(x.url) && buono(x)).slice(0, 40);
+      if (!l.length) return { ok: true, n: 0 };
+      ponteGiroTabellone = ponteTabelloneGiro(l).catch(() => {}).finally(() => { ponteGiroTabellone = null; });
+      return { ok: true, n: l.length };
+    });
   }
   // da qui, solo le pagine dell'estensione: la chiave (nel QR) non va mai a una pagina web
   if (!estensione) return reply({ ok: false, why: "non da qui" }), undefined;

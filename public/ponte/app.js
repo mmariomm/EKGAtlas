@@ -31,7 +31,7 @@
   const RIPROVA_MAX = 15e3;          // fra un tentativo di presa e l'altro, al massimo
   const APRI_MAX = 12e3;             // una presa che non si apre in 12 secondi si rifà
   const TARDI_MAX = 10 * 60e3;       // una scrittura di cui non si sa: la si rimanda a ogni ritorno della rete, per 10 minuti
-  const ATTESA_VALORI = 200e3;       // «Aggiorna i valori»: il PC, al peggio, ci mette 10 + 150 + 30 secondi
+  const ATTESA_VALORI = 260e3;       // «Aggiorna i valori»: il PC, al peggio, ci mette 10 + 150 + 30 secondi (e 60 se aspetta una pagina del ⟳ del tabellone)
   const ATTESA_CARTELLA = 110e3;     // salvare la cartella: il PC, al peggio, 10 + 3 + 60 secondi (e la rete)
   const ATTESA_TERAPIE = 110e3;      // leggere la Terapia, o cercare nella sua tendina: una scheda del PC, al peggio 10 + 90 secondi
   const ATTESA_TERAPIA = 130e3;      // aggiungere un farmaco: 10 + 3 + 90 secondi (e la rete); oltre, «incerto» finché il PC non risponde
@@ -80,6 +80,9 @@
     coda: new Map(),     // oid → un ordine toccato senza collegamento: { ep, oid, quando, paziente, n, sel, stato: "coda" | "scaduta" }
     fase: "avvio", perche: "", testoFine: "", scaduta: 0,
     pazienti: null, triage: null, aggiornato: 0, erroreLista: "", rinfresca: false, catalogo: null, esiti: new Map(), ristampe: new Map(), ristApri: null, ordini: new Map(), nascosti: new Set(),
+    legge: new Map(),    // ep → { modo, dal }: una lettura dei valori sul PC che sta andando («↻ Rileggi», o da sé)
+    nonLetti: new Map(), // ep → perché la lettura partita da sé non è riuscita (una riga piccola)
+    daSolo: new Map(),   // ep → quando è partita da sé l'ultima volta (al più ogni 10 minuti)
     vista: { nome: "lista", ep: "" }, scheda: "esiti", dfFoglio: false, precAperti: false,
     sel: new Map(), bloccati: new Map(), aperti: new Set(),
     riprendi: null,      // dopo i 3 minuti: { ep, scheda } dell'ultimo paziente — solo in memoria, mai su disco, e solo finché il PC non risponde
@@ -113,6 +116,7 @@
   try { const m = localStorage.getItem(MODO); if (m === "mappa" || m === "dafare") S.modo = m; } catch { /* solo in memoria */ }
   function svuota() {
     S.pazienti = null; S.triage = null; S.mappa = null; S.mappaSel = ""; S.zoom = 1; S.eo = null; S.eoVecchio = false; S.eoSheet = false; S.eoQ = ""; if (S.eoAnnulla) clearTimeout(S.eoAnnulla.t); S.eoAnnulla = null; S.aggiornato = 0; S.erroreLista = ""; S.catalogo = null; S.esiti.clear(); S.ristampe.clear(); S.ordini.clear(); S.nascosti.clear();
+    S.legge.clear(); S.nonLetti.clear(); S.daSolo.clear();
     S.sel.clear(); S.bloccati.clear(); S.aperti.clear(); S.occupato.clear(); S.inviati.clear(); S.promTesto = ""; S.arma = null;
     S.dfFoglio = false; S.precAperti = false; S.riprendi = null;
     S.stampa = null; S.cartelle.clear(); S.cbozze.clear(); S.cstato.clear(); S.coda.clear();
@@ -787,8 +791,29 @@
   async function caricaEsiti(ep, auto = false) {
     if (S.occupato.has("esiti" + ep)) return;
     S.occupato.add("esiti" + ep); render();
-    try { S.esiti.set(ep, await chiedi("esiti", { ep }, 40e3, auto)); } catch (e) { if (!auto) errore(e); }
+    try { esitiArrivati(ep, await chiedi("esiti", { ep }, 40e3, auto)); } catch (e) { if (!auto) errore(e); }
     S.occupato.delete("esiti" + ep); render();
+    leggiDaSolo(ep, auto);
+  }
+  // Gli esiti arrivati dal PC: con la riga del paziente (le allergie e lo stato, dopo una lettura sono nuovi)
+  function esitiArrivati(ep, e) {
+    S.esiti.set(ep, e);
+    if (e && e.riga) aggiornaRiga(e.riga);
+  }
+  // Quello che il PC legge da sé, perché il medico ha aperto il paziente qui (il suo tocco è il gesto):
+  // gli esiti dicono `leggi` — «apri»: in questo turno il PC non l'ha ancora aperto, e apre la sua
+  // pagina dietro, come un clic sulla lista; «nuovi»: il laboratorio della pagina è cambiato, o un
+  // referto non è ancora salvato. È il «↻ Rileggi» senza il tocco: al più una volta ogni 10 minuti per
+  // paziente (il PC, da parte sua, riprova più tardi quello che non è riuscito). ↻ lo rifà quando vuoi.
+  // «apri» solo dopo un tocco: gli esiti richiesti da sé (tornando sull'app) non aprono una pagina nuova.
+  // «nuovi» solo con gli Esiti davanti: per ordinare, o per la cartella, la sua pagina non si riapre.
+  const DA_SOLO_OGNI = 10 * 60e3;
+  function leggiDaSolo(ep, daSe = false) {
+    const e = S.esiti.get(ep);
+    if (!e || !e.leggi || (daSe && e.leggi === "apri") || S.occupato.has("valori" + ep) || Date.now() - (S.daSolo.get(ep) || 0) < DA_SOLO_OGNI) return;
+    if (e.leggi !== "apri" && (S.scheda !== "esiti" || S.vista.nome !== "paziente" || S.vista.ep !== ep)) return;
+    S.daSolo.set(ep, Date.now());
+    aggiornaValori(ep, e.leggi === "apri" ? "apri" : "auto");
   }
   // «Richieste fatte»: quelle che la pagina del paziente sul PC sa stampare (anche
   // non fatte dall'estensione), ognuna con «Ristampa». Un PC più vecchio non
@@ -849,12 +874,15 @@
     if (S.vista.nome === "paziente" && S.scheda === "terapia" && !S.tf) caricaTerapie(S.vista.ep, true);
     if (S.vista.nome === "registrazioni") caricaZip(true);
   }
-  async function aggiornaValori(ep) {
-    S.occupato.add("valori" + ep); render();
+  // «↻ Rileggi» (modo ""), o la lettura partita da sé (leggiDaSolo: «auto», «apri»). Quella da sé non
+  // tiene aperta la sessione e non grida: se non riesce, una riga piccola lo dice e ↻ resta lì.
+  async function aggiornaValori(ep, modo = "") {
+    if (S.occupato.has("valori" + ep)) return;
+    S.occupato.add("valori" + ep); S.legge.set(ep, { modo, dal: Date.now() }); S.nonLetti.delete(ep); render();
     try {
-      S.esiti.set(ep, await chiedi("aggiornaValori", { ep }, ATTESA_VALORI));
-    } catch (e) { errore(e); }
-    S.occupato.delete("valori" + ep); render();
+      esitiArrivati(ep, await chiedi("aggiornaValori", modo ? { ep, modo } : { ep }, ATTESA_VALORI, !!modo));
+    } catch (e) { if (!modo) errore(e); else if (!e.offline) S.nonLetti.set(ep, e.message); }
+    S.occupato.delete("valori" + ep); S.legge.delete(ep); render();
   }
   // Un referto PDF salvato sul PC: arriva a pezzi dalla stessa sessione
   // cifrata, si ricompone e si controlla; poi il visore del telefono lo apre
@@ -1767,26 +1795,35 @@
         : `<td class="${v[1] ? "fuori" : ""}${v[2] ? " parz" : ""}">${esc(v[0])}${v[1] ? (v[1] < 0 ? "↓" : "↑") : ""}${v[3] ? `<span class="pct"> (${esc(v[3])}%)</span>` : ""}</td>`)).join("")}</tr>`).join("")}`).join("");
     return `<div class="tabw"><table class="val"><thead>${testa}</thead><tbody>${corpo}</tbody></table></div>`;
   }
+  // Il PC conosce il paziente solo dalla lista smart: della sua pagina non ha ancora l'indirizzo (lo dà la
+  // riga della lista della sua area, mai costruito; e l'area la cambia il medico, sul PC). Una riga: cosa fare.
+  const soloSmart = (p, per = "") => `Il PC lo conosce solo dalla lista smart: ${per}apri una volta la lista ${p.area ? `«${p.area}»` : "della sua area"} nel gestionale.`;
   function vistaEsiti(p) {
     const e = S.esiti.get(p.ep);
-    const carica = S.occupato.has("esiti" + p.ep), legge = S.occupato.has("valori" + p.ep);
+    const carica = S.occupato.has("esiti" + p.ep), legge = S.occupato.has("valori" + p.ep), lg = S.legge.get(p.ep);
     if (!e) return carica ? `<div class="carica"><div class="giro"></div></div>` : `<div class="vuoto">Esiti non caricati.</div>`;
-    // mai aperto sul PC: niente di salvato, e niente da rileggere (serve la sua pagina) — una riga
-    if (e.mai && !e.tabella) return `<div class="vuoto stretto">Mai aperto sul PC: niente di salvato.</div>`;
+    // senza la sua pagina sul PC: niente di salvato, e niente da leggere — una riga, che dice cosa fare
+    if (e.mai && !e.tabella) return `<div class="vuoto stretto">${esc(soloSmart(p))}</div>`;
     // quando li ha letti il PC: dopo un'ora, in ambra
     const letti = e.tabella && e.letto ? `<small class="letti${Date.now() - e.letto > 60 * 60e3 ? " amb" : ""}">Letti sul PC ${alle(e.letto)}</small>` : "";
     // (come sul PC: quanti valori sono nuovi dall'ultima volta che il medico li ha guardati)
     const nuovi = e.tabella && Number(e.valoriNuovi) > 0 ? `<small class="nuovo">● ${e.valoriNuovi === 1 ? "1 nuovo" : `${Number(e.valoriNuovi)} nuovi`}</small>` : "";
-    const valori = `<div class="carta val-lab"><div class="sezt"><div class="tv">${letti}${nuovi}</div>
-        <button class="agg lab" data-a="valori" ${legge ? "disabled" : ""}>${legge ? "Leggo sul PC…" : "↻ Rileggi"}</button></div>
-      ${e.tabella ? tabellaHtml(e.tabella) : legge ? "" : `<div class="vuoto stretto">Il PC non ha ancora letto valori per questo paziente.</div>`}</div>`;
+    // una lettura sul PC che sta andando — col tocco, o da sé —: una riga con l'ora in cui è partita
+    const leggo = legge ? `<small class="leggo" role="status">${lg && lg.modo === "apri" ? "Apro sul PC…" : lg && lg.modo === "auto" ? "Leggo i valori nuovi sul PC…" : "Leggo sul PC…"}${
+      lg && lg.modo && e.dopoOrdine ? " dopo l'ordine" : ""} · ${hhmm(lg ? lg.dal : Date.now())}</small>` : "";
+    const non = !legge && S.nonLetti.get(p.ep) ? `<small class="amb">Non letti da soli: ${esc(S.nonLetti.get(p.ep))}</small>` : "";
+    const valori = `<div class="carta val-lab"><div class="sezt"><div class="tv">${letti}${nuovi}${leggo}${non}</div>
+        <button class="agg lab" data-a="valori" ${legge ? "disabled" : ""}>↻ Rileggi</button></div>
+      ${e.tabella ? tabellaHtml(e.tabella) : legge ? "" : `<div class="vuoto stretto">${e.lab === false ? "Nella sua pagina non ci sono prelievi." : "Valori non ancora letti sul PC: ↻ Rileggi li legge."}</div>`}</div>`;
     // i referti del laboratorio (emogas, emocromo…) non fra ECG, immagini e visite: a parte, in fondo
     // (con la tabella dei valori il PC non li manda: lì quello che dicono c'è già)
     const lab = e.referti.filter((r) => r.tipo === "lab"), altri = e.referti.filter((r) => r.tipo !== "lab");
     const carta = (l) => (l.length ? `<div class="carta">${l.map((r) => {
       const aperto = S.aperti.has(r.id);
       return `<div class="refw${["lab", "ecg", "img"].includes(r.tipo) ? " k-" + r.tipo : ""}"><button class="ref${r.pdf ? " conpdf" : ""}" data-a="referto" data-id="${esc(r.id)}" aria-expanded="${aperto}"><span class="r1"><span class="q">${esc(r.quando)}</span><span class="t">${esc(r.titolo)}</span>${r.nuovo ? `<span class="nuovo">nuovo</span>` : ""}</span>${
-        aperto ? (r.testo ? `<div class="testo">${esc(r.testo)}</div>` : `<div class="manca">${r.lungo ? "Testo troppo lungo per il telefono: leggilo sul PC." : "Testo non ancora letto sul PC: aprilo una volta dal pannello (Esiti), poi è qui."}</div>`) : ""}</button>${
+        aperto ? (r.testo ? `<div class="testo">${esc(r.testo)}</div>` : `<div class="manca">${r.lungo ? "Testo troppo lungo per il telefono: leggilo sul PC."
+          : r.soloPdf ? (r.pdf ? "Di TC, ecografie e visite c'è il PDF, non il testo: tocca «PDF»." : "Di TC, ecografie e visite c'è il PDF, non il testo: sul PC non è ancora salvato.")
+          : legge ? "Lo leggo sul PC…" : "Testo non ancora letto sul PC: ↻ Rileggi lo prende."}</div>`) : ""}</button>${
         r.pdf ? `<button class="prn" data-a="stampaRef" data-id="${esc(r.id)}" aria-label="Stampa il referto" ${S.stampa && !S.stampa.fine ? "disabled" : ""}>🖨️</button><button class="pdf" data-a="pdf" data-id="${esc(r.id)}" data-n="${Number(r.pdf) || 0}" ${S.occupato.has("pdf" + r.id) ? "disabled" : ""}>PDF</button>` : ""}</div>`;
     }).join("")}</div>` : "");
     return `${valori}${carta(altri)}${lab.length ? `<div class="lbl">Laboratorio</div>${carta(lab)}` : ""}${e.nota ? `<p class="piede">${esc(e.nota)}</p>` : ""}`;
@@ -1795,7 +1832,7 @@
     const c = S.catalogo;
     if (!c) return `<div class="carica"><div class="giro"></div></div>`;
     if (p.prec) return `<div class="vuoto">Episodio precedente: per ordinare apri quello di oggi.</div>`;
-    if (!p.ordina) return `<div class="vuoto">Per ordinare, il PC deve aver aperto almeno una volta la pagina di questo paziente.</div>`;
+    if (!p.ordina) return `<div class="vuoto">${esc(soloSmart(p, "per ordinare, "))}</div>`;
     const s = selDi(p.ep);
     // sul telefono solo i quesiti che sono un pacchetto di esami, coi nomi corti (in una riga)
     const BREVE = { "dolore toracico": "Dol th", "dolore addominale": "Dol add" };
@@ -2247,6 +2284,7 @@
     else if (a === "vit") { S.vitAperti = S.vitAperti === ep ? "" : ep; render(); }
     else if (a === "scheda") {
       S.scheda = b.dataset.s; S.arma = null; render();
+      if (S.scheda === "esiti") leggiDaSolo(ep);
       if (S.scheda === "cartella") caricaCartella(ep, !!S.cartelle.get(ep));
       if (S.scheda === "terapia") caricaTerapie(ep, !!S.terapie.get(ep));
       if (S.scheda === "richieste") caricaRistampe(ep);

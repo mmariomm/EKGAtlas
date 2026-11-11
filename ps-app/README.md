@@ -301,8 +301,8 @@ che porta un parametro, quindi il triage solo finché è l'unica; un parametro c
 non si prende da una riga più vecchia e non si inventa — si conta su quello che c'è. **Non lampeggia**: quando
 compare fa un impulso solo, di un secondo (nemmeno quello se il sistema chiede meno movimento), poi
 resta fermo. Dopo **4 ore** senza una riga più nuova diventa vuoto, con le ore: **«♡ 5h»**. Si legge
-solo quando la pagina del paziente si apre, come lo stato degli esami: un paziente mai aperto non
-ha cuore.
+con la pagina del paziente, come lo stato degli esami (anche col ⟳, per chi hai aperto in questo
+turno): un paziente mai aperto non ha cuore.
 
 **Lo stato degli esami**, su ogni riga: `Lab 3/6 50′` `ECG ✓` `RX 0/1 1h20 ●` — un pezzetto per
 tipo, sempre in quest'ordine e ognuno **tinto col colore della sua sezione negli Esiti** (Lab
@@ -330,10 +330,14 @@ con l'ora, gli esami e lo stato: un **REFERTO** o la finestra **Visualizza Risul
 le consulenze non contano, l'ECG sì — e dagli **esami che PS Assist ha messo in carrello**, che
 contano «in attesa, ordinati da qui» finché la pagina non elenca la loro richiesta (stesso
 numero). Una richiesta ancora da confermare non è un ordine. Ordine e risultato si legano solo
-per riga o per numero di richiesta, mai per nome e ora. Niente si legge da solo e niente si
-chiede al server: si aggiorna quando la pagina del paziente si apre (↻ del gestionale compreso).
-Il limite: un paziente che non apri da un po' ha lo stato di quando l'hai aperto — per questo il
-grigio.
+per riga o per numero di richiesta, mai per nome e ora. Niente si legge a tempo: si aggiorna quando
+la pagina del paziente si apre (↻ del gestionale compreso, un ordine in sottofondo, il telefono) e
+col **⟳** del tabellone, che oltre alla smart **rilegge dietro chi hai aperto in questo turno**
+(dodici ore, dal PC o dal telefono): la sua pagina, dal suo indirizzo, un paziente alla volta, mai
+mentre un ordine manda esami, e i valori solo se il laboratorio della pagina è cambiato (niente
+PDF); la riga, il letto e il pallino «nuovo» si rifanno da soli. Non è «aperto adesso». Chi non hai
+aperto in questo turno resta com'è la lista: la sua pagina non si apre senza di te. Il limite: fra un
+⟳ e l'altro, un paziente che non apri ha lo stato dell'ultima lettura — per questo il grigio.
 
 **La stanza** — una mappa minima, per vedere a colpo d'occhio **dove sta ogni paziente**: i
 **letti** e le **sedie** (un paziente ciascuno) e le **aree** senza letto — corridoio, attesa —
@@ -1262,7 +1266,9 @@ nemmeno una richiesta in più: legge la tabella che hai già davanti.
   *«non è BIANCHI ANNA, da cui l'hai aperta»*). Poi il **codice fiscale** quando c'è: se in
   archivio esiste una scheda con quel codice fiscale è quella, sempre — si ripiega sul nome solo
   se nessuna scheda porta un codice, altrimenti un omonimo senza codice potrebbe vincere su una
-  verificata. Le altre schede non attraversano nemmeno il ponte.
+  verificata. Le altre schede non attraversano nemmeno il ponte. Letti in un'altra scheda (una dietro:
+  il telefono, il ⟳ del tabellone), il codice fiscale resta segnato sull'episodio: la sua pagina aperta
+  dopo scrive i referti nella stessa scheda, mai in una nuova «per nome».
 - Le schede stanno nella memoria dell'estensione (**su disco**), **sopravvivono alla chiusura del
   browser e al logout** — un turno è di dodici ore e i pazienti sono più di dodici — e **scadono da
   sole 24 ore** dopo l'ultima lettura. Su un PC condiviso: profilo Chrome tuo, e chiudi a fine turno.
@@ -1322,6 +1328,29 @@ Aprendo l'app (o tornandoci, o con aggiorna) il telefono chiede al PC di rilegge
 (`triage` con `rileggi`, al più ogni 2 minuti) e richiede l'elenco 25 secondi dopo; il PC la legge
 anche da sé, appena il gestionale è aperto. Così nell'elenco del telefono c'è **tutto il PS**, ogni
 area, anche chi il PC non ha mai aperto.
+
+**Un tocco sul telefono è un clic sul PC.** Aprendo sul telefono un paziente che il PC in questo
+turno non ha ancora aperto (dodici ore: dalla lista dell'area, o di un altro turno), il PC apre la
+**sua pagina vera in una scheda dietro** — l'indirizzo della riga della lista della sua area, mai
+costruito — e fa quello che fa un clic: chi è (l'età, la nascita, «aperto alle …»), la cartella,
+lo stato, le allergie, poi i valori e i referti (`aggiornaValori` con `modo: "apri"`). Il telefono
+intanto dice **«Apro sul PC… · 14:32»** («dopo l'ordine» se un ordine sta mandando esami: si aspetta
+lui), e poi mostra gli esiti, con la riga del paziente rifatta. Un paziente alla volta (una scheda
+dietro alla volta, per tutto il browser). Senza il tocco non si apre niente. Chi il PC conosce **solo
+dalla lista smart** non ha ancora un indirizzo della sua pagina (la smart non ne porta, e l'area la
+cambia il medico, sul PC): il telefono lo dice, una riga — «Il PC lo conosce solo dalla lista smart:
+apri una volta la lista «Bassa» nel gestionale» —, e dopo quella lista si apre da qui.
+
+**Gli esiti si leggono da soli.** Aprendo gli Esiti, il PC rilegge la pagina del paziente (come
+sempre) e guarda quello che guarda la sua apertura: la **firma del laboratorio** della pagina non è
+quella già letta (mai letto, o cambiata), un laboratorio a metà non si ricontrolla da 10 minuti, un
+referto non è ancora salvato. Allora il telefono fa da sé il «↻ Rileggi» (`aggiornaValori` con
+`modo: "auto"`, che non tiene aperta la sessione) e la tabella dice **«Leggo i valori nuovi sul PC…
+· 14:32»** finché la risposta arriva. Solo con gli Esiti davanti (aperto sulle Richieste o sulla
+cartella, la sua pagina non si riapre); al più una volta ogni 10 minuti per paziente; quello che da
+solo non è riuscito il PC lo riprova solo più tardi (dopo 2 e 10 minuti, poi basta finché la pagina
+non cambia), e il telefono lo dice in una riga piccola. **↻ Rileggi** resta, per forzarlo. Dei TC,
+ecografie e visite c'è il PDF, non il testo, e il telefono lo dice.
 
 Lontano dal PC per qualche minuto, dal telefono: **i pazienti**, **gli esiti** di uno (con
 **↻ Rileggi** e l'ora in cui il PC li ha letti), **un ordine** (lo stesso «Conferma e
@@ -2337,13 +2366,16 @@ nella tendina del gestionale») — poi **Prepara nel gestionale** (o Ctrl+Invio
     **per scheda**: pulisce la scheda in cui è comparso il login, non le altre schede aperte.
     **⋯ → Reset dati pazienti** toglie tutto questo in una volta, in tutte le schede aperte.
     Su un PC condiviso: usa un profilo Chrome tuo e chiudi il browser a fine turno.
-15. **Niente parte da solo, e niente si inventa.** Aprire la pagina di un paziente non legge
-    **nessun** valore: cliccare un paziente non è chiedere il laboratorio. I valori si leggono
-    quando li chiedi — aprendo un prelievo, o con **⭳ Carica i valori** che li prende tutti, uno
-    alla volta, insieme allo storico del portale aperto in sottofondo dal link della pagina —
-    e un prelievo che ha già fallito non si ritenta da solo. **Un PDF non si salva mai da
-    solo**: lo prende un tocco sul referto, **⭳ Salva i referti** o **⭳ Carica i valori** negli
-    Esiti (mai il laboratorio), due alla volta al massimo con una pausa a caso prima di ognuno (gli
+15. **Niente parte a tempo, nessuna pagina senza il medico, e niente si inventa.** La pagina di un
+    paziente si apre col gesto del medico — un clic sul PC, un tocco sul telefono (la scheda dietro
+    del Ponte: «un tocco è un clic») — o, col **⟳** del tabellone, per chi ha aperto in questo turno;
+    mai a tempo, mai per chi non ha aperto. Aperto il paziente, quello che la pagina mostra e il
+    pannello non ha ancora si legge da sé (Esiti: «si carica da solo»): i valori quando la firma del
+    laboratorio cambia, o con **⭳ Carica i valori** che li prende tutti, uno alla volta, insieme
+    allo storico del portale aperto in sottofondo dal link della pagina — e quello che ha già
+    fallito da solo si ritenta solo più tardi (2 e 10 minuti, poi basta). **Un PDF si salva** con
+    l'apertura del paziente, un tocco sul referto, **⭳ Salva i referti** o **⭳ Carica i valori** negli
+    Esiti (mai il laboratorio; mai col ⟳ del tabellone), due alla volta al massimo con una pausa a caso prima di ognuno (gli
     altri in fila, e la riga in cima dice a che punto è), dal link del gestionale o dal portale
     come sempre, col controllo d'identità della regola 18; il testo dei PDF già
     salvati si legge invece sempre, dalla copia su questo computer, senza chiedere niente. E la tabella

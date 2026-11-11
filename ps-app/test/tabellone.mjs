@@ -70,6 +70,7 @@ function server() {
     link: LINK_SMART,
     focus: false,               // le pagine portano refreshOnFocus
     shell: true,                // dopo «Conferma»: 302 → PsoPazienti, che rimanda alla lista
+    rich: {},                   // ep → le richieste della sua pagina: [{ esame, quando, referto }] (le righe RICH del gestionale)
   };
   const linguetta = (p) => `<div class="myLinguetta" style=" border=1; background-color: ORANGE; color: White; "><table cellpadding="3" cellspacing="0" width="100%"><tbody><tr>
       <td nowrap="" width="1%"><img title="${p.triage || "esame"}" src="icona:2.gif" width="18"></td>
@@ -110,7 +111,9 @@ function server() {
     return pagina(p.name, `<form name="AmbulatorioPSO" method="post" action="menuPsoEpisodio.do?ccsForm=AmbulatorioPSO:Edit&amp;MVPG=PsoEpisodioClinicoAmbulatorio&amp;EPISODIO_ID=${ep}"></form>
       <table><tr><td title="${p.triage}"><font style="font-size: 150%">${p.name}</font><br><font style="font-size: 120%">${p.nato} (${p.eta}) M</font></td></tr></table>
       <a href="menuPsoEpisodio.do?MVPG=PsoRichiestaCreaRcs&amp;EPISODIO_ID=${ep}&amp;RISORSA_ID=00660001P&amp;RISORSE=00660001P&amp;toPage=RcsRichiestaPrestazioniRicercaErogatore" title="Richieste Laboratorio">Laboratorio</a>
-      <h1 id="cartella">Cartella ${ep}</h1>`);
+      <h1 id="cartella">Cartella ${ep}</h1>
+      <table>${(s.rich[ep] || []).map((r, i) => `<tr><td class="AFCDataTD" title="${r.esame}">${r.referto ? `<a href="#" title="REFERTO" onclick="javascript:window.open('../../sa4/restrict2/Sa4ViewerExtRedirect.do?ASSISTITO_ID=*T&amp;REFERTO_SISTEMA=HL7RIS&amp;REFERTO_ID=r${ep}${i}','HL7RIS')"><img alt="referto"></a>` : ""}
+        ${r.esame}<input type="hidden" name="TIPO" value="RICH"><input type="hidden" name="DATA_ORD" value="${r.quando}"><input type="hidden" name="DESCRIZIONE_TITLE" value="${r.esame}"></td></tr>`).join("")}</table>`);
   };
   const smartPage = (u) => {
     if (s.smartLogin) return `<html><body><form><input type="text" name="u"><input type="password" name="p"></form></body></html>`;
@@ -968,7 +971,7 @@ await blocco("Chi è al Triage: di partenza nella Sala attesa della Bassa, finch
 await browser.close();
 
 // ------------------------------- 8. con l'estensione vera: la scheda dietro
-await blocco("Con l'estensione: la smart si apre in una scheda dietro e si chiude", async () => {
+await blocco("Con l'estensione: la smart si apre in una scheda dietro e si chiude; il ⟳ rilegge dietro chi è stato aperto in questo turno", async () => {
   const EXT = join(root, "extension");
   const PROFILO = join("/tmp", "psa-tabellone-" + process.pid);
   const exe = process.env.CHROMIUM_PATH || ["/opt/pw-browsers/chromium-1243/chrome-linux/chrome", "/opt/pw-browsers/chromium-1194/chrome-linux/chrome", "/opt/pw-browsers/chromium"].find((p) => { try { return readFileSync(p) && true; } catch { return false; } });
@@ -977,51 +980,103 @@ await blocco("Con l'estensione: la smart si apre in una scheda dietro e si chiud
     args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`, ...(process.env.PSA_CHROMIUM_ARGS || "").split(/\s+/).filter(Boolean)],
   });
   ctx.setDefaultTimeout(10000);
+  const finoA2 = async (fn, ms) => { for (const t0 = Date.now(); Date.now() - t0 < ms; await new Promise((r) => setTimeout(r, 300))) if (await fn()) return true; return false; };
   try {
     const srv = server();
     srv.s.pazienti = srv.s.pazienti.filter((p) => p.ep !== "700012");
     srv.s.pazienti.push(P("700061", "MORO DINO", "09/09/1999", 27, "ARANCIONE", "obi", 15));
+    // la pagina di ROSSI (aperto 20 minuti fa) e quella di VERDI (mai aperto): una RX ciascuno, ancora senza referto
+    const dataOrd = (t) => { const d = new Date(t); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:00.0`; };
+    srv.s.rich["700001"] = [{ esame: "69-140 RX ADDOME (A2)", quando: dataOrd(Date.now() - 40 * 60e3), referto: false }];
+    srv.s.rich["700002"] = [{ esame: "69-140 RX TORACE (A1)", quando: dataOrd(Date.now() - 30 * 60e3), referto: false }];
     await ctx.route(`${ORIGIN}/**`, servi(srv));
     const page = ctx.pages()[0] || await ctx.newPage();
-    // (l'elenco di partenza: tutti tranne MORO, già visti — seminato da una pagina fuori dal gestionale)
+    // (l'elenco di partenza: tutti tranne MORO, già visti — seminato da una pagina fuori dal gestionale;
+    // la smart mai letta da quando il gestionale è aperto)
+    const seme = semeTabellone();
+    seme["patients.v1"] = seme["patients.v1"].filter((p) => p.ep !== "700051");   // (SENZA AREA: qui il gestionale non ce l'ha)
+    seme["tabellone.modo.v1"] = "lista";   // (la Lista: una riga per tutti, anche per chi ha un letto)
+    seme["stato.v1"]["700001"].righe = [{ k: "x", rid: "", ts: Date.now() - 40 * 60e3, esami: [["img", "RX ADDOME"]], fatto: "", quando: 0 }];
     await page.goto(`${ORIGIN}/vuota.html`);
     await page.evaluate((seed) => {
       for (const [k, v] of Object.entries(seed)) localStorage.setItem("psassist:" + k, JSON.stringify(v));
       localStorage.setItem("psassist:win.v1", JSON.stringify({ x: 0.02, y: 0.01, w: 0.96, h: 0.97 }));
       sessionStorage.setItem("psassist:navPannello.v1", JSON.stringify(Date.now()));
-    }, semeTabellone());
+    }, seme);
     const schede = [];
     ctx.on("page", (p) => schede.push(p));
     srv.s.log.length = 0;
     await page.goto(URL_LISTA);
     await page.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
-    // (niente giri a tempo: la si rilegge col ⟳, o aprendo l'app sull'iPhone)
-    if (!(await page.locator("#psassist-host .card").count())) await page.locator("#psassist-host #expand").click({ timeout: 10000 }).catch(() => {});
-    await page.waitForSelector("#psassist-host #tbsync", { timeout: 15000 }).catch(async (e) => {
-      console.log("    [⟳]", await page.evaluate(() => document.getElementById("psassist-host")?.shadowRoot.innerHTML.replace(/<svg.*?<\/svg>/gs, "").slice(0, 600)));
-      throw e;
-    });
-    await page.locator("#psassist-host #tbsync").click();
-    await page.waitForFunction(() => { const s = JSON.parse(localStorage.getItem("psassist:smart.sync.v1") || "null"); return s && s.fine && s.esito; }, null, { timeout: 20000 });
+    // il gestionale appena aperto: la smart, da sola, in una scheda dietro (niente giri a tempo: poi col ⟳, o aprendo l'app sull'iPhone)
+    const letta = () => page.waitForFunction(() => { const s = JSON.parse(localStorage.getItem("psassist:smart.sync.v1") || "null"); return s && s.fine && s.esito; }, null, { timeout: 30000 }).then(() => true, () => false);
+    let persa = !(await letta());
+    const daSola = srv.s.log.some((l) => /PAZIENTI_FILTRO=AMB_7/.test(l)), primaScheda = schede.length;
+    if (persa) {
+      // (la navigazione persa sotto Playwright, vedi il ⟳ qui sotto: passati i suoi tempi, il ⟳ la rilegge)
+      console.log("    (la scheda dietro ha perso la sua pagina: ⟳)");
+      await page.waitForTimeout(16000);
+      await page.locator("#psassist-host #expand").click({ timeout: 10000 }).catch(() => {});
+      await page.locator("#psassist-host #tbsync").click().catch(() => {});
+      persa = !(await letta());
+    }
     const sync = await page.evaluate(() => JSON.parse(localStorage.getItem("psassist:smart.sync.v1")));
     await page.waitForTimeout(800);
     const aperte = ctx.pages().filter((p) => !p.isClosed());
-    check(sync.esito === "ok" && schede.length === 1 && aperte.length === 1 && /PsoPazientiAmbulatorio/.test(page.url()),
-      `una scheda dietro, sulla smart; letta, si chiude; il medico resta dov'era (got: ${JSON.stringify(sync)} · schede ${schede.length}, aperte ${aperte.length})`);
+    check(!persa && daSola && sync.esito === "ok" && sync.letta > 0 && primaScheda === 1 && aperte.length === 1 && /PsoPazientiAmbulatorio/.test(page.url()),
+      `appena aperto il gestionale: da sola, una scheda dietro, sulla smart; letta, si chiude; il medico resta dov'era (got: ${JSON.stringify(sync)} · schede ${primaScheda}, aperte ${aperte.length})`);
     const visibile = await page.evaluate(() => document.visibilityState);
     check(visibile === "visible", "la scheda del medico resta davanti");
     const paz = await page.evaluate(() => JSON.parse(localStorage.getItem("psassist:patients.v1")));
     check(paz.some((p) => p.name === "MORO DINO" && /^sm/.test(p.ep)) && paz.find((p) => p.ep === "700012")?.arch === true,
       "MORO entra; NERI PAOLA, uscita, è dimessa");
-    await page.locator("#psassist-host .stsnack").waitFor({ timeout: 5000 }).catch(() => {});
-    const snack = await page.locator("#psassist-host .stsnack").innerText().catch(() => "");
-    check(/NERI P\. dimesso/.test(snack), `e la scheda del medico lo dice, con «Annulla» (got: ${snack.replace(/\s+/g, " ")})`);
-    // ⟳
-    await page.locator("#psassist-host #expand").click().catch(() => {});
+    // (letta mentre la pagina nasce: «… dimesso · Annulla» dura 8 secondi, e il pannello può essere ancora ridotto — c'è l'uscita da annullare)
+    const dim = await page.evaluate(() => JSON.parse(localStorage.getItem("psassist:dimessi.v1") || "null"));
+    check(dim && dim.eps.join() === "700012" && dim.nomi.join() === "NERI P.", `e la sua uscita si può annullare: «NERI P. dimesso · Annulla» (got: ${JSON.stringify(dim)})`);
+    check(!srv.s.log.some((l) => /EPISODIO_ID=/.test(l)), "la smart letta da sola non apre la pagina di nessun paziente");
+    // intanto le due radiografie tornano refertate
+    srv.s.rich["700001"][0].referto = true;
+    srv.s.rich["700002"][0].referto = true;
+    // ⟳: la smart di nuovo, e dietro, uno alla volta, chi è stato aperto in questo turno (ROSSI) — VERDI no
+    if (!(await page.locator("#psassist-host .card").count())) await page.locator("#psassist-host #expand").click({ timeout: 10000 }).catch(() => {});
+    await page.waitForSelector("#psassist-host #tbsync", { timeout: 15000 });
+    const rxRossi = () => page.evaluate(() => (JSON.parse(localStorage.getItem("psassist:stato.v1") || "{}")["700001"]?.righe || []).find((r) => /RX ADDOME/.test(JSON.stringify(r.esami))) || null);
+    check((await rxRossi())?.fatto === "", "prima del ⟳: la RX di ROSSI è in attesa, sul PC");
     srv.s.log.length = 0;
-    await page.locator("#psassist-host #tbsync").click();
-    await page.waitForFunction(() => { const s = JSON.parse(localStorage.getItem("psassist:smart.sync.v1") || "null"); return s && s.fine && Date.now() - s.fine < 5000; }, null, { timeout: 20000 });
-    check(srv.s.log.some((l) => /PAZIENTI_FILTRO=AMB_7/.test(l)), "⟳: di nuovo, dal link della pagina");
+    // (Sotto Playwright una scheda nata vuota e poi mandata sulla sua pagina a volte perde la navigazione —
+    // net::ERR_ABORTED, anche col codice di prima —: la scheda si chiude da sola, e il medico ritocca ⟳.
+    // Qui lo stesso, passati i tempi di quella persa: al più due volte.)
+    const nate = schede.length;
+    const pagine = [];
+    const tocco = async () => {
+      srv.s.log.length = 0;
+      const t0 = await page.evaluate(() => Date.now());
+      await page.locator("#psassist-host #tbsync").click();
+      const smart = await page.waitForFunction((t0) => { const s = JSON.parse(localStorage.getItem("psassist:smart.sync.v1") || "null"); return s && s.fine > t0; }, t0, { timeout: 30000 }).then(() => true, () => false);
+      const fatto = await finoA2(async () => (await rxRossi())?.fatto === "referto", 40000);
+      await page.waitForTimeout(1500);
+      pagine.push(...srv.s.log.filter((l) => /MVPG=PsoEpisodioClinicoAmbulatorio/.test(l)));
+      return smart && fatto && srv.s.log.some((l) => /PAZIENTI_FILTRO=AMB_7/.test(l));
+    };
+    let riuscito = await tocco();
+    for (let n = 0; !riuscito && n < 2; n++) { console.log("    (⟳ di nuovo: una scheda dietro ha perso la sua pagina)"); await page.waitForTimeout(65000); pagine.length = 0; riuscito = await tocco(); }
+    check(riuscito, `⟳: la smart di nuovo, dal link della pagina, e la pagina di ROSSI riletta dietro — la sua RX ora è refertata (got ${JSON.stringify(await rxRossi())})`);
+    check(pagine.length === 1 && pagine.every((l) => /EPISODIO_ID=700001\b/.test(l)),
+      `…la sua pagina una volta, e solo lui: VERDI, mai aperto in questo turno, resta com'è la lista — la sua pagina non si apre (pagine: ${JSON.stringify(pagine)})`);
+    // nella Lista: «RX ✓» e «● nuovo» (nel passaggio del mouse); nella Mappa, sul letto, il pallino blu del nuovo
+    const riga = await page.evaluate(() => { const r = document.getElementById("psassist-host").shadowRoot.querySelector('.pzrow[data-pz="700001"]');
+      return r ? { rx: r.querySelector(".esm.es-img")?.className || "", nuovo: /● nuovo/.test(r.querySelector(".pzapri")?.getAttribute("aria-label") || "") } : null; });
+    check(riga && /\bok\b/.test(riga.rx) && riga.nuovo, `nel tabellone, la riga di ROSSI si rifà da sola: «RX ✓» e «● nuovo» (got ${JSON.stringify(riga)})`);
+    await page.locator('#psassist-host [data-modo="mappa"]').click();
+    const letto = await page.evaluate(() => [...document.getElementById("psassist-host").shadowRoot.querySelectorAll(".stbed.occ")].find((b) => b.querySelector('[data-stp="700001"]'))?.querySelector(".stseg")?.className || "");
+    check(/\bnuovo\b/.test(letto), `…e sulla mappa il suo letto ha il pallino blu del nuovo (got «${letto}»)`);
+    const verdi = await page.evaluate(() => JSON.parse(localStorage.getItem("psassist:stato.v1") || "{}")["700002"]?.righe?.some((r) => r.fatto === "referto") || false);
+    check(!verdi, "e VERDI ha lo stato di prima");
+    await finoA2(async () => ctx.pages().filter((p) => !p.isClosed()).length === 1, 15000);
+    check(ctx.pages().filter((p) => !p.isClosed()).length === 1 && schede.length - nate >= 2 && await page.evaluate(() => document.visibilityState) === "visible",
+      `le schede dietro (la smart, ROSSI) si chiudono; il medico resta davanti (nate ${schede.length - nate})`);
+    const visto = await page.evaluate(() => JSON.parse(localStorage.getItem("psassist:patients.v1")).find((p) => p.ep === "700001")?.ts);
+    check(visto === seme["patients.v1"].find((p) => p.ep === "700001").ts, "rileggere col ⟳ non è «aperto adesso» dal medico");
   } finally {
     await ctx.close();
     rmSync(PROFILO, { recursive: true, force: true });

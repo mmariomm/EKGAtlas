@@ -81,6 +81,12 @@ const riquadro = (nome, triage, ep, cf, nascita) => `<table><tr><td title="${tri
 // cinque campi, l'esame obiettivo di sola lettura se l'ha scritto un altro
 // medico, «Conferma»), e il gestionale che lo riceve. Accesa solo nella sua sezione.
 const CART = { on: false, lento: 0, eoRo: true, ignora: "", post: [], campi: {} };
+let ALLERGIE_B = false;   // la pagina di BIANCHI porta il campo delle allergie (il suo «aperto dal telefono»)
+let TRATTIENI = null;     // una promessa: la pagina di ROSSI, aperta in una scheda, arriva quando si compie (una lettura vista mentre va)
+const TRATTENUTE = [];    // …e le schede che l'hanno chiesta intanto
+const APERTE = [];        // ogni pagina di un paziente aperta in una scheda: { url, pg } (la richiesta vera, anche se l'evento «page» arriva tardi)
+// (le schede dietro sulla pagina di un episodio, viste dal service worker: quelle che il medico non ha davanti)
+const dietroSu = (ep) => sw.evaluate((e) => chrome.tabs.query({}).then((l) => l.filter((t) => !t.active && new RegExp(`EPISODIO_ID=${e}\\b`).test(t.pendingUrl || t.url || "")).length), ep);
 const CART_NOMI = ["ANAMNESI", "ALLERGIE", "MALATTIE_PREGRESSE", "FARMACI_ASSUNTI", "ESAME_OBIETTIVO"];
 const escH = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const formCartella = (ep) => `<form method="post" name="AmbulatorioPSO" action="menuPsoEpisodio.do?ccsForm=AmbulatorioPSO:Edit&amp;MVPG=PsoEpisodioClinicoAmbulatorio&amp;EPISODIO_ID=${ep}">
@@ -127,6 +133,12 @@ await ctx.route("https://smarthealth.multimedica.it/**", async (r) => {
   if (login && /menuPsoEpisodio\.do/.test(u)) { await r.fulfill({ status: 200, headers: { "content-type": "text/html; charset=windows-1252" }, body: LOGIN }); return; }
   if (lento && /Insert=Inserisci/.test(u)) await sospendi(lento);
   if (lentoRef && /Sa4ViewerExtRedirect\.do/.test(u) && /REFERTO_ID=/.test(u)) await sospendi(lentoRef);
+  if (req.isNavigationRequest() && /MVPG=PsoEpisodioClinico/.test(u)) {   // (la pagina che si apre; gli esiti la leggono con un fetch, e passano)
+    let pg = null;
+    try { pg = req.frame().page(); } catch { /* la scheda non ha ancora la cornice */ }
+    APERTE.push({ url: u, pg });
+    if (TRATTIENI && /MVPG=PsoEpisodioClinicoAmbulatorio/.test(u) && quale(u) === A) { TRATTENUTE.push({ url: u, pg }); await TRATTIENI; }
+  }
   if (PASSA.n > 0 && req.method() === "GET" && /MVPG=PsoEpisodioClinicoAmbulatorio/.test(u) && quale(u) === A) {
     PASSA.n--;
     const via = PASSA.tipo === "lista" ? A.worklistUrl : u;   // (la lista: ci si resta)
@@ -155,6 +167,7 @@ await ctx.route("https://smarthealth.multimedica.it/**", async (r) => {
       69-140 RX TORACE (A6900)<input type="hidden" name="DATA_ORD" value="2026-08-22 03:10:00.0"><input type="hidden" name="DESCRIZIONE_TITLE" value="69-140 RX TORACE (A6900)"></td></tr></table>`;
     let html0 = Buffer.from(out.body).toString("latin1");
     if (rossi && CART.on) html0 = html0.replace(/<form name="AmbulatorioPSO"[\s\S]*?<\/form>/, formCartella(m.state.episodeId));
+    if (!rossi && ALLERGIE_B) html0 = html0.replace('<textarea name="DIARIO"></textarea>', '<textarea name="DIARIO"></textarea><textarea name="ALLERGIE">PENICILLINA</textarea>');
     const html = html0.replace("</body>", (rossi ? rx : "") + "</body>").replace("<body>", "<body>" + riquadro(rossi ? "ROSSI MARIO" : "BIANCHI ANNA", rossi ? "ARANCIONE" : "VERDE", m.state.episodeId, rossi ? CF_A : CF_B, rossi ? "17/05/1949 (77) M" : ""));
     out = { ...out, body: Buffer.from(html, "latin1") };
   }
@@ -830,22 +843,80 @@ const esitiDi = async (ep, re = /./) => {
   await finche(() => inoltrati.length >= n + 2, 20000); await sospendi(400);
   return aspettaTel(tel, re, 20000);
 };
-// ROSSI, aperto sul PC solo un attimo (all'inizio): niente salvato. Una riga e ↻ Rileggi; i referti del
-// laboratorio (emogas, emocromo) non stanno fra la radiografia e la TC, ma a parte, in fondo
+// ROSSI, aperto sul PC solo un attimo (all'inizio): il laboratorio della sua pagina mai letto. Aprendolo sul
+// telefono il PC lo trova, e lo legge da solo — dietro, come «↻ Rileggi», senza il tocco: «Leggo i valori
+// nuovi sul PC… · 14:32», poi la tabella. Finché la tabella non c'è, i referti del laboratorio (emogas,
+// emocromo) non stanno fra la radiografia e la TC, ma a parte, in fondo
 {
+  // (aperto prima, nella sezione delle note, il PC l'ha già letto da solo: si torna a com'era — i valori
+  // via dalla sua scheda, nessuna firma del laboratorio letta, e il telefono appena aperto)
+  await sw.evaluate(() => chrome.storage.local.get("storicoArch").then((o) => {
+    const a = o.storicoArch || {};
+    for (const r of Object.values(a)) if (r.ep === "999001" || /ROSSI/.test(JSON.stringify(r.paziente || {}))) Object.assign(r, { righe: [], date: [] });
+    return chrome.storage.local.set({ storicoArch: a });
+  }));
+  await doc.evaluate(() => { for (const k of ["psassist:autoCarica.v1", "psassist:autoFalliti.v1"]) { const o = JSON.parse(localStorage.getItem(k) || "{}"); delete o["999001"]; localStorage.setItem(k, JSON.stringify(o)); } });
+  // (la sua pagina, aperta dietro, la si trattiene: così la lettura si vede mentre va)
+  let lasciaRossi = () => {};
+  TRATTIENI = new Promise((r) => { lasciaRossi = () => { TRATTIENI = null; r(); }; });
+  TRATTENUTE.length = 0;
+  const vistoR = () => doc.evaluate(() => (JSON.parse(localStorage.getItem("psassist:patients.v1") || "[]").find((p) => p.ep === "999001") || {}).ts);
+  const vistoR0 = await vistoR();
+  await tel.reload();
+  await aspettaTel(tel, /ROSSI MARIO/, 20000);
+  await tocca(tel, '.paz[data-ep="999001"]');
   await tocca(tel, '[data-a="scheda"][data-s="esiti"]');
-  const es = await esitiDi("999001", /RX TORACE/);
+  const es = await aspettaTel(tel, /Leggo i valori nuovi sul PC…/, 20000);
   const ordine = await tel.evaluate(() => [...document.querySelectorAll("main > .carta, main > .lbl")].map((x) => (x.classList.contains("lbl") ? "#" + x.textContent
     : [...x.querySelectorAll(".ref .t")].map((t) => t.textContent).join("+") || (x.querySelector(".vuoto") ? "vuoto" : "?"))).join(" | "));
-  check(/non ha ancora letto valori/.test(es) && await tel.locator('[data-a="valori"]').count() === 1,
-    "niente salvato sul PC per lui: «Il PC non ha ancora letto valori», e ↻ Rileggi");
-  check(/^vuoto \| RX TORACE\+TC ENCEFALO \| #Laboratorio \| EMOGASANALISI VENOSA POC\+EMOCROMOCITOMETRICO URGENTE$/.test(ordine),
-    `i referti del laboratorio a parte, in fondo, sotto «Laboratorio»: prima la radiografia e la TC (${ordine})`);
+  check(/Leggo i valori nuovi sul PC… · \d\d:\d\d/.test(es) && !/non ha ancora letto|non ancora letti/.test(es) && await tel.locator('[data-a="valori"][disabled]').count() === 1,
+    `aperti gli Esiti, il laboratorio della sua pagina il PC non l'ha mai letto: lo legge da solo — «Leggo i valori nuovi sul PC… · 14:32», nessun tocco, ↻ aspetta (${(es.match(/Leggo[^\n]*/) || [""])[0]})`);
+  check(/^\? \| RX TORACE\+TC ENCEFALO \| #Laboratorio \| EMOGASANALISI VENOSA POC\+EMOCROMOCITOMETRICO URGENTE$/.test(ordine),
+    `finché la tabella non c'è, i referti del laboratorio a parte, in fondo, sotto «Laboratorio»: prima la radiografia e la TC (${ordine})`);
   await shot(tel, "esiti-laboratorio");
-  // VERDI, mai aperto sul PC: una riga, niente da rileggere
-  const v = await esitiDi("999003", /Mai aperto/);
-  check(/Mai aperto sul PC: niente di salvato\./.test(v) && await tel.locator('[data-a="valori"]').count() === 0 && !/Per i referti/.test(v),
-    `mai aperto sul PC: una riga sola, «Mai aperto sul PC: niente di salvato.», senza ↻ Rileggi (${v.replace(/\n+/g, " / ").slice(0, 120)})`);
+  await finche(() => TRATTENUTE.length > 0, 30000);   // (la scheda dietro nasce quando tocca a lei: una alla volta, dopo quello che il PC sta già facendo)
+  const chieste = TRATTENUTE.slice(), pagR = new Set(chieste.map((x) => x.pg).filter(Boolean)), dietroR = await dietroSu("999001");
+  lasciaRossi();
+  check(chieste.length >= 1 && dietroR === 1 && !pagR.has(doc) && pagR.size <= 1 && chieste.every((x) => /EPISODIO_ID=999001/.test(x.url)),
+    `…in una scheda dietro, sul PC (non quella del medico): la sua pagina (${chieste.length} richieste, ${dietroR} schede dietro)`);
+  const pronta = await aspettaTel(tel, /Letti sul PC alle \d\d:\d\d/, 150000);
+  check(/Hb/.test(pronta) && !/Leggo i valori nuovi/.test(pronta) && await finche(async () => await dietroSu("999001") === 0, 20000),
+    `…e la tabella arriva da sola, la scheda dietro si chiude: zero tocchi (${(pronta.match(/Letti[^\n]*/) || ["niente"])[0]})`);
+  check(await vistoR() === vistoR0, "leggere da soli non è «aperto adesso» dal medico");
+  // VERDI, che il PC conosce solo dalla lista smart (senza l'indirizzo della sua pagina): una riga, che dice cosa fare
+  const v = await esitiDi("999003", /solo dalla lista smart/);
+  check(/Il PC lo conosce solo dalla lista smart: apri una volta la lista «Bassa» nel gestionale\./.test(v) && await tel.locator('[data-a="valori"]').count() === 0 && !/Mai aperto/.test(v),
+    `noto solo dalla lista smart: una riga sola, cosa fare — «apri una volta la lista «Bassa» nel gestionale», senza ↻ Rileggi (${v.replace(/\n+/g, " / ").slice(0, 160)})`);
+  await tocca(tel, '[data-a="scheda"][data-s="richieste"]');
+  check(/Il PC lo conosce solo dalla lista smart: per ordinare, apri una volta la lista «Bassa» nel gestionale\./.test(await testoTel(tel)), "…e per ordinare, la stessa riga");
+  await tocca(tel, '[data-a="scheda"][data-s="esiti"]');
+}
+// BIANCHI, che il PC conosce dalla lista della sua area ma non ha aperto in questo turno: un tocco sul
+// telefono è un clic sulla lista — la sua pagina vera, dietro, una volta: chi è, le allergie, la
+// cartella, lo stato, poi valori e referti; il telefono intanto dice «Apro sul PC…»
+{
+  // (com'è chi la lista dell'area ha portato e nessuno ha aperto: `ts` 0, `lista` adesso)
+  await doc.evaluate(() => { const K = "psassist:patients.v1", l = JSON.parse(localStorage.getItem(K) || "[]"); for (const p of l) if (p.ep === "999002") Object.assign(p, { ts: 0, lista: Date.now() }); localStorage.setItem(K, JSON.stringify(l)); });
+  ALLERGIE_B = true;
+  const a0 = APERTE.length;
+  const pagineB = () => APERTE.slice(a0).filter((x) => /EPISODIO_ID=999002/.test(x.url));
+  const es = await esitiDi("999002", /Apro sul PC…/);
+  check(/Apro sul PC… · \d\d:\d\d/.test(es), `un tocco su chi il PC non ha aperto in questo turno: «Apro sul PC… · 14:32» (${(es.match(/Apro[^\n]*/) || [""])[0]})`);
+  const fatto = await aspettaTel(tel, /Allergie: PENICILLINA/, 150000);
+  await finche(() => tel.locator('[data-a="valori"]:not([disabled])').count().then((n) => n === 1), 150000);
+  const b = await doc.evaluate(() => ({ p: (JSON.parse(localStorage.getItem("psassist:patients.v1") || "[]").find((x) => x.ep === "999002") || {}),
+    s: (JSON.parse(localStorage.getItem("psassist:stato.v1") || "{}")["999002"] || {}) }));
+  check(!!fatto && b.p.ts > 0 && b.s.anag?.allergie?.testo === "PENICILLINA" && b.s.letto > 0,
+    `…il PC apre la sua pagina dietro come un clic: ora è «aperto» (alle ${b.p.ts ? new Date(b.p.ts).toTimeString().slice(0, 5) : "—"}), le sue allergie e lo stato letti — e il telefono le mostra (${JSON.stringify(b.s.anag || null)})`);
+  const pagB = new Set(pagineB().map((x) => x.pg).filter(Boolean));
+  check(pagineB().length >= 1 && !pagB.has(doc) && pagB.size <= 1 && await finche(async () => await dietroSu("999002") === 0, 20000),
+    `…in una scheda dietro sola, che si chiude (${pagineB().length} richieste, ${pagB.size} schede)`);
+  // di nuovo: è aperto in questo turno, niente scheda nuova
+  const prima = pagineB().length;
+  await esitiDi("999002", /Allergie: PENICILLINA/);
+  await sospendi(3000);
+  check(pagineB().length === prima && !/Apro sul PC/.test(await testoTel(tel)), "riaperto: già aperto in questo turno, niente scheda nuova");
+  ALLERGIE_B = false;
 }
 await doc.bringToFront();
 // sul PC il referto della radiografia si è letto da solo, aprendo il paziente: il suo testo ora viaggia anche verso il telefono

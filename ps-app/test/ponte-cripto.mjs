@@ -681,10 +681,11 @@ await blocco(async () => {
   check(!rotto, `un errore nel codice del ponte non ferma bg.js (ordini, referti, stampe)${rotto ? ": " + rotto : ""}`);
 });
 await blocco(async () => {
-  // il telefono aspetta «Aggiorna i valori» almeno quanto il PC, al peggio
+  // il telefono aspetta «Aggiorna i valori» almeno quanto il PC, al peggio (anche in fila dietro
+  // una pagina del ⟳ del tabellone: le schede dietro sono una alla volta)
   const n = (re, t) => Number(re.exec(t)[1]);
   const sw = EXT("ponte-sw.js"), app = leggi("../public/ponte/app.js");
-  const pcMax = n(/PONTE_VALORI_MAX = ([\d.e]+);/, sw) + n(/esiti: ([\d.e]+)/, sw) + n(/altro: ([\d.e]+)/, sw);
+  const pcMax = n(/PONTE_VALORI_MAX = ([\d.e]+);/, sw) + n(/esiti: ([\d.e]+)/, sw) + n(/altro: ([\d.e]+)/, sw) + n(/PONTE_TABELLONE_MAX = ([\d.e]+);/, sw);
   const tel = n(/ATTESA_VALORI = ([\d.e]+);/, app);
   check(tel >= pcMax && tel <= pcMax + 30e3, `«Aggiorna i valori»: il telefono aspetta ${tel / 1000} s, il PC al peggio ${pcMax / 1000} s`);
 });

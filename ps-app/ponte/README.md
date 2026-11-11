@@ -352,8 +352,9 @@ d'accesso: «Gestionale da riaprire». Una scheda che tace oltre l'attesa può s
 un ordine la risposta è «non si sa», mai un no, e l'ordine che nasce lo stesso arriva al telefono; un
 ordine o un promemoria non passa poi alla scheda dopo (sarebbero due). Mai un silenzio.
 
-**I comandi** (e solo questi, con argomenti controllati uno per uno): `pazienti`, `esiti(ep)`,
-`aggiornaValori(ep)`, `richieste` (il catalogo; con una stazione di stampa collegata, `stampa: {stazione, dove}`), `ordina(ep, oid, esami, quesito, mio, nato, dest?)`, `nota(ep,
+**I comandi** (e solo questi, con argomenti controllati uno per uno): `pazienti`, `esiti(ep)`
+(con `leggi`: «apri» o «nuovi», quando il PC ha da leggere da sé), `aggiornaValori(ep, modo?)`
+(`modo`: «auto», «apri» — partito da sé dopo un `leggi`), `richieste` (il catalogo; con una stazione di stampa collegata, `stampa: {stazione, dove}`), `ordina(ep, oid, esami, quesito, mio, nato, dest?)`, `nota(ep,
 testo)`, `promemoria(ep, testo)`, `fatto(ep, id)`, `cartella(ep, rileggi?)`, `cartellaSalva(ep, campi: {NOME:
 {prima, dopo}})`, `terapie(ep, rileggi?)`, `terapiaCerca(ep, q)`, `terapiaAggiungi(ep, rq, voce, visti)`, `accetta(k | ep, rq)`, `ristampe(ep)` (per richiesta anche `et` e `fo`: quante etichette e quanti fogli), `ristampa(ep, rid, oid, dest?, quali?)` (`quali`: `etichette` | `foglio` | `tutto`), `pdf(ep, ref, i)`, `stampa(rid, i, n, size, b)`, `stampaReferto(ep, ref, rid, dest?)`, `stazioneCollega(sta, nome)`,
 più `ciao`/`esci`/`ordini` per la sessione e lo stato degli ordini. Niente navigazione libera, niente script, niente appunti. L'ordine passa per
@@ -371,8 +372,12 @@ testo mai letto — la pagina che l'aveva chiesto se n'era già andata — si le
 lo stesso controllo di chi è del pannello (di un altro paziente: niente testo, niente PDF), e il testo
 va nella scheda del paziente. «Aggiorna i valori» risponde quando la sua scheda ha finito — valori e
 referti —, o allo scadere con i valori letti. «Aggiorna i valori» annota la sua scheda di sottofondo in `storage.session`
-(`ponte.valori`): anche se il service worker si ferma a metà, la si riconosce, scade e si chiude; il
-telefono aspetta 200 secondi, più del caso peggiore del PC.
+(`ponte.valori`): anche se il service worker si ferma a metà, la si riconosce, scade e si chiude. Una
+scheda ancora vuota dopo 6 secondi — né arrivata né in arrivo sul gestionale, e nessuna pagina ha
+chiesto «chi sono?», come la scheda vuota di un ordine: la navigazione si è persa per strada — si
+rimanda all'indirizzo del paziente una volta (lo stesso gesto: la pagina non era mai arrivata). Il
+telefono aspetta 260 secondi, più del caso peggiore del PC (anche in fila dietro una pagina del ⟳ del
+tabellone).
 
 **La cartella.** Il modulo `AmbulatorioPSO` della pagina del paziente (`ANAMNESI`,
 `MALATTIE_PREGRESSE`, `FARMACI_ASSUNTI`, `ALLERGIE`, `ESAME_OBIETTIVO`). Ogni volta che il medico
