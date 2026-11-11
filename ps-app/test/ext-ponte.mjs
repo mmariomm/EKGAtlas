@@ -182,7 +182,8 @@ async function suPagina(p, url) {
 const registroPc = (p) => p.evaluate(() => Object.entries(sessionStorage).filter(([k]) => /^psassist:log\./.test(k)).map(([, v]) => (JSON.parse(v).lines || []).join("\n")).join("\n"));
 
 // ---- il telefono: un altro browser, in formato iPhone ---------------------
-const telBrowser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_PATH || chromiumPath() });
+// (gli stessi PSA_CHROMIUM_ARGS del PC: con /dev/shm piccolo, senza --disable-dev-shm-usage il telefono si schianta aprendo i PDF)
+const telBrowser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_PATH || chromiumPath(), args: (process.env.PSA_CHROMIUM_ARGS || "").split(/\s+/).filter(Boolean) });
 const IPHONE = {
   viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true, locale: "it-IT",
   userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1",
@@ -2821,8 +2822,10 @@ sezione("«Scansiona il QR» dentro l'app");
   await shot(dentro.p, "tel-qr-5-menu");
   await tocca(dentro.p, '.menu [data-a="scansiona"]');
   check(await finche(() => dentro.p.evaluate(() => !!document.querySelector(".scan video")), 10000), "…apre la stessa fotocamera");
-  check(/ROSSI MARIO/.test(await aspettaTel(dentro.p, /ROSSI MARIO/, 25000)) && (await chiaveTel(dentro.p))?.k === K4 && await dentro.p.locator(".scan").count() === 0,
-    "e lo stesso QR del PC, inquadrato di nuovo: lo stesso PC, la stessa chiave, l'elenco");
+  // (letto il QR la pagina riparte: prima la vista della fotocamera se ne va, poi l'elenco di nuovo)
+  const riletto = await finche(async () => await dentro.p.locator(".scan").count() === 0 && /ROSSI MARIO/.test(await testoTel(dentro.p)), 30000);
+  check(riletto && (await chiaveTel(dentro.p))?.k === K4,
+    `e lo stesso QR del PC, inquadrato di nuovo: lo stesso PC, la stessa chiave, l'elenco (${(await testoTel(dentro.p)).replace(/\s+/g, " ").slice(0, 80)})`);
   await dentro.b.close();
   await pqr.close();
   rmSync(VID, { force: true });
