@@ -1333,8 +1333,11 @@ if (await prova("il pacchetto Dolore toracico con l'RX: due ordini in sottofondo
   await finche(async () => lavori().length >= l0 + 3, 60000);
   await sospendi(3000);
   const rif = lavori().slice(l0);
-  check(rif.length === 3 && rif.filter((x) => x.tipo === "etichette").length === 1 && rif.filter((x) => x.tipo === "a4").length === 2 && rif[0].tipo === "etichette",
-    `«Ristampa»: i fogli di tutte e due le richieste — etichette POC, lista POC, RX —, una volta ciascuno, le etichette prima (got ${JSON.stringify(rif.map((x) => `${x.tipo}→${x.stampante}`))})`);
+  // (le etichette prima nell'ordine dei fogli: le due stampanti lavorano insieme, e quale finisce prima non conta)
+  const rifatto = (await ordini()).filter((x) => x.stampa && Array.isArray(x.stampa.jobs) && x.stampa.jobs.length === 3).sort((a, b) => (b.ts || 0) - (a.ts || 0))[0];
+  const ordineRif = rifatto ? rifatto.stampa.jobs.map((j) => j.printer) : [];
+  check(rif.length === 3 && rif.filter((x) => x.tipo === "etichette").length === 1 && rif.filter((x) => x.tipo === "a4").length === 2 && ordineRif[0] === "etichettatrice",
+    `«Ristampa»: i fogli di tutte e due le richieste — etichette POC, lista POC, RX —, una volta ciascuno, le etichette prima (got ${JSON.stringify(rif.map((x) => `${x.tipo}→${x.stampante}`))} · ${JSON.stringify(ordineRif)})`);
 }
 
 // Nelle pagine vere il foglio della radiologia non si chiama sempre «Stampa
