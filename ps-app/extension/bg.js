@@ -2321,7 +2321,8 @@ async function stampaMigra() {
   const s = o.stampa;
   if (!s || !("attiva" in s)) return;
   const { attiva, ...resto } = s;
-  if (attiva === false && !o["stazione.qui"]) { delete resto.etichette; delete resto.a4; }
+  const q = o["stazione.qui"];   // (una stazione vera: associata e non revocata, come per il puntino, stzPuntino)
+  if (attiva === false && !(q && q.conferma && !q.revoca)) { delete resto.etichette; delete resto.a4; }
   await chrome.storage.local.set({ stampa: resto });
 }
 stampaMigra().catch(() => {});
