@@ -732,6 +732,10 @@ await blocco(async () => {
   }
   check(tutte, "ogni scrittura del gestionale è rifiutata, grezza nel canale: «Questo PC è in sola lettura»");
   check(!pc.comandi.some((m) => scritture.some((s) => s.cmd === m.cmd)), "…e nessuna scrittura raggiunge una scheda del gestionale");
+  // cercare un farmaco nella tendina serve solo ad aggiungerlo: qui no — e solo una ricerca tiene aperta la scheda della Terapia
+  const cerca = (await t.manda({ id: 40, cmd: "terapiaCerca", ep: "1", q: "para" })).find((x) => x.re === 40);
+  check(cerca && cerca.ok === false && cerca.solaLettura === true && !pc.comandi.some((m) => m.cmd === "terapiaCerca"),
+    "anche «terapiaCerca» è rifiutato: sul PC di sola lettura nessuna scheda della Terapia resta aperta (una lettura sola si chiude)");
 });
 // «🖨️» su un referto (stampaReferto): STAMPA, non scrive: passa anche dal muro del mini; ma solo
 // un referto offerto al telefono in questa sessione (la stessa lista di quando lo apre), e una stampa per numero

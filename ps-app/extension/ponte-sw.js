@@ -1195,14 +1195,16 @@ const ponteTerapieCambia = (fn) => (ponteFilaTerapie = ponteFilaTerapie.then(asy
   return r;
 }).catch(() => null));
 // la scheda di sottofondo, come quella della cartella — una alla volta. Finita
-// bene una lettura o una ricerca, resta ferma sulla pagina Terapia (`fermo`) e
-// il lavoro dopo la riusa: la ricerca lì dov'è (la tendina della pagina), una
-// lettura o un'aggiunta prima rileggono la pagina col suo pulsante «Prescrizione»
-// (una GET: lo stato di adesso, `visti` compreso, subito prima di scrivere).
-// Si chiude dopo un'aggiunta, a ogni dubbio, col foglio «＋ Farmaco» chiuso sul
-// telefono (`terapiaFine`), a fine sessione, per un altro paziente, e dopo 2
-// minuti senza lavoro. Una scheda in cui il medico entra (`ponteTerapiaVista`)
-// da quel momento è sua: mai riusata, mai chiusa da qui, una pagina come le altre.
+// bene una ricerca (si cerca solo col foglio «＋ Farmaco» aperto sul telefono),
+// resta ferma sulla pagina Terapia (`fermo`) e il lavoro dopo la riusa: la
+// ricerca lì dov'è (la tendina della pagina), un'aggiunta prima rilegge la pagina
+// col suo pulsante «Prescrizione» (una GET: lo stato di adesso, `visti` compreso,
+// subito prima di scrivere). Una lettura sola si chiude; quella tenuta dopo
+// un'aggiunta, a ogni dubbio, col foglio chiuso sul telefono (`terapiaFine`), a
+// fine sessione, per un altro paziente, e dopo 2 minuti senza lavoro. (Un PC di
+// sola lettura non cerca: lì non resta mai.) Una scheda in cui il medico entra
+// (`ponteTerapiaVista`) da quel momento è sua: mai riusata, mai chiusa da qui,
+// una pagina come le altre.
 let ponteFilaTerapia = Promise.resolve();
 function ponteTerapiaSotto(url, ep, nome, job) {
   const p = ponteFilaTerapia.then(() => ponteTerapiaSottoOra(url, ep, nome, job));
@@ -1273,8 +1275,8 @@ async function ponteTerapiaSottoOra(url, ep, nome, job) {
   clearTimeout(tempo);
   return esito;
 }
-// finita: la risposta a chi aspetta, e la scheda chiusa — o, con `tieni` (una lettura o una ricerca riuscite,
-// sulla pagina Terapia), tenuta lì, ferma, per il lavoro dopo. Una scheda in cui il medico è entrato non si tiene né si
+// finita: la risposta a chi aspetta, e la scheda chiusa — o, con `tieni` (una ricerca riuscita, sulla pagina
+// Terapia), tenuta lì, ferma, per il lavoro dopo. Una scheda in cui il medico è entrato non si tiene né si
 // chiude: torna una pagina come le altre (`ponteTerapiaLasciata`, core.js), con quello che c'è scritto.
 async function ponteTerapiaFine(id, esito, tieni = false) {
   const w = pt.terapie.get(id);
@@ -1620,7 +1622,7 @@ function ponteDaPagina(msg, sender, reply) {
   }
   if (msg.t === "ponteTerapiaFatto" && gestionale) {
     return fai(async () => {
-      const id = sender.tab.id, w = pt.terapie.get(id), cosa = w ? w.job.cosa : "";
+      const id = sender.tab.id, w = pt.terapie.get(id), cosa = w?.job?.cosa || "";   // (tenuta, ferma: nessun lavoro)
       // «Confermata» solo dopo il clic annotato; leggere e cercare solo dalla pagina delle terapie
       const ok = !!msg.ok && !!w && w.fase === (cosa === "aggiungi" ? "inviato" : "pagina");
       const esito = { ok, testo: corto(msg.testo, 160), incerto: !!msg.incerto || (!!w && w.fase === "inviato" && !ok), gia: msg.gia === true, perche: corto(msg.perche, 40) };
@@ -1629,8 +1631,9 @@ function ponteDaPagina(msg, sender, reply) {
       if (l && l.ep === w.ep) esito.lettura = l;
       if (ok && cosa === "cerca") esito.voci = (Array.isArray(msg.voci) ? msg.voci : []).filter((x) => typeof x === "string").map((x) => x.slice(0, 200)).slice(0, 40);
       if (ok && cosa === "aggiungi") esito.riga = (ponteTerapiaPulita({ righe: [msg.riga] }) || { righe: [] }).righe[0] || null;
-      // (una lettura o una ricerca riuscite: la scheda resta, ferma sulla pagina, per il lavoro dopo; un'aggiunta la chiude)
-      return { ok: await ponteTerapiaFine(id, esito, ok && cosa !== "aggiungi") };
+      // (una ricerca riuscita — il foglio «＋ Farmaco» è aperto sul telefono —: la scheda resta, ferma sulla pagina, per
+      // il lavoro dopo; una lettura sola e un'aggiunta la chiudono)
+      return { ok: await ponteTerapiaFine(id, esito, ok && cosa === "cerca") };
     });
   }
   // la scheda di «Accetta in ambulatorio» ha la riga, e sta per cliccare la sua freccia:

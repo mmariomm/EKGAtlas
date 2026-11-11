@@ -2080,10 +2080,10 @@ nella tendina del gestionale») — poi **Prepara nel gestionale** (o Ctrl+Invio
   riporta solo le scritte delle voci; due voci uguali dal telefono non si scelgono). Dose, unità e
   via in vista; diluizione, frequenza, durata, continua e al bisogno dietro «Altro»; mai le note,
   mai l'ora. Un riepilogo col nome, e **«Conferma per ROSSI M.»**: un farmaco per Conferma.
-  Il PC fa il giro di sempre in **una scheda di sottofondo**, la stessa per leggere, cercare e
-  aggiungere (comandi `terapie`, `terapiaCerca`, `terapiaAggiungi`): la pagina del paziente, il **suo**
-  pulsante «Terapia» (mai un indirizzo fatto da noi), e lì resta, ferma, finché serve — le ricerche nella
-  sua tendina, senza ricaricare; prima di aggiungere la pagina si rilegge col suo pulsante
+  Il PC fa il giro di sempre in **una scheda di sottofondo** (comandi `terapie`, `terapiaCerca`,
+  `terapiaAggiungi`): la pagina del paziente, il **suo** pulsante «Terapia» (mai un indirizzo fatto da
+  noi). Per una lettura sola si chiude; col foglio «＋ Farmaco» aperto resta, ferma, la stessa per
+  cercare e aggiungere — le ricerche nella sua tendina, senza ricaricare; prima di aggiungere la pagina si rilegge col suo pulsante
   «Prescrizione», e il controllo di quello che il telefono ha visto si fa su quella. Si chiude dopo
   l'aggiunta, a ogni dubbio, col foglio chiuso sul telefono, o dopo 2 minuti senza lavoro. Se ci entri
   (anche perché Chrome te la mostra chiudendo la tua) è tua: una pagina come le altre, mai riusata né

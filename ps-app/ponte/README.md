@@ -424,11 +424,12 @@ volte. Nel registro degli errori (`segnaErrore`) solo il perché e i nomi dei ca
 
 **La Terapia.** La pagina Terapia del gestionale (`PsoEpisodioTerapieImposta`), sempre da una scheda
 di sottofondo (`ponte.terapie`, una sola) aperta sulla pagina del paziente, che preme il suo
-pulsante «Terapia» e fa il lavoro chiesto (`ponteTerapiaQui` in `core.js`). Finita bene una lettura o
-una ricerca, la scheda resta ferma sulla pagina Terapia (`fermo`) e il lavoro dopo la riusa
-(`ponteTerapiaLavoro`): una ricerca lì dov'è, nella tendina della pagina; una lettura o un'aggiunta
-prima rileggono la pagina col suo pulsante «Prescrizione» (una GET: lo stato di adesso, subito prima
-di scrivere). Si chiude dopo un'aggiunta, a ogni dubbio, quando il foglio «＋ Farmaco» si chiude sul
+pulsante «Terapia» e fa il lavoro chiesto (`ponteTerapiaQui` in `core.js`). Una lettura sola si
+chiude. Finita bene una ricerca (cioè col foglio «＋ Farmaco» aperto sul telefono; un PC di sola
+lettura non cerca), la scheda resta ferma sulla pagina Terapia (`fermo`) e il lavoro dopo la riusa
+(`ponteTerapiaLavoro`): una ricerca lì dov'è, nella tendina della pagina; un'aggiunta prima rilegge
+la pagina col suo pulsante «Prescrizione» (una GET: lo stato di adesso, subito prima di scrivere).
+Si chiude dopo un'aggiunta, a ogni dubbio, quando il foglio «＋ Farmaco» si chiude sul
 telefono (`terapiaFine`), a fine sessione, per un altro paziente, dopo 2 minuti senza lavoro. Una
 scheda in cui il medico entra (la sceglie lui, o Chrome gliela dà chiudendo la sua: `tabs.onActivated`,
 il fuoco della finestra) da lì è sua: mai riusata né chiusa dal ponte, e torna una pagina come le altre
@@ -626,7 +627,7 @@ suo aiutante non l'ha stampato (e il suo file temporaneo, come per ogni foglio).
   un'altra estensione.
 - **La stazione di stampa** riceve i fogli degli ordini e risponde; non comanda e non legge niente.
   Chi ha il telefono sbloccato e associato può collegare una stazione al PC, ma solo inquadrando il suo
-  QR (sullo schermo della stazione, cinque minuti): il PC lo dice (⋯ → Stampanti, il Registro del ponte).
+  QR (sullo schermo della stazione, cinque minuti): il PC lo dice (⋯ → Impostazioni, il Registro del ponte).
 - **Un PDF da stampare** passa cifrato come tutto il resto, e chi ha il telefono sbloccato può far
   uscire fogli dalla stampante A4 del PC (uno per richiesta, al massimo 15 MB): il registro del ponte
   lo dice.

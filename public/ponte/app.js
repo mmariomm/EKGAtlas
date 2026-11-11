@@ -1164,7 +1164,7 @@
       if (!prima) chiedi("richieste", {}, TEMPO, true).then((c) => { if (c) { S.catalogo = c; render(); } }, () => {});
     };
     try { fatto(await scrivi("stazioneCollega", { sta: st.sta, nome: st.nome }, 60e3, fatto, "")); }
-    catch (e) { if (S.stazione === st) { st.fase = "errore"; st.testo = e.inviata ? "Non so se è collegata: guarda sul PC, ⋯ → Stampanti" : e.message; render(); } }
+    catch (e) { if (S.stazione === st) { st.fase = "errore"; st.testo = e.inviata ? "Non so se è collegata: guarda sul PC, ⋯ → Impostazioni" : e.message; render(); } }
   }
   function foglioStazione() {
     const st = S.stazione;
