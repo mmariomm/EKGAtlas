@@ -37,6 +37,12 @@
  *      pagina del paziente. Ognuna resta `ms` millisecondi. Le pagine servite
  *      stanno in `state.passaggi`.
  *
+ *  (f) Il carrello di una richiesta confermata non ha più il suo bottone
+ *      Conferma: la richiesta non è più una bozza (le registrazioni della 3.85
+ *      l'hanno visto al contrario: una Conferma che il gestionale non aveva
+ *      preso lasciava l'esame in carrello col suo Conferma). Il simulatore lo
+ *      mostrava sempre; qui no. (opts.confermaSempre: come il simulatore.)
+ *
  * opts.prenotazioneEsterna: il foglio RX resta «Stampa Prenotazione Esterna».
  * opts.filtroStaccato: il modulo RisorsaFiltro com'è nella pagina salvata
  * (`esempi-gestionale/esami-centrale.html`): vuoto, coi controlli fuori — lì
@@ -162,6 +168,10 @@ export function createMock(opts = {}) {
     const prima = html;
     // (c) il foglio RX col suo nome vero (opts.prenotazioneEsterna: quello di una prenotazione esterna)
     if (!opts.prenotazioneEsterna) html = html.replace(/title="Stampa Prenotazione Esterna"/g, 'title="Stampa Richiesta Radiologia"');
+    // (f) il carrello di una richiesta confermata: senza il suo bottone Conferma
+    if (!opts.confermaSempre && mvpg === "RcsRichiestaPrestazioniRicercaErogatore" && (st.richieste[p.get("RICHIESTA_ID")] || {}).confirmed) {
+      html = html.replace(/<input type="submit" name="Update1?" value="Conferma">/g, "");
+    }
     // il modulo vuoto e i controlli fuori, come nella pagina salvata (solo il carrello)
     if (opts.filtroStaccato && /name="Prestazioni"/.test(html)) {
       html = html.replace(/(<form name="RisorsaFiltro"[^>]*>)([\s\S]*?)<\/form>/, (m, apre, dentro) => `${apre}</form><div>${dentro}</div>`);

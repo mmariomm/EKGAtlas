@@ -382,6 +382,8 @@
     }
     if (d.evento === "fine") return chiusa(d.perche, d.testo);
     if (d.evento === "ordine" && d.ordine) { ordineVisto(d.ordine); render(); return; }
+    // (le stampe del PC cambiate: i bottoni di stampa si accendono o si spengono, col perché)
+    if (d.evento === "stampa" && d.stampa && typeof d.stampa === "object") { if (S.catalogo) { S.catalogo = { ...S.catalogo, stampa: d.stampa }; render(); } return; }
     if (d.evento === "avviso") avviso(d.testo);
   }
   const errDa = (d) => Object.assign(new Error(d.errore || "Non riuscito sul PC"), { dati: d.dati, incerto: !!d.incerto, dimesso: !!d.dimesso, scaduta: !!d.scaduto,
@@ -826,6 +828,20 @@
     S.occupato.delete("ristampe" + ep);
     if (JSON.stringify(S.ristampe.get(ep) || null) !== prima) render();   // (uguale a prima: niente da ridisegnare)
   }
+  // «Stampa sul PC» sulla carta di un ordine la cui stazione di stampa non
+  // risponde: il PC fa quello che fa il suo «Stampa qui» (una volta; il tocco è
+  // il consenso). Com'è andata la dice la carta, con le parole del PC.
+  async function ordQui(id) {
+    const k = "qui" + id;
+    if (S.occupato.has(k)) return;
+    S.occupato.add(k); render();
+    try { await chiedi("ordineQui", { id }, 30e3); }
+    catch (e) {
+      if (e.tempo || e.incerto) avviso("Non so se la stampa sul PC è partita: guarda la stampante prima di rifarla", "err", true);
+      else errore(e);
+    }
+    S.occupato.delete(k); render();
+  }
   // «Ristampa»: le etichette e il foglio di quella richiesta, sulle stampanti scelte
   // (PC o stazione, come per un ordine). Una alla volta: un doppio tocco è un tocco
   // solo; il numero (`oid`) è della ristampa, rimandata il PC la fa una volta sola.
@@ -860,10 +876,12 @@
     // il secondo tocco stampa; con un genere solo (o un PC che non dice quali) stampa subito
     const apri = S.ristApri && S.ristApri.ep === p.ep ? S.ristApri.id : "";
     const q = (r, k, t) => `<button class="btnmini" data-a="ristampaQ" data-id="${esc(r.id)}" data-q="${k}">${t}</button>`;
+    const no = stampaNo(staDi() ? doveDi(p.ep) : "qui");   // (il PC non stampa da solo: si ristampa da lì)
     return `<div class="lbl">Richieste fatte</div>${doveHtml(p)}<div class="carta ristampe">${l.map((r) => `<div class="rist${apri === r.id ? " apri" : ""}"><span class="c"><b>${esc(r.quando || "Richiesta")}</b>${
       r.esami ? `<span>${esc(r.esami)}</span>` : ""}<small>${esc(r.cosa || "")}</small></span><button class="btnmini pri" data-a="ristampa" data-id="${esc(r.id)}" aria-expanded="${apri === r.id}" ${
-      S.occupato.has("ris" + p.ep + "." + r.id) ? "disabled" : ""}>Ristampa</button>${
-      apri === r.id ? `<div class="quali" role="group" aria-label="Che cosa ristampare">${q(r, "etichette", "🏷️ Etichette")}${q(r, "foglio", "📄 Foglio")}${q(r, "tutto", "Entrambi")}</div>` : ""}</div>`).join("")}</div>`;
+      S.occupato.has("ris" + p.ep + "." + r.id) || no ? "disabled" : ""}>Ristampa</button>${
+      apri === r.id && !no ? `<div class="quali" role="group" aria-label="Che cosa ristampare">${q(r, "etichette", "🏷️ Etichette")}${q(r, "foglio", "📄 Foglio")}${q(r, "tutto", "Entrambi")}</div>` : ""}</div>`).join("")}</div>${
+      no ? `<p class="piede">${esc(no)}: si ristampa dal PC</p>` : ""}`;
   }
   // Tornati sull'app: l'elenco e, sulla pagina di un paziente, i suoi esiti
   // (un referto arrivato intanto). Li chiede l'app da sé: non tengono aperta la sessione.
@@ -1436,7 +1454,7 @@
     return `<header class="top">${sx}${nome}${statoPc()}${solaLettura() ? segnoSola() : ""}<button class="ico" data-a="menu" aria-label="Altro" aria-expanded="${S.menu}">${ICO.altro}</button>
       ${S.menu ? `<div class="menu" role="menu">
         ${listaPc}
-        <button data-a="stampaPdf">${em("📄")}Stampa PDF${staDi() ? ` · ${esc(doveTel() === "stazione" ? staDi() : "PC")}` : ""}</button>
+        <button data-a="stampaPdf" ${stampaNo() ? "disabled" : ""}>${em("📄")}Stampa PDF${staDi() ? ` · ${esc(doveTel() === "stazione" ? staDi() : "PC")}` : ""}${stampaNo() ? ` <small>${esc(stampaNo())}</small>` : ""}</button>
         <button data-a="scansiona">${em("📷")}Scansiona il QR</button>
         ${solaLettura() ? "" : `<button data-a="registrazioni"><span class="em rec" aria-hidden="true">●</span> Registrazioni</button>`}
         <button class="via" data-a="dimentica">${em("🗑️")}Scollega ${S.pcs.length >= 2 ? "questo PC" : "il PC"}</button>
@@ -1536,20 +1554,23 @@
       <span class="tr"></span><span class="cor"><span class="r1"><span class="nome">${p.omonimo ? '<span class="om">⚠ </span>' : ""}${esc(p.nome || p.breve)}</span>${Number.isInteger(p.eta) ? `<span class="eta">${p.eta} anni</span>` : ""}${
         p.posto ? `<span class="posto">${esc(p.posto)}</span>` : ""}${statoPaz(p.stato)}${promPill(p)}</span>${p.nota ? `<span class="nota">${esc(p.nota)}</span>` : ""}</span></button>`;
   }
-  // Un ordine, con le parole del PC: il titolo è com'è andata, l'ora una volta.
-  // In una barra: quello che corre, o uno finito male (finché non lo si chiude
-  // con ✕); «Ordine non completo» se non è stato confermato tutto.
+  // Un ordine, con le parole del PC: il titolo è com'è andata — Confermata,
+  // Da controllare, Non partita —, l'ora una volta. In una barra: quello che
+  // corre, o uno finito male (finché non lo si chiude con ✕), col paziente.
   function ordineHtml(o, barra = false, sopra = false) {
     const quieto = !!o.quieto;   // esito calmo (ordine confermato dal telefono, etichette al PC): niente allarme, ambra solo nel pallino
     const segno = quieto ? "" : o.tono === "err" || o.tono === "warn" ? "!" : o.tono === "ok" ? "✓" : "";
-    const male = !quieto && o.fine && (o.tono === "err" || o.tono === "warn"), monco = male && (o.tono === "err" || o.stato !== "avviso");
-    const titolo = barra ? `${monco ? "Ordine non completo" : o.titolo || ""} · ${o.paziente || ""}` : o.titolo || "";
-    const testo = barra && monco ? [o.titolo, o.testo].filter(Boolean).join(" · ") : o.testo || "";
+    const titolo = barra ? `${o.titolo || ""} · ${o.paziente || ""}` : o.titolo || "";
+    // quali esami, in breve (due carte «Confermata» dello stesso paziente devono dire quale è quale)
+    const esami = Array.isArray(o.esami) && o.esami.length ? o.esami.slice(0, 4).join(", ") + (o.esami.length > 4 ? ` +${o.esami.length - 4}` : "") : "";
+    const testo = [barra ? "" : esami, o.testo].filter(Boolean).join(" · ");
+    // la stazione di stampa non risponde: «Stampa sul PC», un tocco (lo stesso di «Stampa qui» sul PC); senza la stampa automatica, al PC
+    const qui = o.qui && !barra && stampaNo("qui") === "" ? `<button class="btnmini" data-a="ordQui" data-id="${esc(o.id)}" ${S.occupato.has("qui" + o.id) ? "disabled" : ""}>Stampa sul PC</button>` : "";
     const meta = barra || /\balle \d/.test(`${o.titolo} ${o.testo}`) ? "" : hhmm(o.ts || Date.now());
     return `<div class="ord ${esc(o.tono || "run")}${quieto ? " quieto" : ""}${barra ? " ordbar" : ""}${sopra ? " sopra" : ""}" role="status"${barra ? ` data-a="paz" data-ep="${esc(o.ep)}"` : ""}>
       <span class="seg-o">${segno}</span>
       <span class="c"><b><span>${esc(titolo)}</span>${meta ? `<time>${esc(meta)}</time>` : ""}</b>${testo ? `<span>${esc(testo)}</span>` : ""}${!barra && o.dettaglio && !`${titolo} ${testo}`.includes(o.dettaglio) ? `<small>${esc(o.dettaglio)}</small>` : ""}</span>
-      ${o.fine ? `<button class="x" data-a="nascondi" data-id="${esc(o.id)}" aria-label="Chiudi">✕</button>` : ""}</div>`;
+      ${qui}${o.fine ? `<button class="x" data-a="nascondi" data-id="${esc(o.id)}" aria-label="Chiudi">✕</button>` : ""}</div>`;
   }
   // (un ordine finito bene se ne va da solo dopo due minuti: le carte non si ammucchiano)
   const ordiniDi = (ep) => [...S.ordini.values()].filter((o) => o.ep === ep && !S.nascosti.has(o.id) && !(o.finito && Date.now() - o.finito > VERDE_MAX))
@@ -1813,7 +1834,7 @@
       const aperto = S.aperti.has(r.id);
       return `<div class="refw${["lab", "ecg", "img"].includes(r.tipo) ? " k-" + r.tipo : ""}"><button class="ref${r.pdf ? " conpdf" : ""}" data-a="referto" data-id="${esc(r.id)}" aria-expanded="${aperto}"><span class="r1"><span class="q">${esc(r.quando)}</span><span class="t">${esc(r.titolo)}</span>${r.nuovo ? `<span class="nuovo">nuovo</span>` : ""}</span>${
         aperto ? (r.testo ? `<div class="testo">${esc(r.testo)}</div>` : `<div class="manca">${r.lungo ? "Testo troppo lungo per il telefono: leggilo sul PC." : "Testo non ancora letto sul PC: aprilo una volta dal pannello (Esiti), poi è qui."}</div>`) : ""}</button>${
-        r.pdf ? `<button class="prn" data-a="stampaRef" data-id="${esc(r.id)}" aria-label="Stampa il referto" ${S.stampa && !S.stampa.fine ? "disabled" : ""}>🖨️</button><button class="pdf" data-a="pdf" data-id="${esc(r.id)}" data-n="${Number(r.pdf) || 0}" ${S.occupato.has("pdf" + r.id) ? "disabled" : ""}>PDF</button>` : ""}</div>`;
+        r.pdf ? `<button class="prn" data-a="stampaRef" data-id="${esc(r.id)}" aria-label="${esc(stampaNo() || "Stampa il referto")}" ${(S.stampa && !S.stampa.fine) || stampaNo() ? "disabled" : ""}>🖨️</button><button class="pdf" data-a="pdf" data-id="${esc(r.id)}" data-n="${Number(r.pdf) || 0}" ${S.occupato.has("pdf" + r.id) ? "disabled" : ""}>PDF</button>` : ""}</div>`;
     }).join("")}</div>` : "");
     return `${valori}${carta(altri)}${lab.length ? `<div class="lbl">Laboratorio</div>${carta(lab)}` : ""}${e.nota ? `<p class="piede">${esc(e.nota)}</p>` : ""}`;
   }
@@ -1860,6 +1881,12 @@
   // La stazione di stampa collegata al PC (il suo nome) e dove vanno i fogli:
   // la scelta del PC, o l'ultima toccata qui.
   const staDi = () => (S.catalogo && S.catalogo.stampa && S.catalogo.stampa.stazione) || "";
+  // Il PC stampa da solo (l'aiutante)? Se no, quello che il telefono manda a
+  // stampare sul PC aspetterebbe un tocco là: i bottoni si spengono, col perché,
+  // prima del tocco. Verso la stazione l'aiutante del PC non serve; un PC che
+  // non lo dice (`auto` assente): come prima.
+  const STAMPA_NO = "Sul PC la stampa automatica non è impostata";
+  const stampaNo = (dove = doveTel()) => (S.catalogo && S.catalogo.stampa && S.catalogo.stampa.auto === false && dove !== "stazione" ? STAMPA_NO : "");
   // La stampante DEL TELEFONO, per PC associato: il PC o la stazione — l'ultima toccata in
   // «Stampa: PC · Infermeria» (sopra un ordine, sopra «Richieste fatte»), e da lì vale per tutto:
   // ordini, ristampe, «Stampa PDF», 🖨️ dei referti. Non scelta: quella del PC (il catalogo).
@@ -2094,7 +2121,7 @@
   let premuto = 0, rinviato = false, disegno = false, trascino = false;
   // le azioni che senza il PC non vanno
   // (l'ordine no: senza collegamento va in coda)
-  const SERVE_PC = new Set(["valori", "pdf", "aggiornaLista", "stampaPdf", "stampaRef", "dfck", "dftogli", "csalva", "cricarica", "crileggi", "registrazioni", "zipLista", "zipScarica", "zipVia",
+  const SERVE_PC = new Set(["valori", "pdf", "aggiornaLista", "stampaPdf", "stampaRef", "ordQui", "dfck", "dftogli", "csalva", "cricarica", "crileggi", "registrazioni", "zipLista", "zipScarica", "zipVia",
     "trileggi", "tconferma", "accetta"]);
   function render() {
     if (premuto || trascino) { rinviato = true; return; }
@@ -2306,6 +2333,7 @@
       else ristampa(ep, b.dataset.id);
     }
     else if (a === "ristampaQ") ristampa(ep, b.dataset.id, ["etichette", "foglio"].includes(b.dataset.q) ? b.dataset.q : "tutto");
+    else if (a === "ordQui") ordQui(b.dataset.id);
     else if (a === "trileggi") { if (S.tf && !S.tf.stato) S.tf = null; caricaTerapie(ep, false, true); }
     else if (a === "tnuovo") apriFarmaco(ep);
     // (chiuso il foglio: la scheda della Terapia che il PC teneva aperta per la ricerca non serve più)

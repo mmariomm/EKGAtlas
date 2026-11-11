@@ -44,6 +44,12 @@ function chromiumPath() {
 }
 let fail = 0;
 const check = (c, m) => { console.log((c ? "  ✓ " : "  ✗ ") + m); if (!c) fail++; };
+// Un ordine confermato dice «Confermata»: com'è andata la stampa è la frase
+// sotto («Stampato su …»), e quello che le stava sotto scende alla riga dopo.
+// Qui si legge la stampa com'è andata, per un ordine e per una ristampa.
+const conStampa = (p) => !!p && p.titolo === "Confermata" && !!p.testo && !/^(Stampo|Etichette pronte|Fermo la stampa|L'etichetta anagrafica)/.test(p.testo);
+const stampaDi = (p) => (!p ? "" : conStampa(p) ? p.testo : p.titolo);
+const sottoDi = (p) => (!p ? "" : conStampa(p) ? String(p.dettaglio || "").split(" · ")[0] : p.testo);
 const sezione = (t) => console.log("\nstazione: " + t);
 const sospendi = (ms) => new Promise((r) => setTimeout(r, ms));
 const shot = async (page, nome) => { if (SHOTS) await page.screenshot({ path: join(SHOTS, nome + ".png") }).catch((e) => console.log(`  (foto ${nome} non salvata: ${String(e.message).split("\n")[0]})`)); };
@@ -306,9 +312,9 @@ await doc.bringToFront();
 await suPagina(doc, A.patientUrl);
 let prima = await idsOra();
 await ordina(doc, ["TROPONINA"]);
-const qui1 = await finito(prima, (x) => x.stato === "avviso" && /^Stampato/.test(x.pubblico?.titolo || ""));
+const qui1 = await finito(prima, (x) => x.stato === "avviso" && /^Stampato/.test(stampaDi(x.pubblico) || ""));
 const locali = lavori("pc");
-check(!!qui1 && /^Stampato su /.test(qui1.pubblico.titolo) && locali.length >= 2 && lavori("sta").length === 0,
+check(!!qui1 && /^Stampato su /.test(stampaDi(qui1.pubblico)) && locali.length >= 2 && lavori("sta").length === 0,
   `«Stampa: Qui»: i fogli sulle stampanti del PC del medico, come sempre (got ${JSON.stringify(locali.map((x) => `${x.tipo}→${x.stampante}`))})`);
 // «Stampa: Infermeria», dal menu ⋯ del pannello
 await doc.bringToFront();
@@ -333,10 +339,10 @@ check((await sw.evaluate(() => chrome.storage.local.get("stampa"))).stampa?.dove
 prima = await idsOra();
 const pcPrima = lavori("pc").length;
 await $panel(doc, "#goconfirm").click();
-const inf1 = await finito(prima, (x) => x.stato === "avviso" && /^Stampato/.test(x.pubblico?.titolo || ""));
+const inf1 = await finito(prima, (x) => x.stato === "avviso" && /^Stampato/.test(stampaDi(x.pubblico) || ""));
 const st1 = lavori("sta");
 const tipi = (l) => l.map((x) => x.tipo).sort().join(",");
-check(!!inf1 && inf1.pubblico.titolo === "Stampato in Infermeria" && inf1.dest === "stazione" && inf1.fogli.every((f) => f.stato === "stampato" && f.stazione),
+check(!!inf1 && stampaDi(inf1.pubblico) === "Stampato in Infermeria" && inf1.dest === "stazione" && inf1.fogli.every((f) => f.stato === "stampato" && f.stazione),
   `l'ordine dice «Stampato in Infermeria» (got ${JSON.stringify(inf1 && inf1.pubblico)})`);
 check(st1.length === locali.length && tipi(st1) === tipi(locali) && st1.every((x) => x.ok)
   && st1.filter((x) => x.tipo === "etichette").every((x) => x.stampante === "Zebra Infermeria") && st1.filter((x) => x.tipo === "a4").every((x) => x.stampante === "HP Infermeria A4"),
@@ -399,8 +405,8 @@ await shot(tel, "stazione-5-telefono-ordine");
 const sta0 = lavori("sta").length;
 prima = await idsOra();
 await tocca("#ordina"); await sospendi(900); await tocca("#ordina");
-const inf2 = await finito(prima, (x) => x.id.startsWith("tel") && x.stato === "avviso" && /^Stampato/.test(x.pubblico?.titolo || ""));
-check(!!inf2 && inf2.pubblico.titolo === "Stampato in Infermeria" && lavori("sta").length === sta0 + st1.length && lavori("pc").length === pcPrima,
+const inf2 = await finito(prima, (x) => x.id.startsWith("tel") && x.stato === "avviso" && /^Stampato/.test(stampaDi(x.pubblico) || ""));
+check(!!inf2 && stampaDi(inf2.pubblico) === "Stampato in Infermeria" && lavori("sta").length === sta0 + st1.length && lavori("pc").length === pcPrima,
   `l'ordine dal telefono: i fogli in Infermeria, una volta (got ${JSON.stringify(inf2 && inf2.pubblico)})`);
 check(/Stampato in Infermeria/.test(await aspettaTel(/Stampato in Infermeria/, 15000)), "e il telefono dice «Stampato in Infermeria»");
 // «PC», toccato: per questo ordine e quelli dopo (si ricorda)
@@ -411,8 +417,8 @@ await tocca('.cta .dove [data-d="qui"]');
 check(await doveTel() === "PC" && !/→/.test(await tel.locator("#ordina").innerText()), "«PC» toccato: il bottone non dice più «→ Infermeria»");
 prima = await idsOra();
 await tocca("#ordina"); await sospendi(900); await tocca("#ordina");
-const qui2 = await finito(prima, (x) => x.id.startsWith("tel") && x.stato === "avviso" && /^Stampato/.test(x.pubblico?.titolo || ""));
-check(!!qui2 && /^Stampato su /.test(qui2.pubblico.titolo) && lavori("pc").length === pcPrima + locali.length && lavori("sta").length === sta0 + st1.length,
+const qui2 = await finito(prima, (x) => x.id.startsWith("tel") && x.stato === "avviso" && /^Stampato/.test(stampaDi(x.pubblico) || ""));
+check(!!qui2 && /^Stampato su /.test(stampaDi(qui2.pubblico)) && lavori("pc").length === pcPrima + locali.length && lavori("sta").length === sta0 + st1.length,
   `…e i fogli escono sulle stampanti del PC del medico, non in Infermeria (got ${JSON.stringify(qui2 && qui2.pubblico)})`);
 check((await sw.evaluate(() => chrome.storage.local.get("stampa"))).stampa?.dove === "stazione", "la scelta del PC resta «Infermeria»: il telefono ha la sua");
 // riaperta l'app, la scelta del telefono è quella toccata l'ultima volta: «PC»
@@ -449,9 +455,9 @@ prima = await idsOra();
 const pcR = lavori("pc").length, staR = lavori("sta").length;
 await tocca('[data-a="ristampa"][data-id="699999"]');
 await tel.locator('[data-a="ristampaQ"][data-id="699999"][data-q="tutto"]').dblclick();
-const risQui = await finche(async () => (await ristampati(prima)).find((x) => x.stato === "avviso" && /^Stampato/.test(x.pubblico?.titolo || "")), 60000);
+const risQui = await finche(async () => (await ristampati(prima)).find((x) => x.stato === "avviso" && /^Stampato/.test(stampaDi(x.pubblico) || "")), 60000);
 await sospendi(2500);
-check(!!risQui && /^Stampato su /.test(risQui.pubblico.titolo) && (await ristampati(prima)).length === 1 && risQui.dest === "qui" && deiRid(risQui, 699999),
+check(!!risQui && /^Stampato su /.test(stampaDi(risQui.pubblico)) && (await ristampati(prima)).length === 1 && risQui.dest === "qui" && deiRid(risQui, 699999),
   `«Ristampa» → PC: etichette e foglio della 699999, una ristampa sola nonostante il doppio tocco (got ${JSON.stringify(risQui && risQui.pubblico)})`);
 check(lavori("pc").length === pcR + risQui.stampa.jobs.length && lavori("sta").length === staR && tipi(lavori("pc").slice(pcR)) === "a4,etichette" && (await stampe(doc)).length === 0,
   "sulle stampanti del PC del medico, una volta: le etichette sull'etichettatrice e la lista sull'A4; niente in Infermeria, nessun dialogo");
@@ -464,9 +470,9 @@ prima = await idsOra();
 const pcR2 = lavori("pc").length, staR2 = lavori("sta").length;
 await tocca(`[data-a="ristampa"][data-id="${altra}"]`);
 await tocca(`[data-a="ristampaQ"][data-id="${altra}"][data-q="tutto"]`);
-const risSta = await finche(async () => (await ristampati(prima)).find((x) => x.stato === "avviso" && /^Stampato/.test(x.pubblico?.titolo || "")), 60000);
+const risSta = await finche(async () => (await ristampati(prima)).find((x) => x.stato === "avviso" && /^Stampato/.test(stampaDi(x.pubblico) || "")), 60000);
 await sospendi(2500);
-check(!!risSta && risSta.pubblico.titolo === "Stampato in Infermeria" && risSta.dest === "stazione" && deiRid(risSta, altra),
+check(!!risSta && stampaDi(risSta.pubblico) === "Stampato in Infermeria" && risSta.dest === "stazione" && deiRid(risSta, altra),
   `«Ristampa» → Infermeria: i fogli della richiesta ${altra} (got ${JSON.stringify(risSta && risSta.pubblico)})`);
 check(lavori("sta").length === staR2 + risSta.stampa.jobs.length && lavori("pc").length === pcR2 && (await ristampati(prima)).length === 1,
   "sulle stampanti della stazione, una volta; niente sul PC del medico");
@@ -507,7 +513,7 @@ sezione("dal telefono, in Infermeria: un referto con 🖨️, e «Ristampa» sol
   const staE = lavori("sta").length, pcE = lavori("pc").length;
   await tocca(`[data-a="ristampa"][data-id="${altra2}"]`);
   await tocca(`[data-a="ristampaQ"][data-id="${altra2}"][data-q="etichette"]`);
-  const risEt = await finche(async () => (await ristampati(prima)).find((x) => x.stato === "avviso" && /^Stampato/.test(x.pubblico?.titolo || "")), 60000);
+  const risEt = await finche(async () => (await ristampati(prima)).find((x) => x.stato === "avviso" && /^Stampato/.test(stampaDi(x.pubblico) || "")), 60000);
   await sospendi(2500);
   const nuoviEt = lavori("sta").slice(staE);
   check(!!risEt && risEt.dest === "stazione" && risEt.stampa.jobs.length === nuoviEt.length && nuoviEt.length >= 1 && tipi(nuoviEt) === "etichette" && lavori("pc").length === pcE && (await ristampati(prima)).length === 1,
@@ -525,7 +531,7 @@ prima = await idsOra();
 const sta1 = lavori("sta").length, pc1 = lavori("pc").length;
 await ordina(doc, ["TROPONINA"]);
 const ign = await finito(prima, (x) => x.stato === "avviso" && x.fogli && x.fogli.some((f) => f.stato === "sconosciuto"));
-check(!!ign && /Infermeria non risponde/.test(ign.pubblico.titolo) && /forse stampat/.test(ign.pubblico.testo),
+check(!!ign && /Infermeria non risponde/.test(stampaDi(ign.pubblico)) && /forse stampat/.test(sottoDi(ign.pubblico)),
   `l'ultimo pezzo è arrivato, la risposta no: «Infermeria non risponde · forse stampate: guarda lì…» (got ${JSON.stringify(ign && ign.pubblico)})`);
 const forse = await striscia(doc, /Infermeria non risponde/, 10000);
 check(/forse stampat/.test(forse) && (await azione(doc)) === "Stampa qui", `la striscia lo dice, con «Stampa qui» accanto (got «${forse}» · ${await azione(doc)})`);
@@ -571,7 +577,7 @@ const foglioProva = (rq) => sw.evaluate((r) => stazioneStampa("a4", btoa("%PDF-1
   await ordina(doc, ["TROPONINA"]);
   const fant = await finito(prima, (x) => x.stato === "stampa" || x.stato === "avviso", 60000);
   const durata = (Date.now() - t0) / 1000;
-  check(!!fant && fant.pubblico.titolo === "Infermeria non risponde" && fant.dest === "stazione" && fant.fogli.every((f) => f.stato === "fallito" && f.nonRisponde),
+  check(!!fant && stampaDi(fant.pubblico) === "Infermeria non risponde" && fant.dest === "stazione" && fant.fogli.every((f) => f.stato === "fallito" && f.nonRisponde),
     `«Infermeria non risponde», non «forse»: nessun foglio è partito (got ${JSON.stringify(fant && fant.pubblico)})`);
   check(durata < 25, `detto in secondi, non in minuti: ${durata.toFixed(0)} s dal tocco (prima: più di 120 s)`);
   const sfant = await striscia(doc, /Infermeria non risponde/, 10000);
@@ -630,12 +636,26 @@ await sw.evaluate(() => chrome.storage.session.set({ ordini: [] }));   // (l'avv
 await pSta.close();
 await staCtx.close();
 check(!!(await finche(async () => (await pubblicoPc())?.presente === false, 10000)), "chiuso Chrome sulla stazione: il PC lo sa (non risponde)");
+// all'ordine che nasce la stazione si chiede SUBITO (in sola lettura): tace →
+// la striscia lo dice mentre l'ordine gira, e «Stampa qui» — un tocco — cambia strada
+check(await sw.evaluate(() => stazioneSonda()) === false, "la domanda alla stazione, quando un ordine nasce: spenta, non risponde");
 await suPagina(doc, A.patientUrl);
+{
+  const ora = Date.now();
+  await sw.evaluate((x) => ordScrivi(x), [{ id: "pcmuta0001", ep: "999001", paziente: "ROSSI MARIO", n: 1, stato: "corre", ts: ora, agg: ora, worker: null,
+    vista: { tag: "Invio", testo: "TROPONINA" }, dest: "stazione", destNome: "Infermeria", stazioneMuta: true, resto: { mancano: ["TROPONINA"], controllare: [], nel: [] } }]);
+  const sm = await striscia(doc, /Infermeria non risponde: stampo qui\?/, 10000);
+  check(!!sm && (await azione(doc)) === "Stampa qui", `l'ordine gira, la stazione tace: «Infermeria non risponde: stampo qui?», con «Stampa qui» (got «${sm}» · ${await azione(doc)})`);
+  await $panel(doc, AZIONE).click();
+  const qui = await finche(async () => (await ordini()).find((x) => x.id === "pcmuta0001" && x.dest === "qui" && !x.stazioneMuta), 10000);
+  check(!!qui && !/non risponde/.test(qui.pubblico ? JSON.stringify(qui.pubblico) : ""), `un tocco: l'ordine stampa qui, e la domanda se ne va (got ${JSON.stringify(qui && [qui.dest, qui.pubblico])})`);
+  await sw.evaluate(() => chrome.storage.session.set({ ordini: [] }));
+}
 prima = await idsOra();
 const pc2 = lavori("pc").length, sta2 = lavori("sta").length;
 await ordina(doc, ["TROPONINA"]);
 const muta = await finito(prima, (x) => x.stato === "stampa");
-check(!!muta && muta.pubblico.titolo === "Infermeria non risponde" && muta.dest === "stazione" && muta.fogli.every((f) => f.stato === "fallito" && f.nonRisponde),
+check(!!muta && stampaDi(muta.pubblico) === "Infermeria non risponde" && muta.dest === "stazione" && muta.fogli.every((f) => f.stato === "fallito" && f.nonRisponde),
   `«Infermeria non risponde», nessun foglio arrivato (got ${JSON.stringify(muta && muta.pubblico)})`);
 const nr = await striscia(doc, /Infermeria non risponde/, 10000);
 check(/Infermeria non risponde/.test(nr) && (await azione(doc)) === "Stampa qui", `la striscia: «Infermeria non risponde», con «Stampa qui» (got «${nr}» · ${await azione(doc)})`);
@@ -665,7 +685,7 @@ const pcR3 = lavori("pc").length;
 await tocca('[data-a="ristampa"][data-id="699999"]');
 await tocca('[data-a="ristampaQ"][data-id="699999"][data-q="tutto"]');
 const risMuta = await finche(async () => (await ristampati(prima)).find((x) => x.stato === "stampa"), 60000);
-check(!!risMuta && risMuta.pubblico.titolo === "Infermeria non risponde" && risMuta.dest === "stazione" && risMuta.fogli.every((f) => f.stato === "fallito" && f.nonRisponde),
+check(!!risMuta && stampaDi(risMuta.pubblico) === "Infermeria non risponde" && risMuta.dest === "stazione" && risMuta.fogli.every((f) => f.stato === "fallito" && f.nonRisponde),
   `la stazione spenta: «Infermeria non risponde», nessun foglio arrivato (got ${JSON.stringify(risMuta && risMuta.pubblico)})`);
 check(/Infermeria non risponde/.test(await aspettaTel(/Infermeria non risponde/, 15000)), "e il telefono lo dice");
 await sospendi(2500);
@@ -684,7 +704,7 @@ check(!!(await finche(async () => (await pubblicoPc())?.presente === true, 30000
 await suPagina(doc, A.patientUrl);
 prima = await idsOra();
 await ordina(doc, ["TROPONINA"]);
-check(!!(await finito(prima, (x) => x.stato === "avviso" && x.pubblico?.titolo === "Stampato in Infermeria")), "un ordine: di nuovo «Stampato in Infermeria»");
+check(!!(await finito(prima, (x) => x.stato === "avviso" && stampaDi(x.pubblico) === "Stampato in Infermeria")), "un ordine: di nuovo «Stampato in Infermeria»");
 const ign0 = await sw.evaluate(() => stm.ignorati);
 const ord0 = (await ordini()).length, reg0 = JSON.stringify((await sw.evaluate(() => chrome.storage.session.get("ponte"))).ponte?.registro || []);
 const mandati = await staSw.evaluate(async () => {

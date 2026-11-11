@@ -982,6 +982,7 @@ const ORD = "ordini";
 const ORD_PIANO = (id) => "ordine:" + id;
 const ORD_VISTI = "ordiniVisti";   // gli ordini già accettati: uno chiesto due volte parte una volta
 const ORD_FOGLI = "ordiniFogli";   // gli ordini di cui il service worker ha già i fogli: consegnati due volte, si stampano una
+const ORD_RICONF = "ordiniRiconfermate";   // le richieste la cui Conferma è già stata rifatta: una volta sola
 const SA4 = "https://smarthealth.multimedica.it";
 const ATTIVI = new Set(["avvio", "corre"]);          // occupano la coda: un motore alla volta
 // (e «stampo»: confermata, il service worker stampa i fogli senza dialogo; la
@@ -999,6 +1000,26 @@ const ATTIVI = new Set(["avvio", "corre"]);          // occupano la coda: un mot
 const PRESA_MAX = 60e3;       // una presa di PDF ferma da così: non tiene più la coda
 const daPrendere = (rec) => rec.stato === "stampo" && !rec.ferma && !rec.interrotta && Date.now() - (rec.agg || 0) < PRESA_MAX
   && Array.isArray(rec.fogli) && rec.fogli.some((f, i) => (f.stato === "attesa" || f.stato === "prendo") && !((rec.stampa && rec.stampa.jobs && rec.stampa.jobs[i]) || {}).diretto);
+// PRIMA LE ETICHETTE. Senza la stampa automatica le etichette di un ordine le
+// stampa una scheda del medico, col dialogo: la si cerca SUBITO (daDare: il
+// prossimo ordine aspetta che la consegna sia tentata, al più DARE_MAX), e la
+// scheda che le prende scarica tutti i PDF per primi e lo dice
+// (ordinePresi): finché non li ha — al più PRESA_PDF_MAX — il prossimo ordine
+// non parte. Le pagine del gestionale sono di una sessione sola: un motore
+// che manda esami intanto le avrebbe fatte aspettare dietro di sé.
+// (In memoria: un service worker che riparte non aspetta niente.)
+const PRESE = new Map();   // id dell'ordine → { t: quando una scheda ha preso le sue etichette, tab: quale }
+const PRESA_PDF_MAX = 20e3, DARE_MAX = 12e3;
+const preseInCorso = () => { const ora = Date.now(); for (const [k, x] of PRESE) if (ora - x.t > PRESA_PDF_MAX) PRESE.delete(k); return PRESE.size > 0; };
+// (la scheda che le ha prese se ne va — chiusa, o su un'altra pagina —: i suoi PDF non arrivano più, la coda non li aspetta)
+const preseVia = (tab) => {
+  let via = false;
+  for (const [k, x] of PRESE) if (x.tab === tab) { PRESE.delete(k); via = true; }
+  if (via) inFilaOrd(async () => { await ordAvanti(await ordLeggi()); }).catch(() => {});
+};
+chrome.tabs.onRemoved.addListener((tab) => preseVia(tab));
+chrome.tabs.onUpdated.addListener((tab, info) => { if (info.status === "loading" && PRESE.size) preseVia(tab); });
+const daDare = (rec) => rec.stato === "stampa" && !!rec.daDare && Date.now() - rec.daDare < DARE_MAX;
 // IL MOTORE, UNO SOLO IN TUTTO IL BROWSER. Un ordine in sottofondo che gira
 // (`ATTIVI`) è un motore; e lo è un giro nella scheda del medico (senza la
 // scheda di sottofondo, la pagina «Nuova richiesta», una ripresa), la sua
@@ -1017,7 +1038,7 @@ try { motorePronto = Promise.resolve(chrome.storage.session.get(MOTORE_K)).then(
 const motoreDiScheda = () => (MOTORE_ORA && MOTORE_ORA.scade > Date.now() ? MOTORE_ORA : null);
 const motoreScrivi = (m) => { MOTORE_ORA = m; return m ? chrome.storage.session.set({ [MOTORE_K]: m }) : chrome.storage.session.remove(MOTORE_K); };
 // (un ordine «muto» — «Ordine fermo · ⏹ la chiude» — tiene la coda, ma non le letture)
-const occupato = (l) => l.some((x) => ATTIVI.has(x.stato) || daPrendere(x)) || !!motoreDiScheda();
+const occupato = (l) => l.some((x) => ATTIVI.has(x.stato) || daPrendere(x) || daDare(x)) || !!motoreDiScheda() || preseInCorso();
 const motoreAlLavoro = (l, tranne = null) => l.some((x) => x !== tranne && ATTIVI.has(x.stato) && !x.muto) || !!motoreDiScheda();
 // …e chi apre da solo una scheda del gestionale (un referto, lo storico, il
 // telefono) aspetta qui la fine del motore, al più 4 minuti
@@ -1108,7 +1129,7 @@ async function ordAvanti(l) {
     try { await ordApri(next, l); return; }
     catch {
       next.stato = "errore"; next.agg = Date.now(); next.worker = null;
-      next.vista = { tag: "Non partito", testo: "La scheda per l'ordine non si è aperta: niente inviato", tono: "err" };
+      next.vista = { tag: NON_PARTITA, testo: "niente inviato: riprova", tono: "err", quesito: "la scheda per l'ordine non si è aperta" };
       await ordScrivi(l);
     }
   }
@@ -1135,7 +1156,9 @@ async function ordSlega(rec) {
 // dalla fila degli ordini: una scheda lenta non ferma gli altri. Un ordine si
 // dà a una scheda alla volta (CONSEGNO): mai a due schede insieme.
 const CONSEGNO = new Set();
-async function ordDai(id, tabId, forza, jobs = null, dest = "") {
+// (`insieme`: gli altri ordini dello stesso tocco su Conferma, i cui fogli sono
+// in `jobs`: dati alla scheda, se ne vanno anche loro — la Ristampa di un gesto)
+async function ordDai(id, tabId, forza, jobs = null, dest = "", insieme = []) {
   if (CONSEGNO.has(id)) return false;
   CONSEGNO.add(id);
   try {
@@ -1145,12 +1168,14 @@ async function ordDai(id, tabId, forza, jobs = null, dest = "") {
     // (`dest`: «Ristampa» di un ordine della stazione torna alla stazione; «Stampa qui», qui)
     const r = await allaScheda(tabId, { t: "psassistStampa", id: rec.id, ep: rec.ep, paziente: rec.paziente, stampa, forza: !!forza, conferma: rec.ts || 0,
       dest: dest || (rec.dest === "stazione" && rec.stato !== "stampa" ? "stazione" : "qui"),
-      confermata: rec.confermata || 0 });   // (la prova della Conferma: la pagina del paziente caricata prima si ricarica, stampato)
+      ...(rec.gesto ? { gesto: rec.gesto } : {}), confermata: rec.confermata || 0 });
     if (!(r && r.ok)) return false;
+    // (le etichette prese da una scheda col dialogo: la coda aspetta che lei abbia tutti i PDF — ordinePresi)
+    if (rec.stato === "stampa" && !forza && !r.gia) PRESE.set(String(rec.id), { t: Date.now(), tab: tabId });
     await inFilaOrd(async () => {
       const l = await ordLeggi();
-      const x = l.find((y) => y.id === id);
-      if (x) { await togli(l, x); await ordScrivi(l); }
+      for (const y of l.filter((y) => y.id === id || insieme.includes(y.id))) await togli(l, y);
+      await ordScrivi(l);
     });
     return true;
   } finally { CONSEGNO.delete(id); }
@@ -1165,7 +1190,18 @@ async function ordConsegnaStampa() {
   for (const q of [{ active: true, lastFocusedWindow: true }, { active: true }]) {
     for (const t of await chrome.tabs.query(q).catch(() => [])) if (sulGestionale(t.url) && !cand.includes(t.id)) cand.push(t.id);
   }
-  for (const rec of pronte) for (const id of cand) if (await ordDai(rec.id, id, false)) break;
+  for (const rec of pronte) {
+    let data = false;
+    for (const id of cand) if (await ordDai(rec.id, id, false)) { data = true; break; }
+    // (nessuna scheda le prende adesso — un altro paziente davanti, chi scrive, nessuna scheda:
+    // restano per il tocco su «Stampa», e la coda non le aspetta più)
+    if (!data && rec.daDare) {
+      await inFilaOrd(async () => {
+        const l = await ordLeggi(), x = l.find((y) => y.id === rec.id);
+        if (x && x.daDare) { delete x.daDare; await ordScrivi(l); await ordAvanti(l); }
+      });
+    }
+  }
 }
 // Il giro di controllo: schede sparite, schede che non partono o non parlano
 // più, etichette che nessuno ha preso. Lo chiedono le schede
@@ -1180,11 +1216,11 @@ async function ordControlla(l) {
     const t = rec.worker != null ? await chrome.tabs.get(rec.worker).catch(() => null) : null;
     if (rec.worker != null && (!t || t.discarded)) {
       rec.worker = null;
-      if (ATTIVI.has(rec.stato)) { rec.stato = "chiusa"; rec.agg = ora; rec.vista = { tag: "Scheda chiusa", testo: "", tono: "err" }; }
+      if (ATTIVI.has(rec.stato)) { rec.stato = "chiusa"; rec.agg = ora; rec.vista = { tag: "", testo: "", tono: "err" }; }
       if (rec.stato === "stampo") rec.interrotta = rec.interrotta || "la scheda dell'ordine si è chiusa";
     } else if (rec.stato === "avvio" && ora - rec.agg > AVVIO_MAX) {
       rec.stato = "errore"; rec.agg = ora;
-      rec.vista = { tag: "Non partito", testo: "La scheda dell'ordine non ha risposto: niente inviato", tono: "err" };
+      rec.vista = { tag: NON_PARTITA, testo: "niente inviato: riprova", tono: "err", quesito: "la scheda dell'ordine non ha risposto" };
       await ordSlega(rec);
     } else if (rec.stato === "avvio" && t && !rec.riaperta && rec.consegnata == null && ora - rec.agg > AVVIO_VUOTA && !sulGestionale(t.url) && !sulGestionale(t.pendingUrl)) {
       // La scheda nuova non è mai arrivata sulla pagina (il suo processo è
@@ -1199,7 +1235,7 @@ async function ordControlla(l) {
       try { await ordApri(rec, l); }
       catch {
         rec.stato = "errore"; rec.agg = ora; rec.worker = null;
-        rec.vista = { tag: "Non partito", testo: "La scheda per l'ordine non si è aperta: niente inviato", tono: "err" };
+        rec.vista = { tag: NON_PARTITA, testo: "niente inviato: riprova", tono: "err", quesito: "la scheda per l'ordine non si è aperta" };
       }
     } else if (rec.stato === "corre" && ora - rec.agg > MUTO_MAX) {
       // Zitta da troppo: le si chiede se c'è (ordSonda, fuori dalla fila).
@@ -1227,7 +1263,7 @@ async function ordControlla(l) {
 // nessuno, o «Annulla» —: non stampate, e lo si dice in ambra, mai un verde.
 function nonStampate(rec, testo) {
   rec.stato = "avviso"; rec.agg = Date.now(); rec.stampa = null; delete rec.fogli;
-  rec.vista = { tag: "Etichette NON stampate", testo, tono: "warn" };
+  rec.vista = { tag: CONFERMATA, testo: "Etichette NON stampate", quesito: testo, tono: "warn" };
 }
 // «Ci sei?» alle schede zitte — fuori dalla fila: una scheda bloccata non deve
 // fermare gli altri ordini, il ⏹ né le letture —; la risposta si scrive dopo,
@@ -1258,7 +1294,7 @@ chrome.tabs.onRemoved.addListener((id) => {
     if (!rec) return;
     rec.worker = null;
     // chiusa a metà giro: le schede del medico diranno cosa non è partito
-    if (ATTIVI.has(rec.stato)) { rec.stato = "chiusa"; rec.agg = Date.now(); rec.vista = { tag: "Scheda chiusa", testo: "", tono: "err" }; }
+    if (ATTIVI.has(rec.stato)) { rec.stato = "chiusa"; rec.agg = Date.now(); rec.vista = { tag: "", testo: "", tono: "err" }; }
     // chiusa mentre si stampa: la richiesta è confermata, i fogli rimasti non partono
     if (rec.stato === "stampo") rec.interrotta = rec.interrotta || "la scheda dell'ordine si è chiusa";
     await ordScrivi(l);
@@ -1282,13 +1318,21 @@ const braccialeUrl = (u) => { try { const x = new URL(u); return x.origin === SA
 const soloBracciale = (rec) => !!rec.stampa && Array.isArray(rec.stampa.jobs) && rec.stampa.jobs.length > 0 && rec.stampa.jobs.every((j) => braccialeUrl(j.url));
 const etichetteInCorso = (l, rec) => l.find((x) => x !== rec && x.stato === "stampo" && !x.interrotta && !x.ferma && !soloBracciale(x)
   && (x.fogli || []).some((f) => f.tipo === "etichette" && ["attesa", "prendo", "invio"].includes(f.stato)));
+// Com'è finito un ordine, in tre parole sole — le stesse sulla striscia, sul
+// telefono e nel Registro: «Confermata» (provata), «Da controllare» (la
+// Conferma è partita, la prova no), «Non partita» (provata non presa, o
+// fermata prima della Conferma). Sotto, l'azione; sotto ancora, il perché.
+const CONFERMATA = "Confermata", DA_CONTROLLARE = "Da controllare", NON_PARTITA = "Non partita";
+const GUARDA = "guarda le sue richieste: se c'è, Ristampa; se no, apri il carrello";
 function ordPubblico(rec, l = []) {
   const v = rec.vista || {}, r = rec.resto || {}, f = Array.isArray(rec.fogli) ? rec.fogli : [];
-  // «Quesito: il tuo» è la frase della scheda dell'ordine: per un ordine dal telefono, si dice quale
-  const vero = (s) => (rec.quesito ? s.replace(/Quesito: il tuo(, al posto del triage)?/g, () => `Quesito: «${rec.quesito}»`) : s);
   // (la scheda dell'ordine ha passato il gestionale all'area del paziente: l'esito lo dice, una volta)
-  const area = rec.area && !["coda", "avvio", "corre"].includes(rec.stato) ? `gestionale ora sull'area ${rec.area}` : "";
-  const P = (tono, titolo, testo = "", ...dettaglio) => ({ tono, titolo: corto(titolo, 80), testo: corto(testo, 200), dettaglio: corto(vero([...dettaglio, area].filter(Boolean).join(" · ")), 240) });
+  const gira = ["coda", "avvio", "corre"].includes(rec.stato);
+  const area = rec.area && !gira ? `gestionale ora sull'area ${rec.area}` : "";
+  // (la stazione non ha risposto quando l'ordine è nato: lo si chiede subito — «Stampa qui», un tocco)
+  const muta = gira && rec.dest === "stazione" && rec.stazioneMuta ? `${rec.destNome || "Infermeria"} non risponde: stampo qui?` : "";
+  // (il quesito si vede dove si sceglie, e nella ricevuta: non sulla striscia)
+  const P = (tono, titolo, testo = "", ...dettaglio) => ({ tono, titolo: corto(titolo, 80), testo: corto(testo, 200), dettaglio: corto([muta, ...dettaglio, area].filter(Boolean).join(" · "), 240) });
   const alTel = (pc, telefono) => (dalTelefono(rec) ? { ...pc, tel: telefono } : pc);
   const tono = (t, d) => (["run", "ok", "warn", "err"].includes(t) ? t : d);
   const lista = (k) => (Array.isArray(r[k]) ? r[k] : []);
@@ -1302,6 +1346,12 @@ function ordPubblico(rec, l = []) {
   const etichette = (xs) => xs.some((x) => x.tipo === "etichette");
   const cosa = (xs) => (etichette(xs) ? "Etichette NON stampate" : "Fogli NON stampati");
   const alle = `${st.riassunto ? st.riassunto + " " : ""}alle ${ORA(rec.agg)}`;
+  // Un ordine confermato dice «Confermata»: com'è andata la stampa è la frase
+  // sotto (le parole di sempre), e quello che stava sotto scende alla riga
+  // del perché. Una stampa che non è un ordine (l'etichetta anagrafica, un
+  // consenso, un PDF) dice com'è andata, come sempre.
+  const conf = !!rec.confermata || st.tag === "Confermata";
+  const E = (tono, titolo, testo = "", ...det) => (conf ? P(tono, CONFERMATA, titolo, testo, ...det) : P(tono, titolo, testo, ...det));
   switch (rec.stato) {
     case "coda": {
       const prima = l.find((x) => x !== rec && ATTIVI.has(x.stato));
@@ -1338,39 +1388,49 @@ function ordPubblico(rec, l = []) {
       if (rotti.length && sta(rotti)) {
         const muta = rotti.find((x) => x.nonRisponde);
         const titolo = muta ? `${dove(rotti)} non risponde` : cosa(rotti);
-        return alTel(P("warn", titolo, muta ? `${cosa(rotti)}: stampa qui?` : rotti[0].why, st.riassunto),
-          P("warn", titolo, `${cosa(rotti)}: aspettano qualcuno al PC`, muta ? "" : rotti[0].why, st.riassunto));
+        return alTel(E("warn", titolo, muta ? `${cosa(rotti)}: stampa qui?` : rotti[0].why, st.riassunto),
+          E("warn", titolo, `${cosa(rotti)}: aspettano qualcuno al PC`, muta ? "" : rotti[0].why, st.riassunto));
       }
       if (rotti.length) {
-        return alTel(P("warn", cosa(rotti), rotti[0].why || `${dove(rotti)} ha dato errore`, st.riassunto),
-          P("warn", cosa(rotti), "aspettano qualcuno al PC", rotti[0].why, st.riassunto));
+        return alTel(E("warn", cosa(rotti), rotti[0].why || `${dove(rotti)} ha dato errore`, st.riassunto),
+          E("warn", cosa(rotti), "aspettano qualcuno al PC", rotti[0].why, st.riassunto));
       }
-      if (dalTelefono(rec)) return alTel(P("warn", "Etichette NON stampate", "tocca Stampa", st.riassunto), { ...P("ok", "Confermato · etichette al PC", "", st.riassunto), quieto: true });
-      return P("run", "Confermata", "Etichette pronte", st.riassunto, st.quesito);
+      if (dalTelefono(rec)) return alTel(E("warn", "Etichette NON stampate", "tocca Stampa", st.riassunto), { ...P("ok", CONFERMATA, "etichette al PC", st.riassunto), quieto: true });
+      return P("run", CONFERMATA, "Etichette pronte", st.riassunto);
     }
     case "errore": {
-      // Prima che cosa fare, poi (nel resoconto) il perché: «TROPONINA US: non
-      // mandato · apri il carrello → Riprova». La causa — «il codice 324 oggi
-      // si chiama…» — la dice il resoconto che il carrello apre.
+      // «Non partita». Sotto che cosa fare — «apri il carrello → Riprova i
+      // mancanti» —, poi che cosa manca, o il perché di un ordine che non è
+      // partito affatto. La causa di un errore — «il codice 324 oggi si
+      // chiama…» — la dice il resoconto che il carrello apre.
       const m = lista("mancano"), c = lista("controllare");
-      if (!v.sessione && (m.length || c.length)) {
-        const cosa = m.length ? `${m.join(", ")}: ${m.length === 1 ? "non mandato" : "non mandati"}` : `${c.join(", ")}: da controllare`;
-        const riprova = !!(rec.consegna && rec.consegna.avviso && rec.consegna.avviso.riprova) && m.length;
-        const fare = rec.consegna ? (riprova ? "apri il carrello → Riprova" : "apri il carrello e completa") : "completa a mano nel gestionale";
-        // (un ordine che non è partito: il perché, che il resoconto non ha)
-        const poi = [m.length && c.length ? `Da controllare: ${c.join(", ")}` : "", v.tag === "Non partito" ? v.testo : ""].filter(Boolean).join(" · ");
-        return alTel(P("err", cosa, fare, poi), P("err", cosa, "completa al PC", poi));
-      }
-      return P("err", v.tag || "Errore", v.testo || "completa a mano", v.quesito || resto);
+      const riprova = !!(rec.consegna && rec.consegna.avviso && rec.consegna.avviso.riprova) && m.length;
+      // (niente è partito — la scheda non si è aperta, o ha detto di no prima
+      // del primo esame —: solo quando chi lo sa lo ha detto, mai dedotto da
+      // un elenco che potrebbe essere vecchio)
+      const detto = v.tag === NON_PARTITA ? String(v.testo || "") : "";
+      const niente = !rec.consegna && /^niente inviato/.test(detto);
+      const fare = v.sessione ? "rifai l'accesso, poi apri il carrello" : niente ? detto
+        : rec.consegna ? (riprova ? "apri il carrello → Riprova i mancanti" : "apri il carrello") : detto || "completa a mano nel gestionale";
+      const elenchi = [m.length ? `${m.join(", ")}: ${m.length === 1 ? "non mandato" : "non mandati"}` : "", c.length ? `Da controllare: ${c.join(", ")}` : ""].filter(Boolean);
+      const pc = P("err", NON_PARTITA, fare, ...(elenchi.length && !niente ? elenchi : [v.quesito || resto]));
+      return alTel(pc, niente || v.sessione ? pc : { ...pc, testo: "completa al PC" });
     }
     case "chiusa": {
-      const k = lista("mancano").length;
-      return P("err", v.tag || "Scheda chiusa", k ? `${k === 1 ? "1 esame non mandato" : `${k} esami non mandati`}: ${lista("mancano").join(", ")}` : v.testo || "controlla il carrello",
-        lista("controllare").length ? `Da controllare: ${lista("controllare").join(", ")}` : "");
+      // La scheda chiusa a metà giro. Mancava ancora un esame: la Conferma non
+      // c'è stata («Non partita»). Se no può esserci stata: da controllare.
+      const m = lista("mancano"), c = lista("controllare"), nel = lista("nel");
+      const det = ["la scheda dell'ordine si è chiusa", m.length ? `Mancano: ${m.join(", ")}` : "", c.length ? `Da controllare: ${c.join(", ")}` : ""];
+      if (!m.length && (nel.length || c.length)) return P("warn", DA_CONTROLLARE, GUARDA, ...det);
+      return P("err", NON_PARTITA, nel.length || c.length ? "apri il carrello" : "niente inviato: riprova", ...det);
     }
-    case "interrotto": return P("warn", "Interrotto", v.testo || "controlla il carrello", v.quesito || resto);
+    case "interrotto": return P("err", NON_PARTITA, v.testo || "apri il carrello", v.quesito || resto);
     default: {
-      if (!f.length) return P(tono(v.tono, "ok"), v.tag || "Fatto", v.testo, v.quesito);
+      if (!f.length) {
+        const p = P(tono(v.tono, "ok"), v.tag || "Fatto", v.testo, v.quesito);
+        // («Conferma di nuovo» è un bottone della striscia del PC)
+        return v.riconferma ? alTel(p, { ...p, testo: "Conferma di nuovo: dal PC" }) : p;
+      }
       // com'è finita la stampa senza dialogo, foglio per foglio
       // (il perché tecnico resta sul PC; il telefono dice che cosa guardare)
       // (un foglio tolto col suo ✕ l'ha voluto il medico: non è «non uscito»)
@@ -1378,23 +1438,23 @@ function ordPubblico(rec, l = []) {
       // (la stazione: il foglio le è arrivato, la risposta no — o la sua stampante non ha detto com'è andata)
       if (ignoti.length && sta(ignoti)) {
         const e = etichette(ignoti) ? "e" : "i";
-        return alTel(P("warn", /non risponde/.test(ignoti[0].why) ? `${dove(ignoti)} non risponde` : `Esito sconosciuto ${su(ignoti)}`,
+        return alTel(E("warn", /non risponde/.test(ignoti[0].why) ? `${dove(ignoti)} non risponde` : `Esito sconosciuto ${su(ignoti)}`,
           `forse stampat${e}: guarda lì prima di stamparl${e} qui`, st.riassunto),
-        P("warn", etichette(ignoti) ? `Etichette forse stampate ${su(ignoti)}` : `Fogli forse stampati ${su(ignoti)}`, `guarda lì prima di ristamparl${e} dal PC`, st.riassunto));
+        E("warn", etichette(ignoti) ? `Etichette forse stampate ${su(ignoti)}` : `Fogli forse stampati ${su(ignoti)}`, `guarda lì prima di ristamparl${e} dal PC`, st.riassunto));
       }
       if (ignoti.length) {
-        return alTel(P("warn", "Esito della stampa sconosciuto", `controlla ${dove(ignoti)}: ${ignoti[0].why || "l'aiutante non ha detto com'è andata"}`, st.riassunto),
-          P("warn", etichette(ignoti) ? "Etichette forse stampate" : "Fogli forse stampati",
+        return alTel(E("warn", "Esito della stampa sconosciuto", `controlla ${dove(ignoti)}: ${ignoti[0].why || "l'aiutante non ha detto com'è andata"}`, st.riassunto),
+          E("warn", etichette(ignoti) ? "Etichette forse stampate" : "Fogli forse stampati",
             `guarda ${dove(ignoti)} prima di ristamparl${etichette(ignoti) ? "e" : "i"} dal PC`, st.riassunto));
       }
-      if (non.length) return P("warn", "Stampa interrotta", `non usciti: ${non.map((x) => x.name).join(", ")}`, rec.interrotta, st.riassunto);
+      if (non.length) return E("warn", "Stampa interrotta", `non usciti: ${non.map((x) => x.name).join(", ")}`, rec.interrotta, st.riassunto);
       // (tutto tolto col ✕: non è uscito niente, e lo ha voluto il medico)
-      if (f.every((x) => x.stato === "tolto")) return P("ok", "Niente stampato", "tolto col ✕");
+      if (f.every((x) => x.stato === "tolto")) return E("ok", "Niente stampato", "tolto col ✕");
       const stampati = f.filter((x) => x.stato === "stampato"), mandati = f.filter((x) => x.stato === "mandato");
       if (soloBracciale(rec)) return mandati.length ? P("warn", `Mandata ${a(mandati)}`, alle, "è nella coda di Windows: controlla che sia uscita")
         : P("ok", `Etichetta stampata ${su(stampati)}`, alle);
-      if (!mandati.length) return P("ok", `Stampato ${su(stampati)}`, alle, st.quesito, tel);
-      return P("warn", `Mandato ${a(mandati)}`, alle, "è nella coda di Windows: controlla che sia uscito",
+      if (!mandati.length) return E("ok", `Stampato ${su(stampati)}`, alle, tel);
+      return E("warn", `Mandato ${a(mandati)}`, alle, "è nella coda di Windows: controlla che sia uscito",
         stampati.length ? `stampato ${su(stampati)}` : "", tel);
     }
   }
@@ -1429,6 +1489,68 @@ async function stampaDove(d) {
   const nome = corto((c && c.nome) || "Infermeria", 40);
   if (d === "stazione" || (d === "ricordata" && collegata && (o.stampa || {}).dove === "stazione")) return { dest: "stazione", destNome: nome };
   return { dest: "qui" };
+}
+// La stazione, chiesta QUANDO L'ORDINE NASCE: la stessa prova in sola lettura
+// che stazioneStampa fa prima di mandare un foglio (una domanda «esito» su
+// una sessione che non si sente da un po', poi una sessione nuova). Se tace,
+// la striscia e il telefono lo dicono subito — «Infermeria non risponde:
+// stampo qui?» — e decide il medico con un tocco (ordQui). Mai altrove da soli.
+async function stazioneSonda() {
+  if (typeof stmSessione !== "function" || typeof stmAttiva !== "function" || !stmAttiva()) return false;
+  try {
+    let s = await stmSessione();
+    if (s && staOra() - stm.sentito <= STA_ATTESA.fresco) return true;
+    if (s && await stmChiedi(s, { cmd: "esito", rq: "sondaviva" }, STA_ATTESA.vivo)) return true;
+    if (s) stmFineSessione();
+    s = await stmSessione();
+    return !!s;
+  } catch { return false; }
+}
+// «Stampa qui», per un ordine della stazione che non risponde: il tocco del
+// medico, sul PC o sul telefono, è il consenso. Un ordine che non è ancora
+// alle etichette cambia strada (da qui le stampa questo PC); uno le cui
+// etichette la stazione non ha stampato le stampa qui, una volta, con lo
+// stesso giro di «Stampa qui» sulla striscia del PC (ordDai: una scheda del
+// gestionale le passa alla stampa automatica). Dal telefono solo con la stampa
+// automatica: un dialogo su un PC che nessuno guarda non è una stampa.
+async function ordQui(id, { daTel = false } = {}) {
+  const fatto = await inFilaOrd(async () => {
+    const l = await ordLeggi();
+    const rec = l.find((x) => x.id === id && x.dest === "stazione");
+    if (!rec) return { ok: false, errore: "Ordine non trovato sul PC" };
+    if (["coda", "avvio", "corre"].includes(rec.stato)) {
+      rec.dest = "qui"; delete rec.destNome; delete rec.stazioneMuta; rec.agg = Date.now();
+      await ordScrivi(l);
+      return { ok: true, cambiata: true };
+    }
+    return { ok: false, rec };
+  });
+  if (fatto.ok || !fatto.rec) return fatto;
+  const rec = fatto.rec;
+  if (!rec.stampa || !["stampa", "avviso"].includes(rec.stato)) return { ok: false, errore: "Niente da stampare qui" };
+  if (daTel && !(await stampaScelte().catch(() => null))) return { ok: false, errore: "Sul PC la stampa automatica non è impostata" };
+  const f = Array.isArray(rec.fogli) ? rec.fogli : [];
+  // (dal telefono mai un foglio «forse stampato»: chi tocca non vede il PC — lì si guarda, e si decide al PC)
+  if (daTel && f.some((x) => x.stato === "sconosciuto")) return { ok: false, errore: "Forse già stampate: guarda lì, poi decidi dal PC" };
+  if (daTel && !f.some((x) => x.stato === "fallito")) return { ok: false, errore: "Niente da stampare sul PC" };
+  const non = rec.stampa.jobs.filter((_, i) => f[i] && !usciti(f[i]) && f[i].stato !== "tolto");
+  const tutte = (await chrome.tabs.query({}).catch(() => [])).filter((t) => sulGestionale(t.url));
+  for (const t of [...tutte.filter((x) => x.active), ...tutte.filter((x) => !x.active)]) {
+    if (await ordDai(rec.id, t.id, true, non.length ? non : null, "qui")) return { ok: true };
+  }
+  return { ok: false, errore: tutte.length ? "Stampa non partita: riprova dal PC" : "Sul PC non c'è una pagina del gestionale aperta" };
+}
+// (l'ordine appena nato, diretto alla stazione: tace? lo si segna, e la striscia lo chiede)
+async function sondaOrdine(id) {
+  // (un altro ordine sta mandando fogli alla stazione: lei risponde a quello, e la sua sessione non si tocca)
+  if ((await ordLeggi()).some((x) => x.stato === "stampo" && x.dest === "stazione")) return;
+  if (await stazioneSonda()) return;
+  await inFilaOrd(async () => {
+    const l = await ordLeggi(), x = l.find((y) => y.id === id);
+    if (!x || x.dest !== "stazione" || !["coda", "avvio", "corre"].includes(x.stato)) return;
+    x.stazioneMuta = true; x.agg = Date.now();
+    await ordScrivi(l);
+  });
 }
 // le «scelte» della stampa per un ordine: quelle di questo PC, o la stazione
 function stampaVerso(rec) {
@@ -1712,6 +1834,10 @@ function ordMessaggio(msg, sender, reply) {
       // laboratorio o radiologia: la riga «Rich Lab · 3/6», «Rich RX · 1/1» sotto la striscia
       kind: j.piano.kind === "radio" ? "radio" : j.piano.kind === "lab" ? "lab" : "",
       rid: j.rid ? corto(j.rid, 20) : null, opener: tab.id, worker: null,
+      // (lo stesso tocco su Conferma: una richiesta per erogatore, un esito e una Ristampa — gestoDi, content)
+      gesto: j.gesto ? corto(j.gesto, 40) : id,
+      // (quali esami, in breve: la carta del telefono li nomina)
+      nomi: nomi(j.nomi),
       // (il quesito scritto sul telefono: lo dice ordPubblico al posto di «il tuo»)
       quesito: id.startsWith("tel") ? corto(String(j.piano.quesito || "").replace(/\s+/g, " ").trim(), 90) : "",
       stato: "coda", ts: Date.now(), agg: Date.now(), vista: null,
@@ -1721,6 +1847,8 @@ function ordMessaggio(msg, sender, reply) {
     };
     await chrome.storage.session.set({ [ORD_PIANO(id)]: j.piano, [ORD_VISTI]: [...visti, id].slice(-100) });
     l.push(rec);
+    // (per la stazione: le si chiede subito se c'è — fuori dalla fila, una domanda in sola lettura)
+    if (rec.dest === "stazione") setTimeout(() => { sondaOrdine(id).catch(() => {}); }, 0);
     if (occupato(l)) {
       await ordScrivi(l);
       return reply({ ok: true, id, coda: true, ordini: l });
@@ -1780,7 +1908,10 @@ function ordMessaggio(msg, sender, reply) {
     if (msg.vista && typeof msg.vista === "object") {
       const v = msg.vista;
       rec.vista = { tag: corto(v.tag, 60), badge: corto(v.badge, 30), testo: corto(v.testo), tono: corto(v.tono, 6),
-        quesito: corto(v.quesito, 90), ferma: !!v.ferma, sessione: !!v.sessione,
+        // (`quesito`: la riga sotto — che cosa manca, il perché)
+        quesito: corto(v.quesito, 200), ferma: !!v.ferma, sessione: !!v.sessione,
+        // («Non partita»: il gestionale non ha preso la Conferma — si può rifarla, un tocco: ordineRiconferma)
+        ...(v.riconferma ? { riconferma: true } : {}),
         // (quanti esami sono passati, su quanti: la riga «Richiesta · 3/6» sotto la striscia)
         ...(Array.isArray(v.prog) && v.prog.length === 2 ? { prog: v.prog.map((x) => Math.max(0, Math.min(99, Number(x) || 0))) } : {}) };
     }
@@ -1803,6 +1934,53 @@ function ordMessaggio(msg, sender, reply) {
     await ordScrivi(l);
     reply({ ok: true, ferma: !!rec.ferma && ATTIVI.has(rec.stato) });
     await ordAvanti(l);
+  });
+  // «Conferma di nuovo»: la Conferma che il gestionale non ha preso (il suo
+  // carrello l'aveva ancora, col suo bottone), rifatta solo al tocco del
+  // medico e UNA volta per richiesta — segnata prima di partire, così anche un
+  // service worker che muore qui non la rifà. È un ordine come gli altri, in
+  // coda e un motore alla volta: la sua scheda apre il carrello di quella
+  // richiesta (l'indirizzo che la scheda dell'ordine ha consegnato, da
+  // leggere) e lì preme la Conferma vera coi controlli di sempre
+  // (riconfermaLavoro). Lo stesso tocco due volte: una.
+  if (msg.t === "ordineRiconferma") return fai(async () => {
+    const l = await ordLeggi();
+    const rec = l.find((x) => x.id === msg.id && FINALI.has(x.stato) && x.vista && x.vista.riconferma);
+    if (!rec) return reply({ ok: false, ordini: l });
+    const fatte = (await chrome.storage.session.get(ORD_RICONF))[ORD_RICONF] || [];
+    const c = rec.consegna || {}, rc = c.receipt || {};
+    let rid = "";
+    try { rid = new URL(c.url).searchParams.get("RICHIESTA_ID") || ""; } catch { rid = ""; }
+    const ok = !!rid && leggibileOrd(c.url) && String(rc.richiestaId || "") === rid && Array.isArray(rc.items) && rc.items.length > 0
+      && rc.items.length <= 60 && !fatte.includes(rid) && (!rec.rid || String(rec.rid) === rid);
+    // (già rifatta, o senza il carrello da aprire: niente — e il bottone se ne va)
+    delete rec.vista.riconferma;
+    if (!ok) rec.vista.testo = "apri il carrello";
+    rec.agg = Date.now();
+    if (!ok) { await ordScrivi(l); return reply({ ok: false, ordini: l }); }
+    await chrome.storage.session.set({ [ORD_RICONF]: [...fatte, rid].slice(-50) });
+    const id = corto(rec.id, 36) + "c";
+    let paz = "";
+    try { paz = new URL(rec.url).searchParams.get("MVPG") === "PsoEpisodioClinicoAmbulatorio" && leggibileOrd(rec.url) ? rec.url : ""; } catch { paz = ""; }
+    const piano = { startPage: "riconferma", richiestaId: rid, episodeId: rec.ep, patientName: rec.paziente || "", patientUrl: paz,
+      listUrl: c.url, receipt: rc, items: rc.items, kind: rec.kind || "" };
+    const nuovo = { id, ep: rec.ep, paziente: rec.paziente, n: rc.items.length, autoConfirm: true, url: c.url, kind: rec.kind || "", rid,
+      listUrl: c.url, opener: tab.id, worker: null, quesito: rec.quesito || "", stato: "coda", ts: Date.now(), agg: Date.now(), vista: null,
+      resto: { mancano: [], controllare: [], nel: nomi(rc.items.map((i) => i.display || i.label)) }, dest: rec.dest || "qui",
+      ...(rec.destNome ? { destNome: rec.destNome } : {}), ...(rec.gesto ? { gesto: rec.gesto } : {}) };
+    await chrome.storage.session.set({ [ORD_PIANO(id)]: piano });
+    // l'avviso di prima ha detto la sua: al suo posto, questa
+    await togli(l, rec);
+    l.push(nuovo);
+    if (occupato(l)) { await ordScrivi(l); return reply({ ok: true, id, coda: true, ordini: l }); }
+    try { await ordApri(nuovo, l); }
+    catch {
+      nuovo.stato = "errore"; nuovo.agg = Date.now(); nuovo.worker = null;
+      nuovo.vista = { tag: "Non partita", testo: "apri il carrello", tono: "err", quesito: "la scheda per la Conferma non si è aperta: niente premuto" };
+      nuovo.consegna = c;
+      await ordScrivi(l);
+    }
+    reply({ ok: true, id, ordini: l });
   });
   // I fogli della richiesta confermata (la conferma è provata), solo da un
   // ordine che gira: i link letti dalla pagina, mai costruiti. Con la stampa
@@ -1831,11 +2009,27 @@ function ordMessaggio(msg, sender, reply) {
     await chrome.storage.session.set({ [ORD_FOGLI]: [...presi, rec.id].slice(-100) });
     rec.stato = auto ? "stampo" : "stampa";
     if (!auto) await ordSlega(rec);
+    // (col dialogo: prima che parta il prossimo ordine, le etichette a una scheda del medico — PRESE)
+    if (!auto && !dalTelefono(rec) && rec.dest !== "stazione") rec.daDare = Date.now();
     await ordScrivi(l);
     reply({ ok: true, stampo: !!auto });
     if (auto) ordStampaFogli(rec.id);
     await ordAvanti(l);
     ordStampaOra();
+  });
+  // «Stampa qui» sulla striscia di un ordine che sta ancora andando, per la
+  // stazione che non risponde: il tocco del medico (ordQui; fuori dalla fila,
+  // che ordQui prende da sé)
+  if (msg.t === "ordineQui") {
+    ordQui(corto(msg.id, 60)).then((r) => reply(r), () => reply({ ok: false }));
+    return true;
+  }
+  // La scheda col dialogo ha tutti i PDF delle etichette che ha preso (o ha
+  // rinunciato): il prossimo ordine può partire.
+  if (msg.t === "ordinePresi") return fai(async () => {
+    PRESE.delete(corto(msg.id, 60));
+    reply({ ok: true });
+    await ordAvanti(await ordLeggi());
   });
   // Una stampa chiesta dalla scheda del medico — dopo una conferma,
   // «Ristampa», «Stampa l'ultima richiesta», un consenso —, con la stampa
@@ -1888,7 +2082,19 @@ function ordMessaggio(msg, sender, reply) {
   // (fuori dalla fila, come ogni consegna a una scheda: ordDai)
   if (msg.t === "ordineStampaQui") {
     (async () => {
-      const rec = (await ordLeggi()).find((x) => x.id === msg.id && (x.stato === "stampa" || x.stato === "avviso") && x.stampa);
+      const l = await ordLeggi();
+      const rec = l.find((x) => x.id === msg.id && (x.stato === "stampa" || x.stato === "avviso") && x.stampa);
+      // La Ristampa di un tocco su Conferma (`gruppo`: i suoi ordini, una
+      // richiesta per erogatore): tutti i fogli di tutte le sue richieste, una
+      // volta ciascuno, le etichette prima — e quegli ordini se ne vanno insieme.
+      const gruppo = !msg.qui && rec && rec.gesto && Array.isArray(msg.gruppo)
+        ? l.filter((x) => x.gesto === rec.gesto && msg.gruppo.includes(x.id) && x.stato === "avviso" && x.stampa) : [];
+      if (gruppo.length > 1 && gruppo.includes(rec)) {
+        const visti = new Set(), tutti = [];
+        for (const j of gruppo.flatMap((x) => x.stampa.jobs || [])) if (j && !visti.has(j.url)) { visti.add(j.url); tutti.push(j); }
+        const jobs = [...tutti.filter((j) => j.printer === "etichettatrice"), ...tutti.filter((j) => j.printer !== "etichettatrice")];
+        return reply({ ok: await ordDai(rec.id, tab.id, true, jobs, "", gruppo.map((x) => x.id).filter((x) => x !== rec.id)) });
+      }
       // «Ristampa» dopo la stampa senza dialogo: i fogli non usciti (o non si
       // sa); se sono usciti tutti, tutti — un'etichetta inceppata
       const f = rec && rec.stato === "avviso" && Array.isArray(rec.fogli) ? rec.fogli : [];
@@ -1927,7 +2133,7 @@ function ordMessaggio(msg, sender, reply) {
     }
     if (rec.stato === "avvio") {
       rec.stato = "interrotto"; rec.agg = Date.now();
-      rec.vista = { tag: "Interrotto", testo: "Fermato prima di partire: niente inviato", tono: "warn" };
+      rec.vista = { tag: NON_PARTITA, testo: "niente inviato", tono: "err", quesito: "fermato col ⏹ prima di partire" };
       await ordSlega(rec);
       await ordScrivi(l);
       reply({ ok: true });

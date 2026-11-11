@@ -569,7 +569,10 @@ const nomi = await tel.locator(".paz .nome").evaluateAll((l) => l.map((x) => { c
 check(nomi.length >= 3 && nomi.every((x) => !x.taglia && x.pieno), `i nomi non si troncano mai (il posto e il promemoria vanno a capo) ${JSON.stringify(nomi)}`);
 check(!(await piccoli(tel)).length, `ogni bottone almeno 44 px (${JSON.stringify(await piccoli(tel))})`);
 await tocca(tel, '[data-a="menu"]');
-const vociMenu = (await tel.locator(".menu button").allInnerTexts()).map((t) => t.replace(/\s+/g, " ").trim());
+// (le voci, senza il perché in piccolo di una voce spenta: «Sul PC la stampa automatica non è impostata»)
+const vociMenu = await tel.locator(".menu button").evaluateAll((l) => l.map((b) => [...b.childNodes].filter((n) => n.nodeName !== "SMALL").map((n) => n.textContent).join("").replace(/\s+/g, " ").trim()));
+check(await tel.locator('.menu [data-a="stampaPdf"]').isDisabled() === /stampa automatica non è impostata/.test(await tel.locator('.menu [data-a="stampaPdf"]').innerText()),
+  "«Stampa PDF» spenta solo col suo perché (il PC senza stampa automatica), accesa senza");
 check(JSON.stringify(vociMenu) === JSON.stringify(["📄 Stampa PDF", "📷 Scansiona il QR", "● Registrazioni", "🗑️ Scollega il PC"])
   && !/codice|Aggiorna elenco|Chiudi sessione|Stampa su|Dimentica|Associato/.test(await tel.locator(".menu").innerText()),
   `il ⋯ del telefono: solo quello che non c'è altrove — niente «Aggiorna elenco», «Chiudi sessione», codice; per finire una parola sola, «Scollega» (${vociMenu.join(" | ")})`);
@@ -1359,9 +1362,9 @@ check(await finche(async () => /dall'iPhone/.test(await $panel(doc, ".strip").in
 await tel.evaluate(() => window.scrollTo(0, 0));
 await shot(tel, "tel-4-ordine-in-corso");
 // (un ordine dal telefono non apre da solo il dialogo sul PC: davanti può non esserci nessuno)
-const fatto = await aspettaTel(tel, /Confermato · etichette al PC/, 60000);
-check(/Confermato · etichette al PC/.test(fatto) && !/NON stampate|aspettano qualcuno|tocca Stampa|sulla striscia/.test(fatto),
-  "e alla fine «Confermato · etichette al PC» (la frase del telefono, non un allarme e non quella del PC)");
+const fatto = await aspettaTel(tel, /Confermata[\s\S]*etichette al PC/, 60000);
+check(/Confermata[\s\S]*etichette al PC/.test(fatto) && !/NON stampate|aspettano qualcuno|tocca Stampa|sulla striscia/.test(fatto),
+  "e alla fine «Confermata · etichette al PC» (la frase del telefono, non un allarme e non quella del PC)");
 const rid = Object.keys(A.state.richieste)[0];
 check(A.state.richieste[rid]?.confirmed === true && Object.values(A.state.insertCount).every((n) => n === 1) && Object.keys(A.state.insertCount).length === 2,
   `confermata, ogni esame mandato una volta (${JSON.stringify(A.state.insertCount)})`);
@@ -1372,7 +1375,7 @@ await doc.locator(`#psassist-host ${AZIONE}`).click();   // «Stampa», sulla st
 check(await finche(async () => (await doc.evaluate(() => JSON.parse(localStorage.getItem("__psaStampe") || "[]"))).length === 1, 10000),
   "un tocco su «Stampa» nella striscia del PC: le etichette si stampano lì, come sempre");
 check(/Etichette prese in stampa sul PC/.test(await aspettaTel(tel, /Etichette prese in stampa sul PC/, 15000)),
-  "e il telefono lo sa: «Etichette prese in stampa sul PC», non «Ordine non completo»");
+  "e il telefono lo sa: «Etichette prese in stampa sul PC», una delle tre parole");
 // gli esami appena ordinati, accanto al nome come nelle Richieste del PC: «0′» in attesa (ambra), e il perché nel nome per la voce
 await tocca(tel, '[data-a="scheda"][data-s="esiti"]');
 await tocca(tel, '[data-a="scheda"][data-s="richieste"]');
@@ -1384,8 +1387,8 @@ check(!(await ultTel("PCR")), "…e gli altri no");
 await shot(tel, "tel-richieste-gia-chieste");
 const carta = await tel.locator(".ord").first().innerText();
 check(!/Quesito: il tuo/.test(carta) && (carta.match(/2 esami/g) || []).length <= 1, `la carta dell'ordine: niente «Quesito: il tuo», niente «2 esami» ripetuto (${carta.replace(/\s+/g, " ")})`);
-check(await tel.locator(".ord").first().locator(".c b > span").innerText() === "Etichette prese in stampa sul PC" && (carta.match(/\d\d:\d\d/g) || []).length === 1,
-  `il titolo della carta è com'è andata, e l'ora c'è una volta (${carta.replace(/\s+/g, " ")})`);
+check(await tel.locator(".ord").first().locator(".c b > span").innerText() === "Confermata" && /Etichette prese in stampa sul PC/.test(carta) && (carta.match(/\d\d:\d\d/g) || []).length === 1,
+  `il titolo della carta è «Confermata», sotto la stampa, e l'ora c'è una volta (${carta.replace(/\s+/g, " ")})`);
 await shot(tel, "tel-5-ordine-confermato");
 await tel.emulateMedia({ colorScheme: "dark" }); await shot(tel, "tel-5-ordine-confermato-buio"); await tel.emulateMedia({ colorScheme: "light" });
 // finito bene, dopo due minuti se ne va da solo: le carte verdi non si ammucchiano
@@ -1415,8 +1418,18 @@ check(await finche(async () => (await righeRis()).length === attese.length, 1500
 const rigaTxt = await tel.locator('.rist:has([data-id="699999"])').innerText();
 check(/etichette/.test(rigaTxt) && /lista esami/.test(rigaTxt) && /Ristampa/.test(rigaTxt), `ognuna con che cosa stampa e «Ristampa» (${rigaTxt.replace(/\s+/g, " ")})`);
 await shot(tel, "tel-richieste-fatte");
-// «Ristampa»: un doppio tocco è una ristampa sola (al PC arriva un comando solo)
-await sw.evaluate(() => { self.__ris = []; self.__risVera = ponteRistampa; globalThis.ponteRistampa = (d) => { self.__ris.push(d.rid); return self.__risVera(d); }; });
+// senza la stampa automatica sul PC «Ristampa» è spenta, e lo dice PRIMA del tocco (catalogo.stampa.auto)
+const risBtn = tel.locator('[data-a="ristampa"][data-id="699999"]');
+check(await risBtn.isDisabled() && /Sul PC la stampa automatica non è impostata: si ristampa dal PC/.test(await testoTel(tel)),
+  "senza la stampa automatica sul PC: «Ristampa» spenta, col perché prima del tocco — «Sul PC la stampa automatica non è impostata: si ristampa dal PC»");
+// accesa sul PC: il telefono lo sa subito (l'evento «stampa»), senza riaprire, e «Ristampa» si accende
+await sw.evaluate(() => chrome.storage.local.set({ stampa: { attiva: true, etichette: "Zebra ZD421", a4: "HP LaserJet A4" } }));
+check(await finche(async () => !(await risBtn.isDisabled()), 10000) && !/stampa automatica non è impostata/.test(await testoTel(tel)),
+  "accesa la stampa automatica sul PC: il telefono lo sa subito, e «Ristampa» si accende");
+// «Ristampa»: un doppio tocco è una ristampa sola (al PC arriva un comando solo). (Il PC
+// la spegne proprio mentre arriva il comando: la sua parola è quella che conta.)
+await sw.evaluate(() => { self.__ris = []; self.__risVera = ponteRistampa;
+  globalThis.ponteRistampa = async (d) => { self.__ris.push(d.rid); await chrome.storage.local.remove("stampa"); return self.__risVera(d); }; });
 await tocca(tel, '[data-a="ristampa"][data-id="699999"]');
 check(await tel.locator('.rist:has([data-id="699999"]) .quali [data-a="ristampaQ"]').allInnerTexts().then((l) => l.join("|")) === "🏷️ Etichette|📄 Foglio|Entrambi" && !(await sw.evaluate(() => self.__ris)).length,
   "«Ristampa» su una richiesta con etichette E foglio: il primo tocco non stampa, apre «🏷️ Etichette · 📄 Foglio · Entrambi»");
@@ -1425,7 +1438,7 @@ await finche(async () => (await sw.evaluate(() => self.__ris)).length >= 1, 1000
 await sospendi(800);
 check((await sw.evaluate(() => self.__ris)).join() === "699999", "«Ristampa» → «Entrambi», doppio tocco: al PC arriva un comando solo, per quella richiesta");
 // (qui la stampa automatica non è impostata: lo dice, niente di stampato, niente dialogo)
-check(/La stampa automatica non è impostata|stampa automatica non è impostata/.test(await aspettaTel(tel, /stampa automatica non è impostata/, 15000)) && !(await sw.evaluate(() => chrome.storage.session.get("ordini").then((o) => (o.ordini || []).some((x) => String(x.id).startsWith("ris"))))),
+check(/Ristampa non partita: la stampa automatica non è impostata/.test(await aspettaTel(tel, /Ristampa non partita/, 15000)) &&!(await sw.evaluate(() => chrome.storage.session.get("ordini").then((o) => (o.ordini || []).some((x) => String(x.id).startsWith("ris"))))),
   "senza la stampa automatica sul PC: il telefono lo dice com'è («Ristampa non partita»), e sul PC nessuna stampa nata");
 await sw.evaluate(() => { globalThis.ponteRistampa = self.__risVera; });
 
@@ -1585,29 +1598,29 @@ await finche(ordiniFiniti, 60000);
 sezione("un ordine finito male resta sulla lista, con le parole di bg.js");
 // un ordine del telefono come lo racconta bg.js (`pubblico`), qui scritto a mano
 const male = { id: "telmaleprova1l", ep: "999002", paziente: "BIANCHI ANNA", n: 1, stato: "errore", ts: Date.now(), agg: Date.now(), worker: null, vista: null,
-  resto: { mancano: ["TROPONINA US"], controllare: [], nel: [] }, pubblico: { tono: "err", titolo: "Ordine fermo", testo: "Mancano: TROPONINA US", dettaglio: "Quesito: il tuo" } };
+  resto: { mancano: ["TROPONINA US"], controllare: [], nel: [] }, pubblico: { tono: "err", titolo: "Non partita", testo: "niente inviato: riprova", dettaglio: "Mancano: TROPONINA US" } };
 await sw.evaluate((m) => chrome.storage.session.get("ordini").then((o) => chrome.storage.session.set({ ordini: [...(o.ordini || []), m] })), male);
 await tocca(tel, '[data-a="indietro"]');
-const barra = await aspettaTel(tel, /Ordine non completo/, 10000);
-check(/Ordine non completo · BIANCHI ANNA/.test(barra) && /Ordine fermo · Mancano: TROPONINA US/.test(barra) && !/Tocca per vedere/.test(barra),
-  "in fondo alla lista: «Ordine non completo · BIANCHI ANNA», con le parole di bg.js (e nient'altro)");
+const barra = await aspettaTel(tel, /Non partita · BIANCHI ANNA/, 10000);
+check(/Non partita · BIANCHI ANNA/.test(barra) && /niente inviato: riprova/.test(barra) && !/Tocca per vedere/.test(barra),
+  "in fondo alla lista: «Non partita · BIANCHI ANNA», con le parole di bg.js (e nient'altro)");
 await shot(tel, "tel-6b-ordine-non-completo");
 // sulla pagina di un altro paziente lo si vede lo stesso, in testa (in fondo c'è il bottone dell'ordine)
 await tocca(tel, '.paz[data-ep="999001"]');
-const suRossi = await aspettaTel(tel, /Ordine non completo/, 10000);
-check(/Ordine non completo · BIANCHI ANNA/.test(suRossi) && await tel.locator("main > .ordbar.sopra").count() === 1,
+const suRossi = await aspettaTel(tel, /Non partita · BIANCHI ANNA/, 10000);
+check(/Non partita · BIANCHI ANNA/.test(suRossi) && await tel.locator("main > .ordbar.sopra").count() === 1,
   "l'ordine finito male si vede anche dalla pagina di un altro paziente, in testa");
 await tocca(tel, '.ordbar[data-a="paz"]');
 await aspettaTel(tel, /Esiti/, 10000);
-check(await tel.locator(".top .tit").innerText() === `BIANCHI ANNA · ${ETA_B} anni` && await tel.locator(".ordbar").count() === 0 && /Ordine fermo/.test(await testoTel(tel)),
+check(await tel.locator(".top .tit").innerText() === `BIANCHI ANNA · ${ETA_B} anni` && await tel.locator(".ordbar").count() === 0 && /Non partita/.test(await testoTel(tel)),
   "toccato: si è sul suo paziente, dove l'ordine ha la sua carta (e niente barra)");
 await tocca(tel, '[data-a="indietro"]');
-await aspettaTel(tel, /Ordine non completo/, 10000);
+await aspettaTel(tel, /Non partita · BIANCHI ANNA/, 10000);
 await sw.evaluate((id) => chrome.storage.session.get("ordini").then((o) => chrome.storage.session.set({ ordini: (o.ordini || []).filter((x) => x.id !== id) })), male.id);
 await sospendi(1500);
-check(/Ordine non completo/.test(await testoTel(tel)), "tolto dal PC (✕ là): sul telefono resta com'era l'ultima volta, finché non lo si chiude");
+check(/Non partita · BIANCHI ANNA/.test(await testoTel(tel)), "tolto dal PC (✕ là): sul telefono resta com'era l'ultima volta, finché non lo si chiude");
 await tocca(tel, '.ordbar [data-a="nascondi"]');
-check(!/Ordine non completo/.test(await testoTel(tel)), "✕: via");
+check(!/Non partita · BIANCHI ANNA/.test(await testoTel(tel)), "✕: via");
 await tocca(tel, '.paz[data-ep="999002"]');
 await aspettaTel(tel, /Richieste/, 10000);
 
@@ -2326,13 +2339,31 @@ sezione("«Stampa un PDF» dal telefono, sull'A4 del PC");
   const carta = async (re, ms = 30000) => (await finche(async () => re.test(await tel.locator(".stampa").innerText().catch(() => "")), ms)) ? tel.locator(".stampa").innerText() : "";
   const comePdf = { name: "foglio.pdf", mimeType: "application/pdf", buffer: pdf };
 
-  // 1. senza la stampa automatica: no, e il PDF non parte nemmeno (il PC lo dice al primo pezzo)
+  // 1. senza la stampa automatica la voce è spenta, e dice perché PRIMA del tocco (catalogo.stampa.auto)
+  const voce = tel.locator('.menu [data-a="stampaPdf"]');
+  await tocca(tel, '[data-a="menu"]');
+  check(await voce.isDisabled() && /Sul PC la stampa automatica non è impostata/.test(await voce.innerText()),
+    `senza la stampa automatica sul PC: «Stampa PDF» spenta, col perché (${(await voce.innerText()).replace(/\s+/g, " ")})`);
+  // accesa sul PC, la voce si accende da sola (l'evento «stampa»)…
+  await sw.evaluate(() => chrome.storage.local.set({ stampa: { attiva: true, etichette: "Zebra ZD421", a4: "HP LaserJet A4" } }));
+  check(await finche(async () => !(await voce.isDisabled()), 10000), "accesa la stampa automatica sul PC: «Stampa PDF» si accende da sola");
+  // …e se il PC la spegne proprio mentre il PDF parte: no, e il resto del PDF non parte (il PC lo dice al primo pezzo)
   const a0 = rete.alPc.length;
-  await scegli(comePdf);
+  {
+    const [fc] = await Promise.all([tel.waitForEvent("filechooser", { timeout: 8000 }), tocca(tel, '[data-a="stampaPdf"]')]);
+    await sw.evaluate(() => chrome.storage.local.remove("stampa"));
+    await fc.setFiles(comePdf);
+  }
   const senza = await carta(/stampa automatica/, 15000);
   check(/Sul PC la stampa automatica non è impostata/.test(senza) && await tel.locator(".stampa.err").count() === 1 && rete.alPc.slice(a0).filter((x) => x.length > 1e5).length === 1 && !lavori().length,
     `senza la stampa automatica sul PC: «Sul PC la stampa automatica non è impostata», e il resto del PDF non parte (${rete.alPc.slice(a0).filter((x) => x.length > 1e5).length} pezzi)`);
   await tocca(tel, '[data-a="stampaVia"]');
+
+  // (la stampa automatica di nuovo accesa: le prove dopo)
+  await sw.evaluate(() => chrome.storage.local.set({ stampa: { attiva: true, etichette: "Zebra ZD421", a4: "HP LaserJet A4" } }));
+  await tocca(tel, '[data-a="menu"]');
+  await finche(async () => !(await voce.isDisabled()), 10000);
+  await tocca(tel, '[data-a="menu"]');
 
   // 2. un file che non è un PDF: il telefono non lo manda
   const a1 = rete.alPc.length;
@@ -2341,7 +2372,6 @@ sezione("«Stampa un PDF» dal telefono, sull'A4 del PC");
   await tocca(tel, '[data-a="stampaVia"]');
 
   // 3. con la stampa automatica: a pezzi, cifrato, fino all'A4
-  await sw.evaluate(() => chrome.storage.local.set({ stampa: { attiva: true, etichette: "Zebra ZD421", a4: "HP LaserJet A4" } }));
   const n0 = inoltrati.length, a2 = rete.alPc.length;
   await scegli(comePdf);
   const fatto = await carta(/Stampato su/, 40000);
