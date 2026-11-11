@@ -780,6 +780,10 @@ if (prova("prima le etichette: senza la stampa automatica, i PDF del primo ordin
   check(crea.length === 2 && pdf1.length >= 2 && pdf1.every((x) => x.t < crea[1].t) && conf1.t < crea[1].t,
     `i PDF del primo ordine (etichette e lista) presi prima che nasca la seconda richiesta (got ${pdf1.map((x) => x.t - conf1.t).join(", ")} ms dalla prima Conferma · Crea ${crea[1] ? crea[1].t - conf1.t : "?"} ms)`);
   check(sess.ora === 0 && conferme(A).length === 2, `e tutt'e due confermate, senza «ORA-» (got ${sess.ora})`);
+  // (`partito`: quando ha lasciato la coda, non quando c'è entrato — la striscia toccata cede solo a uno partito dopo)
+  // (il primo, stampato qui, se n'è già andato: resta il secondo, entrato in coda con lui)
+  const o2 = (await ordini()).find((x) => x.paziente === "ROSSI MARIO" && x.stato === "stampa");
+  check(!!o2 && o2.partito - o2.ts > 1000, `il secondo ordine: «partito» quando lascia la coda (got ${o2 ? o2.partito - o2.ts : "?"} ms dopo esserci entrato)`);
   lento = 0;
 }
 

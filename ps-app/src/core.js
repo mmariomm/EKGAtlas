@@ -8922,8 +8922,10 @@
         if (p.tono === "err" || p.tono === "warn") return p.tono;
         return (x.stampa && x.stampa.tag === "Stampa") || p.titolo === "Confermata" ? "ok" : "warn";
       };
-      const segno = segnoDi ? { id: segnoDi.id, chi: nomeCorto(segnoDi.paziente || ""), tono: tonoSegno(segnoDi), n: altri.length,
-        titolo: [segnoDi.paziente, (segnoDi.pubblico || {}).titolo, (segnoDi.pubblico || {}).testo].filter(Boolean).join(" · ") + (altri.length > 1 ? ` (e altri ${altri.length - 1})` : "") } : null;
+      // («+N»: i tocchi su Conferma, non le richieste — un tocco con POC e RX è un ordine solo, come gestoDi)
+      const tocchi = new Set(altri.map((x) => x.gesto || x.id)).size;
+      const segno = segnoDi ? { id: segnoDi.id, chi: nomeCorto(segnoDi.paziente || ""), tono: tonoSegno(segnoDi), n: tocchi,
+        titolo: [segnoDi.paziente, (segnoDi.pubblico || {}).titolo, (segnoDi.pubblico || {}).testo].filter(Boolean).join(" · ") + (tocchi > 1 ? ` (e altri ${tocchi - 1})` : "") } : null;
       this.segnaSegno(segno);
       const avviso = (x) => grado(x) <= 1 && !gira(x) && x.stato !== "stampa";
       if (this._mostraAvviso && !l.some((x) => x.id === this._mostraAvviso && avviso(x))) this._mostraAvviso = null;
@@ -8931,7 +8933,8 @@
       // girava già. Un ordine partito DOPO il tocco vince lui, come sempre — il
       // suo ⏹ a vista —, e quello toccato si piega accanto: un tocco, e torna)
       const apertoX = this._segnoAperto ? l.find((x) => x.id === this._segnoAperto) : null;
-      const dopo = !!apertoX && l.some((x) => gira(x) && x !== apertoX && (x.ts || 0) > (this._segnoApertoTs || 0));
+      // (partito: quando ha lasciato la coda — non quando ci è entrato)
+      const dopo = !!apertoX && l.some((x) => gira(x) && x !== apertoX && (x.partito || x.ts || 0) > (this._segnoApertoTs || 0));
       const aperto = apertoX && !dopo ? apertoX : null;
       const piegati = l.some(gira) ? l.filter((x) => x !== aperto && x.id !== this._mostraAvviso && (avviso(x) || x === apertoX)) : [];
       const fuoco = aperto || [...l].filter((x) => !piegati.includes(x)).sort((a, b) => grado(a) - grado(b) || (b.agg || 0) - (a.agg || 0))[0];

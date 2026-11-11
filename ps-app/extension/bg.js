@@ -1138,7 +1138,8 @@ async function ordApri(rec, l, stato = "avvio") {
   const dove = op && sulGestionale(op.url) ? { openerTabId: op.id, index: op.index + 1, windowId: op.windowId } : {};
   const vuota = { url: "about:blank", active: false };
   const t = await chrome.tabs.create({ ...vuota, ...dove }).catch(() => chrome.tabs.create(vuota));
-  rec.worker = t.id; rec.stato = stato; rec.agg = Date.now();
+  // (`partito`: quando ha lasciato la coda — la striscia toccata cede solo a un ordine partito dopo il tocco)
+  rec.worker = t.id; rec.stato = stato; rec.agg = Date.now(); rec.partito = Date.now();
   await ordScrivi(l);
   try { await chrome.tabs.update(t.id, { url: rec.url }); }
   catch (e) { await chrome.tabs.remove(t.id).catch(() => {}); rec.worker = null; throw e; }
