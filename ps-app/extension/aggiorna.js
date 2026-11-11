@@ -1,34 +1,37 @@
 /*
- * PS Assist — «Aggiorna app» (⋯), dal service worker. Caricato da bg.js
+ * PS Assist — l'aggiornamento da sé, dal service worker. Caricato da bg.js
  * (importScripts): vede le sue costanti (SA4, ordLeggi, inFilaOrd, ospite,
  * corto, b64).
  *
- * Una volta al giorno, e ogni volta che si apre ⋯, si legge VERSION.txt da
- * GitHub: una GET senza cookie e senza dati, l'unica cosa che esce. Più nuova
- * di questa: un puntino su ⋯ e «Aggiorna app». Un tocco: lo zip si scarica
- * qui (la rete di Chrome, che in ospedale funziona), si controlla
+ * All'avvio e ogni sei ore si legge VERSION.txt da GitHub: una GET senza
+ * cookie e senza dati, l'unica cosa che esce. Più nuova di questa, e se
+ * l'estensione gira dalla cartella dell'installazione e l'aiutante c'è, la si
+ * applica da sé, ma solo quando è sicuro (aggOccupato: niente ordine in corso
+ * o in coda, niente stampa, niente registrazione, niente testo non salvato in
+ * una scheda del gestionale); se no si riprova ogni quarto d'ora. Lo zip si
+ * scarica qui (la rete di Chrome, che in ospedale funziona), si controlla
  * (extension/manifest.json, stessa versione di VERSION.txt, stessa chiave), e
  * va all'aiutante di Windows (native messaging), che scambia la cartella
  * %LOCALAPPDATA%\PSAssist\estensione (la vecchia resta in estensione.prima) e
  * rinnova i suoi file; poi chrome.runtime.reload(). Solo se l'estensione gira
  * da quella cartella (installa.cmd ci mette `installata.json`, e l'aiutante
- * dice che versione c'è dentro); mai con un ordine, una stampa o un giro in
- * corso. In storage.local, `aggiorna` = { ts, nuova, puo, come }: lo legge il
- * pannello.
+ * dice che versione c'è dentro). In storage.local, `aggiorna` = { ts, nuova,
+ * puo, come }: lo legge il pannello (solo la riga «come», se da qui non si
+ * può). Nessun tocco del medico: né un puntino, né «Aggiorna app», né «Ricarica».
  */
 /* global SA4, ordLeggi, inFilaOrd, ospite, corto, b64, motoreDiScheda */
 
 const AGG_BASE = "https://raw.githubusercontent.com/mmariomm/EKGAtlas/main/ps-app/dist/";
-const AGG_GIORNO = 24 * 3600e3;
-const AGG_DI_NUOVO = 60e3;               // ⋯ aperto e richiuso: non una lettura a ogni tocco
+const AGG_ORE = 6 * 3600e3;              // ogni quanto si guarda GitHub
+const AGG_RIPROVA = 15;                  // minuti: se non era il momento, si riprova
 const AGG_ZIP_MAX = 28 * 1024 * 1024;   // in base64 resta sotto i 40 MB che l'aiutante accetta
 const AGG_ATTESA = 180e3;                // l'aiutante apre lo zip e scambia la cartella
 const AGG_APERTO = new Set(["coda", "avvio", "corre", "stampo", "stampa"]);   // come ORDINE_APERTO nel pannello
 const AGG_CARTELLA = "%LOCALAPPDATA%\\PSAssist\\estensione";
 const AGG_OCCUPATO = "Dopo l'ordine in corso";
-// La build è di sola lettura? Allora scarica il SUO zip (quello mini) e si
-// aggiorna da sé (vedi in fondo). La versione (VERSION.txt) è unica per le due
-// build, che escono insieme dallo stesso `npm run dist`.
+// La build è di sola lettura? Allora scarica il SUO zip (quello mini). La
+// versione (VERSION.txt) è unica per le due build, che escono insieme dallo
+// stesso `npm run dist`.
 const aggSolaLettura = () => typeof self !== "undefined" && self.PSA_SOLA_LETTURA === true;
 const aggZipNome = () => (aggSolaLettura() ? "ps-assist-lettura.zip" : "ps-assist-latest.zip");
 const aggMia = () => chrome.runtime.getManifest().version;
@@ -61,9 +64,9 @@ async function aggInstallata() {
   return { puo: true, come: "" };
 }
 
-async function aggControlla(ora) {
+async function aggControlla() {
   const prima = (await chrome.storage.local.get("aggiorna")).aggiorna || {};
-  if (Date.now() - (prima.ts || 0) < (ora ? AGG_DI_NUOVO : AGG_GIORNO)) return prima;
+  if (Date.now() - (prima.ts || 0) < AGG_ORE) return prima;
   let v;
   try { v = await aggVersione(); } catch { return prima; }   // senza rete: resta quello che si sapeva
   const rec = { ts: Date.now(), nuova: "", puo: false, come: "" };
@@ -75,10 +78,17 @@ async function aggControlla(ora) {
   return rec;
 }
 
-// Un ordine, una stampa, un ordine dal telefono, o un giro che gira in una
-// scheda del medico (il suo appunto, o il presidio di chi sta mandando).
+// Non è il momento: un ordine, una stampa, un ordine dal telefono, o un giro
+// che gira in una scheda del medico (il suo appunto, o il presidio di chi sta
+// mandando); un foglio sulla stazione di stampa; una registrazione; un testo
+// non salvato in una scheda del gestionale (una cartella, una dimissione, la
+// terapia, il pannello). Nel dubbio (la scheda non risponde in tempo) è
+// occupato: si riprova fra poco.
 async function aggOccupato() {
   if ((await ordLeggi()).some((x) => AGG_APERTO.has(x.stato)) || motoreDiScheda()) return true;   // (anche il motore di una scheda)
+  if (typeof stz !== "undefined" && (stz.stampa.size || stz.inCorso.size)) return true;          // (un foglio per la stazione che arriva o stampa)
+  try { if (typeof regLeggi === "function") await regPronto; } catch { /* sotto */ }
+  if ((typeof regAttiva === "function" && regAttiva()) || (typeof regStato !== "undefined" && regStato && regStato.stato === "fermo" && !regStato.errore && regSalvando(regStato))) return true;
   const schede = await chrome.tabs.query({ url: SA4 + "/*" }).catch(() => []);
   for (const t of schede) {
     if (t.discarded) continue;
@@ -88,7 +98,21 @@ async function aggOccupato() {
         func: (corsaTtl, presidioMs) => {
           const leggi = (d, k) => { try { return JSON.parse(d.getItem("psassist:" + k)); } catch { return null; } };
           const c = leggi(sessionStorage, "corsa.v1"), p = leggi(localStorage, "corsa.presidio.v1");
-          return !!(c && Date.now() - (c.ts || 0) < corsaTtl) || !!(p && Date.now() - (p.ts || 0) < presidioMs);
+          if ((c && Date.now() - (c.ts || 0) < corsaTtl) || (p && Date.now() - (p.ts || 0) < presidioMs)) return true;
+          // un ordine che aspetta la Conferma, o la terapia a metà
+          if (leggi(sessionStorage, "confirm.v1") || leggi(sessionStorage, "receipt.v1") || leggi(sessionStorage, "terapia.v1")) return true;
+          // una dimissione o un testo dell'EO riscritti e non salvati (la bozza resta finché non si salva o si butta)
+          for (let i = 0; i < sessionStorage.length; i++) {
+            const k = sessionStorage.key(i) || "";
+            if (/^psassist:(dimdraft|eodraft)\./.test(k)) { const d = leggi(sessionStorage, k.slice(9)); if (d && String(d.testo || "").trim()) return true; }
+          }
+          // un testo cambiato e non inviato: nei campi della pagina (la cartella) e in quelli del pannello
+          const h = document.getElementById("psassist-host");
+          for (const radice of [document, h && h.shadowRoot]) {
+            if (!radice) continue;
+            for (const t of radice.querySelectorAll("textarea")) if (!t.readOnly && !t.disabled && t.value !== t.defaultValue) return true;
+          }
+          return false;
         },
       }).catch(() => null),
       new Promise((res) => setTimeout(() => res(null), 3000)),
@@ -156,21 +180,7 @@ async function aggiorna() {
   });
 }
 
-chrome.runtime.onMessage.addListener((msg, sender, reply) => {
-  if (!msg || typeof msg !== "object" || (msg.t !== "aggiornaControlla" && msg.t !== "aggiorna")) return;
-  if (!sender || sender.id !== chrome.runtime.id) return;
-  if (msg.t === "aggiornaControlla") {
-    aggControlla(!!msg.ora).then((r) => reply({ ok: true, aggiorna: r }), () => reply({ ok: false }));
-    return true;
-  }
-  aggiorna().catch((e) => ({ ok: false, why: `Aggiornamento non riuscito: ${corto(e && e.message || e, 120)}` })).then((r) => {
-    reply(r);
-    if (r.ricarica) setTimeout(() => chrome.runtime.reload(), 400);
-  });
-  return true;
-});
-
-// Ricaricata (dopo «Aggiorna app», o «Ricarica estensione»): nelle schede già
+// Ricaricata (dopo l'aggiornamento, o «Ricarica» in chrome://extensions): nelle schede già
 // aperte il pannello è quello vecchio e non parla più con l'estensione. Una
 // pillola lo dice; la pagina la ricarica il medico, con un tocco — mai da
 // sola: lì può esserci un testo non ancora mandato. E all'aiutante: «sono
@@ -200,32 +210,36 @@ chrome.runtime.onInstalled.addListener((d) => {
   }).catch(() => {});
 });
 
-// --------------------------------------------- la build mini: senza mani
-// La build «Lettura e stampa» non ha pannello: non c'è un ⋯ da cui controllare,
-// né un tocco per applicare. Quindi guarda da sé — all'avvio del service worker
-// e ogni sei ore (chrome.alarms) — e, se c'è una versione nuova e il PC è libero
-// (la stessa guardia «stampa in corso»; non ci sono ordini qui), si aggiorna da
-// sola: `aggiorna()` tiene OGNI controllo (versione == VERSION.txt, stessa
-// chiave della build mini, cartella installata, aiutante confermato, host fisso,
-// mai a metà di una stampa). Dopo lo scambio, la ricarica — nessun avviso: sola
-// lettura, niente di non mandato.
-const AGG_MINI_ALLARME = "psassist-aggiorna-mini";
-const AGG_MINI_ORE = 6 * 60;   // minuti
-let aggMiniInCorso = false;   // avvio + allarme possono scattare insieme: una sola volta
-async function aggMiniAuto() {
-  if (!aggSolaLettura() || aggMiniInCorso) return;
-  aggMiniInCorso = true;
+// --------------------------------------------- da sé, senza mani
+// Niente tocco del medico, in nessuna build: si guarda all'avvio del service
+// worker e ogni quarto d'ora (chrome.alarms) — GitHub al più ogni sei ore, ma
+// una versione già nota e non applicata (il PC era occupato) si riprova a ogni
+// giro. `aggiorna()` tiene OGNI controllo (occupato, versione == VERSION.txt,
+// stessa chiave, cartella installata, aiutante confermato, host fisso) e
+// l'ultimo dentro la fila degli ordini, subito prima dello scambio. Dopo lo
+// scambio la ricarica; nelle schede già aperte la pillola «Ricarica la
+// pagina» (mai da sola: lì può esserci un testo non mandato).
+const AGG_ALLARME = "psassist-aggiorna";
+let aggAutoInCorso = false;   // avvio + allarme possono scattare insieme: una sola volta
+async function aggAuto() {
+  if (aggAutoInCorso) return;
+  aggAutoInCorso = true;
   try {
-    const rec = await aggControlla(true).catch(() => null);
+    let rec = (await chrome.storage.local.get("aggiorna")).aggiorna || {};
+    if (rec.nuova && !rec.puo && aggPiuNuova(rec.nuova, aggMia())) {   // nota ma non applicabile (l'aiutante taceva?): si rilegge solo questo, senza rete
+      const i = await aggInstallata().catch(() => null);
+      if (i && i.puo) { rec = { ...rec, puo: true, come: "" }; await chrome.storage.local.set({ aggiorna: rec }); }
+    }
+    if (!(rec.nuova && rec.puo && aggPiuNuova(rec.nuova, aggMia()))) rec = await aggControlla().catch(() => null);
     if (!rec || !rec.nuova || !rec.puo) return;   // niente di nuovo, o non si aggiorna da qui
     const r = await aggiorna().catch(() => null);
     if (r && r.ricarica) setTimeout(() => chrome.runtime.reload(), 400);
   } finally {
-    aggMiniInCorso = false;
+    aggAutoInCorso = false;
   }
 }
-chrome.runtime.onStartup?.addListener(() => { aggMiniAuto().catch(() => {}); });
-if (aggSolaLettura() && chrome.alarms) {
-  chrome.alarms.create(AGG_MINI_ALLARME, { periodInMinutes: AGG_MINI_ORE, delayInMinutes: 3 });
-  chrome.alarms.onAlarm.addListener((a) => { if (a && a.name === AGG_MINI_ALLARME) aggMiniAuto().catch(() => {}); });
+chrome.runtime.onStartup?.addListener(() => { aggAuto().catch(() => {}); });
+if (chrome.alarms) {
+  chrome.alarms.create(AGG_ALLARME, { periodInMinutes: AGG_RIPROVA, delayInMinutes: 3 });
+  chrome.alarms.onAlarm.addListener((a) => { if (a && a.name === AGG_ALLARME) aggAuto().catch(() => {}); });
 }

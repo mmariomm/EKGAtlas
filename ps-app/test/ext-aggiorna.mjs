@@ -1,18 +1,21 @@
 #!/usr/bin/env node
 /*
- * ⋯ → «Aggiorna app», con l'estensione VERA caricata in Chromium dalla
+ * L'aggiornamento DA SÉ (niente tocco del medico), con l'estensione VERA caricata in Chromium dalla
  * cartella dove la mette installa.cmd (qui una cartella di prova che fa da
  * %LOCALAPPDATA%\PSAssist\estensione, con il suo installata.json), il finto
  * aiutante (test/ospite-finto.mjs: «chi» e «aggiorna» come host.ps1, e lo
  * scambio della cartella fatto davvero) e GitHub finto (le richieste a
  * raw.githubusercontent.com intercettate: VERSION.txt e lo zip).
- * Le prove: la versione su GitHub uguale, più vecchia o più nuova (il puntino
- * sul ⋯ e «Aggiorna app» solo per la più nuova); senza installata.json o
- * senza aiutante «Aggiorna app» non c'è, e una riga dice come; un ordine in
- * corso (anche dal telefono) o un giro nella scheda del medico: «Dopo l'ordine
- * in corso», niente all'aiutante; uno zip che non è quello di VERSION.txt o
+ * Le prove: la versione su GitHub uguale, più vecchia o più nuova (e niente
+ * puntino, niente «Aggiorna app», niente «Ricarica» nel pannello: il medico
+ * non tocca niente); senza installata.json o senza aiutante non si applica, e
+ * una riga nel ⋯ dice come; mai a metà di qualcosa: un ordine in corso (anche
+ * dal telefono), un giro nella scheda del medico, un testo non salvato (una
+ * cartella, una dimissione), una registrazione, un foglio sulla stazione:
+ * niente zip scaricato, niente all'aiutante — e quando il momento è buono
+ * si applica da sé; uno zip che non è quello di VERSION.txt o
  * non è di PS Assist: niente all'aiutante; l'aiutante che dice di no: niente
- * ricarica; e il tocco che va: lo zip all'aiutante, la cartella scambiata
+ * ricarica; e l'applicazione: lo zip all'aiutante, la cartella scambiata
  * (la vecchia in estensione.prima), i file di stampa rinnovati, nessuna
  * cartella temporanea rimasta, chrome.runtime.reload() e l'estensione nuova
  * che parte (e lo dice all'aiutante), la pillola «Ricarica la pagina» nella
@@ -156,15 +159,23 @@ async function apriMenu() {
 const chiudiMenu = async () => { if (await $panel(doc, ".menu").count()) await $panel(doc, "#menubtn").click(); };
 const puntino = () => $panel(doc, "#menubtn").evaluate((b) => b.classList.contains("agg")).catch(() => null);
 const voce = () => $panel(doc, "#aggapp").count();
+const zipScaricati = () => gh.richieste.filter((x) => /\.zip$/.test(x.url)).length;
 
 console.log("\naggiorna: la versione su GitHub");
 {
   check(await sw.evaluate(() => typeof chrome.runtime.getManifest().key === "string" && chrome.runtime.getManifest().key.length > 100),
     "il manifest dice la sua chiave (si confronta con quella dello zip)");
-  // il pannello, all'apertura, guarda una volta al giorno
-  await finche(async () => gh.richieste.length > 0, 10000);
-  check(gh.richieste.length >= 1 && gh.richieste.every((x) => /VERSION\.txt$/.test(x.url) && !x.cookie),
-    `aperto il pannello: una lettura di VERSION.txt, senza cookie (got ${JSON.stringify(gh.richieste)})`);
+  // da sé: una sveglia ogni quarto d'ora; il pannello e il ⋯ non leggono GitHub (non lo fanno più)
+  const sv = await sw.evaluate(() => chrome.alarms.get("psassist-aggiorna"));
+  check(!!sv && sv.periodInMinutes === 15, `una sveglia ogni quarto d'ora (got ${JSON.stringify(sv)})`);
+  await apriMenu();
+  await chiudiMenu();
+  await sospendi(1000);
+  check(gh.richieste.length === 0, `aprire il pannello e il ⋯ non legge GitHub (got ${JSON.stringify(gh.richieste)})`);
+  await sw.evaluate(() => aggControlla());
+  check(gh.richieste.length === 1 && /VERSION\.txt$/.test(gh.richieste[0].url) && !gh.richieste[0].cookie, `il service worker: una lettura di VERSION.txt, senza cookie (got ${JSON.stringify(gh.richieste)})`);
+  await sw.evaluate(() => aggControlla());
+  check(gh.richieste.length === 1, "e non di nuovo prima di sei ore");
   for (const [v, attesa] of [[MIA, false], ["1.0.0", false], [NUOVA, true]]) {
     gh.versione = v;
     await dimentica();
@@ -172,18 +183,25 @@ console.log("\naggiorna: la versione su GitHub");
     check(!!r.nuova === attesa && (!attesa || (r.nuova === NUOVA && r.puo === true)),
       `GitHub ${v === MIA ? "uguale" : attesa ? "più nuova" : "più vecchia"} (${v}, questa ${MIA}): ${attesa ? "c'è la nuova, e si può aggiornare da qui" : "niente"} (got ${JSON.stringify(r)})`);
   }
+  gh.versione = NUOVA;
+  await dimentica();
+  await controlla();
   await apriPannello();
-  check(await finche(async () => (await puntino()) === true, 5000), "il puntino sul ⋯");
   await apriMenu();
-  const titolo = await $panel(doc, "#aggapp").getAttribute("title").catch(() => "");
-  check((await voce()) === 1 && (await $panel(doc, "#aggapp").innerText()).trim() === "Aggiorna app" && titolo.includes(NUOVA),
-    `nel ⋯: «Aggiorna app», con la versione nel suggerimento (got «${titolo}»)`);
+  const piede = (await $panel(doc, ".menu .mpiede").innerText()).replace(/\s+/g, " ").trim();
+  check((await puntino()) === false && (await voce()) === 0 && (await $panel(doc, "#extreload").count()) === 0 && !/Ricarica|Aggiorna/.test(piede) && /^PS Assist \S+$/.test(piede),
+    `c'è la nuova, e il medico non vede niente: né puntino sul ⋯, né «Aggiorna app», né «Ricarica» (piede: «${piede}»)`);
   check(lavori().some((x) => x.chi), "(l'aiutante ha detto che cosa c'è nella cartella: «chi»)");
   await chiudiMenu();
+  // nessuno può più chiederlo con un messaggio: né «aggiorna» né «aggiornaControlla»
+  const pagina = await ctx.newPage();
+  await pagina.goto(`chrome-extension://${ID}/ponte.html`);
+  const risposte = await pagina.evaluate(() => Promise.all(["aggiorna", "aggiornaControlla"].map((t) => chrome.runtime.sendMessage({ t }).then((r) => r || null, () => null))));
+  check(risposte.every((r) => !r || !r.ok), `i messaggi «aggiorna» e «aggiornaControlla» non ci sono più (got ${JSON.stringify(risposte)})`);
+  await pagina.close();
   gh.versione = MIA;
   await dimentica();
   await controlla();
-  check(await finche(async () => (await puntino()) === false, 5000), "GitHub di nuovo uguale: il puntino se ne va");
 }
 
 console.log("\naggiorna: non da qui");
@@ -196,8 +214,8 @@ console.log("\naggiorna: non da qui");
     `senza installata.json (caricata da un'altra cartella): niente tocco, e come si fa (got ${JSON.stringify(r)})`);
   await apriMenu();
   const testo = (await $panel(doc, ".menu").innerText()).replace(/\s+/g, " ");
-  check((await voce()) === 0 && (await puntino()) === true && testo.includes(`C'è la ${NUOVA}`),
-    `nel ⋯ il puntino e una riga che lo dice, senza «Aggiorna app» (got ${testo.slice(-220)})`);
+  check((await voce()) === 0 && (await puntino()) === false && testo.includes(`C'è la ${NUOVA}`),
+    `nel ⋯ una riga che dice come, senza puntino né «Aggiorna app» (got ${testo.slice(-220)})`);
   await chiudiMenu();
   writeFileSync(join(EST, "installata.json"), MARCA);
   installaAiutante(false);
@@ -229,14 +247,45 @@ console.log("\naggiorna: mai a metà di qualcosa");
   r = await sw.evaluate(() => aggiorna());
   check(!r.ok && r.why === "Dopo l'ordine in corso", `qualcuno sta mandando (il presidio): lo stesso (got ${JSON.stringify(r)})`);
   await doc.evaluate(() => localStorage.removeItem("psassist:corsa.presidio.v1"));
-  // dal pannello: con un ordine aperto il tocco non chiede nemmeno
-  await sw.evaluate(() => chrome.storage.session.set({ ordini: [{ id: "o3", stato: "corre", agg: Date.now(), ts: Date.now() }] }));
-  await apriMenu();
-  await $panel(doc, "#aggapp").click();
-  const msg = await finche(async () => { const t = await $panel(doc, ".card").innerText(); return /Dopo l'ordine in corso/.test(t) ? t : null; }, 5000);
-  check(!!msg, "dal pannello, con l'ordine aperto: «Dopo l'ordine in corso»");
-  await nessunOrdine();
-  check(!lavori().some((x) => x.aggiorna) && !gh.richieste.some((x) => /\.zip$/.test(x.url)), "niente zip scaricato, niente all'aiutante");
+  // un testo scritto e non salvato: nella pagina (la cartella), nel pannello, una dimissione o la terapia a metà
+  const prima0 = zipScaricati();
+  await doc.evaluate(() => { const t = document.createElement("textarea"); t.id = "prova-cartella"; t.defaultValue = "come prima"; t.value = "scritto adesso"; document.body.appendChild(t); });
+  r = await sw.evaluate(() => aggiorna());
+  check(!r.ok && r.why === "Dopo l'ordine in corso", `un testo cambiato e non salvato nella pagina (la cartella): occupato (got ${JSON.stringify(r)})`);
+  await doc.evaluate(() => { document.getElementById("prova-cartella").value = "come prima"; });
+  r = await sw.evaluate(() => aggOccupato());
+  check(r === false, `lo stesso campo com'era: libero (got ${r})`);
+  await doc.evaluate(() => sessionStorage.setItem("psassist:dimdraft.x", JSON.stringify({ ts: Date.now(), testo: "Si dimette in buone condizioni" })));
+  r = await sw.evaluate(() => aggOccupato());
+  check(r === true, `una dimissione riscritta e non salvata (la bozza): occupato (got ${r})`);
+  await doc.evaluate(() => sessionStorage.setItem("psassist:dimdraft.x", JSON.stringify({ ts: Date.now(), testo: "  " })));
+  r = await sw.evaluate(() => aggOccupato());
+  check(r === false, `una bozza vuota non conta (got ${r})`);
+  await doc.evaluate(() => sessionStorage.removeItem("psassist:dimdraft.x"));
+  await doc.evaluate(() => sessionStorage.setItem("psassist:terapia.v1", JSON.stringify({ ep: "999001" })));
+  r = await sw.evaluate(() => aggOccupato());
+  check(r === true, `un giro di terapia a metà: occupato (got ${r})`);
+  await doc.evaluate(() => sessionStorage.removeItem("psassist:terapia.v1"));
+  await doc.evaluate(() => sessionStorage.setItem("psassist:confirm.v1", JSON.stringify({ ts: Date.now() })));
+  r = await sw.evaluate(() => aggOccupato());
+  check(r === true, `un ordine che aspetta la sua Conferma: occupato (got ${r})`);
+  await doc.evaluate(() => sessionStorage.removeItem("psassist:confirm.v1"));
+  // una registrazione in corso
+  await sw.evaluate(() => chrome.storage.local.set({ [REG]: { stato: "rec", inizio: Date.now(), scade: Date.now() + 600e3 } }));
+  await finche(async () => sw.evaluate(() => regAttiva()), 5000);
+  r = await sw.evaluate(() => aggOccupato());
+  check(r === true, `una registrazione in corso: occupato (got ${r})`);
+  await sw.evaluate(() => chrome.storage.local.remove(REG));
+  await finche(async () => !(await sw.evaluate(() => regAttiva())), 5000);
+  // un foglio che arriva sulla stazione di stampa (questo PC fa anche da stazione)
+  await sw.evaluate(() => stz.inCorso.set("prova", { n: 1 }));
+  r = await sw.evaluate(() => aggOccupato());
+  check(r === true, `un foglio in arrivo sulla stazione di stampa: occupato (got ${r})`);
+  await sw.evaluate(() => stz.inCorso.delete("prova"));
+  r = await sw.evaluate(() => aggOccupato());
+  check(r === false, `tutto finito: libero (got ${r})`);
+  check(!lavori().some((x) => x.aggiorna) && zipScaricati() === prima0, "niente zip scaricato, niente all'aiutante");
+  await doc.evaluate(() => document.getElementById("prova-cartella")?.remove());
 }
 
 console.log("\naggiorna: lo zip deve essere quello giusto");
@@ -260,15 +309,23 @@ console.log("\naggiorna: lo zip deve essere quello giusto");
   comportati();
 }
 
-console.log("\naggiorna: il tocco");
+console.log("\naggiorna: da sé, quando è il momento");
 {
   azzeraLavori();
   gh.zip = zipDi(NUOVA);
   await dimentica();
   await controlla();
+  // non è il momento: un testo scritto e non salvato. La sveglia gira, e non fa niente.
+  await doc.evaluate(() => { const t = document.createElement("textarea"); t.id = "prova-cartella"; t.defaultValue = ""; t.value = "anamnesi a metà"; document.body.appendChild(t); });
+  const prima1 = zipScaricati();
+  await sw.evaluate(() => aggAuto());
+  await sw.evaluate(() => aggAuto());
+  check(zipScaricati() === prima1 && !lavori().some((x) => x.aggiorna) && (await memoria())?.nuova === NUOVA,
+    `con un testo non salvato: niente scaricato, niente all'aiutante, e la versione nuova resta da applicare (got ${JSON.stringify(await memoria())})`);
+  // ora il testo è salvato (la pagina com'era): al giro dopo si applica, da sé
+  await doc.evaluate(() => document.getElementById("prova-cartella").remove());
   const nasce = ctx.waitForEvent("serviceworker", { timeout: 30000 }).catch(() => null);
-  await apriMenu();
-  await $panel(doc, "#aggapp").click();
+  await sw.evaluate(() => { aggAuto().catch(() => {}); return true; }).catch(() => {});
   const nuovo = await nasce;
   const l = lavori().filter((x) => x.aggiorna);
   check(l.length === 1 && l[0].ok && l[0].versione === NUOVA && Math.abs(l[0].byte - gh.zip.length) < 4,
