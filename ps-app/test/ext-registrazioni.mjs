@@ -126,6 +126,11 @@ check(await $panel(doc, ".recchip").count() === 0 && await doc.locator("#psassis
 await vista(doc);
 const v1 = await $panel(doc, ".registrazioni").innerText();
 check(await $panel(doc, "#regauto").isChecked() && /Registrazione automatica · accesa/.test(v1) && /ultimi 3 minuti/.test(v1), "la vista dice che è accesa, e cosa tiene");
+const regIn = await doc.evaluate(() => {
+  const r = document.getElementById("psassist-host").shadowRoot, d = r.querySelector("details#registro"), s = r.querySelector(".registrazioni");
+  return { c: !!d && !d.open && !!d.querySelector("summary #copylog"), sotto: !!d && !!s && !!(s.compareDocumentPosition(d) & Node.DOCUMENT_POSITION_FOLLOWING), voce: !!r.querySelector("#verbtn, #refdiag") };
+});
+check(regIn.c && regIn.sotto && !regIn.voce, `una voce sola: in fondo alle Registrazioni, chiuso, il Registro con ⧉ Copia; niente «Registro» né «⧉ Diagnosi» a parte (got ${JSON.stringify(regIn)})`);
 check(!(await sw.evaluate(() => RegistraDb.tx("scorre", "readonly", (s) => s.getAll()).then((l) => l.some((x) => x.origine === "rilettura" || (x.flusso || []).some((r) => r.registratore))))),
   "e non rilegge niente dalla cache");
 
@@ -173,6 +178,9 @@ await suPagina(doc, A.worklistUrl);
 await doc.waitForTimeout(1000);
 await suPagina(doc, A.patientUrl);
 await doc.waitForTimeout(800);
+// (un documento che non si è lasciato leggere, in quei minuti: la sua diagnosi com'è quando arriva dal pannello —
+// senza numeri né valori, ma col nome che la pagina portava)
+await sw.evaluate(() => regAccoda("diagnosi", { ts: Date.now(), scheda: 0, testo: "PS Assist 3.86 · 10:00:00 · referto RX TORACE (HL7RIS)\n/sa4/restrict2/Sa4ViewerExtRedirect.do?ASSISTITO_ID&REFERTO_ID\nnessun PDF [frame]\n---\n<html><body><table><tr><td>Paziente:</td><td>ROSSI MARIO</td></tr></table><iframe src=\"x?ID=###\"></iframe></body></html>" }));
 await ordina(doc, ["CREATININEMIA", "EMOCROMOCITOMETRICO", "TROPONINA"], "febbre");
 const male = await finche(async () => (await ordini()).some((x) => x.id && ["errore", "chiusa", "interrotto", "avviso", "stampa"].includes(x.stato) && x.pubblico && ["warn", "err"].includes(x.pubblico.tono)), 120000);
 const ordA = (await ordini()).map((x) => `${x.stato}/${x.pubblico && x.pubblico.tono}: ${x.pubblico && x.pubblico.titolo}`);
@@ -182,7 +190,7 @@ await sospendi(6000);   // un incidente, uno zip: quello che arriva dopo (il reg
 const l1 = await elenco(), z = l1[0] || {};
 check(auto && l1.length === 1 && z.motivo === "auto" && /-auto\.zip$/.test(z.nome) && z.errore && !/ROSSI|MARIO|999001/.test(JSON.stringify(z)),
   `uno zip «auto», uno solo, col motivo e senza il paziente (${z.nome} · «${z.errore}»)`);
-check(/automatica: dai 3 minuti prima di «.+» a 1 dopo/.test(z.riepilogo || "") && z.controllo, `anonimizzato e controllato come gli altri (${(/Durata:[^\n]*/.exec(z.riepilogo || "") || [""])[0]} · controllo ${z.controllo ? "superato" : `${z.punti} punti`})`);
+check(/automatica: dai 3 minuti prima di «.+» a 1 dopo/.test(z.riepilogo || "") && z.controllo, `anonimizzato e controllato come gli altri (${(/Durata:[^\n]*/.exec(z.riepilogo || "") || [""])[0]} · controllo ${z.controllo ? "superato" : `${z.punti} punti: ${JSON.stringify(await sw.evaluate((id) => RegistraDb.tx("zip", "readonly", (s) => s.get(id)).then((x) => x && x.dove), z.id))}`})`);
 check(!ctx.pages().some((p) => /^chrome-extension:/.test(p.url())), `salvato senza aprire schede nell'estensione (aperte: ${ctx.pages().map((p) => p.url().replace(/\?.*/, "")).join(", ")})`);
 const zipBuf = Buffer.from(await sw.evaluate(async (id) => b64(await RegistraDb.tx("zipdati", "readonly", (s) => s.get(id))), z.id), "base64");
 const zf = join(OUT, "auto.zip"), dir = join(OUT, "auto");
@@ -197,6 +205,11 @@ const rq = (JSON.parse(leggi("flusso.json") || "{}").richieste || []);
 check(rq.some((x) => /Insert=Inserisci/.test(x.url)) && rq.some((x) => /RICHIESTACrea|PsoRichiestaCreaRcs/.test(x.url)), `e il giro dell'ordine: la richiesta creata, gli inserimenti (${rq.length} richieste)`);
 const err = (JSON.parse(leggi("errori.json") || "{}").errori || []).filter((x) => x.tipo === "ordine");
 check(err.length >= 1, `e il registro degli errori di quei minuti (${err.length} errori dell'ordine)`);
+const regTxt = leggi("testi/registro.txt"), diaTxt = leggi("testi/diagnosi-1.txt");
+check(/── scheda 1 ──/.test(regTxt) && /esam/.test(regTxt) && !/ROSSI|999001|febbre/.test(regTxt),
+  `e il Registro dei pannelli di quei minuti, anonimizzato (testi/registro.txt: ${regTxt.split("\n").length} righe; ${(/[^\n]*esam[^\n]*/.exec(regTxt) || ["—"])[0].slice(0, 90)})`);
+check(/referto RX TORACE/.test(diaTxt) && /<iframe/.test(diaTxt) && !/ROSSI|MARIO/.test(diaTxt),
+  `e la diagnosi del documento che non si è lasciato leggere, anonimizzata (testi/diagnosi-1.txt: ${diaTxt.replace(/\s+/g, " ").slice(0, 120)})`);
 const tutto = readdirSync(dir, { recursive: true }).filter((f) => statSync(join(dir, String(f))).isFile()).map((f) => leggi(String(f))).join("\n");
 for (const [cosa, v] of [["ROSSI MARIO", /ROSSI(?:\s|&nbsp;|\+|%20)+MARIO/i], ["BIANCHI ANNA", /BIANCHI(?:\s|&nbsp;|\+|%20)+ANNA/i],
   ["il codice fiscale del simulatore", /SMPRSS80A01F205X/], ["l'episodio 999001", /999001/], ["l'ospedale", /multimedica/i]]) check(!v.test(tutto), `nello zip non c'è ${cosa}`);

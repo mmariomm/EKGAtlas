@@ -68,10 +68,12 @@ async function riapriDopoCopia(page) {
   await page.waitForSelector("#psassist-host .card", { state: "attached", timeout: 3000 });
   return /Copiato/.test(t);
 }
-// il Registro sta nel menu «⋯» dell'intestazione
+// il Registro sta in fondo alle Registrazioni (menu «⋯»): chiuso con l'estensione, aperto senza
 async function registro(page) {
   await page.locator("#psassist-host #menubtn").click();
-  await page.locator("#psassist-host #verbtn").click();
+  await page.locator("#psassist-host #regmenu").click();
+  await page.waitForSelector("#psassist-host details#registro", { state: "attached", timeout: 5000 }).catch(() => {});
+  if (await page.locator("#psassist-host details#registro:not([open]) > summary").count()) await page.locator("#psassist-host details#registro > summary").click();
 }
 // …e nella scheda del browser: si legge senza aprire niente
 const registroDi = (page, ep = "999001") => page.evaluate((e) =>
@@ -4320,10 +4322,13 @@ async function scenarioResizeAndLog(browser) {
   await atterraCarrello(page);
   await apriStriscia(page);
   await page.waitForSelector("#psassist-host #confirmnow", { timeout: 5000 });
-  // the Registro now lives behind the version button, on the Pazienti screen
+  // il Registro sta in fondo alle Registrazioni (⋯), da qualunque schermata
   await $panel(page, "#back").click();
   await page.waitForSelector("#psassist-host #menubtn");
   await registro(page);
+  check(scen, (await testoPanel(page, ".seg.vmenu .segtit")) === "Registrazioni" && (await $panel(page, "details#registro[open] #copylog").count()) === 1
+    && (await $panel(page, "#verbtn").count()) === 0,
+    `⋯ → Registrazioni: senza estensione c'è solo il Registro, aperto, con ⧉ Copia — niente più voce «Registro» a parte (got ${await testoPanel(page, ".seg")})`);
   await page.waitForSelector("#psassist-host #copylog");
   await $panel(page, "#copylog").click();
   await page.waitForTimeout(300);
@@ -7357,7 +7362,7 @@ async function scenarioMenuSezioni(browser) {
   const chiudi = async (page) => { if (await $panel(page, ".menu").count()) await $panel(page, "#menubtn").click(); };
   const vedi = (s) => s.map((x) => `${x.t || "·"}: ${x.ids.join(" ")}`).join(" | ");
   const di = (s, t) => (s.find((x) => x.t === t) || { ids: [] }).ids;
-  const EXT = ["tabmenu", "pontemenu", "regmenu", "stampanti", "ricmenu", "termenu"];
+  const EXT = ["tabmenu", "pontemenu", "stampanti", "ricmenu", "termenu"];
 
   // ---- senza estensione (bookmarklet), sulla pagina di un paziente con richieste confermate
   const mock = createMock({ seedConfirmed: true, withResults: true });
@@ -7368,8 +7373,8 @@ async function scenarioMenuSezioni(browser) {
   let s = await sezioni(a.page);
   check(scen, JSON.stringify(s.map((x) => x.t)) === '["Paziente","Strumenti","Impostazioni"]' && !(await $panel(a.page, ".menu .mforma").count()) && !(await sparse(a.page)),
     `paziente: Paziente · Strumenti · Impostazioni (niente Forma in cima), e nessuna voce fuori da una sezione (got ${vedi(s)})`);
-  check(scen, di(s, "Paziente").join() === "stampamenu" && di(s, "Strumenti").join() === "consmenu" && di(s, "Impostazioni").join() === "verbtn,resetpaz"
-    && !EXT.some((id) => s.some((x) => x.ids.includes(id))), `senza estensione: Stampa le richieste · Consegne · Registro, Reset — niente voci dell'estensione (got ${vedi(s)})`);
+  check(scen, di(s, "Paziente").join() === "stampamenu" && di(s, "Strumenti").join() === "consmenu" && di(s, "Impostazioni").join() === "regmenu,resetpaz"
+    && !EXT.some((id) => s.some((x) => x.ids.includes(id))), `senza estensione: Stampa le richieste · Consegne · Registrazioni (lì, il Registro), Reset — niente voci dell'estensione (got ${vedi(s)})`);
   check(scen, !(await senzaIcona(a.page)).length, `ogni voce ha la sua icona di 16 px accanto alla parola (senza: ${(await senzaIcona(a.page)).join(", ")})`);
   const tit = await a.page.evaluate(() => { const t = document.getElementById("psassist-host").shadowRoot.querySelector(".menu .mtit"), c = getComputedStyle(t); return { up: c.textTransform, px: parseFloat(c.fontSize) }; });
   check(scen, tit.up === "uppercase" && tit.px < 12, `i titoli delle sezioni: piccoli, maiuscoli (got ${JSON.stringify(tit)})`);
@@ -7377,7 +7382,7 @@ async function scenarioMenuSezioni(browser) {
   const mb = await $panel(a.page, ".menu").boundingBox();
   check(scen, mb.y + mb.height <= 900 && Math.round(mb.width) === 360, `il menu largo 360 px e nello schermo (${Math.round(mb.width)}×${Math.round(mb.height)} px)`);
   const reset = await a.page.evaluate(() => {
-    const r = document.getElementById("psassist-host").shadowRoot, b = r.querySelector("#resetpaz"), sez = b.closest(".msez"), v = r.querySelector("#verbtn");
+    const r = document.getElementById("psassist-host").shadowRoot, b = r.querySelector("#resetpaz"), sez = b.closest(".msez"), v = r.querySelector("#regmenu");
     const bb = b.getBoundingClientRect(), sb = sez.getBoundingClientRect();
     return { ultima: sez.lastElementChild === b && !sez.nextElementSibling?.classList.contains("msez"), largo: bb.width >= sb.width - 2, sotto: bb.top >= v.getBoundingClientRect().bottom - 1, colore: getComputedStyle(b).color };
   });
@@ -7411,8 +7416,8 @@ async function scenarioMenuSezioni(browser) {
   await menu(b.page);
   s = await sezioni(b.page);
   check(scen, di(s, "Paziente").filter((x) => x !== "valreset").join() === "ricmenu,termenu,stampamenu" && di(s, "Strumenti").join() === "tabmenu,pontemenu,consmenu"
-    && di(s, "Impostazioni").join() === "stampanti,regmenu,verbtn,resetpaz" && !(await sparse(b.page)),
-    `con l'estensione, sul paziente: Ricetta SISS, Terapia, Stampa · Tabellone, iPhone, Consegne · Impostazioni, Registrazioni, Registro, Reset (got ${vedi(s)})`);
+    && di(s, "Impostazioni").join() === "stampanti,regmenu,resetpaz" && !(await sparse(b.page)),
+    `con l'estensione, sul paziente: Ricetta SISS, Terapia, Stampa · Tabellone, iPhone, Consegne · Impostazioni, Registrazioni, Reset (got ${vedi(s)})`);
   check(scen, await riga(b.page, "tabmenu", "pontemenu"), "le voci corte, due per riga, alte almeno 32 px (Tabellone · iPhone)");
   check(scen, !(await senzaIcona(b.page)).length, `con l'estensione anche: un'icona per voce (senza: ${(await senzaIcona(b.page)).join(", ")})`);
   const piede = (await $panel(b.page, ".menu .mpiede .mver").innerText()).replace(/\s+/g, " ").trim();

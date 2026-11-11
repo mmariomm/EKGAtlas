@@ -1115,6 +1115,8 @@
       .replace(/\d{3,}/g, "###")
       .slice(0, 16000);
   }
+  // il quesito è l'unico testo clinico che può finire nel Registro: fuori dalla pagina (⧉ Copia, lo zip) non esce
+  const senzaQuesito = (t) => String(t).replace(/(quesito[^:]*:\s*)"[^"]*"/gi, '$1"…"');
   function diagnosiTesto(d) {
     if (!d) return "";
     let dove = String(d.url || "");
@@ -7084,7 +7086,6 @@
     spento: ico('<circle cx="8" cy="8" r="5.6"/>'),
     acceso: ico('<circle cx="8" cy="8" r="5.6" fill="currentColor" stroke="none"/><path d="M5.4 8.2l1.8 1.8 3.5-3.6" stroke="#fff"/>'),
     link: ico('<path d="M6.9 9.1a2.6 2.6 0 0 0 3.7 0l2.1-2.1a2.6 2.6 0 0 0-3.7-3.7l-.8.8"/><path d="M9.1 6.9a2.6 2.6 0 0 0-3.7 0L3.3 9a2.6 2.6 0 0 0 3.7 3.7l.8-.8"/>'),
-    registro: ico('<rect x="1.8" y="2.5" width="12.4" height="11" rx="1.6"/><path d="M4.6 6.2 6.6 8l-2 1.8M8.4 10h3"/>'),
     cestino: ico('<path d="M2.8 4.4h10.4M6.2 4.4V2.8h3.6v1.6M4.2 4.4l.6 8.4c.1.8.6 1.3 1.4 1.3h3.6c.8 0 1.3-.5 1.4-1.3l.6-8.4M6.7 7.1v4.2M9.3 7.1v4.2"/>'),
     aggiornaApp: ico('<circle cx="8" cy="8" r="5.8"/><path d="M8 10.9V5.3M5.6 7.6 8 5.2l2.4 2.4"/>'),
     aggiorna: ico('<path d="M13.2 8A5.2 5.2 0 1 1 11.7 4.3"/><path d="M12.2 1.8v2.9H9.3"/>'),
@@ -7941,6 +7942,26 @@
       tabStore.set("log." + (this.episodeId || "x"), { ts: Date.now(), lines: this.logLines });
       const el = this.root.querySelector(".log");
       if (el) { el.textContent = this.logLines.join("\n"); el.scrollTop = el.scrollHeight; }
+      this.registroAlRegistratore(line);
+    }
+    // Ogni registrazione (a mano, o gli ultimi minuti salvati da soli) porta il
+    // Registro delle schede di quei minuti e le diagnosi dei documenti che non
+    // si sono lasciati leggere: il registratore (registra.js) li tiene solo se
+    // sta tenendo qualcosa, e nello zip passano dall'anonimizzazione come ogni
+    // pagina (testi/registro.txt, testi/diagnosi-N.txt). Il quesito, come in
+    // ⧉ Copia, non esce mai. Le righe vanno a mucchi, ogni secondo e mezzo.
+    registroAlRegistratore(riga) {
+      if (!hasExt() || TABELLONE) return;
+      (this._regRighe = this._regRighe || []).push(senzaQuesito(String(riga)).slice(0, 2000));
+      if (this._regRigheT) return;
+      this._regRigheT = setTimeout(() => {
+        const righe = this._regRighe.splice(0, 200);
+        this._regRighe = []; this._regRigheT = 0;
+        ask({ t: "regRegistro", righe }).catch(() => {});
+      }, 1500);
+    }
+    segnaDiagnosi(d) {
+      if (d && hasExt() && !TABELLONE) ask({ t: "regDiagnosi", testo: diagnosiTesto(d) }).catch(() => {});
     }
 
     // La striscia dice a che punto è, due righe: chi (e cosa) sopra, il
@@ -9523,8 +9544,7 @@
                       !this.stampaPronta() ? "" : this.stampaAuto.s.attiva === false
                         ? `<button role="menuitemcheckbox" id="stautosw" aria-checked="false" title="Spenta: i fogli passano dal dialogo di stampa. Tocca per accenderla: ogni foglio va da solo alla sua stampante, senza dialogo">${mico("spento")}Stampa automatica</button>`
                         : `<button role="menuitemcheckbox" id="stautosw" aria-checked="true" title="Attiva: ogni foglio va da solo alla sua stampante. Tocca per spegnerla: i fogli tornano a passare dal dialogo di stampa">${mico("acceso")}Stampa automatica</button>`,
-                      hasExt() ? `<button role="menuitem" id="regmenu" title="Registra una sessione, la registrazione automatica degli ultimi minuti, gli zip salvati su questo PC (anche dall'iPhone)">${memo("●")}Registrazioni</button>` : "",
-                      `<button role="menuitem" id="verbtn" title="Il Registro delle operazioni">${mico("registro")}${this.showLog ? "Nascondi il registro" : "Registro"}</button>`,
+                      `<button role="menuitem" id="regmenu" title="${hasExt() ? "Registra una sessione, gli zip salvati su questo PC (anche dall'iPhone), e in fondo il Registro delle operazioni" : "Il Registro delle operazioni di questa scheda"}">${memo("●")}Registrazioni</button>`,
                       // l'ultima, da sola sulla sua riga, in rosso: non sta accanto a niente di innocuo
                       this.giroQui() ? "" : this.resetArmato() ? `<button role="menuitem" id="resetpaz" class="mreset mrischio">${mico("cestino")}Cancello tutto? Tocca di nuovo</button>`
                         : `<button role="menuitem" id="resetpaz" class="mreset">${mico("cestino")}Reset dati pazienti</button>`])}
@@ -9561,7 +9581,7 @@
                 </div>` : ""}
               ${!this.runState ? this.selbarHtml() : ""}
               </div>
-              <div class="bd"><div class="bdi">${this.view === "richieste" ? "" : this.notaHtml()}${this.registroHtml()}${body}</div></div>
+              <div class="bd"><div class="bdi">${this.view === "richieste" ? "" : this.notaHtml()}${body}</div></div>
               ${this.inPazienti() ? "" : this.stanzaSnack()}
               ${TABELLONE ? "" : `
               ${["n", "s", "e", "w", "ne", "nw", "se", "sw"].map((d) => `<div class="rz rz-${d}" data-rz="${d}"></div>`).join("")}
@@ -11130,14 +11150,6 @@
       this.render();
     }
 
-    // Il Registro si apre col numero di versione in fondo, che ora c'è su ogni
-    // schermata: dopo un banner rosso è lì che si va a vedere cos'è successo,
-    // e due ‹ di distanza erano due di troppo.
-    registroHtml() {
-      if (!this.showLog) return "";
-      return `<details class="reg" open><summary>Registro <button class="mini" id="copylog" title="Copia il registro negli appunti (il quesito viene omesso)">⧉ Copia</button></summary><div class="log" aria-live="polite">${esc(this.logLines.join("\n"))}</div></details>`;
-    }
-
     viewIdle(patientName, ep) {
       const cat = fullCatalog();
       // On the ER worklist (no patient open) nothing can be ordered: show no
@@ -11694,7 +11706,6 @@
         au ? "" : salva ? `<span class="wuprog" role="status">Salvo i referti ${salva.fatti}/${salva.totale}…</span>`
           : daSalvare.length ? `<button type="button" class="mini" id="refsave" title="Tiene una copia di ${daSalvare.length === 1 ? "questo referto" : `questi ${daSalvare.length} referti`} su questo computer (due alla volta) e ne legge il testo">⭳ Salva i referti (${daSalvare.length})</button>` : "",
         (nSaved || referti.some((e) => open.has(e.id))) && !salva ? `<button type="button" class="mini" id="refreset" title="Dimentica i referti salvati e il loro testo">↺</button>` : "",
-        this.diagnosi ? `<button type="button" class="mini" id="refdiag" title="Copia com'è fatto il documento che non si è lasciato leggere (senza numeri), da mandare a chi fa il pannello">⧉ Diagnosi</button>` : "",
       ].filter(Boolean).join("");
       const sep = `<span class="wusep" aria-hidden="true">·</span>`;
       const sommario = `<div class="wusum">
@@ -12777,7 +12788,7 @@
       const why = `${(err && (err.head || err.message)) || "non letto"}${err && err.body ? ` — ${err.body}` : ""}${err && err.diag ? ` [${err.diag}]` : ""}`;
       this.refBusy = { ...(this.refBusy || {}), [e.id]: why };
       segnaFallito(this.episodeId, e.id);
-      this.diagnosi = { cosa: `referto ${shortLabel(e.label)} (${e.sistema || "?"})`, url: e.url, html: (err && err.html) || "", diag: why, quando: now() };
+      this.segnaDiagnosi({ cosa: `referto ${shortLabel(e.label)} (${e.sistema || "?"})`, url: e.url, html: (err && err.html) || "", diag: why, quando: now() });
       this.log(`${now()}  ${shortLabel(e.label)}: referto non letto (${why})`);
       segnaErrore("referto", { episodio: this.episodeId || "", referto: e.id, sistema: e.sistema || "", motivo: why.slice(0, 200) });
     }
@@ -13009,8 +13020,8 @@
           // lettore. Si apre il PDF, e la diagnosi dice com'è fatto (la
           // struttura, mai il contenuto) per correggerlo.
           const diag = `${l.letto.motivo ? `${l.letto.motivo} · ` : ""}${pdfDiag(r.buf)}`;
-          this.diagnosi = { cosa: `referto ${shortLabel(e.label)} (${e.sistema || "?"})`, url: e.url, html: "", diag, quando: now() };
-          this.log(`${now()}  ${shortLabel(e.label)}: testo non letto — si apre il PDF (⧉ Diagnosi) [${diag}]`);
+          this.segnaDiagnosi({ cosa: `referto ${shortLabel(e.label)} (${e.sistema || "?"})`, url: e.url, html: "", diag, quando: now() });
+          this.log(`${now()}  ${shortLabel(e.label)}: testo non letto — si apre il PDF [${diag}]`);
           if (this.espanso === id) this.espanso = null;
           this.render();
           return this.openReferto(id);
@@ -13250,7 +13261,7 @@
     // automatica e perché, il controllo; per ognuno il riepilogo, «Scarica sul
     // PC» e «Cancella» (due tocchi). Gli stessi zip li vede e scarica l'iPhone.
     // Niente pazienti: solo i nomi degli zip e i loro numeri.
-    apriRegistrazioni() { this.setView("registrazioni"); this.caricaRegistrazioni(); }
+    apriRegistrazioni() { this.setView("registrazioni"); if (hasExt()) this.caricaRegistrazioni(); }
     caricaRegistrazioni() {
       if (this._regCarica) { this._regDiNuovo = true; return; }
       this._regCarica = ask({ t: "registraLista" }).then((r) => {
@@ -13262,9 +13273,13 @@
       });
     }
     viewRegistrazioni() {
+      // in fondo, chiuso, il Registro delle operazioni di questa scheda (⧉ Copia, senza il quesito); senza
+      // l'estensione (il preferito) c'è solo lui, aperto
+      const registro = `<details class="sec reg" id="registro"${this.registroAperto || !hasExt() ? " open" : ""}><summary>Registro <button class="mini" id="copylog" title="Copia il registro negli appunti (il quesito viene omesso)">⧉ Copia</button></summary><div class="log" aria-live="polite">${esc(this.logLines.join("\n"))}</div></details>`;
+      if (!hasExt()) return registro;
       const L = this.regLista;
-      if (!L) { this.caricaRegistrazioni(); return `<div class="sec"><div class="hint">Leggo le registrazioni…</div></div>`; }
-      if (!L.ok) return `<div class="sec"><div class="hint">Il registratore non risponde: ricarica l'estensione e riprova.</div></div>`;
+      if (!L) { this.caricaRegistrazioni(); return `<div class="sec"><div class="hint">Leggo le registrazioni…</div></div>${registro}`; }
+      if (!L.ok) return `<div class="sec"><div class="hint">Il registratore non risponde: ricarica l'estensione e riprova.</div></div>${registro}`;
       const r = this.reg, occ = this.regOcc || "";
       const kb = (b) => (b >= 1048576 ? `${(b / 1048576).toFixed(1).replace(".", ",")} MB` : `${Math.max(1, Math.round(b / 1024))} KB`);
       const giorno = (ts) => { const d = new Date(ts); return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`; };
@@ -13305,8 +13320,8 @@
           ${righe ? `<div class="reglist">${righe}</div>` : `<div class="hint">Nessuna registrazione salvata.</div>`}
           ${(L.lista || []).length > 1 ? `<button class="mini via${this.regArma && this.regArma.id === "*" ? " armato" : ""}" id="regtutte">${this.regArma && this.regArma.id === "*"
             ? `Cancello tutte le ${(L.lista || []).length} registrazioni? Tocca di nuovo` : "Cancella tutto"}</button>` : ""}
-          <div class="hint">Al più 30 zip e 300 MB: oltre, se ne vanno i più vecchi, prima gli automatici.</div>
-        </div>`;
+          <div class="hint">Al più 30 zip e 300 MB: oltre, se ne vanno i più vecchi, prima gli automatici. Ogni zip porta anche il Registro e le diagnosi di quei minuti.</div>
+        </div>${registro}`;
     }
     legaRegistrazioni($) {
       const dopo = (x, ok, no) => {
@@ -13870,7 +13885,7 @@
       this._resetFuori?.();   // (un reset di prima ancora nei suoi 8 secondi: il suo resto adesso)
       const foto = fotoReset();
       const mem = { storico: this.storico, storicoAltri: this.storicoAltri, storicoDaConfermare: this.storicoDaConfermare, notaPortale: this.notaPortale,
-        refCache: this.refCache, refBusy: this.refBusy, espanso: this.espanso, diagnosi: this.diagnosi, logLines: this.logLines, esiti: this.esiti, rotti: [...this.rottiTab] };
+        refCache: this.refCache, refBusy: this.refBusy, espanso: this.espanso, logLines: this.logLines, esiti: this.esiti, rotti: [...this.rottiTab] };
       azzeraPazienti();
       this.dimenticaTutto();
       let fatto = false;
@@ -13899,7 +13914,7 @@
     // quello che il pannello tiene in mente, oltre la memoria
     dimenticaTutto() {
       this.storico = null; this.storicoAltri = ""; this.storicoDaConfermare = false; this.notaPortale = "";
-      this.refCache = {}; this.refBusy = {}; this.espanso = null; this.diagnosi = null;
+      this.refCache = {}; this.refBusy = {}; this.espanso = null;
       this.rottiTab.clear(); this.logLines = [];
       this.esiti = esitiModel(document, location.href);
     }
@@ -13920,7 +13935,7 @@
     // can end up in it, so it is masked out before leaving the page.
     async copyLog() {
       const head = [`PS Assist ${VERSION} · pagina ${this.pageType}`, `${navigator.userAgent}`, `${new Date().toLocaleString("it-IT")}`, ""].join("\n");
-      const text = head + this.logLines.join("\n").replace(/(quesito[^:]*:\s*)"[^"]*"/gi, '$1"…"');
+      const text = head + senzaQuesito(this.logLines.join("\n"));
       const ok = await copiaTesto(text);
       const b = this.root.querySelector("#copylog");
       segnaCopia(b, ok);
@@ -14523,7 +14538,6 @@
         this.message = { ok: `Eliminato tutto di ${p?.name || "quel paziente"}.` };
         this.render();
       }));
-      $("#verbtn")?.addEventListener("click", () => { this.showLog = !this.showLog; this.menuAperto = false; this.render(); });
       // il ponte: la pagina dell'iPhone (nel pannello, o in una scheda se lì non si apre), e «Scollega» dall'intestazione
       $("#pontemenu")?.addEventListener("click", () => { this.menuAperto = false; this._ponteNo = ""; this.setView("iphone"); });
       $("#ponteapri")?.addEventListener("click", () => this.ponteInScheda());
@@ -14563,10 +14577,6 @@
         if (!this.valArmato()) { this._valArmato = Date.now(); this.render(); return; }
         this._valArmato = 0; this.menuAperto = false;
         this.resetValori();
-      });
-      $("#refdiag")?.addEventListener("click", async () => {
-        const b = this.root.querySelector("#refdiag");
-        segnaCopia(b, await copiaTesto(diagnosiTesto(this.diagnosi)));
       });
       this.root.querySelectorAll("[data-dcopy]").forEach((b) => b.addEventListener("click", async () => {
         const d = dimissioni()[b.getAttribute("data-dcopy")];
@@ -14845,6 +14855,7 @@
       $("#regmenu")?.addEventListener("click", () => { this.menuAperto = false; this.apriRegistrazioni(); });
       $("#recchip")?.addEventListener("click", () => this.apriRegistrazioni());
       if (this.view === "registrazioni") this.legaRegistrazioni($);
+      $("#registro")?.addEventListener("toggle", (e) => { this.registroAperto = e.currentTarget.open; });
       $("#stautow")?.addEventListener("click", (e) => { if (e.target.closest("#stauto")) this.apriStampanti(); });
       // «Segue il gestionale» (⋯): acceso di norma; spento, la smart si rilegge solo col ⟳
       $("#seguesw")?.addEventListener("click", () => {
@@ -16421,7 +16432,7 @@
         const suo = e instanceof ViewerError;
         if (suo && e.html) {
           ultimaDiag = { cosa: `stampa ${job.name}`, url: job.url, html: e.html, diag: e.diag, quando: now() };
-          if (panel) panel.diagnosi = ultimaDiag;
+          if (panel) panel.segnaDiagnosi(ultimaDiag);
         }
         panel?.log(`${now()}  ${job.name}: PDF non catturato — ${suo ? `visualizzatore${e.diag ? " [" + e.diag + "]" : ""}` : `${e?.head || e?.message || e}`}`);
         corpo.innerHTML = suo

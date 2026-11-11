@@ -198,7 +198,7 @@ pagina non ha voci non c'è. Ci sta solo quello che serve durante il turno:
   stanza** e **Segue il gestionale**;
 - **Impostazioni**: **Impostazioni** (una pagina sola: stampanti, stazione di stampa, indirizzo del
   portale, iPhone), e — scelte le due stampanti — **Stampa automatica** (vedi
-  «Stampa automatica»), **Registrazioni**, il **Registro** e per ultimo,
+  «Stampa automatica»), **Registrazioni** (vedi «Registrazioni») e per ultimo,
   da solo sulla sua riga e in rosso, **Reset dati pazienti**. Le voci che si accendono e si spengono
   (Segue il gestionale, Stampa automatica) si spuntano: al posto dell'icona il loro stato (il
   pallino blu con la spunta, acceso);
@@ -998,8 +998,8 @@ o una richiesta in attesa.
   ogni tipo, **testo ruotato** come negli ECG in orizzontale). Senza estensione resta il lettore
   interno, più semplice (anche lui legge il testo ruotato). I referti sono **PDF di testo, mai
   immagini**: se il testo non esce è uno sbaglio del lettore, non del referto — il PDF **si tiene**
-  lo stesso e si apre, e **⧉ Diagnosi** (nella riga in cima) dice com'è fatto quel PDF (versione,
-  cifratura, font, filtri: **mai il contenuto**), per correggerlo. Se il pannello non lo legge ci
+  lo stesso e si apre, e la **diagnosi** — com'è fatto quel PDF (versione, cifratura, font, filtri:
+  **mai il contenuto**) — va da sola nelle Registrazioni, per correggerlo. Se il pannello non lo legge ci
   prova il **service worker**; se neanche lui, il pallino è rosso col motivo — e il documento **si
   apre lo stesso, con lo stesso tocco**.
 - **Salvare i referti.** Prima era solo una decisione del medico; ora, **su sua richiesta**, lo fa
@@ -1468,7 +1468,7 @@ tranquillo che rifà etichette e lista.
 
 **I comandi sono quelli di sempre**, nella scheda: 🖨 Stampa · → Avanti · ↗ Scheda · ✕ Chiudi.
 Un documento che non si lascia catturare (un visualizzatore) ha al loro posto un grande
-**↗ Apri e stampa** (poi Ctrl+P), con ⧉ Diagnosi; un PDF che non arriva lo dice in rosso. Un
+**↗ Apri e stampa** (poi Ctrl+P), con ⧉ Diagnosi (e la diagnosi va anche nelle Registrazioni); un PDF che non arriva lo dice in rosso. Un
 tocco sulla striscia mostra la scheda anche mentre il PDF arriva; **✕** — o **Esc**, a scheda
 aperta — annulla la stampa e ferma davvero la ricerca del PDF (mentre il PDF arriva un Esc è del
 gestionale: una tendina, un campo). Niente velo sulla pagina: il dialogo di stampa del browser è
@@ -1774,12 +1774,18 @@ mai attaccati a un referto (niente li collega). Il referto in PDF resta lì acca
 > `extension/manifest.json` → `host_permissions` (oggi `http://10.11.0.151:9080/*`). Se nella tua
 > sede è un altro indirizzo, cambialo lì e ricarica l'estensione.
 
-## Registra (una sessione vera, anonimizzata)
+## Registrazioni (una sessione vera, anonimizzata)
 
-Per ricostruire le pagine di esempio, imparare il flusso e i tempi veri e costruire una
-«palestra» che si comporti come il gestionale. Solo con l'**estensione**.
+Per mandare un problema a chi fa il pannello, ricostruire le pagine di esempio, imparare il flusso
+e i tempi veri e costruire una «palestra» che si comporti come il gestionale. Una voce sola nel
+menu, **⋯ → Registrazioni**: in cima **● Registra / Ferma e salva**, poi le registrazioni salvate
+(**Scarica** c'è sempre, anche con «restano N dati da controllare»), e in fondo, chiuso, il
+**Registro** delle operazioni con **⧉ Copia**. Ogni zip porta da sé il Registro dei pannelli di quei
+minuti (`testi/registro.txt`, senza il quesito) e la **diagnosi** di ogni documento che non si è
+lasciato leggere (`testi/diagnosi-N.txt`: la struttura, senza numeri né valori), anonimizzati come
+le pagine e ricontrollati dal cancello. Col preferito (bookmarklet) la voce mostra solo il Registro.
 
-- **⋯ → Registrazioni** apre la vista del registratore: **● Registra** fa partire; la pill e
+- **● Registra** (solo con l'**estensione**) fa partire; la pill e
   l'intestazione mostrano **● REC** (un tocco sul ● REC riapre la vista). Lavori come sempre.
   **Ferma e salva** ferma, anonimizza, controlla e **salva lo zip qui, nella memoria
   dell'estensione** (`psassist-registrazione-AAAAMMGG-HHMM.zip`): nessuna scheda, nessuna finestra,
@@ -2533,7 +2539,7 @@ prima fase usa **solo** "Crea richiesta e aggiungi" — mai il bottone con confe
 11. **Regime.** Una scheda per paziente; mai avviare un run e allontanarsi; nella prima settimana,
     a fine turno, scorri le richieste create cercando doppioni o bozze non confermate.
 
-Se un passaggio non torna: il **Registro** (in fondo al pannello) elenca ogni azione con l'orario,
+Se un passaggio non torna: il **Registro** (⋯ → Registrazioni, in fondo) elenca ogni azione con l'orario,
 inclusi i primi 160 caratteri di qualsiasi pagina inattesa del server e **da quale strada è stato
 ottenuto ogni PDF**. Resta scritto anche cambiando pagina (per scheda e per episodio, 2 ore) e il bottone
 **⧉ Copia** lo mette negli appunti pronto da incollare — **il quesito diagnostico viene omesso**,

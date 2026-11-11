@@ -522,10 +522,10 @@ await finito(p2);
 const rx = await rxRiga(p2);
 await p2.waitForTimeout(800);
 const schedeDopo = ctx.pages().filter((p) => !p.isClosed()).length;
-await p2.locator("#psassist-host #menubtn").click();   // il Registro, dal menu «⋯»
-await p2.locator("#psassist-host #verbtn").click();
-await p2.waitForSelector("#psassist-host .log", { state: "attached", timeout: 5000 }).catch(() => {});
-const registro = await p2.evaluate(() => document.getElementById("psassist-host").shadowRoot.querySelector(".log")?.textContent || "");
+await p2.locator("#psassist-host #menubtn").click();   // il Registro: ⋯ → Registrazioni, in fondo
+await p2.locator("#psassist-host #regmenu").click();
+await p2.waitForSelector("#psassist-host #registro .log", { state: "attached", timeout: 5000 }).catch(() => {});
+const registro = await p2.evaluate(() => document.getElementById("psassist-host").shadowRoot.querySelector("#registro .log")?.textContent || "");
 check(letto && !rx.rosso && RIGHE_ESEMPIO.some((r) => String(rx.testo).includes(r)),
   `referto del portale, preso da solo: il testo nel pannello (got: ${rx.rosso ? "rosso — " + rx.rosso.slice(0, 160) : String(rx.testo).slice(0, 60)})`);
 check(/lo apro nel portale, in una scheda dietro/.test(registro) && /testo letto \(\d+ righe, pdf\.js[;)]/.test(registro),
