@@ -1435,7 +1435,7 @@ async function stampaDove(d) {
 function stampaVerso(rec) {
   if (rec.dest !== "stazione") return stampaScelte();
   const nome = rec.destNome || "Infermeria";
-  return Promise.resolve({ attiva: true, stazione: true, etichette: nome, a4: nome });
+  return Promise.resolve({ stazione: true, etichette: nome, a4: nome });
 }
 // il resoconto di una conferma (quanti esami, quando), per la scheda che stampa dal dialogo
 const fineDi = (f) => ({ n: Number(f && f.n) || 0, ts: Number(f && f.ts) || Date.now(), quesito: (f && f.quesito) || null });
@@ -2038,8 +2038,11 @@ chrome.runtime.onMessage.addListener(ordMessaggio);
 // foglio che non è partito per un motivo detto: quel foglio passa dal dialogo
 // di sempre. Un esito sconosciuto no — il foglio può essere uscito —: si dice,
 // con «Ristampa».
-// Le scelte del medico stanno in storage.local: `stampa` = { attiva, etichette,
-// a4, ruota } (i nomi delle stampanti); `stampaEsito` = com'è andata l'ultima.
+// Le scelte del medico stanno in storage.local: `stampa` = { etichette, a4,
+// ruota, dove } (i nomi delle stampanti); `stampaEsito` = com'è andata l'ultima.
+// Scelte le due stampanti, con l'aiutante, la stampa è automatica: non c'è un
+// interruttore (il dialogo del browser è il ripiego, senza aiutante o senza le
+// due stampanti). `attiva: false`, l'interruttore di prima, se ne va una volta.
 const OSPITE = "it.psassist.stampa";
 const STAMPA_PDF_MAX = 25 * 1024 * 1024;   // come l'aiutante
 const STAMPA_ATTESA = 90e3;   // l'aiutante finisce entro 40 secondi; oltre questi, l'esito è sconosciuto
@@ -2071,11 +2074,16 @@ async function aiutanteCopie() {
   if (v == null) v = (await ospite({ t: "ping" }, 20e3)).versione;
   return Number(v) >= 4;
 }
-// le scelte del medico, se la stampa automatica è accesa
+// le scelte del medico, se ci sono tutt'e due le stampanti
 async function stampaScelte() {
   const s = (await chrome.storage.local.get("stampa")).stampa || {};
-  return s.attiva !== false && s.etichette && s.a4 ? s : null;
+  return s.etichette && s.a4 ? s : null;
 }
+async function stampaMigra() {
+  const s = (await chrome.storage.local.get("stampa")).stampa;
+  if (s && "attiva" in s) { const { attiva, ...resto } = s; await chrome.storage.local.set({ stampa: resto }); }
+}
+stampaMigra().catch(() => {});
 // SumatraPDF gira ogni etichetta più larga che alta: coi driver delle
 // etichettatrici (Zebra, ZDesigner, TSC, Citizen) uscirebbe di traverso, e per
 // loro di partenza no. Si cambia nelle impostazioni.

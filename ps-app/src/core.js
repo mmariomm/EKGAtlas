@@ -7038,6 +7038,8 @@
     tabellone: ico('<rect x="1.8" y="2.3" width="5.4" height="4.9" rx="1.1"/><rect x="8.8" y="2.3" width="5.4" height="4.9" rx="1.1"/><rect x="1.8" y="8.8" width="5.4" height="4.9" rx="1.1"/><rect x="8.8" y="8.8" width="5.4" height="4.9" rx="1.1"/>'),
     tel: ico('<rect x="4.4" y="1.4" width="7.2" height="13.2" rx="1.7"/><path d="M7 12.1h2"/>'),
     rec: ico('<circle cx="8" cy="8" r="5.8"/><circle cx="8" cy="8" r="2.5" fill="currentColor" stroke="none"/>'),
+    // Impostazioni: una voce sola, la sua icona (un ingranaggio, non la stampante: lì c'è anche il resto)
+    impostazioni: ico('<circle cx="8" cy="8" r="2.2"/><path d="M8 1.8v1.6M8 12.6v1.6M1.8 8h1.6M12.6 8h1.6M3.6 3.6l1.15 1.15M11.25 11.25l1.15 1.15M3.6 12.4l1.15-1.15M11.25 4.75l1.15-1.15"/><circle cx="8" cy="8" r="4.3"/>'),
     matita: ico('<path d="M10.5 2.7a1.6 1.6 0 0 1 2.3 0l.5.5a1.6 1.6 0 0 1 0 2.3L6 12.8l-3.3.6.6-3.3z"/><path d="M9.3 3.9l2.8 2.8"/>'),
     // le voci che si accendono e si spengono: il loro stato al posto dell'icona
     spento: ico('<circle cx="8" cy="8" r="5.6"/>'),
@@ -7271,7 +7273,7 @@
       // ogni scheda del gestionale ne mostra la striscia.
       this.ordini = [];
       this._lavoroChiuso = false;   // la scheda di sottofondo ha già detto l'ultima parola
-      // la stampa automatica, dalla memoria dell'estensione: { s: { attiva, etichette, a4 }, esito }
+      // la stampa automatica, dalla memoria dell'estensione: { s: { etichette, a4, dove }, esito }
       this.stampaAuto = null;
       this.acq = "";           // catalog search text
       this.esiti = [];                  // risultati + referti, newest first
@@ -7555,7 +7557,7 @@
       if (LAVORO || PONTE_VALORI) return;
       const icona = (e) => {
         if (!e.isTrusted || e.button !== 0 || !e.detail || e.ctrlKey || e.shiftKey || e.metaKey || e.altKey) return null;
-        if (!this.stampaPronta() || this.stampaAuto.s.attiva === false) return null;
+        if (!this.stampaPronta()) return null;
         const a = e.target && e.target.closest ? e.target.closest("a[href]") : null;
         return a ? this.iconaStampa(a) : null;
       };
@@ -7634,8 +7636,8 @@
     }
     nomeStazione() { return (this.stampaAuto && this.stampaAuto.sta && this.stampaAuto.sta.nome) || "Infermeria"; }
     // senza il dialogo: la stampa automatica di qui, o la stazione
-    senzaDialogo() { return this.stampaDove() === "stazione" || (this.stampaPronta() && this.stampaAuto.s.attiva !== false); }
-    // La stampa automatica: le due stampanti scelte (allora si può accendere e spegnere)…
+    senzaDialogo() { return this.stampaDove() === "stazione" || this.stampaPronta(); }
+    // La stampa automatica: le due stampanti scelte (niente interruttore: col dialogo solo senza)…
     stampaPronta() {
       const s = this.stampaAuto && this.stampaAuto.s;
       return !!(s && s.etichette && s.a4);
@@ -7649,7 +7651,7 @@
         const titolo = `I fogli degli ordini e l'etichetta anagrafica vanno in ${nome} (stazione di stampa)${sta.presente ? "" : ` · adesso ${nome} non risponde`}. Tocca per le Stampanti`;
         return `<button class="iconbtn stauto sta${sta.presente ? "" : " ko"}" id="stauto" title="${esc(titolo)}" aria-label="${esc(titolo)}">${ICO.stampante}→ ${esc(nome)}</button>`;
       }
-      if (!this.stampaPronta() || this.stampaAuto.s.attiva === false) return "";
+      if (!this.stampaPronta()) return "";
       const { s, esito } = this.stampaAuto;
       const ko = !!esito && esito.ok === false;
       const titolo = esito && esito.nonInstallata ? `Stampa automatica non installata: ${esito.why}`
@@ -9491,13 +9493,10 @@
                       // (quelle della stanza ci sono solo sulla mappa: in fondo, così le altre non cambiano posto)
                       inStanza && !this.stanzaEdit ? `<button role="menuitem" id="stmodmenu" title="Ritocca la stanza: aggiungi, sposta e rinomina letti, sedie e aree">${mico("matita")}Modifica la stanza</button>` : "",
                       inStanza && !this.stanzaEdit && hasExt() ? `<button role="menuitemcheckbox" id="seguesw" aria-checked="${segueAcceso()}" title="${segueAcceso() ? "Acceso" : "Spento: tocca per accenderlo"} — quando apri l'app sull'iPhone (e col ⟳) la lista smart del gestionale, letta dietro: chi c'è, l'area, il triage; chi esce è dimesso">${mico(segueAcceso() ? "acceso" : "spento")}Segue il gestionale</button>` : ""])}
-                    ${this.menuSez("Impostazioni", [
-                      hasExt() ? `<button role="menuitem" id="stampanti" title="Stampanti (etichettatrice e A4), stazione di stampa, indirizzo del portale, iPhone">${memo("🖨️")}Impostazioni</button>` : "",
-                      this.stampaAuto && this.stampaAuto.sta ? `<div class="mforma" role="group" aria-label="Dove stampano gli ordini"><span>Stampa</span>${[["qui", "PC"], ["stazione", this.nomeStazione()]].map(([d, t]) =>
+                    ${this.menuSez("Questo PC", [
+                      hasExt() ? `<button role="menuitem" id="stampanti" title="La forma del pannello, le stampanti (etichettatrice e A4), la stazione di stampa, l'indirizzo del portale, l'iPhone">${mico("impostazioni")}Impostazioni</button>` : "",
+                      this.stampaAuto && this.stampaAuto.sta ? `<div class="mforma" role="group" aria-label="Dove stampano gli ordini"><span>Stampa su</span>${[["qui", "PC"], ["stazione", this.nomeStazione()]].map(([d, t]) =>
                         `<button role="menuitemradio" data-stdove="${d}" aria-checked="${this.stampaDove() === d}"${this.stampaDove() === d ? ' class="on"' : ""} title="${d === "qui" ? "I fogli degli ordini su questo PC" : `I fogli degli ordini e l'etichetta anagrafica in ${esc(this.nomeStazione())}, la stazione di stampa`}">${esc(t)}</button>`).join("")}</div>` : "",
-                      !this.stampaPronta() ? "" : this.stampaAuto.s.attiva === false
-                        ? `<button role="menuitemcheckbox" id="stautosw" aria-checked="false" title="Spenta: i fogli passano dal dialogo di stampa. Tocca per accenderla: ogni foglio va da solo alla sua stampante, senza dialogo">${mico("spento")}Stampa automatica</button>`
-                        : `<button role="menuitemcheckbox" id="stautosw" aria-checked="true" title="Attiva: ogni foglio va da solo alla sua stampante. Tocca per spegnerla: i fogli tornano a passare dal dialogo di stampa">${mico("acceso")}Stampa automatica</button>`,
                       `<button role="menuitem" id="regmenu" title="${hasExt() ? "Registra una sessione, gli zip salvati su questo PC (anche dall'iPhone), e in fondo il Registro delle operazioni" : "Il Registro delle operazioni di questa scheda"}">${memo("●")}Registrazioni</button>`,
                       // l'ultima, da sola sulla sua riga, in rosso: non sta accanto a niente di innocuo
                       this.giroQui() ? "" : this.resetArmato() ? `<button role="menuitem" id="resetpaz" class="mreset mrischio" title="${esc(DIMENTICA_TITOLO)}">${mico("cestino")}Dimentico tutto? Tocca di nuovo</button>`
@@ -14752,13 +14751,6 @@
         this.menuAperto = false;
         this.render();
       });
-      $("#stautosw")?.addEventListener("click", () => {
-        const s = { ...this.stampaAuto.s, attiva: this.stampaAuto.s.attiva === false };
-        this.stampaAuto = { ...this.stampaAuto, s };
-        this.menuAperto = false;
-        chrome.storage.local.set({ stampa: s }).catch(() => {});
-        this.render();
-      });
       $("#aggapp")?.addEventListener("click", async () => {
         this.menuAperto = false;
         if (this.giroInCorso()) { this.message = "Dopo l'ordine in corso."; return this.render(); }
@@ -15918,7 +15910,7 @@
     if (!hasExt()) return null;
     try {
       const s = (await chrome.storage.local.get("stampa")).stampa;
-      return s && s.attiva !== false && s.etichette && s.a4 ? s : null;
+      return s && s.etichette && s.a4 ? s : null;
     } catch { return null; }
   }
   // Ogni stampa che il pannello fa parte da qui. `ep`, `paziente`: di chi

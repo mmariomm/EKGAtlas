@@ -7378,9 +7378,9 @@ async function scenarioMenuSezioni(browser) {
   await a.page.waitForSelector("#psassist-host .card", { state: "attached" });
   await menu(a.page);
   let s = await sezioni(a.page);
-  check(scen, JSON.stringify(s.map((x) => x.t)) === '["Paziente","Strumenti","Impostazioni"]' && !(await $panel(a.page, ".menu .mforma").count()) && !(await sparse(a.page)),
-    `paziente: Paziente · Strumenti · Impostazioni (niente Forma in cima), e nessuna voce fuori da una sezione (got ${vedi(s)})`);
-  check(scen, di(s, "Paziente").join() === "stampamenu" && di(s, "Strumenti").join() === "consmenu" && di(s, "Impostazioni").join() === "regmenu,resetpaz"
+  check(scen, JSON.stringify(s.map((x) => x.t)) === '["Paziente","Strumenti","Questo PC"]' && !(await $panel(a.page, ".menu .mforma").count()) && !(await sparse(a.page)),
+    `paziente: Paziente · Strumenti · Questo PC (niente Forma in cima), e nessuna voce fuori da una sezione (got ${vedi(s)})`);
+  check(scen, di(s, "Paziente").join() === "stampamenu" && di(s, "Strumenti").join() === "consmenu" && di(s, "Questo PC").join() === "regmenu,resetpaz"
     && !EXT.some((id) => s.some((x) => x.ids.includes(id))), `senza estensione: Stampa le richieste · Consegne · Registrazioni (lì, il Registro), Reset — niente voci dell'estensione (got ${vedi(s)})`);
   check(scen, !(await senzaIcona(a.page)).length, `ogni voce ha la sua icona di 16 px accanto alla parola (senza: ${(await senzaIcona(a.page)).join(", ")})`);
   const tit = await a.page.evaluate(() => { const t = document.getElementById("psassist-host").shadowRoot.querySelector(".menu .mtit"), c = getComputedStyle(t); return { up: c.textTransform, px: parseFloat(c.fontSize) }; });
@@ -7404,13 +7404,13 @@ async function scenarioMenuSezioni(browser) {
   await a.page.waitForSelector("#psassist-host .card", { state: "attached" });
   await menu(a.page);
   s = await sezioni(a.page);
-  check(scen, JSON.stringify(s.map((x) => x.t)) === '["Strumenti","Impostazioni"]' && di(s, "Strumenti").join() === "consmenu,stmodmenu",
+  check(scen, JSON.stringify(s.map((x) => x.t)) === '["Strumenti","Questo PC"]' && di(s, "Strumenti").join() === "consmenu,stmodmenu",
     `sulla lista (la stanza): niente sezione Paziente, «Modifica la stanza» in fondo agli Strumenti (got ${vedi(s)})`);
   await chiudi(a.page);
   await $panel(a.page, '[data-seg="dimissioni"]').click();
   await menu(a.page);
   s = await sezioni(a.page);
-  check(scen, JSON.stringify(s.map((x) => x.t)) === '["Strumenti","Impostazioni"]',
+  check(scen, JSON.stringify(s.map((x) => x.t)) === '["Strumenti","Questo PC"]',
     `sulla lista, in Dimissioni: niente sezione in più (Esporta e Importa stanno sotto i fogli) (got ${vedi(s)})`);
   await a.context.close();
 
@@ -7423,10 +7423,15 @@ async function scenarioMenuSezioni(browser) {
   await menu(b.page);
   s = await sezioni(b.page);
   check(scen, di(s, "Paziente").join() === "ricmenu,termenu,stampamenu" && di(s, "Strumenti").join() === "tabmenu,pontemenu,consmenu"
-    && di(s, "Impostazioni").join() === "stampanti,regmenu,resetpaz" && !(await sparse(b.page)),
+    && di(s, "Questo PC").join() === "stampanti,regmenu,resetpaz" && !(await sparse(b.page)),
     `con l'estensione, sul paziente: Ricetta SISS, Terapia, Stampa · Tabellone, iPhone, Consegne · Impostazioni, Registrazioni, Reset (got ${vedi(s)})`);
   check(scen, await riga(b.page, "tabmenu", "pontemenu"), "le voci corte, due per riga, alte almeno 32 px (Tabellone · iPhone)");
   check(scen, !(await senzaIcona(b.page)).length, `con l'estensione anche: un'icona per voce (senza: ${(await senzaIcona(b.page)).join(", ")})`);
+  // «Impostazioni» è una cosa sola, con la sua icona: la voce (l'ingranaggio, non la stampante), non anche il titolo di una sezione
+  const imp = await b.page.evaluate(() => { const r = document.getElementById("psassist-host").shadowRoot, x = r.querySelector("#stampanti");
+    return { t: x.textContent.trim(), svg: !!x.querySelector(".mico > svg"), emoji: !!x.querySelector(".mem"), titoli: [...r.querySelectorAll(".menu .mtit")].map((t) => t.textContent) }; });
+  check(scen, imp.t === "Impostazioni" && imp.svg && !imp.emoji && !imp.titoli.includes("Impostazioni") && !(await $panel(b.page, "#stautosw").count()),
+    `«Impostazioni»: una voce sola, con la sua icona (non 🖨️), nessuna sezione con lo stesso nome, niente interruttore «Stampa automatica» (got ${JSON.stringify(imp)})`);
   const piede = (await $panel(b.page, ".menu .mpiede .mver").innerText()).replace(/\s+/g, " ").trim();
   check(scen, /^PS Assist \S+ · Ricarica$/.test(piede) && (await $panel(b.page, ".menu .mpiede .mver #extreload").count()) === 1,
     `«Ricarica estensione» è un link accanto alla versione: «PS Assist … · Ricarica» (got ${piede})`);
@@ -7436,7 +7441,7 @@ async function scenarioMenuSezioni(browser) {
   await b.page.waitForSelector("#psassist-host .card", { state: "attached" });
   await menu(b.page);
   s = await sezioni(b.page);
-  check(scen, JSON.stringify(s.map((x) => x.t)) === '["Strumenti","Impostazioni"]' && di(s, "Strumenti").join() === "tabmenu,pontemenu,consmenu,stmodmenu,seguesw",
+  check(scen, JSON.stringify(s.map((x) => x.t)) === '["Strumenti","Questo PC"]' && di(s, "Strumenti").join() === "tabmenu,pontemenu,consmenu,stmodmenu,seguesw",
     `con l'estensione, sulla stanza: Modifica la stanza e Segue il gestionale in fondo agli Strumenti (got ${vedi(s)})`);
   // l'interruttore: una voce da spuntare, lo stato al posto dell'icona (niente «✓ » davanti)
   const segue = await b.page.evaluate(() => { const x = document.getElementById("psassist-host").shadowRoot.querySelector("#seguesw");
@@ -8133,7 +8138,7 @@ const scenarios = [
   ["richieste compatte: una casella, tre colonne, la barra solo con qualcosa, Ctrl+Invio, Stampa nel ⋯", scenarioRichiesteCompatte],
   ["esiti: il workup — fuori range in cima, Lab · ECG · Imaging, attese, ↗ PDF", scenarioWorkup],
   ["menu ⋯: i comandi rari fuori dal menu, niente paragrafi, ricarica", scenarioMenuAltro],
-  ["menu ⋯ a sezioni: Paziente · Strumenti · Impostazioni, due voci per riga", scenarioMenuSezioni],
+  ["menu ⋯ a sezioni: Paziente · Strumenti · Questo PC, due voci per riga", scenarioMenuSezioni],
   ["tastiera e lente: la lente apre il filtro, F2 sui Pazienti col filtro", scenarioTastieraLente],
   ["no-patient page has no exams", scenarioNoPatientPage],
   ["panel titled by patient", scenarioPatientTitle],

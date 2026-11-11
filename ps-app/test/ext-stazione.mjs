@@ -298,7 +298,8 @@ await imp.goto(EXTURL("portale.html"));
 await imp.waitForSelector("#stasi:not([hidden])", { timeout: 8000 });
 check(/^Infermeria · collegata dal telefono alle \d\d:\d\d$/.test((await imp.locator("#stast").innerText()).trim()) && await imp.locator("#stavia").innerText() === "Scollega",
   `sul PC (⋯ → Stampanti): «Infermeria · collegata dal telefono alle HH:MM», con «Scollega» (got «${(await imp.locator("#stast").innerText()).trim()}»)`);
-check(await imp.locator('[data-dove="qui"]').getAttribute("aria-pressed") === "true", "la scelta di partenza: «Stampa: Qui» (niente cambia finché il medico non sceglie)");
+check(await imp.locator("[data-dove]").count() === 0 && /menu ⋯ del pannello/.test(await imp.locator("#stasi").innerText()),
+  "nelle impostazioni la stazione e «Scollega», ma la scelta «Stampa su» no: sta nel menu ⋯ del pannello (un posto solo)");
 
 // ===========================================================================
 sezione("un ordine dal PC: prima qui, poi in Infermeria");
@@ -315,7 +316,8 @@ await doc.bringToFront();
 await apriPannello(doc);
 await $panel(doc, "#menubtn").dispatchEvent("click");
 check(await $panel(doc, '.menu [data-stdove="stazione"]').innerText() === "Infermeria" && await $panel(doc, '.menu [data-stdove="qui"]').getAttribute("aria-checked") === "true",
-  "nel menu ⋯ del pannello: «Stampa: PC · Infermeria» (con una stazione collegata), su «PC»");
+  "nel menu ⋯ del pannello: «Stampa su: PC · Infermeria» (con una stazione collegata), su «PC», la scelta di partenza");
+check(/^Stampa su/.test((await $panel(doc, '.menu .mforma[aria-label="Dove stampano gli ordini"]').innerText()).trim()), "con la parola «Stampa su»");
 await $panel(doc, '.menu [data-stdove="stazione"]').dispatchEvent("click");
 await finche(async () => (await sw.evaluate(() => chrome.storage.local.get("stampa"))).stampa?.dove === "stazione", 5000);
 await shot(doc, "stazione-3-pc-scelta");
@@ -328,7 +330,7 @@ const cta = (await $panel(doc, "#goconfirm").innerText()).trim();
 check(/→ Infermeria$/.test(cta), `il bottone dell'ordine lo dice: «${cta}»`);
 const chip = await doc.evaluate(() => document.getElementById("psassist-host")?.shadowRoot?.querySelector("#stauto")?.innerText.trim() || "");
 check(chip === "→ Infermeria", `e la stampantina in intestazione: «→ Infermeria» (got «${chip}»)`);
-check(await imp.locator('[data-dove="stazione"]').getAttribute("aria-pressed") === "true", "la scelta resta (e la pagina delle Stampanti la mostra)");
+check((await sw.evaluate(() => chrome.storage.local.get("stampa"))).stampa?.dove === "stazione", "la scelta resta");
 prima = await idsOra();
 const pcPrima = lavori("pc").length;
 await $panel(doc, "#goconfirm").click();

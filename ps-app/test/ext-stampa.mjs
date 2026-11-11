@@ -13,7 +13,7 @@
  * volta sola; una conferma nella scheda del medico, che va subito altrove; una
  * richiesta fatta a mano, che non stampa; un foglio
  * che non esce passa dal dialogo, col motivo, e solo lui; l'aiutante sparito o
- * che non parte; l'interruttore e la stampantina in intestazione; l'ordine in
+ * che non parte; niente interruttore (la «spenta» di prima migrata) e la stampantina in intestazione; l'ordine in
  * sottofondo che stampa mentre il medico è su un altro paziente e la sua
  * scheda non si vede, e «Ristampa»; l'ordine in sottofondo con un foglio che
  * non esce, che arriva al medico col motivo; l'aiutante che non risponde in
@@ -377,8 +377,8 @@ if (await prova("le impostazioni: aiutante non installato, poi le due stampanti 
   check(await stato() === "Stampa automatica: non installata", `senza aiutante: «non installata» (got ${await stato()})`);
   const perche = (await impostazioni.locator("#sperche").innerText()).trim();
   check(/chrome:\/\/policy/.test(perche), `e sotto, dove guardare se l'hai appena installato: chrome://policy (got ${perche})`);
-  check(await impostazioni.locator("#setic").isDisabled() && await impostazioni.locator("#sauto").isDisabled() && await impostazioni.locator("#sinst").getAttribute("open") !== null,
-    "tendine e interruttore spenti, e i tre passi per installare aperti");
+  check(await impostazioni.locator("#setic").isDisabled() && await impostazioni.locator("#sauto").count() === 0 && await impostazioni.locator("#sinst").getAttribute("open") !== null,
+    "tendine spente (e nessun interruttore), e i tre passi per installare aperti");
   check(ID === ID_FISSO && (await impostazioni.locator("#sid, #sidcopia").count()) === 0,
     `l'ID è fisso (${ID_FISSO}, dalla chiave del manifest): niente ID da copiare per installa.cmd (got ${ID})`);
   installa(true);
@@ -392,8 +392,7 @@ if (await prova("le impostazioni: aiutante non installato, poi le due stampanti 
   await impostazioni.selectOption("#setic", "Zebra ZD421");
   await impostazioni.waitForFunction(() => /attiva$/.test(document.getElementById("sst").textContent), null, { timeout: 8000 }).catch(() => {});
   const m = (await memoria()).stampa || {};
-  check(await stato() === "Stampa automatica: attiva" && m.etichette === "Zebra ZD421" && m.a4 === "HP LaserJet A4" && m.attiva !== false
-    && await impostazioni.locator("#sauto").isChecked(),
+  check(await stato() === "Stampa automatica: attiva" && m.etichette === "Zebra ZD421" && m.a4 === "HP LaserJet A4" && !("attiva" in m),
   `scelta l'etichettatrice: salvata, e la stampa automatica è attiva (got ${await stato()} · ${JSON.stringify(m)})`);
   await impostazioni.click("#sprovaetic");
   await impostazioni.waitForFunction(() => /mandata a/.test(document.getElementById("sm").textContent), null, { timeout: 15000 }).catch(() => {});
@@ -630,38 +629,29 @@ if (await prova("aiutante disinstallato con le stampanti ancora scelte: dialogo,
   await chiudiStampa(doc);
 }
 
-// ---- 6. l'interruttore, nel menu ⋯ e nelle impostazioni -------------------
-if (await prova("l'interruttore: spenta → dialogo, accesa → da sola")) {
+// ---- 6. niente interruttore: scelte le due stampanti, la stampa è automatica ----
+// (una «spenta» di prima della 3.86 non vale più, e se ne va dalla memoria)
+if (await prova("niente interruttore: la stampa automatica «spenta» di prima torna da sola")) {
   installa(true);
-  await scelte(ATTIVA);
+  await scelte({ ...ATTIVA, attiva: false });
   await suPagina(doc, A.patientUrl);
-  let voci = await menu(doc);
-  // (una voce da spuntare: lo stato è nell'icona, non in «: attiva · Spegni»)
-  const interr = async () => ({ on: await $panel(doc, "#stautosw").getAttribute("aria-checked"), role: await $panel(doc, "#stautosw").getAttribute("role"), t: (await $panel(doc, "#stautosw").innerText()).trim() });
-  let x = await interr();
-  check(x.on === "true" && x.role === "menuitemcheckbox" && x.t === "Stampa automatica", `nel menu ⋯: «Stampa automatica», spuntata (got ${JSON.stringify(x)})`);
-  await $panel(doc, "#stautosw").click();
-  check((await memoria()).stampa?.attiva === false, "un tocco la spegne (e lo ricorda)");
-  check(!(await stampantina(doc)), "spenta: la stampantina in intestazione sparisce");
-  if (impostazioni && !impostazioni.isClosed()) {
-    const t = await impostazioni.waitForFunction(() => /spenta/.test(document.getElementById("sst").textContent) && !document.getElementById("sauto").checked, null, { timeout: 5000 }).catch(() => null);
-    check(!!t, "e la pagina delle impostazioni lo mostra: «spenta», interruttore giù");
-  }
-  voci = await menu(doc);
-  x = await interr();
-  check(x.on === "false" && x.t === "Stampa automatica", `il menu ora la mostra spenta: «Stampa automatica», non spuntata (got ${JSON.stringify(x)})`);
+  const voci = await menu(doc);
+  check(!(await $panel(doc, "#stautosw").count()) && !/Stampa automatica/.test(voci), `nel menu ⋯ niente interruttore «Stampa automatica» (got: ${voci})`);
   await $panel(doc, "#menubtn").click();
-  await ristampaDallaPagina(doc);
-  await aspettaScheda(doc, "s.stato === 'stampo'");
-  const s = await scheda(doc);
-  check(s && s.dialoghi === 1 && !s.avviso && lavori().length === 0, `spenta: il dialogo di sempre, senza righe, e all'aiutante niente (got ${JSON.stringify(s)})`);
-  await chiudiStampa(doc);
-  await menu(doc);
-  await $panel(doc, "#stautosw").click();
-  check((await memoria()).stampa?.attiva === true && !!(await finche(() => stampantina(doc), 3000)), "riaccesa: torna la stampantina");
+  check(!!(await finche(() => stampantina(doc), 3000)), "la stampantina in intestazione c'è: la stampa è automatica");
   await azzeraStampe(doc);
   const { rec } = await ristampaSenzaScheda(doc);
-  check(!!rec && rec.stato === "avviso" && lavori().length === 2 && (await stampe(doc)).length === 0, `accesa: di nuovo da sola, due fogli, niente davanti (got ${lavori().length})`);
+  check(!!rec && rec.stato === "avviso" && lavori().length === 2 && (await stampe(doc)).length === 0,
+    `la scelta «spenta» di prima non vale più: da sola, due fogli, niente dialogo (got ${lavori().length})`);
+  await sw.evaluate(() => stampaMigra());
+  const m = (await memoria()).stampa || {};
+  check(!("attiva" in m) && m.etichette === ATTIVA.etichette && m.a4 === ATTIVA.a4, `e la scelta di prima se ne va dalla memoria, le stampanti restano (got ${JSON.stringify(m)})`);
+  if (impostazioni && !impostazioni.isClosed()) {
+    await impostazioni.reload();
+    await impostazioni.waitForFunction(() => !/controllo/.test(document.getElementById("sst").textContent), null, { timeout: 15000 }).catch(() => {});
+    check((await impostazioni.locator("#sauto").count()) === 0 && /attiva$/.test((await impostazioni.locator("#sst").innerText()).trim()),
+      `e le impostazioni: niente interruttore, «Stampa automatica: attiva» (got ${(await impostazioni.locator("#sst").innerText()).trim()})`);
+  }
 }
 
 // ---- 7. l'ordine in sottofondo, il medico lontano --------------------------

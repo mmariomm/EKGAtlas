@@ -189,20 +189,20 @@ pill: lì stai lavorando tu. La finestra si apre da sola quando la pagina l'ha a
 **giro di esami** no: dalla spedizione alle etichette parla la striscia nell'angolo, e la
 finestra la apri tu con un tocco. **Esc** o un clic fuori la riducono; dopo **Copia** si riduce da sola e la pill dice
 «✓ Copiato · incolla». Il menu **⋯** è a sezioni, ognuna col suo titolo piccolo, le voci corte due
-per riga, ognuna con la sua **icona** (grigia, 16 px) accanto alla parola — salvo iPhone 📱, Impostazioni 🖨️ e Registrazioni 📦, che hanno la stessa emoji del menu del telefono; una sezione che su quella
+per riga, ognuna con la sua **icona** (grigia, 16 px) accanto alla parola — salvo iPhone 📱 e Registrazioni ●, che hanno la stessa emoji del menu del telefono; una sezione che su quella
 pagina non ha voci non c'è. Ci sta solo quello che serve durante il turno:
 - **Paziente** (sulla sua pagina): **Ricetta SISS** e **Terapia** (solo con l'estensione), **Stampa
   le richieste**;
 - **Strumenti**, quelli clinici: **Tabellone** e **iPhone** (il Ponte; solo con l'estensione),
   **Consegne** (vedi sotto); in fondo, sulla stanza, **Modifica la
   stanza** e **Segue il gestionale**;
-- **Impostazioni**: **Impostazioni** (una pagina sola: stampanti, stazione di stampa, indirizzo del
-  portale, iPhone), e — scelte le due stampanti — **Stampa automatica** (vedi
-  «Stampa automatica»), **Registrazioni** (vedi «Registrazioni») e per ultimo,
-  da solo sulla sua riga e in rosso, **Dimentica i dati…** (l'unico comando che cancella: vedi «Chi
-  c'è, e chi è stato dimesso»). Le voci che si accendono e si spengono
-  (Segue il gestionale, Stampa automatica) si spuntano: al posto dell'icona il loro stato (il
-  pallino blu con la spunta, acceso);
+- **Questo PC**: **Impostazioni** (una voce, l'ingranaggio, una pagina sola: la forma del pannello,
+  le stampanti, la stazione di stampa, l'indirizzo del portale, l'iPhone); **Stampa su: PC ·
+  Infermeria**, solo con una stazione di stampa collegata (vedi «Stazione di stampa»);
+  **Registrazioni** (vedi «Registrazioni») e per ultimo, da solo sulla sua riga e in rosso,
+  **Dimentica i dati…** (l'unico comando che cancella: vedi «Chi c'è, e chi è stato dimesso»).
+  La voce che si accende e si spegne (Segue il gestionale) si spunta: al posto dell'icona il suo
+  stato (il pallino blu con la spunta, acceso);
 
 e in fondo la versione, con accanto **Ricarica** (l'estensione) e sopra, quando c'è una versione
 nuova, **Aggiorna app**. Le schermate che si aprono dal ⋯ (Consegne, Registrazioni, iPhone,
@@ -1639,20 +1639,23 @@ Windows), con **Stampa una pagina di prova** per ciascuna. Da lì:
   più l'etichetta anagrafica con tante copie quanti i clic (fino a 10): mentre clicchi, accanto all'icona,
   «×2», «×3»… (un segno dell'estensione sopra la pagina, che non la tocca); partita la stampa, una sola, la
   riga sotto la pill «×N». Lo stesso conto del braccialetto nel pannello. Solo i link della pagina, così come sono (stessa origine, il
-  servlet giusto, l'etichetta anagrafica di questo episodio); spenta la stampa automatica, o un link che non
+  servlet giusto, l'etichetta anagrafica di questo episodio); senza la stampa automatica, o un link che non
   è uno di questi, il clic passa subito, com'è.
 - **Le etichette dritte**: SumatraPDF gira di 90° le pagine più larghe che alte, e coi driver
   Zebra, ZDesigner, TSC e Citizen l'etichetta uscirebbe di traverso. Nelle Stampanti,
   «Etichette più larghe che alte: non girarle / girale di 90°» (di partenza «non girarle» per
-  quei nomi). La pagina di prova delle etichette ha la misura di un'etichetta. **Prima di usarla
+  quei nomi: dal nome non si può sapere di più, e lo dice la riga sotto la scelta — se la pagina di
+  prova esce girata o tagliata, si cambia lì). La pagina di prova delle etichette ha la misura di un'etichetta. **Prima di usarla
   sui pazienti**, ristampa un'etichetta vera e leggi il suo codice a barre col lettore del
   laboratorio.
-- **Si spegne con un tocco**: menu **⋯ → Stampa automatica** (spuntata: accesa; un tocco la
-  spegne, un altro la riaccende), o l'interruttore nella pagina Stampanti. Spenta, tutto torna esattamente com'era:
-  il dialogo, «Stampa finita». Senza aiutante, o col preferito (bookmarklet), lo stesso.
+- **Niente interruttore**: scelte le due stampanti, con l'aiutante, la stampa è automatica. Il
+  dialogo del browser è il ripiego: senza aiutante, senza una delle due stampanti, o col preferito
+  (bookmarklet), tutto è esattamente com'era — il dialogo, «Stampa finita». (Chi l'aveva spenta
+  dal ⋯ di prima la ritrova automatica: la scelta vecchia se ne va dalla memoria.) Le stampanti si
+  scelgono solo in **Impostazioni**; dove stampano gli ordini, **Stampa su**, solo nel ⋯.
 - **In Windows non resta acceso niente.** Nessun programma che gira, nessuna icona: Chrome avvia
   l'aiutante solo per il secondo in cui stampa un foglio, e l'aiutante esce appena ha risposto.
-  Non c'è niente da chiudere; per spegnere la stampa automatica c'è l'interruttore.
+  Non c'è niente da chiudere; per tornare al dialogo di stampa, `disinstalla.cmd`.
 
 ### Si può scegliere la stampante senza l'aiutante?
 
@@ -1694,7 +1697,7 @@ telefono), li stampa sulle sue stampanti e dice com'è andata.
   scaduto, o di una stazione che non risponde, lo dice e non collega niente; un telefono non
   associato: «Prima associa l'iPhone al PC». Resta collegata finché uno dei due non **scollega** (due
   tocchi, sul PC o sulla stazione): l'altro lo sa subito, o appena si riaccende.
-- **Scegliere: «Stampa: PC · Infermeria»**, nel menu ⋯ del pannello e nelle Impostazioni, con
+- **Scegliere: «Stampa su: PC · Infermeria»**, nel menu ⋯ del pannello (solo lì), con
   una stazione collegata; si ricorda. Su Infermeria il bottone dell'ordine lo dice («Conferma e
   stampa · 2 esami → Infermeria») e la stampantina in intestazione è «→ Infermeria» (rossa quando
   non risponde). Vale per le etichette e i fogli A4 di un ordine (e per la loro **Ristampa**) e per
@@ -2382,8 +2385,8 @@ nella tendina del gestionale») — poi **Prepara nel gestionale** (o Ctrl+Invio
     sempre, col motivo scritto; e mai da solo per un ordine dal telefono, che aspetta un tocco al
     PC. Le parole le scrive una funzione sola nel service worker (`ordPubblico`, a ogni
     scrittura dell'ordine): la striscia del PC e il telefono dicono le stesse, salvo dove il
-    telefono ha la sua (`tel`: «Confermato · etichette al PC», non «Etichette NON stampate · tocca Stampa»). Spenta
-    (l'interruttore), non configurata, o col preferito, il percorso è quello di prima, identico.
+    telefono ha la sua (`tel`: «Confermato · etichette al PC», non «Etichette NON stampate · tocca Stampa»). Non
+    configurata (senza aiutante o senza le due stampanti), o col preferito, il percorso è quello di prima, identico.
 18. **Il testo di un referto si mostra solo se è di questo paziente.** Ogni testo letto da un PDF
     passa da `identitaReferto`: il codice fiscale scritto nel PDF contro quello del paziente (il
     riquadro della scheda, o l'impronta di quello dei prelievi), o — senza codice — nome **e**
@@ -2648,7 +2651,7 @@ prova nella misura dell'etichetta, la rotazione, e l'ID fisso; etichette → eti
 → A4 senza dialogo né anteprima (le stampa il service worker, coi PDF da una scheda aperta
 dietro), una volta sola anche chiesta due volte, e i consensi all'A4; una conferma nella scheda del
 medico che va subito su un altro paziente; una richiesta fatta a mano, che non stampa; un foglio che non esce → il dialogo col
-motivo, lui solo; l'aiutante sparito, che non parte o vietato per quell'ID; l'interruttore e la
+motivo, lui solo; l'aiutante sparito, che non parte o vietato per quell'ID; niente interruttore (la «spenta» di prima migrata) e la
 stampantina rossa; l'ordine in sottofondo stampato dal service worker senza più nessuna scheda
 del gestionale aperta, «Stampato su … alle HH:MM · 2 esami confermati» e «Ristampa»; il foglio dell'ordine che non esce, che arriva al medico col motivo, e
 lui solo; l'aiutante che non risponde in tempo → «esito sconosciuto», mai il dialogo; la scheda
