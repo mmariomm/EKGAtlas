@@ -569,6 +569,44 @@ const foglioProva = (rq) => sw.evaluate((r) => stazioneStampa("a4", btoa("%PDF-1
 }
 
 // ===========================================================================
+sezione("il puntino sull'icona: solo un guaio (foglio non stampato, aiutante muto), e si spegne guardando la stazione");
+{
+  const puntino = () => staSw.evaluate(async () => ({ t: await chrome.action.getBadgeText({}), c: await chrome.action.getBadgeBackgroundColor({}) }));
+  const man = JSON.parse(readFileSync(join(EXT, "manifest.json"), "utf8"));
+  check(man.action && !man.action.default_popup && !man.permissions.includes("notifications"), "la build intera ha l'icona (senza popup: un clic apre la stazione) e nessun permesso in più, niente notifiche");
+  await pSta.goto("about:blank");   // (la pagina aperta, guardando, spegnerebbe il puntino: qui si guarda solo l'icona)
+  await staSw.evaluate(() => chrome.storage.local.set({ "stazione.visto": Date.now() }));
+  await sospendi(300);
+  check((await puntino()).t === "", "fogli arrivati e stampati bene: niente sull'icona");
+  comportati("sta", { rompi: { "HP Infermeria A4": "carta finita" } });
+  const ko = await foglioProva("puntino-a-" + Date.now().toString(36));
+  check(ko.esito === "fallito" && !!(await finche(async () => (await puntino()).t === " ", 8000)), `un foglio non stampato: un puntino (uno spazio), non un numero (got «${(await puntino()).t}»)`);
+  const col = (await puntino()).c;
+  check(col[0] > 150 && col[1] < 80 && col[2] < 80, `…rosso (got ${JSON.stringify(col)})`);
+  await pSta.goto(EXTURL("stazione.html"));
+  check(!!(await finche(async () => (await puntino()).t === "", 8000)), "aprire la pagina della stazione lo spegne");
+  await pSta.goto("about:blank");
+  comportati("sta");
+  const bene = await foglioProva("puntino-b-" + Date.now().toString(36));
+  await sospendi(600);
+  check(bene.esito === "stampato" && (await puntino()).t === "", "un foglio stampato bene dopo: niente");
+  // l'aiutante di stampa che non risponde: il puntino; il popup lo spegne
+  await staSw.evaluate(async () => { const o = ospite; ospite = async () => ({ ok: false, why: "non risponde" }); try { await stzAiutante(true); } finally { ospite = o; } });
+  check(!!(await finche(async () => (await puntino()).t === " ", 8000)), "l'aiutante di stampa non risponde: un puntino");
+  const pop = await staCtx.newPage();
+  await pop.goto(EXTURL("azione.html"));
+  check(!!(await finche(async () => (await puntino()).t === "", 8000)), "aprire il popup lo spegne");
+  const html = await pop.content();
+  check(!html.includes("●") && /🖨/.test(await pop.locator("#staz").innerText()), "nel popup la voce della stazione ha una stampante, non un ● rosso (che dice «registra»)");
+  await pop.close();
+  await staSw.evaluate(() => stzAiutante(true));   // l'aiutante c'è di nuovo: la prova lo registra buono
+  await sospendi(300);
+  check((await puntino()).t === "", "l'aiutante torna: niente");
+  await pSta.goto(EXTURL("stazione.html"));
+  await pSta.waitForSelector("#qr, #qrsec", { state: "attached", timeout: 10000 });
+}
+
+// ===========================================================================
 sezione("la stazione spenta: «Infermeria non risponde» e «Stampa qui»");
 await sw.evaluate(() => chrome.storage.session.set({ ordini: [] }));   // (l'avviso di prima, letto)
 await pSta.close();

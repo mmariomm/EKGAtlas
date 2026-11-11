@@ -1,6 +1,7 @@
 // Il popup dell'icona (solo build mini): apre la pagina della stazione di stampa
 // o quella dell'associazione dell'iPhone, in una scheda. Nessuna scrittura.
 "use strict";
+chrome.runtime.sendMessage({ t: "stazioneVisto" }).catch(() => {});   // il popup è aperto: il puntino sull'icona si spegne
 function apri(pagina) {
   chrome.tabs.create({ url: chrome.runtime.getURL(pagina) });
   window.close();

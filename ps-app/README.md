@@ -1720,6 +1720,13 @@ telefono), li stampa sulle sue stampanti e dice com'è andata.
 - **La stazione riceve fogli e risponde, nient'altro**: non può mandare un comando al PC del medico
   né leggerci niente, e dopo la stampa non tiene niente del foglio. Nella sua pagina, «Ultimi
   fogli»: l'ora, etichette o A4, le pagine, com'è andata — mai un nome.
+- **Un puntino rosso sull'icona**, quasi invisibile (il badge più piccolo di Chrome: uno spazio),
+  solo quando serve: l'ultimo foglio non è stampato (fallito o esito sconosciuto) o l'aiutante di
+  stampa non risponde (lo guarda ogni mezz'ora). I fogli stampati bene non dicono niente: la carta
+  si vede. Si spegne aprendo la pagina della stazione o il popup. Nessuna notifica di Windows,
+  nessun permesso in più. La build intera ha ora la sua icona (senza popup: un clic apre la
+  stazione); l'icona va **fissata** nella barra (il puzzle) perché il puntino si veda. Nel popup
+  della build mini la voce della stazione ha una stampante 🖨️, non un ● rosso (che dice «registra»).
 
 I fogli viaggiano cifrati da un capo all'altro, come i messaggi del ponte, attraverso lo stesso
 ripetitore (fuori dall'ospedale e ritorno: lo dice la regola 9). Come è fatto, la chiave, che cosa
