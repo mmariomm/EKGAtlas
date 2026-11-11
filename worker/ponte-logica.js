@@ -10,7 +10,7 @@
  * al massimo due prese, una del PC e una del telefono. Quello che arriva da
  * una, in binario, va all'altra così com'è: sono messaggi cifrati da un capo
  * all'altro, e qui non si leggono, non si tengono e non si scrivono nei log.
- * Una presa nuova dello stesso ruolo sostituisce quella vecchia. In testo il
+ * Una presa nuova dello stesso ruolo sostituisce quelle vecchie. In testo il
  * ripetitore dice solo una cosa: se dall'altra parte c'è qualcuno.
  * Due tipi di stanza, con la stessa logica: il PC e il suo telefono (`pc`,
  * `tel`), e il PC del medico e la sua stazione di stampa (`medico`,
@@ -20,7 +20,14 @@
 export const PONTE = {
   frameMax: 1 << 20,          // un messaggio non supera 1 MB
   alMinuto: 1200,             // messaggi per minuto per presa, oltre si chiude
-  inattivoMs: 15 * 60e3,      // una presa che tace da tanto (nemmeno il battito) si chiude
+  // Una presa che tace da 75 secondi (tre battiti persi: i client ne mandano
+  // uno ogni 20, e senza «pong» in 10 si rifanno da soli) è morta: non conta
+  // più per chi c'è, e si ritira quando qualcuno entra. Nessuna sveglia apposta.
+  inattivoMs: 75e3,
+  // le prese ritirate che Cloudflare non ha ancora buttato: oltre queste, le più
+  // vecchie si chiudono davvero (solo un tetto: un client che si rifà ogni
+  // minuto e mezzo ne lascia una ventina finché le connessioni cadono)
+  ritirateMax: 64,
 };
 export const PING = "ping";
 export const PONG = "pong";
@@ -56,51 +63,127 @@ const byteDi = (dati) => (typeof dati === "string" ? dati.length * 3 : dati.byte
 
 /*
  * La stanza, sopra un adattatore che sa parlare con le prese vere:
- *   io.socket(ruolo, escluso)   la presa aperta di quel ruolo (non `escluso`)
+ *   io.tutte()                  tutte le prese della stanza
+ *   io.aperta(presa)            è aperta (readyState OPEN)
  *   io.invia(presa, dati)       manda così com'è
  *   io.chiudi(presa, codice, perché)
  *   io.leggi(presa) / io.scrivi(presa, stato)   lo stato attaccato alla presa
- *   io.ultimo(presa)            l'ultima volta che si è fatta sentire (battito compreso)
+ *   io.battito(presa)           l'ora dell'ultimo «ping» (0: mai)
  *   io.osserva?(dati)           solo nei test: che cosa è passato
+ *
+ * Quello che costa, su Cloudflare, è il Durable Object sveglio e che non può
+ * ibernarsi: ogni volta che si sveglia (una presa che entra o esce, un
+ * messaggio, una sveglia), e ogni operazione che resta in sospeso — Cloudflare
+ * ne tiene aperta una fino a 15 minuti. Una chiusura mandata a una presa il cui
+ * capo è morto senza dirlo (un service worker fermato, un PC spento, una rete
+ * caduta) non avrà mai risposta: con un client che si rifà ogni minuto e mezzo
+ * e una chiusura a ogni entrata, la stanza non dorme mai. Per questo il
+ * ripetitore NON manda chiusure a chi forse non può rispondere: una presa
+ * sostituita, o muta da 75 secondi, si RITIRA — fuori dai conti (chi c'è, a chi
+ * si inoltra) subito, senza scrivere niente sulla rete. Se poi parla (era viva:
+ * un telefono rimasto in sottofondo), si chiude allora, col suo codice, e
+ * risponde. Le prese morte le butta Cloudflare quando la connessione cade.
+ * Nessuna sveglia: si guarda quando qualcuno entra.
+ *
+ * Lo stato di una presa: { ruolo, inizio, n, ultimo }, e `via` (4001
+ * sostituita, 4002 muta, o il codice con cui il ripetitore l'ha chiusa)
+ * quando è fuori dai conti; `chiusa` quando la chiusura è partita davvero.
  */
 export class Stanza {
   constructor(io) { this.io = io; }
+  // la presa di quel ruolo (non `escluso`): aperta e non ritirata
+  presa(ruolo, escluso) {
+    return this.io.tutte().find((p) => {
+      const st = p !== escluso && this.io.aperta(p) && this.io.leggi(p);
+      return st && st.ruolo === ruolo && !st.via;
+    }) || null;
+  }
+  // tace da troppo (nemmeno il battito)
+  muta(p, st, ora) { return ora - Math.max(st.ultimo || 0, this.io.battito(p) || 0) > PONTE.inattivoMs; }
   entra(presa, ruolo, ora) {
-    const vecchia = this.io.socket(ruolo, presa);
-    if (vecchia) this.io.chiudi(vecchia, 4001, "sostituita");
+    const tutte = this.io.tutte().filter((p) => p !== presa);
+    // le prese mute dell'altra parte: chi entra non le prende per vive
+    // (l'avviso andrebbe solo alle vecchie del suo ruolo, che se ne vanno qui sotto)
+    for (const p of tutte) {
+      const st = this.io.leggi(p);
+      if (st && !st.via && st.ruolo !== ruolo && this.muta(p, st, ora)) this.ritira(p, st, 4002, false, ora);
+    }
     this.io.scrivi(presa, { ruolo, ...nuovoConto(ora) });
-    const altra = this.io.socket(altroRuolo(ruolo), presa);
+    // TUTTE le altre dello stesso ruolo, non solo la prima: chi si rifà non ne
+    // lascia indietro. Il telefono che si sente ancora (un'altra scheda, un
+    // altro telefono) è vivo: la chiusura gli arriva subito, «Aperto su un altro
+    // dispositivo». Un PC, una stazione: la presa vecchia è di un service worker
+    // che non c'è più (uno vivo chiude la sua prima di aprirne un'altra) — si ritira.
+    for (const p of tutte) {
+      const st = this.io.leggi(p);
+      if (!st || st.via || st.ruolo !== ruolo) continue;
+      if (ruolo === "tel" && !this.muta(p, st, ora)) this.chiudi(p, st, 4001, "sostituita", false, ora);
+      else this.ritira(p, st, 4001, false, ora);   // (al posto suo c'è già quella nuova: nessun avviso)
+    }
+    const ritirate = tutte.filter((p) => this.io.leggi(p)?.via && !this.io.leggi(p).chiusa);
+    if (ritirate.length > PONTE.ritirateMax) {
+      ritirate.sort((x, y) => (this.io.leggi(x).ultimo || 0) - (this.io.leggi(y).ultimo || 0));
+      for (const p of ritirate.slice(0, ritirate.length - PONTE.ritirateMax)) {
+        const st = this.io.leggi(p);
+        this.io.chiudi(p, st.via, "troppe");
+        try { this.io.scrivi(p, { ...st, chiusa: true }); } catch { /* chiusa intanto */ }
+      }
+    }
+    const altra = this.presa(altroRuolo(ruolo), presa);
     this.io.invia(presa, presenza(!!altra));
     if (altra) this.io.invia(altra, presenza(true));
   }
   messaggio(presa, dati, ora) {
     const st = this.io.leggi(presa);
     if (!st) return;
+    // ritirata, e invece parla: è viva, e la chiusura le arriva
+    if (st.via) {
+      if (!st.chiusa) {
+        this.io.chiudi(presa, st.via, st.via === 4001 ? "sostituita" : "inattiva");
+        try { this.io.scrivi(presa, { ...st, chiusa: true }); } catch { /* chiusa intanto */ }
+      }
+      return;
+    }
     const c = contaFrame(st, byteDi(dati), ora);
-    if (!c.ok) { this.io.chiudi(presa, c.codice, c.perche); return; }
+    if (!c.ok) { this.chiudi(presa, st, c.codice, c.perche, true, ora); return; }
     this.io.scrivi(presa, { ...st, ...c.conto });
     // il testo è solo il battito (a cui risponde chi sta sotto): non si inoltra
     if (typeof dati === "string") return;
-    const altra = this.io.socket(altroRuolo(st.ruolo), presa);
+    const altra = this.presa(altroRuolo(st.ruolo), presa);
     if (!altra) return;
     this.io.osserva?.(dati);
     this.io.invia(altra, dati);
   }
-  esce(presa) {
+  // Esce una presa (chiusa dall'altro capo, o caduta)
+  esce(presa, ora) {
     const st = this.io.leggi(presa);
-    if (!st) return;
-    if (this.io.socket(st.ruolo, presa)) return;   // sostituita: dall'altra parte non cambia niente
-    const altra = this.io.socket(altroRuolo(st.ruolo), presa);
+    if (st && !st.via) this.avvisa(presa, st, ora);
+  }
+  // l'altra parte sa che questa presa non c'è più
+  avvisa(presa, st, ora) {
+    if (this.presa(st.ruolo, presa)) return;   // sostituita: dall'altra parte non cambia niente
+    const altra = this.presa(altroRuolo(st.ruolo), presa);
     if (altra) this.io.invia(altra, presenza(false));
   }
-  // le prese mute da troppo si chiudono; dice se ne resta qualcuna
+  // Fuori dai conti, senza niente sulla rete. Una presa che non ha mai battuto
+  // (morta prima del primo «ping», o chissà) si chiude davvero: così, se è viva, lo sa.
+  ritira(p, st, codice, avvisa, ora) {
+    if (codice === 4002 && !this.io.battito(p)) { this.chiudi(p, st, codice, "inattiva", avvisa, ora); return; }
+    if (avvisa) this.avvisa(p, st, ora);
+    try { this.io.scrivi(p, { ...st, via: codice }); } catch { /* chiusa intanto */ }
+  }
+  // La chiude il ripetitore (una presa viva: troppo grande, troppi messaggi)
+  chiudi(p, st, codice, perche, avvisa, ora) {
+    this.io.chiudi(p, codice, perche);
+    if (avvisa) this.avvisa(p, st, ora);
+    try { this.io.scrivi(p, { ...st, via: codice, chiusa: true }); } catch { /* chiusa intanto */ }
+  }
+  // Le prese mute si ritirano (una sveglia rimasta da prima, o una prova)
   pulisci(prese, ora) {
-    let vive = 0;
     for (const p of prese) {
-      if (ora - this.io.ultimo(p) > PONTE.inattivoMs) this.io.chiudi(p, 4002, "inattiva");
-      else vive++;
+      const st = this.io.leggi(p);
+      if (st && !st.via && this.muta(p, st, ora)) this.ritira(p, st, 4002, true, ora);
     }
-    return vive;
   }
 }
 

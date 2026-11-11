@@ -450,11 +450,16 @@ controllare».
 
 **Il ripetitore** (`worker/ponte-logica.js`): al massimo due prese per stanza, una del PC e una del
 telefono — o, nella stanza di una stazione di stampa, una del PC del medico e una della stazione (`medico`,
-`stazione`): ognuno parla solo col suo pari — (una nuova dello stesso ruolo chiude la vecchia, 4001); inoltra solo il binario, così com'è;
-messaggi oltre 1 MB o più di 1200 al minuto chiudono la presa; una presa muta da 15 minuti si chiude.
-Serve dell'app del telefono solo i suoi file (`FILE_APP`). Niente su disco (solo la sveglia di quella
-pulizia), niente nei log: il Durable Object usa l'ibernazione delle WebSocket e il battito lo risponde
-Cloudflare senza svegliarlo.
+`stazione`): ognuno parla solo col suo pari — (una nuova dello stesso ruolo prende il posto di **tutte** le
+vecchie, 4001); inoltra solo il binario, così com'è; messaggi oltre 1 MB o più di 1200 al minuto chiudono la
+presa; una presa muta da 75 secondi (tre battiti persi) non conta più. Serve dell'app del telefono solo i suoi
+file (`FILE_APP`). Niente su disco, niente sveglie, niente nei log: il Durable Object usa l'ibernazione delle
+WebSocket, il battito lo risponde Cloudflare senza svegliarlo, e lo svegliano solo una presa che entra, una che
+esce e un messaggio cifrato. **Nessuna chiusura a chi non può rispondere**: una presa sostituita (di un PC il
+cui service worker è ripartito) o muta si *ritira* — fuori dai conti subito, senza scrivere niente sulla rete —
+perché una chiusura mandata a un capo morto resta in sospeso (Cloudflare la tiene fino a 15 minuti) e tiene
+sveglio il Durable Object. Se una presa ritirata parla (era viva: un telefono rimasto in sottofondo), la
+chiusura le arriva allora; il telefono ancora vivo che un'altra scheda sostituisce la riceve subito.
 
 **L'app del telefono** (`public/ponte/`): meno è meglio (Jakub Krehel). Un elemento resta solo se
 migliora quello che il medico fa: chi è il paziente, quando il PC ha letto i valori, a che punto è un
