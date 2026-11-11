@@ -13,7 +13,7 @@
  * volta sola; una conferma nella scheda del medico, che va subito altrove; una
  * richiesta fatta a mano, che non stampa; un foglio
  * che non esce passa dal dialogo, col motivo, e solo lui; l'aiutante sparito o
- * che non parte; l'interruttore e la stampantina in intestazione; l'ordine in
+ * che non parte; niente interruttore (la «spenta» di prima migrata) e la stampantina in intestazione; l'ordine in
  * sottofondo che stampa mentre il medico è su un altro paziente e la sua
  * scheda non si vede, e «Ristampa»; l'ordine in sottofondo con un foglio che
  * non esce, che arriva al medico col motivo; l'aiutante che non risponde in
@@ -387,8 +387,8 @@ if (await prova("le impostazioni: aiutante non installato, poi le due stampanti 
   check(await stato() === "Stampa automatica: non installata", `senza aiutante: «non installata» (got ${await stato()})`);
   const perche = (await impostazioni.locator("#sperche").innerText()).trim();
   check(/chrome:\/\/policy/.test(perche), `e sotto, dove guardare se l'hai appena installato: chrome://policy (got ${perche})`);
-  check(await impostazioni.locator("#setic").isDisabled() && await impostazioni.locator("#sauto").isDisabled() && await impostazioni.locator("#sinst").getAttribute("open") !== null,
-    "tendine e interruttore spenti, e i tre passi per installare aperti");
+  check(await impostazioni.locator("#setic").isDisabled() && await impostazioni.locator("#sauto").count() === 0 && await impostazioni.locator("#sinst").getAttribute("open") !== null,
+    "tendine spente (e nessun interruttore), e i tre passi per installare aperti");
   check(ID === ID_FISSO && (await impostazioni.locator("#sid, #sidcopia").count()) === 0,
     `l'ID è fisso (${ID_FISSO}, dalla chiave del manifest): niente ID da copiare per installa.cmd (got ${ID})`);
   installa(true);
@@ -402,8 +402,7 @@ if (await prova("le impostazioni: aiutante non installato, poi le due stampanti 
   await impostazioni.selectOption("#setic", "Zebra ZD421");
   await impostazioni.waitForFunction(() => /attiva$/.test(document.getElementById("sst").textContent), null, { timeout: 8000 }).catch(() => {});
   const m = (await memoria()).stampa || {};
-  check(await stato() === "Stampa automatica: attiva" && m.etichette === "Zebra ZD421" && m.a4 === "HP LaserJet A4" && m.attiva !== false
-    && await impostazioni.locator("#sauto").isChecked(),
+  check(await stato() === "Stampa automatica: attiva" && m.etichette === "Zebra ZD421" && m.a4 === "HP LaserJet A4" && !("attiva" in m),
   `scelta l'etichettatrice: salvata, e la stampa automatica è attiva (got ${await stato()} · ${JSON.stringify(m)})`);
   await impostazioni.click("#sprovaetic");
   await impostazioni.waitForFunction(() => /mandata a/.test(document.getElementById("sm").textContent), null, { timeout: 15000 }).catch(() => {});
@@ -417,6 +416,49 @@ if (await prova("le impostazioni: aiutante non installato, poi le due stampanti 
   check(await impostazioni.inputValue("#sruota") === "no" && l[0].ruota === "no" && JSON.stringify(l[0].pagina) === "[142,71]",
     `una Zebra: le etichette di partenza non si girano («ruota: no»), e la pagina di prova è un'etichetta di 50×25 mm (got ${l[0].ruota} · ${JSON.stringify(l[0].pagina)})`);
   await shot(impostazioni, "impostazioni-due-stampanti");
+}
+
+// ---- 2b. la forma del pannello: in Impostazioni, non nel menu ⋯ --------------
+// (Al passaggio · Affianca; ogni scheda del gestionale la segue subito)
+if (await prova("la forma del pannello si sceglie in Impostazioni, e la scheda la segue")) {
+  const formaSw = () => sw.evaluate(() => chrome.storage.local.get("forma").then((o) => o.forma));
+  installa(false);
+  await scelte(null);
+  await sw.evaluate(() => chrome.storage.local.remove("forma"));
+  await suPagina(doc, A.patientUrl);
+  await doc.evaluate(() => { localStorage.removeItem("psassist:forma.v1"); localStorage.removeItem("psassist:win.v1"); });
+  await suPagina(doc, A.patientUrl);
+  const voci = await menu(doc);
+  check(!/Forma|Affianca|Al passaggio|Al centro/.test(voci), `nel menu ⋯ niente Forma (got: ${voci})`);
+  await $panel(doc, "#menubtn").click();
+  // (una scheda delle Impostazioni sua, chiusa alla fine: quella delle prove di stampa resta com'era,
+  // con le stampanti che l'aiutante le ha detto — qui l'aiutante non c'è)
+  const pan = await ctx.newPage();
+  await pan.goto(`chrome-extension://${ID}/portale.html`);
+  const premuto = () => pan.evaluate(() => [...document.querySelectorAll("#pannello [data-forma]")].filter((b) => b.getAttribute("aria-pressed") === "true").map((b) => b.dataset.forma).join());
+  await finche(async () => (await formaSw()) === "passaggio", 5000);
+  await pan.reload();
+  await pan.waitForFunction(() => document.querySelector('#pannello [aria-pressed="true"]'), null, { timeout: 5000 }).catch(() => {});
+  check((await formaSw()) === "passaggio" && (await premuto()) === "passaggio" && /pill/.test(await pan.locator("#formadice").innerText()),
+    `Impostazioni → Il pannello: la forma di adesso, Al passaggio (scritta dal pannello: got ${(await formaSw())} · ${await premuto()})`);
+  await pan.click('#pannello [data-forma="affianca"]');
+  const colonna = () => doc.evaluate(() => {
+    const w = document.getElementById("psassist-host")?.shadowRoot?.querySelector(".wrap.win");
+    const r = w && w.getBoundingClientRect();
+    return { f: JSON.parse(localStorage.getItem("psassist:forma.v1") || "null"), l: r ? Math.round(r.left) : null, w: r ? Math.round(r.width) : null, vw: innerWidth };
+  });
+  await doc.bringToFront();
+  const c1 = await finche(async () => { const c = await colonna(); return c.f === "affianca" && c.l > c.vw * 0.6 ? c : null; }, 5000);
+  check(!!c1 && c1.w < c1.vw * 0.4 && (await premuto()) === "affianca", `scelta Affianca, la scheda del gestionale la segue subito: la colonna a destra (got ${JSON.stringify(c1 || await colonna())})`);
+  await pan.click('#pannello [data-forma="passaggio"]');
+  const c2 = await finche(async () => { const c = await colonna(); return c.f === "passaggio" && c.l < c.vw * 0.2 ? c : null; }, 5000);
+  check(!!c2, `di nuovo Al passaggio: la finestra torna al centro (got ${JSON.stringify(c2 || await colonna())})`);
+  await shot(pan, "impostazioni-pannello");
+  await pan.close();
+  // com'era prima, per le prove qui sotto: nessuna forma scelta, e la finestra a destra (quella che
+  // mette l'init script, se manca): Al passaggio al centro, il mouse «via» delle prove le starebbe sopra
+  await sw.evaluate(() => chrome.storage.local.remove("forma"));
+  await doc.evaluate(() => { localStorage.removeItem("psassist:forma.v1"); localStorage.removeItem("psassist:win.v1"); });
 }
 
 // ---- 3. i fogli vanno da soli alla loro stampante -------------------------
@@ -470,13 +512,13 @@ if (await prova("stampa automatica: etichette all'etichettatrice, lista all'A4, 
   azzeraLavori();
   await nessunOrdine();
   await apriPannello(doc);
-  await $panel(doc, '[data-seg="consensi"]').click();
+  await $panel(doc, '[data-seg="dimissioni"]').click();   // (i Consensi stanno nelle Dimissioni)
   const altra = nuovaPagina(4000);
-  await $panel(doc, "[data-cons]").first().click();
+  await $panel(doc, ".consensi [data-cons]").first().click();
   const c = await finche(async () => (await ordini()).find((x) => x.stato === "avviso" && x.fogli), 20000);
   check(lavori().length === 1 && lavori()[0].tipo === "a4" && lavori()[0].stampante === "HP LaserJet A4" && lavori()[0].byte > 1000
     && !!c && c.pubblico.titolo === "Stampato su HP LaserJet A4",
-  `un consenso dai Consensi → A4, «Stampato su HP LaserJet A4» (got ${JSON.stringify(lavori())} · ${JSON.stringify(c && c.pubblico)})`);
+  `un consenso dalle Dimissioni → A4, «Stampato su HP LaserJet A4» (got ${JSON.stringify(lavori())} · ${JSON.stringify(c && c.pubblico)})`);
   check(!(await altra) && (await stampe(doc)).length === 0, "senza scheda dietro e senza anteprima");
 }
 
@@ -621,38 +663,29 @@ if (await prova("aiutante disinstallato con le stampanti ancora scelte: dialogo,
   await chiudiStampa(doc);
 }
 
-// ---- 6. l'interruttore, nel menu ⋯ e nelle impostazioni -------------------
-if (await prova("l'interruttore: spenta → dialogo, accesa → da sola")) {
+// ---- 6. niente interruttore: scelte le due stampanti, la stampa è automatica ----
+// (una «spenta» di prima della 3.86 non vale più, e se ne va dalla memoria)
+if (await prova("niente interruttore: la stampa automatica «spenta» di prima torna da sola")) {
   installa(true);
-  await scelte(ATTIVA);
+  await scelte({ ...ATTIVA, attiva: false });
   await suPagina(doc, A.patientUrl);
-  let voci = await menu(doc);
-  // (una voce da spuntare: lo stato è nell'icona, non in «: attiva · Spegni»)
-  const interr = async () => ({ on: await $panel(doc, "#stautosw").getAttribute("aria-checked"), role: await $panel(doc, "#stautosw").getAttribute("role"), t: (await $panel(doc, "#stautosw").innerText()).trim() });
-  let x = await interr();
-  check(x.on === "true" && x.role === "menuitemcheckbox" && x.t === "Stampa automatica", `nel menu ⋯: «Stampa automatica», spuntata (got ${JSON.stringify(x)})`);
-  await $panel(doc, "#stautosw").click();
-  check((await memoria()).stampa?.attiva === false, "un tocco la spegne (e lo ricorda)");
-  check(!(await stampantina(doc)), "spenta: la stampantina in intestazione sparisce");
-  if (impostazioni && !impostazioni.isClosed()) {
-    const t = await impostazioni.waitForFunction(() => /spenta/.test(document.getElementById("sst").textContent) && !document.getElementById("sauto").checked, null, { timeout: 5000 }).catch(() => null);
-    check(!!t, "e la pagina delle impostazioni lo mostra: «spenta», interruttore giù");
-  }
-  voci = await menu(doc);
-  x = await interr();
-  check(x.on === "false" && x.t === "Stampa automatica", `il menu ora la mostra spenta: «Stampa automatica», non spuntata (got ${JSON.stringify(x)})`);
+  const voci = await menu(doc);
+  check(!(await $panel(doc, "#stautosw").count()) && !/Stampa automatica/.test(voci), `nel menu ⋯ niente interruttore «Stampa automatica» (got: ${voci})`);
   await $panel(doc, "#menubtn").click();
-  await ristampaDallaPagina(doc);
-  await aspettaScheda(doc, "s.stato === 'stampo'");
-  const s = await scheda(doc);
-  check(s && s.dialoghi === 1 && !s.avviso && lavori().length === 0, `spenta: il dialogo di sempre, senza righe, e all'aiutante niente (got ${JSON.stringify(s)})`);
-  await chiudiStampa(doc);
-  await menu(doc);
-  await $panel(doc, "#stautosw").click();
-  check((await memoria()).stampa?.attiva === true && !!(await finche(() => stampantina(doc), 3000)), "riaccesa: torna la stampantina");
+  check(!!(await finche(() => stampantina(doc), 3000)), "la stampantina in intestazione c'è: la stampa è automatica");
   await azzeraStampe(doc);
   const { rec } = await ristampaSenzaScheda(doc);
-  check(!!rec && rec.stato === "avviso" && lavori().length === 2 && (await stampe(doc)).length === 0, `accesa: di nuovo da sola, due fogli, niente davanti (got ${lavori().length})`);
+  check(!!rec && rec.stato === "avviso" && lavori().length === 2 && (await stampe(doc)).length === 0,
+    `la scelta «spenta» di prima non vale più: da sola, due fogli, niente dialogo (got ${lavori().length})`);
+  await sw.evaluate(() => stampaMigra());
+  const m = (await memoria()).stampa || {};
+  check(!("attiva" in m) && m.etichette === ATTIVA.etichette && m.a4 === ATTIVA.a4, `e la scelta di prima se ne va dalla memoria, le stampanti restano (got ${JSON.stringify(m)})`);
+  if (impostazioni && !impostazioni.isClosed()) {
+    await impostazioni.reload();
+    await impostazioni.waitForFunction(() => !/controllo/.test(document.getElementById("sst").textContent), null, { timeout: 15000 }).catch(() => {});
+    check((await impostazioni.locator("#sauto").count()) === 0 && /attiva$/.test((await impostazioni.locator("#sst").innerText()).trim()),
+      `e le impostazioni: niente interruttore, «Stampa automatica: attiva» (got ${(await impostazioni.locator("#sst").innerText()).trim()})`);
+  }
 }
 
 // ---- 7. l'ordine in sottofondo, il medico lontano --------------------------
@@ -1216,7 +1249,7 @@ if (await prova("un referto salvato: «Stampa» nel visore va sull'A4, una volta
   if (!(await $panel(doc, ".card").count())) { await $panel(doc, "#expand").click({ position: { x: 12, y: 8 } }); await doc.waitForSelector("#psassist-host .card", { timeout: 8000 }); }
   await $panel(doc, '[data-seg="esiti"]').click();
   const salvato = () => doc.waitForFunction(() => document.getElementById("psassist-host").shadowRoot.querySelector(".rdot.saved"), null, { timeout: 30000 }).then(() => true).catch(() => false);
-  if (!(await $panel(doc, ".rdot.saved").count()) && await $panel(doc, "#refsave").count()) await $panel(doc, "#refsave").click();
+  if (!(await $panel(doc, ".rdot.saved").count()) && await $panel(doc, "#risall:not([disabled])").count()) await $panel(doc, "#risall").click();
   await salvato();
   const id = await $panel(doc, ".rrow.saved").first().getAttribute("data-esito").catch(() => "");
   await $panel(doc, `[data-pdf="${id}"]`).click();

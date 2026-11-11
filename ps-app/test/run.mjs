@@ -68,10 +68,12 @@ async function riapriDopoCopia(page) {
   await page.waitForSelector("#psassist-host .card", { state: "attached", timeout: 3000 });
   return /Copiato/.test(t);
 }
-// il Registro sta nel menu «⋯» dell'intestazione
+// il Registro sta in fondo alle Registrazioni (menu «⋯»): chiuso con l'estensione, aperto senza
 async function registro(page) {
   await page.locator("#psassist-host #menubtn").click();
-  await page.locator("#psassist-host #verbtn").click();
+  await page.locator("#psassist-host #regmenu").click();
+  await page.waitForSelector("#psassist-host details#registro", { state: "attached", timeout: 5000 }).catch(() => {});
+  if (await page.locator("#psassist-host details#registro:not([open]) > summary").count()) await page.locator("#psassist-host details#registro > summary").click();
 }
 // …e nella scheda del browser: si legge senza aprire niente
 const registroDi = (page, ep = "999001") => page.evaluate((e) =>
@@ -128,11 +130,12 @@ async function armaSvuota(page) {
 }
 // La forma di partenza è «Al passaggio» (il mouse fermo sulla pill apre, uscendo
 // si richiude). Questi scenari provano quello che c'è DENTRO il pannello, con la
-// finestra di sempre (⋯ → Forma: Finestra); la forma di partenza la provano gli
+// forma che apre e chiude solo con un tocco (Impostazioni → Affianca; la misura
+// della finestra resta quella del test); la forma di partenza la provano gli
 // scenari della forma (`forma: "partenza"`).
 async function finestraDiSempre(context) {
   await context.addInitScript(() => {
-    try { if (!localStorage.getItem("psassist:forma.v1")) localStorage.setItem("psassist:forma.v1", JSON.stringify("finestra")); } catch { /* niente */ }
+    try { if (!localStorage.getItem("psassist:forma.v1")) localStorage.setItem("psassist:forma.v1", JSON.stringify("affianca")); } catch { /* niente */ }
   });
 }
 async function newPage(browser, mock, opts = {}) {
@@ -181,6 +184,18 @@ async function newPage(browser, mock, opts = {}) {
 }
 
 const $panel = (page, sel) => page.locator(`#psassist-host ${sel}`); // pierces open shadow DOM
+// «Affianca» (la colonna a destra) si sceglie in Impostazioni, che qui — senza
+// estensione — non c'è: la memoria com'è dopo quella scelta, e la pagina
+// riletta, col pannello aperto. Al centro: il doppio clic sull'intestazione.
+const AFFIANCA = { x: 0.63, y: 0.02, w: 0.36, h: 0.96 };
+async function affianca(page) {
+  await page.evaluate((g) => { localStorage.setItem("psassist:win.v1", JSON.stringify(g)); localStorage.setItem("psassist:forma.v1", JSON.stringify("affianca")); }, AFFIANCA);
+  await page.reload();
+  await page.waitForSelector("#psassist-host #expand, #psassist-host .card", { state: "attached" });
+  if (!(await $panel(page, ".card").count())) await $panel(page, "#expand").click();
+  await $panel(page, ".card").waitFor();
+}
+const alCentro = (page) => $panel(page, "#draghd").dispatchEvent("dblclick");
 // il bottoncino della striscia («Ristampa», «apri il carrello», «Stampa»): nella striscia, o nel chip a pannello aperto
 const AZIONE = "#strazione, #psassist-host #gchipaz";
 // un tocco sulla striscia («tocca per il carrello»): la striscia, o il chip a pannello aperto
@@ -3498,9 +3513,13 @@ async function scenarioReferti(browser) {
   check(scen, context.pages().length === before && hits(mock, "bbbb2222") === reqBefore,
     "riclick torna alla scheda già aperta, senza ricaricare");
 
-  await $panel(page, "#refreset").click();
+  // il «↺» degli Esiti non c'è più: un solo comando dimentica, ⋯ → «Dimentica i dati…» (due tocchi)
+  check(scen, (await $panel(page, "#refreset").count()) === 0, "nella riga in cima degli Esiti niente «↺», che sembrava un «rileggi»");
+  await $panel(page, "#menubtn").click();
+  await $panel(page, "#resetpaz").click();
+  await $panel(page, "#resetpaz").click();
   await page.waitForTimeout(400);
-  check(scen, (await page.locator("#psassist-host .rdot.open").count()) === 0, "Resetta azzera lo stato");
+  check(scen, (await page.locator("#psassist-host .rdot.open").count()) === 0, "«Dimentica i dati…» azzera anche lo stato dei referti aperti");
   await context.close();
 }
 
@@ -3836,7 +3855,7 @@ async function scenarioPacchettiImparati(browser) {
   await page.waitForTimeout(300);
   mem = await memoria();
   check(scen, uguali(Object.keys(mem), ["febbre"]),
-    `«Reset dati pazienti»: via il pacchetto di un quesito scritto a mano, resta quello di Febbre (got ${Object.keys(mem).join(", ")})`);
+    `«Dimentica i dati…»: via il pacchetto di un quesito scritto a mano, resta quello di Febbre (got ${Object.keys(mem).join(", ")})`);
   await context.close();
 }
 
@@ -4233,16 +4252,18 @@ async function scenarioRisultati(browser) {
     `e la schermata lo dice, in piccolo: «${ignota.chip}», col perché nel passaggio del mouse (got ${ignota.avviso.slice(0, 90)})`);
   await b4.context.close();
 
-  // «Dimentica i valori letti» (⋯, a due tocchi; non nella testata degli Esiti): la tabella sparisce,
-  // il bottone torna a «⭳ Carica i valori», e una nuova lettura la ricostruisce da zero
-  check(scen, (await $panel(page, ".wuh #valreset").count()) === 0, "«Reset» non sta più nella testata degli Esiti, accanto ad «Aggiorna»");
+  // un comando solo per dimenticare, ⋯ → «Dimentica i dati…», a due tocchi (niente più «Dimentica i
+  // valori letti»): la tabella sparisce, si ricomincia da «⭳ Carica i valori», e una lettura la ricostruisce
   await $panel(page, "#menubtn").click();
-  await $panel(page, "#valreset").click();
-  check(scen, /Tocca di nuovo/.test(await $panel(page, "#valreset").innerText()) && (await page.locator("#psassist-host .sttab").count()) > 0, "il primo tocco chiede soltanto (la tabella resta)");
-  await $panel(page, "#valreset").click();
+  check(scen, (await $panel(page, "#valreset").count()) === 0 && (await $panel(page, ".menu .mreset").count()) === 1 && (await $panel(page, "#resetpaz").innerText()).trim() === "Dimentica i dati…",
+    `nel menu ⋯ un comando solo che cancella: «Dimentica i dati…» (got ${(await $panel(page, ".menu .mreset").allInnerTexts()).join(" | ")})`);
+  await $panel(page, "#resetpaz").click();
+  check(scen, /^Dimentico tutto\? Tocca di nuovo$/.test((await $panel(page, "#resetpaz").innerText()).trim()) && (await page.locator("#psassist-host .sttab").count()) > 0, "il primo tocco chiede soltanto (la tabella resta)");
+  await $panel(page, "#resetpaz").click();
   await page.waitForTimeout(300);
-  check(scen, (await page.locator("#psassist-host .sttab").count()) === 0 && /Carica i valori/.test(await $panel(page, "#risall").innerText()),
-    "il secondo dimentica i valori letti: niente tabella, si ricomincia da «Carica i valori»");
+  check(scen, (await page.locator("#psassist-host .sttab").count()) === 0 && /Carica i valori/.test(await $panel(page, "#risall").innerText())
+    && /Dati dei pazienti dimenticati/.test(await $panel(page, ".stsnack").innerText().catch(() => "")),
+    "il secondo dimentica: niente tabella, si ricomincia da «Carica i valori», e «Dati dei pazienti dimenticati · Annulla»");
   await $panel(page, "#risall").click();
   await attendiTabella(page, 2);
   check(scen, (await page.locator("#psassist-host .sttab thead th").count()) === 3, "e una nuova lettura ricostruisce le due colonne");
@@ -4307,10 +4328,13 @@ async function scenarioResizeAndLog(browser) {
   await atterraCarrello(page);
   await apriStriscia(page);
   await page.waitForSelector("#psassist-host #confirmnow", { timeout: 5000 });
-  // the Registro now lives behind the version button, on the Pazienti screen
+  // il Registro sta in fondo alle Registrazioni (⋯), da qualunque schermata
   await $panel(page, "#back").click();
   await page.waitForSelector("#psassist-host #menubtn");
   await registro(page);
+  check(scen, (await testoPanel(page, ".seg.vmenu .segtit")) === "Registrazioni" && (await $panel(page, "details#registro[open] #copylog").count()) === 1
+    && (await $panel(page, "#verbtn").count()) === 0,
+    `⋯ → Registrazioni: senza estensione c'è solo il Registro, aperto, con ⧉ Copia — niente più voce «Registro» a parte (got ${await testoPanel(page, ".seg")})`);
   await page.waitForSelector("#psassist-host #copylog");
   await $panel(page, "#copylog").click();
   await page.waitForTimeout(300);
@@ -4344,16 +4368,16 @@ async function scenarioFinestra(browser) {
   await $panel(page, "#expand").click();
   await page.mouse.click(8, 450);   // sul gestionale, nel bordo che si vede
   check(scen, (await $panel(page, ".card").count()) === 0, "un clic fuori dalla finestra la riduce");
-  // due posizioni pronte nel menu «⋯»
-  await $panel(page, "#expand").click();
-  await $panel(page, "#menubtn").click();
-  await $panel(page, "#winaffianca").click();
+  // Affianca (da Impostazioni): una colonna; il doppio clic sull'intestazione la rimette al centro
+  await affianca(page);
   const b2 = await box();
-  check(scen, b2.l > b2.vw * 0.6 && b2.w < b2.vw * 0.4, `«Affianca a destra»: una colonna, il gestionale resta visibile (${b2.l}px, ${b2.w}px)`);
+  check(scen, b2.l > b2.vw * 0.6 && b2.w < b2.vw * 0.4, `«Affianca»: una colonna, il gestionale resta visibile (${b2.l}px, ${b2.w}px)`);
+  check(scen, (await $panel(page, "#menubtn").click(), await $panel(page, ".menu #wincentra, .menu #winaffianca, .menu [data-forma]").count()) === 0,
+    "nel menu ⋯ niente «Forma», «Affianca», «Al centro»: la forma sta in Impostazioni, e al centro la rimette il doppio clic");
   await $panel(page, "#menubtn").click();
-  await $panel(page, "#wincentra").click();
+  await alCentro(page);
   const b3 = await box();
-  check(scen, Math.abs(b3.w - b3.vw * 0.85) < 3, "«Al centro» la rimette all'85%");
+  check(scen, Math.abs(b3.w - b3.vw * 0.85) < 3, "il doppio clic sull'intestazione la rimette al centro, all'85%");
   // copiato un testo da incollare nel gestionale: la finestra si toglie di mezzo
   await $panel(page, '[data-seg="eo"]').click();
   await $panel(page, '[data-eocopy]').first().click();
@@ -4373,18 +4397,17 @@ async function scenarioFinestra(browser) {
   await context.close();
 }
 
-// ⋯ → Forma: Finestra (di sempre) · Al passaggio · Affianca. Una prova per comportamento.
+// Forma: Al passaggio · Affianca, scelta in Impostazioni (qui, senza estensione,
+// la memoria com'è dopo quella scelta). La «Finestra» non c'è più: chi l'aveva
+// passa ad Al passaggio (un clic la apre fissata), o ad Affianca se l'aveva
+// messa lì; la «Colonna», più vecchia, è Affianca. Una prova per comportamento.
 async function scenarioForma(browser) {
   const scen = "forma";
   const mock = createMock({});
   const { context, page } = await newPage(browser, mock, { finestra: "centro", pill: true, forma: "partenza" });
   const ls = (k) => page.evaluate((k) => JSON.parse(localStorage.getItem("psassist:" + k) || "null"), k);
+  const metti = (kv) => page.evaluate((kv) => { for (const [k, v] of Object.entries(kv)) { if (v === null) localStorage.removeItem("psassist:" + k); else localStorage.setItem("psassist:" + k, JSON.stringify(v)); } }, kv);
   const aperta = async () => (await $panel(page, ".card").count()) === 1;
-  const forma = async (f) => {
-    if (!(await aperta())) await $panel(page, "#expand").click();
-    await $panel(page, "#menubtn").click();
-    await $panel(page, `[data-forma="${f}"]`).click();
-  };
   const centroPill = async (sel = "#expand") => {
     const b = await $panel(page, sel).boundingBox();
     return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
@@ -4393,28 +4416,53 @@ async function scenarioForma(browser) {
   const nellaFinestra = async () => { const b = await $panel(page, ".card").boundingBox(); await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2, { steps: 4 }); };
   // l'apre il mouse fermo sulla pill (non un clic)
   const passa = async () => { const c = await centroPill(); await page.mouse.move(c.x, c.y, { steps: 3 }); await page.waitForTimeout(400); };
+  const ricarica = async () => { await page.reload(); await page.waitForSelector("#psassist-host #expand, #psassist-host .card", { state: "attached" }); };
+  const geo = () => page.evaluate(() => {
+    const w = document.getElementById("psassist-host").shadowRoot.querySelector(".wrap").getBoundingClientRect();
+    return { l: Math.round(w.left), w: Math.round(w.width), vw: innerWidth };
+  });
   await page.goto(mock.patientUrl);
   await page.waitForSelector("#psassist-host #expand", { state: "attached" });
 
-  // --- l'impostazione: di partenza Al passaggio (l'ha chiesta il medico), si ricorda, il reset la lascia
+  // --- di partenza Al passaggio (l'ha chiesta il medico), e nel menu ⋯ niente Forma
   await $panel(page, "#expand").click();
   await $panel(page, "#menubtn").click();
-  check(scen, (await $panel(page, '[data-forma="passaggio"][aria-checked="true"]').count()) === 1 && (await ls("forma.v1")) === null,
-    "di partenza la forma è Al passaggio, senza averla scelta");
+  check(scen, (await ls("forma.v1")) === null && (await $panel(page, "#pinpill").count()) === 1, "di partenza la forma è Al passaggio, senza averla scelta (la pill resta sopra la finestra)");
+  check(scen, (await $panel(page, ".menu [data-forma], .menu #winaffianca, .menu #wincentra").count()) === 0 && !/Forma|Finestra|Al centro/.test(await $panel(page, ".menu").innerText()),
+    "nel menu ⋯ niente riga «Forma», niente «Al centro»: la forma si sceglie in Impostazioni");
+  await $panel(page, "#menubtn").click();
   await page.keyboard.press("Escape");
-  await forma("finestra");
-  check(scen, (await ls("forma.v1")) === "finestra" && (await $panel(page, "#pinpill").count()) === 0, "⋯ → Forma: Finestra, la finestra di sempre, si ricorda");
-  await shot(page, "forma-finestra");
-  await forma("passaggio");
-  check(scen, (await ls("forma.v1")) === "passaggio", "⋯ → Forma: Al passaggio si ricorda");
+
+  // --- la «Finestra» di prima: passa ad Al passaggio; messa ad Affianca, resta Affianca; la «Colonna» è Affianca
+  await metti({ "forma.v1": "finestra", "win.v1": null });
+  await ricarica();
+  check(scen, (await ls("forma.v1")) === "passaggio", `la «Finestra» di prima passa ad Al passaggio (got ${await ls("forma.v1")})`);
+  await metti({ "forma.v1": "finestra", "win.v1": AFFIANCA });
+  await ricarica();
+  check(scen, (await ls("forma.v1")) === "affianca", `la Finestra messa ad Affianca resta Affianca (got ${await ls("forma.v1")})`);
+  await metti({ "forma.v1": "colonna", "win.v1": null });
+  await ricarica();
+  if (!(await aperta())) await $panel(page, "#expand").click();
+  const g2 = await geo();
+  check(scen, (await ls("forma.v1")) === "affianca" && g2.l > g2.vw * 0.6 && g2.w < g2.vw * 0.4, `la «Colonna», più vecchia, è Affianca (${JSON.stringify(g2)})`);
+
+  // --- Affianca: si apre e si chiude con un tocco, il mouse che passa non la apre né la chiude
+  await page.keyboard.press("Escape");
+  check(scen, !(await aperta()), "Affianca: Esc la riduce");
+  await passa();
+  check(scen, !(await aperta()), "Affianca: il mouse fermo sulla pill non la apre");
+  await $panel(page, "#expand").click();
+  await fuori(); await page.waitForTimeout(900);
+  check(scen, (await aperta()) && (await $panel(page, "#pinpill").count()) === 0, "un tocco la apre, e uscendo col mouse resta (niente pill sopra)");
+  await shot(page, "forma-affianca");
   await $panel(page, "#menubtn").click();
   await $panel(page, "#resetpaz").click();
   await $panel(page, "#resetpaz").click();
-  check(scen, (await ls("forma.v1")) === "passaggio", "e «Reset dati pazienti» la lascia");
-  await page.reload();
-  await page.waitForSelector("#psassist-host #expand", { state: "attached" });
+  check(scen, (await ls("forma.v1")) === "affianca", "e «Dimentica i dati…» la lascia");
 
   // --- Al passaggio: si apre col mouse fermo sulla pill, si richiude uscendo
+  await metti({ "forma.v1": "passaggio", "win.v1": null });
+  await ricarica();
   await page.evaluate(() => { const i = document.createElement("input"); i.id = "campogest"; document.body.prepend(i); i.focus(); });
   await passa();
   check(scen, await aperta(), "Al passaggio: il mouse fermo sulla pill apre la finestra");
@@ -4462,9 +4510,8 @@ async function scenarioForma(browser) {
   check(scen, await aperta(), "né durante un trascinamento");
   await page.mouse.up();
   await page.evaluate(() => { localStorage.removeItem("psassist:win.v1"); });
-  await page.reload();
-  await page.waitForSelector("#psassist-host #expand", { state: "attached" });
-  // un clic sulla pill la fissa; di nuovo, o Esc, la lasciano
+  await ricarica();
+  // un clic sulla pill la fissa; di nuovo, o Esc, la lasciano — un clic sulla pill ridotta è la «Finestra» di prima
   await passa();
   await $panel(page, "#pinpill").click();
   check(scen, (await $panel(page, "#pinpill[aria-pressed=true]").count()) === 1, "un clic sulla pill la fissa");
@@ -4474,35 +4521,9 @@ async function scenarioForma(browser) {
   await fuori(); await page.waitForTimeout(1100);
   check(scen, !(await aperta()), "un secondo clic la lascia: uscendo si richiude");
   await $panel(page, "#expand").click();
-  check(scen, (await aperta()) && (await $panel(page, "#pinpill[aria-pressed=true]").count()) === 1, "un clic sulla pill ridotta la apre già fissata");
+  check(scen, (await aperta()) && (await $panel(page, "#pinpill[aria-pressed=true]").count()) === 1, "un clic sulla pill ridotta la apre già fissata (com'era la Finestra)");
   await page.keyboard.press("Escape");
   check(scen, !(await aperta()), "Esc la chiude (e la sfissa)");
-
-  // --- Affianca: la finestra in una colonna a destra, il gestionale visibile a sinistra (non c'è più «Colonna»)
-  if (!(await aperta())) await $panel(page, "#expand").click();
-  if (!(await $panel(page, ".menu").count())) await $panel(page, "#menubtn").click();
-  check(scen, (await $panel(page, '[data-forma="colonna"]').count()) === 0 && (await $panel(page, ".menu .mforma button").allInnerTexts()).join("|") === "Finestra|Al passaggio|Affianca",
-    "Forma: Finestra · Al passaggio · Affianca (Colonna non c'è più, e «Affianca a destra» non è una voce a parte)");
-  await $panel(page, "#winaffianca").click();
-  const geo = () => page.evaluate(() => {
-    const w = document.getElementById("psassist-host").shadowRoot.querySelector(".wrap").getBoundingClientRect();
-    return { l: Math.round(w.left), w: Math.round(w.width), vw: innerWidth };
-  });
-  const g1 = await geo();
-  check(scen, g1.l > g1.vw * 0.6 && g1.w < g1.vw * 0.4 && (await ls("forma.v1")) === "finestra", `Affianca: una colonna a destra, il gestionale resta visibile (${JSON.stringify(g1)})`);
-  await $panel(page, "#menubtn").click();
-  check(scen, (await $panel(page, '#winaffianca[aria-checked="true"]').count()) === 1 && (await $panel(page, '[data-forma="finestra"][aria-checked="true"]').count()) === 0, "e la riga Forma dice «Affianca»");
-  await page.keyboard.press("Escape");
-  await shot(page, "forma-affianca");
-  // chi aveva scelto «Colonna» ritrova «Affianca»
-  await page.evaluate(() => { localStorage.setItem("psassist:forma.v1", JSON.stringify("colonna")); localStorage.removeItem("psassist:win.v1"); });
-  await page.reload();
-  await page.waitForSelector("#psassist-host .wrap", { state: "attached" });
-  if (!(await aperta())) await $panel(page, "#expand").click();
-  const g2 = await geo();
-  check(scen, (await ls("forma.v1")) === "finestra" && g2.l > g2.vw * 0.6 && g2.w < g2.vw * 0.4, `la preferenza «Colonna» di prima passa ad «Affianca» (${JSON.stringify(g2)})`);
-  await forma("finestra");
-  check(scen, (await $panel(page, ".wrap.win").count()) === 1, "Finestra: la finestra di sempre");
   await context.close();
 }
 
@@ -4559,27 +4580,26 @@ async function scenarioPassaggio(browser) {
 
   // ripassando: la stessa schermata, allo stesso punto
   await passa(); await dentro();
-  await $panel(page, "#menubtn").click();
-  await $panel(page, "#rifmenu").click();
+  await page.setViewportSize({ width: 1280, height: 620 });   // (una schermata che scorre)
+  await $panel(page, '[data-seg="dimissioni"]').click();
   await page.waitForTimeout(200);
   const giu = await page.evaluate(() => { const bd = document.getElementById("psassist-host").shadowRoot.querySelector(".bd"); bd.scrollTop = 400; return bd.scrollTop; });
   await sfoca();
   await fuori();
-  check(scen, !(await aperta()), "(uscita dai Riferimenti scorsi in giù: si richiude)");
+  check(scen, !(await aperta()), "(uscita dalle Dimissioni scorse in giù: si richiude)");
   await passa();
   const torna = await page.evaluate(() => {
     const r = document.getElementById("psassist-host").shadowRoot;
-    return { rif: r.querySelectorAll(".rifg").length, top: r.querySelector(".bd")?.scrollTop };
+    return { dim: r.querySelectorAll(".drow").length, top: r.querySelector(".bd")?.scrollTop };
   });
-  check(scen, giu > 100 && torna.rif > 0 && Math.abs((torna.top || 0) - giu) <= 2,
-    `ripassando si riapre dove eri: la stessa schermata (i Riferimenti), scorsa allo stesso punto (${giu} → ${torna.top}px)`);
+  check(scen, giu > 100 && torna.dim > 0 && Math.abs((torna.top || 0) - giu) <= 2,
+    `ripassando si riapre dove eri: la stessa schermata (le Dimissioni), scorsa allo stesso punto (${giu} → ${torna.top}px)`);
   await fuori();
+  await page.setViewportSize({ width: 1280, height: 900 });
 
   // la pill che ricompare sotto il mouse fermo non si riapre da sola
   await $panel(page, "#expand").click();   // un clic: aperta e fissata
-  // (riaperta sui Riferimenti: lì Esc torna alla scheda di prima, come il ‹ — si torna prima col ‹)
-  if (await $panel(page, ".seg.vmenu #back").count()) await $panel(page, ".seg.vmenu #back").click();
-  check(scen, (await $panel(page, "#pinpill[aria-pressed=true]").count()) === 1 && !(await $panel(page, ".seg.vmenu").count()), "(un clic la apre fissata)");
+  check(scen, (await $panel(page, "#pinpill[aria-pressed=true]").count()) === 1, "(un clic la apre fissata)");
   const cp = await centro("#pinpill");
   await page.mouse.move(cp.x, cp.y);
   await page.keyboard.press("Escape");
@@ -4763,6 +4783,8 @@ async function scenarioStanza(browser) {
     await $panel(page, sel).waitFor({ timeout: 10000 });
   };
   const alleStanze = () => aiPazienti(".stmap");
+  // Affianca (la pagina riletta si apre sul paziente: di nuovo ai Pazienti)
+  const affiancaQui = async () => { await affianca(page); if (!(await $panel(page, ".stmap").count())) await aiPazienti(".stmap"); };
   const stile = (sel, prop, pseudo) => page.evaluate(([s, p, ps]) => {
     const el = document.getElementById("psassist-host").shadowRoot.querySelector(s);
     return el ? getComputedStyle(el, ps || null)[p] : null;
@@ -4819,7 +4841,7 @@ async function scenarioStanza(browser) {
   const scorre = () => page.evaluate(() => { const c = document.getElementById("psassist-host").shadowRoot.querySelector(".stcanvas"); return c.scrollWidth > c.clientWidth + 1 || c.scrollHeight > c.clientHeight + 1; });
   const b85 = await sovrapposti();
   check(scen, b85.oggetti === 10 && b85.n === 0 && !(await scorre()), `all'85% la stanza del PS ci sta tutta sotto la lista, senza scorrere, e nessuno sopra un altro (${b85.n}; il letto ${b85.w}px)`);
-  await menu("#winaffianca");
+  await affiancaQui();
   const bAff = await sovrapposti();
   check(scen, bAff.oggetti === 10 && bAff.n === 0, `«Affianca a destra»: nessuno sopra un altro (${bAff.n}; il più stretto ${bAff.w}px)`);
   const rsz0 = await $panel(page, "#rsz").boundingBox();
@@ -4829,7 +4851,7 @@ async function scenarioStanza(browser) {
   await page.mouse.up();
   const bMin = await sovrapposti(), wMin0 = await $panel(page, ".card").boundingBox();
   check(scen, wMin0.width <= 382 && bMin.oggetti === 10 && bMin.n === 0, `alla misura minima (${Math.round(wMin0.width)}×${Math.round(wMin0.height)}): nessuno sopra un altro (${bMin.n})`);
-  await menu("#wincentra");
+  await alCentro(page);
   check(scen, (await $panel(page, ".ststato").count()) === 0 && (await $panel(page, ".stazioni").count()) === 0,
     "niente riga di suggerimenti sopra la mappa, niente comandi nelle schede");
   const fila1 = await alta(".seg");
@@ -4860,7 +4882,8 @@ async function scenarioStanza(browser) {
   // la barra non va mai a capo, nemmeno nella colonna stretta di «Affianca» (a 1280 e a 1366)
   for (const larga of [1280, 1366]) {
     await page.setViewportSize({ width: larga, height: larga === 1366 ? 768 : 900 });
-    await menu("#winaffianca");
+    await affiancaQui();
+    await menu("#stmodmenu");   // (la pagina riletta: di nuovo in Modifica)
     const barra = await page.evaluate(() => {
       const r = document.getElementById("psassist-host").shadowRoot, s = r.querySelector(".seg.modifica").getBoundingClientRect();
       const b = [...r.querySelectorAll(".stazioni button")].map((x) => x.getBoundingClientRect());
@@ -4868,7 +4891,7 @@ async function scenarioStanza(browser) {
     });
     check(scen, barra.righe === 1 && barra.dentro && (await alta(".seg")) === fila2 && (await alta(".stazioni")) === 32,
       `«Affianca» a ${larga}: + Letto, + Sedia, + Area e Fine su una riga, dentro la colonna (${barra.w}px)`);
-    await menu("#wincentra");
+    await alCentro(page);
   }
   await page.setViewportSize({ width: 1280, height: 900 });
 
@@ -5022,7 +5045,7 @@ async function scenarioStanza(browser) {
   // a qualunque misura niente si sovrappone: all'85%, affiancata, alla misura minima
   const s85 = await sovrapposti();
   check(scen, s85.oggetti === 7 && s85.n === 0, `all'85%: 7 oggetti, nessuno sopra un altro (${s85.n})`);
-  await menu("#winaffianca");
+  await affiancaQui();
   const sAff = await sovrapposti();
   check(scen, sAff.oggetti === 7 && sAff.n === 0, `«Affianca a destra»: nessuno sopra un altro (${sAff.n}; il più stretto ${sAff.w}px)`);
   // affiancata la mappa sta nel suo spazio, in scala: niente da scorrere di lato
@@ -5036,7 +5059,7 @@ async function scenarioStanza(browser) {
   const wMin = await $panel(page, ".card").boundingBox(), sMin = await sovrapposti();
   check(scen, wMin.width <= 382 && wMin.height <= 322 && sMin.oggetti === 7 && sMin.n === 0,
     `alla misura minima (${Math.round(wMin.width)}×${Math.round(wMin.height)}): nessuno sopra un altro (${sMin.n})`);
-  await menu("#wincentra");
+  await alCentro(page);
 
   // i pazienti al loro posto, trascinati dalla lista: uno nel letto, l'altro in corridoio.
   // Ogni riga che se ne va accorcia la lista, e la stanza cresce
@@ -5224,7 +5247,7 @@ async function scenarioStanza(browser) {
 
   // nella colonna stretta niente si taglia: nella lista il nome sta da solo sulla prima riga
   // (il post-it sotto, «visto…» via); nella stanza va a capo
-  await menu("#winaffianca");
+  await affiancaQui();
   const taglio = () => page.evaluate(() => {
     const r = document.getElementById("psassist-host").shadowRoot;
     const taglia = (n) => n.scrollWidth > n.clientWidth + 1 || n.scrollHeight > n.clientHeight + 1;
@@ -5253,7 +5276,7 @@ async function scenarioStanza(browser) {
     `colonna stretta, nella stanza: il letto porta il suo paziente, e niente si sovrappone (got: ${JSON.stringify(nelLettoStretto)} ${tagliatiS.join(", ")})`);
   await chip(".stbed", "999001").click({ button: "right" });
   await $panel(page, '.stmenu [data-dove="tray"]').click();
-  await menu("#wincentra");
+  await alCentro(page);
   await ritocca("999001", { name: "ROSSI MARIO", pk: "" });
   await ritocca("999002", { name: "ROSSI MARIO" });
   await page.evaluate(() => { localStorage.removeItem("psassist:note.v1"); localStorage.removeItem("psassist:dafare.v1"); });
@@ -5387,8 +5410,9 @@ async function scenarioAggiornaTutti(browser) {
     "prima di leggere niente il bottone invita a caricare");
   await $panel(page, "#risall").click();
   await attendiTabella(page, 2);
-  check(scen, (await $panel(page, "#risall").innerText()).trim() === "Aggiorna" && (await $panel(page, "#risall svg").count()) === 1,
-    "letti i prelievi, lo stesso bottone diventa «↻ Aggiorna» (la freccia è l'icona, non il glifo)");
+  const soli = await page.evaluate(() => [...document.getElementById("psassist-host").shadowRoot.querySelectorAll(".wusum .wutools > *")].map((b) => b.id || b.className));
+  check(scen, (await $panel(page, "#risall").innerText()).trim() === "Rileggi" && (await $panel(page, "#risall svg").count()) === 1 && JSON.stringify(soli) === '["risall"]',
+    `letti i prelievi, in cima agli Esiti un bottone solo, «↻ Rileggi» (la freccia è l'icona, non il glifo) (got ${soli.join(", ")})`);
   const prima = hits(mock, "RcsAccessiRisultatiElenco");
   // the lab has updated a value since the prefetch
   mock.state.hbNuova = "92";
@@ -5576,47 +5600,24 @@ async function scenarioNomiInattesi(browser) {
   await context.close();
 }
 
-// Il cronometro tiene l'ISTANTE DI INIZIO, non i secondi passati: ricaricare
-// la pagina non deve azzerare niente, e il paziente registrato dev'essere un
-// paziente vero — non il titolo della lista del reparto.
+// Il Cronometro e i Riferimenti non ci sono più (onda 3.86): niente voci nel
+// menu ⋯, niente chip in intestazione, e i tempi che il cronometro teneva in
+// memoria se ne vanno da soli alla prima pagina.
 async function scenarioTempi(browser) {
-  const scen = "tempi";
+  const scen = "via il cronometro";
   const mock = createMock({});
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
-  await page.waitForSelector("#psassist-host", { state: "attached" });
-  // fermo, il cronometro non occupa l'intestazione: «Tempi» sta nel menu ⋯
-  check(scen, (await $panel(page, ".tchip").count()) === 0, "a cronometro fermo l'intestazione non ha nessun segno");
-  await $panel(page, "#menubtn").click();
-  await $panel(page, "#tempimenu").click();
-  await page.waitForSelector("#psassist-host .tpre", { timeout: 8000 });
-  await $panel(page, '[data-avvia="Visita ed esami"]').click();
-  await page.waitForSelector("#psassist-host .tbig", { timeout: 8000 });
-  check(scen, /0m/.test(await $panel(page, ".tbig").innerText()), "il cronometro parte con un tocco");
-
-  // il tempo continua a correre attraverso un ricarico della pagina
-  await page.evaluate(() => {
-    const k = "psassist:tempi.v1";
-    const l = JSON.parse(localStorage.getItem(k));
-    l[l.length - 1].inizio -= 5 * 60 * 1000;   // come se fosse partito 5 minuti fa
-    localStorage.setItem(k, JSON.stringify(l));
-  });
+  await page.waitForSelector("#psassist-host .card", { state: "attached" });
+  await page.evaluate(() => localStorage.setItem("psassist:tempi.v1", JSON.stringify([{ id: "t1", titolo: "Visita ed esami", paz: "ROSSI MARIO", ep: "999001", inizio: Date.now() - 5 * 60e3 }])));
   await page.reload();
-  await page.waitForSelector("#psassist-host", { state: "attached" });
-  await page.waitForTimeout(600);
-  const chip = await $panel(page, ".tchip.on").innerText();
-  check(scen, /5m/.test(chip), `dopo il ricarico il conto è giusto, non azzerato (got ${chip.replace(/\s+/g, " ")})`);
-
-  await $panel(page, "#tstop").click();
-  await page.waitForTimeout(400);
-  check(scen, (await $panel(page, ".tchip").count()) === 0, "fermato il cronometro, il segno in intestazione se ne va");
+  await page.waitForSelector("#psassist-host .card", { state: "attached" });
+  check(scen, (await page.evaluate(() => localStorage.getItem("psassist:tempi.v1"))) === null, "i tempi del cronometro di prima se ne vanno dalla memoria (col nome del paziente)");
+  check(scen, (await $panel(page, ".tchip, #tapri, #tstop").count()) === 0, "nessun cronometro in intestazione, nemmeno uno che correva");
   await $panel(page, "#menubtn").click();
-  await $panel(page, "#tempimenu").click();
-  await page.waitForSelector("#psassist-host .trow", { timeout: 8000 });
-  const riga = (await $panel(page, ".trow").first().innerText()).replace(/\s+/g, " ");
-  check(scen, /Visita ed esami/.test(riga) && /5m/.test(riga), `fermandolo resta durata e titolo (got ${riga})`);
-  check(scen, /ROSSI MARIO/.test(riga), "e il paziente su cui stavi");
-  check(scen, (await $panel(page, ".tchip").count()) === 0, "e il cronometro torna spento");
+  await $panel(page, ".menu").waitFor();
+  check(scen, (await $panel(page, ".menu #tempimenu, .menu #rifmenu").count()) === 0 && !/Cronometro|Riferimenti/.test(await $panel(page, ".menu").innerText()),
+    "nel menu ⋯ niente Cronometro né Riferimenti");
   await context.close();
 }
 
@@ -5677,9 +5678,12 @@ async function scenarioDaFareInCima(browser) {
   // ridotto a una barra (per conto suo: il Da fare dei Pazienti non cambia)
   await $panel(page, ".tdcard.solo #tdtog").click();
   await page.waitForTimeout(150);
-  const ridotto = await page.evaluate(() => { const c = document.getElementById("psassist-host").shadowRoot.querySelector(".tdcard.solo"); return c ? { chiusa: c.classList.contains("chiusa"), voci: c.querySelectorAll(".tdi").length } : null; });
+  const ridotto = await page.evaluate(() => { const r = document.getElementById("psassist-host").shadowRoot, c = r.querySelector(".tdcard.solo");
+    return c ? { chiusa: c.classList.contains("chiusa"), voci: c.querySelectorAll(".tdi").length, testa: r.querySelector(".hdpaz .dfic")?.className || "" } : null; });
   check(scen, ridotto?.chiusa && ridotto.voci === 0 && (await page.evaluate(() => localStorage.getItem("psassist:tabellone.dafare.v1"))) === null,
     `ridotto: una barra «Da fare 2», e il Da fare dei Pazienti resta com'è (got: ${JSON.stringify(ridotto)})`);
+  check(scen, !/\bdfprima\b/.test(b1.testa) && /\bdfprima\b/.test(ridotto?.testa || ""),
+    `«Da fare» una volta sola: col blocco aperto l'intestazione dice solo quante; ridotto il blocco, la prima voce (got: ${b1.testa} → ${ridotto?.testa})`);
   await $panel(page, ".tdcard.solo #tdtog").click();
   // senza voci: niente blocco
   await page.evaluate(() => localStorage.setItem("psassist:dafare.v1", JSON.stringify({})));
@@ -5728,6 +5732,9 @@ async function scenarioPromemoria(browser) {
   // ---- nel browser, con l'orologio finto alle 10 di mattina
   const mock = createMock({});
   const { context, page } = await newPage(browser, mock);
+  // (il blocco Da fare in cima alla scheda, ridotto a una barra: qui si guarda l'icona dell'intestazione,
+  // che col blocco aperto dice solo quante — vedi sotto, e «da fare in cima»)
+  await context.addInitScript(() => { try { if (!localStorage.getItem("psassist:paziente.dafare.v1")) localStorage.setItem("psassist:paziente.dafare.v1", JSON.stringify({ chiusa: true })); } catch { /* niente */ } });
   await page.clock.install({ time: new Date(2026, 9, 5, 10, 0) });
   const apri = async () => {
     await page.waitForSelector("#psassist-host #expand, #psassist-host .card", { state: "attached" });
@@ -5884,7 +5891,15 @@ async function scenarioPromemoria(browser) {
   const righeNota = async (sel) => ((await $panel(page, `${sel}:not([hidden])`).count()) ? (await $panel(page, `${sel} .dfr`).allInnerTexts()).map((t) => t.replace(/\s+/g, " ").trim()) : []);
   const testa = { strisce: await $panel(page, ".card .dfnota").count(), t: await testoIcona(".hd"), prima: (await $panel(page, ".hd .dfic .dfict").innerText().catch(() => "")).trim() };
   check(scen, testa.strisce === 0 && testa.prima === "chiamare la figlia stasera" && testa.t === "chiamare la figlia stasera +1",
-    `aperta la finestra: niente striscia, l'intestazione dice la prima voce e «+1» (got: ${JSON.stringify(testa)})`);
+    `aperta la finestra, col blocco in cima ridotto: niente striscia, l'intestazione dice la prima voce e «+1» (got: ${JSON.stringify(testa)})`);
+  // il blocco aperto: le voci sono lì, e l'intestazione dice solo quante (la stessa riga non si legge due volte)
+  await $panel(page, ".tdcard.solo #tdtog").click();
+  await page.waitForTimeout(150);
+  const testa0 = { blocco: await $panel(page, ".tdcard.solo:not(.chiusa)").count(), t: await testoIcona(".hd"), prima: await $panel(page, ".hd .dfic .dfict").count() };
+  check(scen, testa0.blocco === 1 && testa0.t === "2" && testa0.prima === 0,
+    `col blocco aperto in cima: nell'intestazione solo l'icona e «2», non la stessa riga una seconda volta (got: ${JSON.stringify(testa0)})`);
+  await $panel(page, ".tdcard.solo #tdtog").click();
+  await page.waitForTimeout(150);
   await $panel(page, "#collapse").click();
   const nr = await righeNota(".dfnota");
   const posto = await page.evaluate(() => {
@@ -5988,20 +6003,20 @@ async function scenarioPromemoria(browser) {
   const r2 = { n: await testoIcona('.pzrow:has([data-ep="999002"])') };
   check(scen, r2.n === "3", `e la nota è una voce: la riga ne conta 3 (got: ${JSON.stringify(r2)})`);
 
-  // restano dopo un ricarico; 🗑 le cancella con il paziente; «Svuota l'elenco» anche, e si annulla
+  // restano dopo un ricarico; fra gli archiviati niente 🗑 né «Svuota l'elenco»: dimenticare è ⋯ →
+  // «Dimentica i dati…» (che porta via anche «Da fare»), e si annulla
   await riga("999002").hover();
   await riga("999002").locator(".pzx").click();
   if (!(await $panel(page, ".pzarch").count())) await $panel(page, "#archtog").click();
-  // (il cestino è un'icona del pannello, non l'emoji 🗑 che cambia faccia da un computer all'altro)
-  check(scen, (await $panel(page, '[data-del="999002"] svg').count()) === 1 && !/🗑/.test(await $panel(page, ".pzhint").innerText().catch(() => "")),
-    "il cestino degli archiviati: l'icona del pannello, niente emoji");
-  await $panel(page, '[data-del="999002"]').click();
-  await $panel(page, '[data-del="999002"]').click();
-  check(scen, !(await archivio())["999002"] && ((await archivio())["999001"] || []).length === 2, "🗑 cancella anche il suo «Da fare» (gli altri restano)");
-  await $panel(page, "#stsvuota").click();
-  check(scen, !Object.keys(await archivio()).length, "«Svuota l'elenco» toglie anche «Da fare»");
+  check(scen, (await $panel(page, '.pzarch [data-unarch="999002"]').count()) === 1 && (await $panel(page, "[data-del], #stsvuota").count()) === 0,
+    "fra gli archiviati solo «↩ riporta»: niente cestino, niente «Svuota l'elenco»");
+  const daFarePrima = await archivio();
+  await $panel(page, "#menubtn").click();
+  await $panel(page, "#resetpaz").click();
+  await $panel(page, "#resetpaz").click();
+  check(scen, !Object.keys(await archivio()).length, "«Dimentica i dati…» toglie anche «Da fare»");
   await $panel(page, ".stannulla").click();
-  check(scen, ((await archivio())["999001"] || []).length === 2, "e Annulla lo rimette");
+  check(scen, JSON.stringify(await archivio()) === JSON.stringify(daFarePrima) && ((await archivio())["999001"] || []).length === 2, "e Annulla lo rimette com'era");
   await context.close();
 }
 
@@ -6159,8 +6174,8 @@ async function scenarioEo(browser) {
   await page.waitForSelector("#psassist-host", { state: "attached" });
   // una fila di pillole, nell'ordine in cui si lavora
   const pillole = (await page.locator("#psassist-host .seg > button").allInnerTexts()).map((t) => t.replace(/\s*\d+$/, "").trim());
-  check(scen, pillole.join("|") === "Richieste|Esiti|EO|Consensi|Dimissioni",
-    `le schermate in una fila: Richieste, Esiti, EO, Consensi, Dimissioni (got ${pillole.join("|")})`);
+  check(scen, pillole.join("|") === "Richieste|Esiti|EO|Dimissioni",
+    `le schermate in una fila: Richieste, Esiti, EO, Dimissioni — i Consensi stanno nelle Dimissioni (got ${pillole.join("|")})`);
   await $panel(page, '[data-seg="eo"]').click();
   await page.waitForSelector("#psassist-host [data-eocopy=\"base\"]", { timeout: 10000 });
   check(scen, !(await $panel(page, "#eoricopia").isVisible()), "«Copia di nuovo» non si vede finché non si è scelto un caso");
@@ -6322,8 +6337,7 @@ async function scenarioDimissioni(browser) {
   await riapriDopoCopia(page);
 
   // the export carries every sheet, edited ones included
-  await $panel(page, "#menubtn").click();   // comando raro: sta nel menu ⋯
-  await $panel(page, "#dimexport").click();
+  await $panel(page, ".dfile #dimexport").click();   // comando raro: piccolo, sotto i fogli
   await page.waitForTimeout(400);
   const json = await page.evaluate(() => navigator.clipboard.readText());
   let dati = null;
@@ -6405,8 +6419,7 @@ async function scenarioDimissioni(browser) {
   // import: a paste screen, and only the texts that really differ get in
   await $panel(page, "#back").click();
   await page.waitForSelector("#psassist-host .drow", { timeout: 8000 });
-  await $panel(page, "#menubtn").click();   // comando raro: sta nel menu ⋯
-  await $panel(page, "#dimimport").click();
+  await $panel(page, ".dfile #dimimport").click();   // comando raro: piccolo, sotto i fogli
   await page.waitForSelector("#psassist-host #dimimparea", { timeout: 8000 });
   await page.evaluate(() => {
     // written by hand: an object literal cannot carry an own "__proto__" key
@@ -6558,15 +6571,15 @@ async function scenarioNoPatientPage(browser) {
   // i modelli non appartengono a un paziente: la loro riga c'è anche qui,
   // dove un paziente non c'è
   const qui = (await page.locator("#psassist-host .seg > button").allInnerTexts()).map((t) => t.trim());
-  check(scen, qui.join("|") === "Pazienti|EO|Consensi|Dimissioni",
+  check(scen, qui.join("|") === "Pazienti|EO|Dimissioni",
     `i modelli ci sono anche senza paziente, accanto ai Pazienti (got ${qui.join("|")})`);
   check(scen, (await page.locator('#psassist-host [data-seg="richieste"], #psassist-host [data-seg="esiti"]').count()) === 0,
     "Richieste ed Esiti no: qui non c'è un paziente");
   // …e restano così aprendo EO: la scheda Pazienti non sparisce, e un tocco ci riporta
   await $panel(page, '[data-seg="eo"]').click();
   const daEo = (await page.locator("#psassist-host .seg > button").allInnerTexts()).map((t) => t.trim());
-  check(scen, daEo.join("|") === "Pazienti|EO|Consensi|Dimissioni" && (await $panel(page, '[data-seg="eo"].on').count()) === 1,
-    `sulla lista, da EO le schede sono ancora Pazienti|EO|Consensi|Dimissioni (got ${daEo.join("|")})`);
+  check(scen, daEo.join("|") === "Pazienti|EO|Dimissioni" && (await $panel(page, '[data-seg="eo"].on').count()) === 1,
+    `sulla lista, da EO le schede sono ancora Pazienti|EO|Dimissioni (got ${daEo.join("|")})`);
   await $panel(page, '[data-seg="home"]').click();
   check(scen, (await $panel(page, ".bd .pzrow").count()) >= 1 && (await $panel(page, '[data-seg="home"].on').count()) === 1, "e Pazienti riporta all'elenco");
   await context.close();
@@ -6795,16 +6808,15 @@ async function scenarioFinestraLarga(browser) {
   });
   const prima = await posti();
   const visti = [];
-  for (const v of ["esiti", "eo", "consensi", "dimissioni", "richieste"]) {
+  for (const v of ["esiti", "eo", "dimissioni", "richieste"]) {
     await $panel(page, `[data-seg="${v}"]`).click();
     await page.waitForTimeout(150);
     visti.push(JSON.stringify(await posti()));
   }
-  check(scen, new Set([JSON.stringify(prima), ...visti]).size === 1, `schede, ⋯ e — non si spostano di lato fra Richieste, Esiti, EO, Consensi, Dimissioni (${[...new Set(visti)].join(" / ")})`);
+  check(scen, new Set([JSON.stringify(prima), ...visti]).size === 1, `schede, ⋯ e — non si spostano di lato fra Richieste, Esiti, EO, Dimissioni (${[...new Set(visti)].join(" / ")})`);
 
   // «Affianca» resta una colonna; trascinata/ridimensionata dal medico resta com'è
-  await $panel(page, "#menubtn").click();
-  await $panel(page, "#winaffianca").click();
+  await affianca(page);
   const b4 = await box();
   check(scen, Math.abs(b4.w - 1920 * 0.36) <= 2 && b4.l > 1920 * 0.6, `«Affianca» resta una colonna (${b4.l}px, ${b4.w}px)`);
   await context.close();
@@ -7178,8 +7190,9 @@ async function scenarioEsitiLayout(browser) {
   check(scen, /2 prelievi ancora da leggere/.test(await $panel(page, "#risall").getAttribute("title")), "i dettagli (quanti prelievi) stanno nel passaggio del mouse");
   await $panel(page, "#risall").click();
   await attendiTabella(page, 2);
-  check(scen, (await $panel(page, "#risall").count()) === 1 && (await $panel(page, "#risall.mini").count()) === 1 && /Aggiorna/.test(await $panel(page, "#risall").innerText()),
-    "letti i valori, il bottone diventa il piccolo «↻ Aggiorna»");
+  check(scen, (await $panel(page, "#risall").count()) === 1 && (await $panel(page, ".wusum .wutools #risall.mini").count()) === 1 && /Rileggi/.test(await $panel(page, "#risall").innerText())
+    && (await $panel(page, ".wuh #risall").count()) === 0,
+    "letti i valori, il bottone diventa il piccolo «↻ Rileggi», in cima agli Esiti (non più nella testata del Lab)");
   // l'unità: «x10» nudo non dice niente, per un conteggio cellulare si scrive per esteso
   const um = await $panel(page, ".sttab tbody th.stn").evaluateAll((l) => l.map((t) => t.textContent.replace(/\s+/g, " ").trim()));
   check(scen, um.includes("GB (×10⁹/L)") && !um.some((t) => /\(x10\)/.test(t)), `«x10» diventa ×10⁹/L per i globuli bianchi (got: ${um.slice(0, 4).join(" | ")})`);
@@ -7226,8 +7239,8 @@ async function scenarioEsitiLayout(browser) {
   check(scen, fondi.every((f) => f.rgb && !(f.rgb[0] > f.rgb[1] + 6 && f.rgb[0] > f.rgb[2] + 6)), "e nessuno tende al rosso, che resta dei valori fuori range");
   await shot(page, "esiti-largo");
   // stretta, in colonna (Affianca): una colonna sola, il Lab sempre in cima
-  await $panel(page, "#menubtn").click();
-  await $panel(page, "#winaffianca").click();
+  await affianca(page);
+  if (!(await $panel(page, '[data-seg="esiti"].on').count())) await $panel(page, '[data-seg="esiti"]').click();
   await page.waitForTimeout(300);
   const g2 = await geo();
   labPrima(g2, "nella colonna di «Affianca»");
@@ -7241,10 +7254,9 @@ async function scenarioEsitiLayout(browser) {
   await context.close();
 }
 
-// Quello che esce dalle schermate di tutti i giorni: il cronometro compare solo
-// mentre corre («Tempi» nel ⋯), i paragrafi in fondo a EO, Consensi, Dimissioni
-// e Tempi se ne vanno, «Copia di nuovo» solo dopo una scelta, i comandi rari
-// (JSON, Importa, Salva i referti) nel menu ⋯.
+// Quello che esce dalle schermate di tutti i giorni: i paragrafi in fondo a EO,
+// Consensi e Dimissioni se ne vanno, «Copia di nuovo» solo dopo una scelta, i
+// comandi rari fuori dal menu ⋯ (Esporta e Importa, piccoli, sotto i fogli).
 async function scenarioMenuAltro(browser) {
   const scen = "menu-altro";
   const mock = createMock({ withResults: true });
@@ -7256,30 +7268,8 @@ async function scenarioMenuAltro(browser) {
   const voce = async (id) => (await $panel(page, `.menu #${id}`).count()) === 1;
   const chiudi = async () => { await $panel(page, "#menubtn").click(); };
 
-  // il cronometro: niente in intestazione finché non corre
-  check(scen, (await $panel(page, ".hd .tchip").count()) === 0 && (await $panel(page, ".hd #tapri").count()) === 0, "in intestazione non c'è nessun cronometro fermo");
-  const daQui = await $panel(page, ".seg button.on").getAttribute("data-seg");
-  await menu();
-  check(scen, await voce("tempimenu"), "«Cronometro» sta nel menu ⋯");
-  await $panel(page, "#tempimenu").click();
-  await $panel(page, ".tpre").first().waitFor();
-  check(scen, !/istante di inizio/.test(await $panel(page, ".bd").innerText()), "Tempi senza il paragrafo che spiega come si salva");
-  // dove sei: al posto delle schede «‹ [icona] Cronometro»; il ‹ (uno solo) torna alla scheda di prima
-  const NOMI = { esiti: "Esiti", richieste: "Richieste" };
-  check(scen, (await testoPanel(page, ".seg.vmenu .segtit")) === "Cronometro" && (await $panel(page, ".seg.vmenu .segtit .mico svg").count()) === 1
-    && (await $panel(page, "[data-seg]").count()) === 0 && (await $panel(page, "#back").count()) === 1 && (await $panel(page, ".hd #back").count()) === 0
-    && (await $panel(page, "#back").getAttribute("title")) === `Torna a ${NOMI[daQui]} (Esc)`,
-    `⋯ → Cronometro: in testa «‹ [icona] Cronometro» al posto delle schede, e il ‹ dice dove torna (da ${daQui}; got ${await testoPanel(page, ".seg")} · ${await $panel(page, "#back").getAttribute("title").catch(() => "")})`);
-  await $panel(page, '[data-avvia="Visita ed esami"]').click();
-  await $panel(page, ".tbig").waitFor();
-  await $panel(page, "#back").click();
-  check(scen, (await $panel(page, `[data-seg="${daQui}"].on`).count()) === 1, `il ‹ del Cronometro torna alla scheda da cui si veniva (${daQui}), non a «Tutti i pazienti»`);
-  await $panel(page, '[data-seg="eo"]').click();
-  check(scen, (await $panel(page, ".hd .tchip.on").count()) === 1 && /\d+m|\d+s/.test(await $panel(page, ".hd .tchip.on").innerText()), "mentre corre, il tempo si vede in intestazione da ogni schermata");
-  await $panel(page, "#tstop").click();
-  check(scen, (await $panel(page, ".hd .tchip").count()) === 0, "fermato, l'intestazione torna libera");
-
   // EO: «Copia di nuovo» solo dopo una scelta; niente paragrafo in fondo
+  await $panel(page, '[data-seg="eo"]').click();
   check(scen, !(await $panel(page, "#eoricopia").isVisible()) && !(await $panel(page, "#eoedit").isVisible()), "EO: prima di scegliere un caso non c'è «Copia di nuovo»");
   check(scen, (await $panel(page, ".bd .hint").count()) === 0, "EO: niente paragrafo in fondo");
   await $panel(page, "#eocaso").selectOption("caso:vertigine");
@@ -7287,55 +7277,30 @@ async function scenarioMenuAltro(browser) {
   check(scen, (await $panel(page, "#eoricopia").isVisible()) && (await $panel(page, "#eoedit").isVisible()), "scelto un caso, compaiono «Copia di nuovo» e ✎");
   await riapriDopoCopia(page);
 
-  // Consensi, Dimissioni: niente paragrafi in fondo; le informazioni restano in un tooltip
-  await $panel(page, '[data-seg="consensi"]').click();
-  await $panel(page, ".crow").first().waitFor();
-  check(scen, (await $panel(page, ".bd .hint").count()) === 0 && /dentro l'estensione|Servono i moduli/.test(await $panel(page, ".bd .lbl").first().getAttribute("title")),
-    "Consensi: niente paragrafo, la nota sta nel passaggio del mouse");
+  // Dimissioni (coi moduli di consenso dentro): niente paragrafi in fondo; le informazioni restano in un tooltip
   await $panel(page, '[data-seg="dimissioni"]').click();
+  await $panel(page, ".consensi .crow").first().waitFor();
+  check(scen, (await $panel(page, "[data-seg=\"consensi\"]").count()) === 0 && /dentro l'estensione|Servono i moduli/.test(await $panel(page, ".bd .consensi .lbl").getAttribute("title")),
+    "i Consensi stanno nelle Dimissioni (nessuna scheda a parte), la nota dei moduli nel passaggio del mouse");
   await $panel(page, ".drow").first().waitFor();
   check(scen, (await $panel(page, ".bd .hint").count()) === 0, "Dimissioni: niente paragrafo in fondo");
-  check(scen, (await $panel(page, ".bd #dimexport").count()) === 0 && (await $panel(page, ".bd #dimimport").count()) === 0, "e niente «⬇ JSON» / «⤒ Importa» fra i fogli");
+  // il file dei fogli (un altro PC, una copia, l'editor dimissioni.html): in fondo ai fogli, piccolo; non nel ⋯
+  const file = await page.evaluate(() => {
+    const r = document.getElementById("psassist-host").shadowRoot, e = r.querySelector(".bd #dimexport"), i = r.querySelector(".bd #dimimport"), n = r.querySelector("#dimnuovo");
+    return { c: !!e && !!i && e.closest(".dfile") === i.closest(".dfile"), sotto: !!e && !!n && e.getBoundingClientRect().top > n.getBoundingClientRect().bottom, t: [e?.textContent.trim(), i?.textContent.trim()] };
+  });
+  check(scen, file.c && file.sotto && file.t[0] === "Esporta i fogli" && file.t[1] === "Importa i fogli…", `Esporta e Importa i fogli: una riga quieta sotto i fogli (got ${JSON.stringify(file)})`);
   await menu();
-  check(scen, (await voce("dimexport")) && (await voce("dimimport")), "esportare e importare stanno nel menu ⋯ (solo in Dimissioni)");
-  await $panel(page, "#dimimport").click();
+  check(scen, !(await voce("dimexport")) && !(await voce("dimimport")), "e non nel menu ⋯");
+  await chiudi();
+  await $panel(page, ".bd #dimimport").click();
   await $panel(page, "#dimimpok").waitFor();
-  check(scen, (await $panel(page, ".menu").count()) === 0, "scelta una voce, il menu si chiude, e si apre la schermata per incollare");
+  check(scen, (await testoPanel(page, ".bd")).length > 0 && (await $panel(page, "#back").count()) === 1, "Importa apre la schermata per incollare, col ‹ per tornare");
   await $panel(page, "#back").click();
   await $panel(page, '[data-seg="esiti"]').click();
   await menu();
-  check(scen, !(await voce("dimexport")) && !(await voce("dimimport")) && !(await voce("refsave")), "nelle altre schermate quelle voci non ci sono (e «Salva i referti» c'è solo con l'estensione)");
-
-  // Riferimenti: la tabella dei can't-miss killers, dal ⋯, filtrabile anche in italiano
-  check(scen, await voce("rifmenu"), "«Riferimenti» sta nel menu ⋯");
-  await $panel(page, "#rifmenu").click();
-  await $panel(page, ".rifr").first().waitFor();
-  const visibili = () => page.evaluate(() => [...document.getElementById("psassist-host").shadowRoot.querySelectorAll(".rifr")]
-    .filter((r) => !r.hidden && !r.closest(".rifg")?.hidden).map((r) => r.querySelector("b").textContent));
-  const tutte = await visibili();
-  check(scen, tutte.length === 28 && tutte.includes("Chest pain") && tutte.includes("Gastroenteritis") && tutte.includes("Anticoagulated"),
-    `tre tabelle: per sintomo, etichette benigne, chi cambia la lista (got ${tutte.length} righe)`);
-  check(scen, /Don.t anchor the DDx/.test(await $panel(page, ".rifanc").innerText()),
-    "in cima il promemoria contro l'ancoraggio");
-  check(scen, await page.evaluate(() => document.getElementById("psassist-host").shadowRoot.activeElement?.id === "riffiltro"), "il cursore è già nel filtro");
-  await page.keyboard.type("cefalea");
-  check(scen, JSON.stringify(await visibili()) === JSON.stringify(["Headache"]), "«cefalea» trova Headache");
-  await $panel(page, "#riffiltro").fill("");
-  await page.keyboard.type("elderly");
-  const anz = await visibili();
-  check(scen, anz.includes("Elderly") && anz.includes("UTI (elderly)") && anz.length === 2, `«elderly» trova le righe in inglese (got: ${anz.join(", ")})`);
-  await $panel(page, "#riffiltro").fill("");
-  await page.keyboard.type("zzz");
-  check(scen, (await visibili()).length === 0 && await $panel(page, ".rifvuoto").isVisible(), "niente trovato: lo dice");
-  await $panel(page, "#riffiltro").fill("");
-  check(scen, (await testoPanel(page, ".seg.vmenu .segtit")) === "Riferimenti" && (await $panel(page, "#back").getAttribute("title")) === "Torna a Esiti (Esc)",
-    `⋯ → Riferimenti: «‹ [icona] Riferimenti», e il ‹ torna agli Esiti da cui si veniva (got ${await testoPanel(page, ".seg")})`);
-  await menu();
+  check(scen, !(await voce("refsave")), "«Salva i referti» non sta nel menu ⋯");
   await chiudi();
-  // Esc (fuori da un campo) fa come il ‹: torna alla scheda di prima, la finestra resta aperta
-  await page.keyboard.press("Escape");
-  check(scen, (await $panel(page, '[data-seg="esiti"].on').count()) === 1 && (await $panel(page, ".card").count()) === 1,
-    "Esc da Riferimenti torna agli Esiti, la finestra resta aperta");
   await context.close();
 
   // niente più «Ricarica» in fondo al ⋯ (l'estensione si aggiorna da sola, e solo quando è sicuro): né a riposo, né con un giro
@@ -7400,8 +7365,8 @@ async function scenarioTastieraLente(browser) {
   await context.close();
 }
 
-// Il menu ⋯ a sezioni: in cima la Forma (con Al centro · Affianca a destra),
-// poi Paziente · Strumenti · Impostazioni, ognuna col suo titolo piccolo; una
+// Il menu ⋯ a sezioni (la Forma no: sta in Impostazioni): Paziente ·
+// Strumenti · Impostazioni, ognuna col suo titolo piccolo; una
 // sezione che lì non ha voci non c'è; le voci corte due per riga. Ogni voce di
 // prima c'è ancora, col suo id, dove si offriva. Senza estensione (il
 // bookmarklet) e con un'estensione finta (le voci che la chiedono).
@@ -7427,7 +7392,7 @@ async function scenarioMenuSezioni(browser) {
   const chiudi = async (page) => { if (await $panel(page, ".menu").count()) await $panel(page, "#menubtn").click(); };
   const vedi = (s) => s.map((x) => `${x.t || "·"}: ${x.ids.join(" ")}`).join(" | ");
   const di = (s, t) => (s.find((x) => x.t === t) || { ids: [] }).ids;
-  const EXT = ["tabmenu", "pontemenu", "regmenu", "stampanti", "ricmenu", "termenu"];
+  const EXT = ["tabmenu", "pontemenu", "stampanti", "termenu"];
 
   // ---- senza estensione (bookmarklet), sulla pagina di un paziente con richieste confermate
   const mock = createMock({ seedConfirmed: true, withResults: true });
@@ -7436,50 +7401,40 @@ async function scenarioMenuSezioni(browser) {
   await a.page.waitForSelector("#psassist-host .card", { state: "attached" });
   await menu(a.page);
   let s = await sezioni(a.page);
-  check(scen, JSON.stringify(s.map((x) => x.t)) === '["","Paziente","Strumenti","Impostazioni"]' && s[0].ids[0] === "mforma" && !(await sparse(a.page)),
-    `paziente: la Forma in cima, poi Paziente · Strumenti · Impostazioni, e nessuna voce fuori da una sezione (got ${vedi(s)})`);
-  check(scen, di(s, "Paziente").join() === "stampamenu" && di(s, "Strumenti").join() === "tempimenu,rifmenu,consmenu" && di(s, "Impostazioni").join() === "verbtn,resetpaz"
-    && !EXT.some((id) => s.some((x) => x.ids.includes(id))), `senza estensione: Stampa le richieste · Cronometro, Riferimenti, Consegne · Registro, Reset — niente voci dell'estensione (got ${vedi(s)})`);
-  check(scen, (await $panel(a.page, "#tempimenu").innerText()).trim() === "Cronometro", `«Tempi» si chiama «Cronometro», come dice il suo titolo (got ${await $panel(a.page, "#tempimenu").innerText()})`);
+  check(scen, JSON.stringify(s.map((x) => x.t)) === '["Paziente","Strumenti","Questo PC"]' && !(await $panel(a.page, ".menu .mforma").count()) && !(await sparse(a.page)),
+    `paziente: Paziente · Strumenti · Questo PC (niente Forma in cima), e nessuna voce fuori da una sezione (got ${vedi(s)})`);
+  check(scen, di(s, "Paziente").join() === "stampamenu" && di(s, "Strumenti").join() === "consmenu" && di(s, "Questo PC").join() === "regmenu,resetpaz"
+    && !EXT.some((id) => s.some((x) => x.ids.includes(id))), `senza estensione: Stampa le richieste · Consegne · Registrazioni (lì, il Registro), Reset — niente voci dell'estensione (got ${vedi(s)})`);
   check(scen, !(await senzaIcona(a.page)).length, `ogni voce ha la sua icona di 16 px accanto alla parola (senza: ${(await senzaIcona(a.page)).join(", ")})`);
   const tit = await a.page.evaluate(() => { const t = document.getElementById("psassist-host").shadowRoot.querySelector(".menu .mtit"), c = getComputedStyle(t); return { up: c.textTransform, px: parseFloat(c.fontSize) }; });
   check(scen, tit.up === "uppercase" && tit.px < 12, `i titoli delle sezioni: piccoli, maiuscoli (got ${JSON.stringify(tit)})`);
-  const riga = async (x, y) => { const p = await $panel(a.page, `#${x}`).boundingBox(), q = await $panel(a.page, `#${y}`).boundingBox(); return !!p && !!q && Math.abs(p.y - q.y) < 1 && q.x > p.x && p.height >= 32; };
+  const riga = async (p, x, y) => { const a1 = await $panel(p, `#${x}`).boundingBox(), b1 = await $panel(p, `#${y}`).boundingBox(); return !!a1 && !!b1 && Math.abs(a1.y - b1.y) < 1 && b1.x > a1.x && a1.height >= 32; };
   const mb = await $panel(a.page, ".menu").boundingBox();
-  check(scen, (await riga("tempimenu", "rifmenu")) && mb.y + mb.height <= 900 && Math.round(mb.width) === 360,
-    `le voci corte, due per riga, alte almeno 32 px (Cronometro · Riferimenti), il menu largo 360 px e nello schermo (${Math.round(mb.width)}×${Math.round(mb.height)} px)`);
+  check(scen, mb.y + mb.height <= 900 && Math.round(mb.width) === 360, `il menu largo 360 px e nello schermo (${Math.round(mb.width)}×${Math.round(mb.height)} px)`);
   const reset = await a.page.evaluate(() => {
-    const r = document.getElementById("psassist-host").shadowRoot, b = r.querySelector("#resetpaz"), sez = b.closest(".msez"), v = r.querySelector("#verbtn");
+    const r = document.getElementById("psassist-host").shadowRoot, b = r.querySelector("#resetpaz"), sez = b.closest(".msez"), v = r.querySelector("#regmenu");
     const bb = b.getBoundingClientRect(), sb = sez.getBoundingClientRect();
     return { ultima: sez.lastElementChild === b && !sez.nextElementSibling?.classList.contains("msez"), largo: bb.width >= sb.width - 2, sotto: bb.top >= v.getBoundingClientRect().bottom - 1, colore: getComputedStyle(b).color };
   });
   check(scen, reset.ultima && reset.largo && reset.sotto && reset.colore === "rgb(179, 38, 30)",
-    `«Reset dati pazienti»: l'ultima voce, da sola sulla sua riga, rossa anche a riposo (got ${JSON.stringify(reset)})`);
+    `«Dimentica i dati…»: l'ultima voce, da sola sulla sua riga, rossa anche a riposo (got ${JSON.stringify(reset)})`);
   check(scen, /^PS Assist \S+$/.test((await $panel(a.page, ".menu .mpiede .mver").innerText()).trim()) && !(await $panel(a.page, "#extreload").count()),
     `in fondo la versione; senza estensione niente «Ricarica» (got ${await $panel(a.page, ".menu .mpiede").innerText()})`);
   await shotSide(a.page, "menu-sezioni-bookmarklet");
-  await chiudi(a.page);
-  // in Dimissioni: Esporta e Importa i fogli, fra le voci del paziente
-  await $panel(a.page, '[data-seg="dimissioni"]').click();
-  await menu(a.page);
-  s = await sezioni(a.page);
-  check(scen, di(s, "Paziente").join() === "stampamenu,dimexport,dimimport", `in Dimissioni: Esporta e Importa i fogli, nella sezione del paziente (got ${vedi(s)})`);
-  check(scen, (await $panel(a.page, "#dimexport").innerText()).trim() === "Esporta i fogli" && /JSON/.test(await $panel(a.page, "#dimexport").getAttribute("title")),
-    "«Esporta i fogli», il JSON nel suo titolo");
   await chiudi(a.page);
   // la lista, sulla stanza: niente sezione del paziente; Modifica la stanza in fondo agli Strumenti
   await a.page.goto(mock.worklistUrl);
   await a.page.waitForSelector("#psassist-host .card", { state: "attached" });
   await menu(a.page);
   s = await sezioni(a.page);
-  check(scen, JSON.stringify(s.map((x) => x.t)) === '["","Strumenti","Impostazioni"]' && di(s, "Strumenti").join() === "tempimenu,rifmenu,consmenu,stmodmenu",
+  check(scen, JSON.stringify(s.map((x) => x.t)) === '["Strumenti","Questo PC"]' && di(s, "Strumenti").join() === "consmenu,stmodmenu",
     `sulla lista (la stanza): niente sezione Paziente, «Modifica la stanza» in fondo agli Strumenti (got ${vedi(s)})`);
   await chiudi(a.page);
   await $panel(a.page, '[data-seg="dimissioni"]').click();
   await menu(a.page);
   s = await sezioni(a.page);
-  check(scen, JSON.stringify(s.map((x) => x.t)) === '["","Dimissioni","Strumenti","Impostazioni"]' && di(s, "Dimissioni").join() === "dimexport,dimimport",
-    `sulla lista, in Dimissioni: i fogli in una sezione «Dimissioni» (non c'è un paziente) (got ${vedi(s)})`);
+  check(scen, JSON.stringify(s.map((x) => x.t)) === '["Strumenti","Questo PC"]',
+    `sulla lista, in Dimissioni: niente sezione in più (Esporta e Importa stanno sotto i fogli) (got ${vedi(s)})`);
   await a.context.close();
 
   // ---- con un'estensione (finta: chrome.runtime.id), sulla pagina del paziente e sulla lista
@@ -7490,10 +7445,16 @@ async function scenarioMenuSezioni(browser) {
   await b.page.waitForSelector("#psassist-host .card", { state: "attached" });
   await menu(b.page);
   s = await sezioni(b.page);
-  check(scen, di(s, "Paziente").filter((x) => x !== "valreset").join() === "ricmenu,termenu,stampamenu" && di(s, "Strumenti").join() === "tabmenu,pontemenu,tempimenu,rifmenu,consmenu"
-    && di(s, "Impostazioni").join() === "stampanti,regmenu,verbtn,resetpaz" && !(await sparse(b.page)),
-    `con l'estensione, sul paziente: Ricetta SISS, Terapia, Stampa · Tabellone, iPhone, Cronometro, Riferimenti, Consegne · Impostazioni, Registrazioni, Registro, Reset (got ${vedi(s)})`);
+  check(scen, di(s, "Paziente").join() === "termenu,stampamenu" && !(await $panel(b.page, "#ricmenu").count()) && di(s, "Strumenti").join() === "tabmenu,pontemenu,consmenu"
+    && di(s, "Questo PC").join() === "stampanti,regmenu,resetpaz" && !(await sparse(b.page)),
+    `con l'estensione, sul paziente: Terapia, Stampa (la Ricetta SISS no: sta solo nelle Dimissioni) · Tabellone, iPhone, Consegne · Impostazioni, Registrazioni, Dimentica i dati… (got ${vedi(s)})`);
+  check(scen, await riga(b.page, "tabmenu", "pontemenu"), "le voci corte, due per riga, alte almeno 32 px (Tabellone · iPhone)");
   check(scen, !(await senzaIcona(b.page)).length, `con l'estensione anche: un'icona per voce (senza: ${(await senzaIcona(b.page)).join(", ")})`);
+  // «Impostazioni» è una cosa sola, con la sua icona: la voce (l'ingranaggio, non la stampante), non anche il titolo di una sezione
+  const imp = await b.page.evaluate(() => { const r = document.getElementById("psassist-host").shadowRoot, x = r.querySelector("#stampanti");
+    return { t: x.textContent.trim(), svg: !!x.querySelector(".mico > svg"), emoji: !!x.querySelector(".mem"), titoli: [...r.querySelectorAll(".menu .mtit")].map((t) => t.textContent) }; });
+  check(scen, imp.t === "Impostazioni" && imp.svg && !imp.emoji && !imp.titoli.includes("Impostazioni") && !(await $panel(b.page, "#stautosw").count()),
+    `«Impostazioni»: una voce sola, con la sua icona (non 🖨️), nessuna sezione con lo stesso nome, niente interruttore «Stampa automatica» (got ${JSON.stringify(imp)})`);
   const piede = (await $panel(b.page, ".menu .mpiede .mver").innerText()).replace(/\s+/g, " ").trim();
   check(scen, /^PS Assist \S+$/.test(piede) && (await $panel(b.page, "#menubtn.agg").count()) === 0,
     `in fondo al ⋯ solo la versione, «PS Assist …»: niente «Ricarica», e il ⋯ senza puntino (got ${piede})`);
@@ -7503,7 +7464,7 @@ async function scenarioMenuSezioni(browser) {
   await b.page.waitForSelector("#psassist-host .card", { state: "attached" });
   await menu(b.page);
   s = await sezioni(b.page);
-  check(scen, JSON.stringify(s.map((x) => x.t)) === '["","Strumenti","Impostazioni"]' && di(s, "Strumenti").join() === "tabmenu,pontemenu,tempimenu,rifmenu,consmenu,stmodmenu,seguesw",
+  check(scen, JSON.stringify(s.map((x) => x.t)) === '["Strumenti","Questo PC"]' && di(s, "Strumenti").join() === "tabmenu,pontemenu,consmenu,stmodmenu,seguesw",
     `con l'estensione, sulla stanza: Modifica la stanza e Segue il gestionale in fondo agli Strumenti (got ${vedi(s)})`);
   // l'interruttore: una voce da spuntare, lo stato al posto dell'icona (niente «✓ » davanti)
   const segue = await b.page.evaluate(() => { const x = document.getElementById("psassist-host").shadowRoot.querySelector("#seguesw");
@@ -7862,7 +7823,7 @@ async function scenarioListaLetti(browser) {
       await page.waitForSelector("#psassist-host #expand, #psassist-host .card", { state: "attached" });
       if (!(await $panel(page, ".card").count())) await $panel(page, "#expand").click();
       await $panel(page, ".pzcoda").waitFor({ timeout: 8000 });
-      if (aff) { await $panel(page, "#menubtn").click(); await $panel(page, "#winaffianca").click(); await page.waitForTimeout(200); }
+      if (aff) { await affianca(page); await $panel(page, ".pzcoda").waitFor({ timeout: 8000 }); }
       // i letti stanno sulle mappe, tutti i pazienti nella Lista: due viste, due misure
       await $panel(page, '[data-modo="mappa"]').click();
       await page.waitForTimeout(150);
@@ -8167,12 +8128,12 @@ const scenarios = [
   ["print: una richiesta per erogatore, che compare tardi", (b) => scenarioRichiestePerErogatore(b, { tardi: true })],
   ["lab + rx manual walk", scenarioLabPlusRxManual],
   ["valori: una tabella, una colonna per prelievo", scenarioRisultati],
-  ["↻ Aggiorna rilegge tutti i prelievi", scenarioAggiornaTutti],
+  ["↻ Rileggi rilegge tutti i prelievi", scenarioAggiornaTutti],
   ["valori nuovi e aggiornati dopo il refresh", scenarioNuoviValori],
   ["referto RX letto come testo", scenarioRefertoTesto],
   ["lab vuoto", scenarioLabVuoto],
   ["nomi inattesi e righe non lette", scenarioNomiInattesi],
-  ["cronometro: parte, sopravvive al cambio pagina, si ferma", scenarioTempi],
+  ["via il cronometro e i riferimenti: niente voci, i tempi dimenticati", scenarioTempi],
   ["da fare: una lista per paziente, i promemoria dentro, il post-it sulla riga", scenarioPromemoria],
   ["da fare in cima alla scheda del paziente: solo i suoi, su ogni scheda", scenarioDaFareInCima],
   ["fogli di dimissione: copia, modifica, export", scenarioDimissioni],
@@ -8194,14 +8155,14 @@ const scenarios = [
   ["finestra: pill, Esc, clic fuori, affianca, copia", scenarioFinestra],
   ["pill ridotta: il promemoria di un altro paziente dice di chi è", scenarioPillAltroPaziente],
   ["finestra: tetto di 1150 px, schede ferme", scenarioFinestraLarga],
-  ["forma: Finestra · Al passaggio · Affianca", scenarioForma],
+  ["forma: Al passaggio · Affianca, la Finestra migrata", scenarioForma],
   ["forma di partenza: al passaggio, ripassando com'era", scenarioPassaggio],
   ["esiti: il Lab per primo, un fondo per sezione, bottone grande, unità", scenarioEsitiLayout],
   ["apertura: Esiti o Richieste, Lab in griglia fino a tre prelievi, orologi onesti", scenarioAperturaEGriglia],
   ["richieste compatte: una casella, tre colonne, la barra solo con qualcosa, Ctrl+Invio, Stampa nel ⋯", scenarioRichiesteCompatte],
   ["esiti: il workup — fuori range in cima, Lab · ECG · Imaging, attese, ↗ PDF", scenarioWorkup],
-  ["menu ⋯: tempi, riferimenti, comandi rari, niente paragrafi, ricarica", scenarioMenuAltro],
-  ["menu ⋯ a sezioni: Paziente · Strumenti · Impostazioni, due voci per riga", scenarioMenuSezioni],
+  ["menu ⋯: i comandi rari fuori dal menu, niente paragrafi, ricarica", scenarioMenuAltro],
+  ["menu ⋯ a sezioni: Paziente · Strumenti · Questo PC, due voci per riga", scenarioMenuSezioni],
   ["tastiera e lente: la lente apre il filtro, F2 sui Pazienti col filtro", scenarioTastieraLente],
   ["no-patient page has no exams", scenarioNoPatientPage],
   ["panel titled by patient", scenarioPatientTitle],

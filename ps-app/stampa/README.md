@@ -6,9 +6,9 @@ per un ordine in sottofondo, col medico su un altro paziente o lontano dal PC.
 
 **In Windows non resta acceso niente.** Non c'è un programma che gira, né un'icona vicino
 all'orologio: Chrome avvia l'aiutante solo per il secondo in cui stampa un foglio, e l'aiutante
-esce appena ha finito. Non c'è niente da chiudere. Per spegnere la stampa automatica c'è
-l'interruttore: menu **⋯ → Stampa automatica: attiva · Spegni** nel pannello, o la pagina
-**Stampanti**. Spenta, i fogli tornano a passare dal dialogo di stampa, come prima.
+esce appena ha finito. Non c'è niente da chiudere. Non c'è un interruttore: scelte le due
+stampanti (nel pannello, **⋯ → Impostazioni**), la stampa è automatica; per tornare al dialogo di
+stampa, `disinstalla.cmd`.
 
 ## 0. Prima di tutto: avvisa l'IT
 

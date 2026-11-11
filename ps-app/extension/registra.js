@@ -15,6 +15,10 @@
  *   - i PDF (referti, etichette): i byte che l'estensione ha già in mano, o UNA
  *     rilettura dalla cache del browser (cache: "force-cache") dello stesso
  *     indirizzo appena aperto. Dei PDF nello zip va solo il testo anonimizzato.
+ *   - le righe del Registro di ogni pannello (senza il quesito) e la diagnosi
+ *     di un documento che non si è lasciato leggere (senza numeri né valori):
+ *     nello zip, testi/registro.txt e testi/diagnosi-N.txt, anonimizzati come
+ *     le pagine (raccolta.testi di registra-anonimo.js).
  * Tutto resta nella memoria dell'estensione, su questo PC, finché il medico non
  * preme «Ferma e salva»: allora un documento fuori schermo (registra-esporta.html,
  * chrome.offscreen — nessuna scheda, nessuno scarico) anonimizza
@@ -200,7 +204,9 @@ const regInVolo = new Map();           // requestId → la richiesta, finché no
 const regRilettura = new Set();        // indirizzi che il registratore sta rileggendo
 const regPdfVisti = new Set();         // indirizzi di cui ha già i byte
 let regPdfN = 0, regPagineN = 0;
-let regBuf = { flusso: [], note: [], schede: [], clic: [] };
+// (`registro` e `diagnosi`: dal pannello, le righe del suo Registro e la diagnosi di un documento che non si è lasciato leggere)
+const regBufNuovo = () => ({ flusso: [], note: [], schede: [], clic: [], registro: [], diagnosi: [] });
+let regBuf = regBufNuovo();
 let regBufT = null;
 function regAccoda(tipo, x) {
   regBuf[tipo].push(x);
@@ -209,8 +215,8 @@ function regAccoda(tipo, x) {
 async function regScarica() {
   clearTimeout(regBufT); regBufT = null;
   const b = regBuf;
-  if (!b.flusso.length && !b.note.length && !b.schede.length && !b.clic.length) return;
-  regBuf = { flusso: [], note: [], schede: [], clic: [] };
+  if (!Object.values(b).some((l) => l.length)) return;
+  regBuf = regBufNuovo();
   await regMetti({ tipo: "flusso", ...b });
 }
 const REG_FILTRO = { urls: ["http://*/*", "https://*/*"] };
@@ -343,7 +349,7 @@ self.fetch = function (input, init) {
 async function regAvvia() {
   await regCancella();
   regInVolo.clear(); regRilettura.clear(); regPdfVisti.clear(); regPdfN = 0; regPagineN = 0;
-  regBuf = { flusso: [], note: [], schede: [], clic: [] };
+  regBuf = regBufNuovo();
   const o = await chrome.storage.local.get("portale");
   regPortale = o.portale || "";
   const ora = Date.now();
@@ -635,6 +641,20 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
       regAccoda("clic", { tipo: msg.tipo === "dblclick" ? "dblclick" : "click", ts: Number(msg.ts) || Date.now(), scheda: sender.tab.id, frame: sender.frameId || 0,
         url: String(sender.url || "").slice(0, 4000), bersaglio: b });
     }
+    return reply({ ok: true }), true;
+  }
+  // dal pannello: le righe del Registro (senza il quesito) e la diagnosi di un documento che non si è
+  // lasciato leggere (senza numeri né valori). Nello zip escono come testi, anonimizzati come le pagine.
+  if (msg.t === "regRegistro") {
+    const righe = Array.isArray(msg.righe) ? msg.righe.slice(0, 200).map((r) => String(r).slice(0, 2000)) : [];
+    const scheda = sender.tab.id;
+    if (righe.length) regPronto.then(() => { if (regCattura()) regAccoda("registro", { ts: Date.now(), scheda, righe }); });
+    return reply({ ok: true }), true;
+  }
+  if (msg.t === "regDiagnosi") {
+    const testo = typeof msg.testo === "string" ? msg.testo.slice(0, 20000) : "";
+    const scheda = sender.tab.id;
+    if (testo) regPronto.then(() => { if (regCattura()) regAccoda("diagnosi", { ts: Date.now(), scheda, testo }); });
     return reply({ ok: true }), true;
   }
   if (msg.t === "regRichiesta") {

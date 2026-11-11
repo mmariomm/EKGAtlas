@@ -233,6 +233,16 @@ await sw.evaluate(() => {
   self.__vecchio = null;
   regSalvaOra = async (o) => {
     if (o.fonte === "grezzi" && !self.__vecchio) {
+      // (il Registro e le diagnosi dei pannelli — testi/ nello zip, dalla 3.86 — la pagina di prima non li
+      // conosceva: fuori dal confronto, che resta sullo stesso grezzo; li prova ext-registrazioni)
+      await RegistraDb.tx("grezzi", "readwrite", (s) => {
+        s.openCursor().onsuccess = (e) => {
+          const c = e.target.result;
+          if (!c) return;
+          if (c.value.registro || c.value.diagnosi) { const v = { ...c.value }; delete v.registro; delete v.diagnosi; c.update(v); }
+          c.continue();
+        };
+      });
       self.__vecchio = { grezzi: await regTutto(), st: o.st, esportati: (await chrome.storage.local.get("errori.esportati"))["errori.esportati"] };
     }
     return vero(o);

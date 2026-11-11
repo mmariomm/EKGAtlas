@@ -240,23 +240,22 @@ check(/non di questo paziente/.test(senza.avviso) && /ROSSI MARIO/.test(senza.av
 
 // ---- i moduli di consenso vengono dall'estensione, non dalla rete -------
 const primaRete = mock.state.requests.length;
-await paziente.locator('#psassist-host [data-seg="consensi"]').click();
-await paziente.waitForSelector("#psassist-host [data-cons]", { timeout: 8000 });
-check((await paziente.locator("#psassist-host [data-cons]").count()) === 6, "sei consensi in elenco");
-check((await paziente.locator('#psassist-host [data-cons^="ritiro"]').count()) === 0
+// (i Consensi stanno nelle Dimissioni: una scheda in meno)
+await paziente.locator('#psassist-host [data-seg="dimissioni"]').click();
+await paziente.waitForSelector("#psassist-host .consensi [data-cons]", { timeout: 8000 });
+check((await paziente.locator("#psassist-host .consensi [data-cons]").count()) === 6 && (await paziente.locator('#psassist-host [data-seg="consensi"]').count()) === 0,
+  "nelle Dimissioni, sotto i fogli, sei moduli di consenso (niente scheda Consensi a parte)");
+check((await paziente.locator('#psassist-host .consensi [data-cons^="ritiro"]').count()) === 0
   && /9 pagine/.test(await paziente.locator('#psassist-host [data-cons="emotrasfusione"]').innerText()),
   "le deleghe per il ritiro non stanno fra i consensi, e un modulo lungo dice quanta carta esce");
-// …stanno nella schermata Dimissioni, dove si danno a chi va a casa
-// (sotto i fogli, nella riga chiusa «Moduli per il ritiro ▸»: un tocco la apre)
-await paziente.locator('#psassist-host [data-seg="dimissioni"]').click();
+// …stanno anche loro nella schermata Dimissioni, dove si danno a chi va a casa
+// (sotto i consensi, nella riga chiusa «Moduli per il ritiro ▸»: un tocco la apre)
 await paziente.waitForSelector('#psassist-host #ritiro summary', { timeout: 8000 });
 const chiusa = (await paziente.locator("#psassist-host #ritiro").getAttribute("open")) === null;
 await paziente.locator("#psassist-host #ritiro summary").click();
 await paziente.waitForSelector('#psassist-host [data-cons^="ritiro"]', { timeout: 8000 });
 check(chiusa && (await paziente.locator('#psassist-host [data-cons^="ritiro"]').count()) === 3,
   "i tre moduli per il ritiro sono nella schermata Dimissioni, in una riga chiusa che si apre con un tocco");
-await paziente.locator('#psassist-host [data-seg="consensi"]').click();
-await paziente.waitForSelector("#psassist-host [data-cons]", { timeout: 8000 });
 await paziente.locator('#psassist-host [data-cons="antitetano"]').click();
 await paziente.waitForSelector("#psassist-print iframe", { timeout: 15000 });
 // arrivato il PDF, la scheda lo mostra in anteprima (e il dialogo di stampa parte da lì)

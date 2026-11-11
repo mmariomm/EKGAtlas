@@ -369,7 +369,7 @@ await blocco("Mappa | Lista: la lista senza mappe, nell'ordine del gestionale", 
   check((await $p(page, ".pzcarta").count()) === 1, "e passando sul nome si apre la scheda");
   await page.mouse.move(5, 5);
   if (SHOTS) await page.screenshot({ path: join(SHOTS, "lm-lista.png") });
-  // la scelta resta: ricaricando, e dopo «Reset dati pazienti» (è un'impostazione)
+  // la scelta resta: ricaricando, e dopo «Dimentica i dati…» (è un'impostazione)
   check((await ls(page, "tabellone.modo.v1")) === "lista", "la scelta resta (tabellone.modo.v1)");
   await page.goto(URL_LISTA);
   await pannello(page);
@@ -403,7 +403,7 @@ await blocco("Mappa | Lista: la lista senza mappe, nell'ordine del gestionale", 
   await $p(page, "#resetpaz").click();
   await $p(page, "#resetpaz").click();
   await page.waitForTimeout(500);
-  check(!(await ls(page, "aree.v1")) && (await ls(page, "tabellone.modo.v1")) === "lista", "«Reset dati pazienti»: via aree e righe, la scelta Lista resta");
+  check(!(await ls(page, "aree.v1")) && (await ls(page, "tabellone.modo.v1")) === "lista", "«Dimentica i dati…»: via aree e righe, la scelta Lista resta");
   await $p(page, '[data-modo="mappa"]').click();
   await page.waitForTimeout(150);
   check((await ls(page, "tabellone.modo.v1")) === "mappa" && (await $p(page, ".stmap").count()) >= 1, "e tornando a Mappa, le mappe tornano");
@@ -661,11 +661,11 @@ await blocco("Il Da fare del tabellone: il generale, e quello dei pazienti col c
     `cinque righe e poi scorre: le mappe restano alte uguali (${b6.righe} voci: mappe ${b6.mappe}px; ${b12.righe}: ${b12.mappe}px; si vedono ${b12.vista}px di ${b12.tutta})`);
   if (SHOTS) await page.screenshot({ path: join(SHOTS, "tab-dafare-colonna.png") });
   await page.setViewportSize({ width: 1280, height: 900 });
-  // «Reset dati pazienti» porta via anche il generale (è roba del turno)
+  // «Dimentica i dati…» porta via anche il generale (è roba del turno)
   await $p(page, "#menubtn").click();
   await $p(page, "#resetpaz").click();
   await $p(page, "#resetpaz").click();
-  check((await gen()) === null && (await ls(page, "tabellone.dafare.v1"))?.chiusa === false, "«Reset dati pazienti» porta via il Da fare generale (l'impostazione resta)");
+  check((await gen()) === null && (await ls(page, "tabellone.dafare.v1"))?.chiusa === false, "«Dimentica i dati…» porta via il Da fare generale (l'impostazione resta)");
   await context.close();
 });
 
