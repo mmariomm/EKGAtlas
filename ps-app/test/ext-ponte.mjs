@@ -226,6 +226,14 @@ const tocca = (t, sel) => t.locator(sel).first().click();
 // tornati sull'app: l'elenco si rilegge da solo (nel ⋯ non c'è più «Aggiorna elenco»)
 const rileggiTel = (t) => t.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
 const qrUrl = () => sw.evaluate(() => ponteQr());
+// «Associa» sulla pagina iPhone del PC; con un telefono già entrato il bottone è «Nuovo QR», che butta fuori
+// l'iPhone di prima e chiede il secondo tocco («Butto fuori l'iPhone? Tocca di nuovo»)
+async function nuovoQr(pg) {
+  await pg.locator("#associa").click();
+  if (await finche(async () => /Tocca di nuovo/.test(await pg.locator("#associa").innerText()) || await pg.locator("#qr svg").isVisible(), 5000)
+    && /Tocca di nuovo/.test(await pg.locator("#associa").innerText())) await pg.locator("#associa").click();
+  await pg.waitForSelector("#qr svg", { timeout: 8000 });
+}
 // la chiave del telefono: ora la lista dei PC (pcs.v1) — l'associazione attiva
 const chiaveTel = (t) => t.evaluate(() => {
   try {
@@ -1077,7 +1085,7 @@ sezione("la cartella dal telefono: leggere, scrivere col «Conferma» della pagi
   const post0 = CART.post.length;
   await doc.locator('input[name="Update"]').click();
   await sospendi(1500);
-  const fermo = await doc.locator("#psassist-terapia").evaluate((h) => h.shadowRoot.textContent).catch(() => "");
+  const fermo = await doc.locator("#psassist-terapia").evaluate((h) => h.shadowRoot.querySelector(".b").textContent).catch(() => "");
   check(CART.post.length === post0 && /Cartella/.test(fermo) && /Niente inviato/.test(fermo) && /ricarica la pagina/.test(fermo),
     `…e il suo «Conferma» è fermo: niente inviato (i testi di prima non vanno sopra quelli del telefono), e lo dice (${fermo.replace(/\s+/g, " ").slice(0, 160)})`);
   await shot(doc, "pc-6-cartella-aggiornata");
@@ -1294,7 +1302,7 @@ const compatte = await tel.evaluate(() => {
 check(compatte.alt <= 2 * compatte.vh, `le Richieste (${compatte.n} esami) stanno in due schermi: ${Math.round(compatte.alt)} px su ${compatte.vh} di altezza`);
 check(compatte.minAlt >= 37.9, `ogni tasto è alto almeno 38 px, più 6 di vuoto: 44 di passo (il più basso: ${compatte.minAlt})`);
 // «Febbre» ha imparato il suo pacchetto sul PC: sul telefono è un chip come gli altri
-const accesi = () => tel.locator("main .esame.on").allInnerTexts();
+const accesi = () => tel.locator("main .esame.on .nm").allInnerTexts();   // (il nome: accanto può esserci «✓ 22:10»)
 check(await tel.locator('[data-a="quesito"][data-q="Febbre"]').count() === 1, "il quesito che ha imparato il suo pacchetto sul PC è un chip anche sul telefono: «Febbre»");
 await tocca(tel, '[data-a="quesito"][data-q="Febbre"]');
 const conFebbre = (await accesi()).sort();
@@ -1304,9 +1312,11 @@ await tocca(tel, '[data-a="quesito"][data-q="Febbre"]');
 check((await accesi()).length === 0 && await tel.locator("#quesito").inputValue() === "", "toccato di nuovo li toglie");
 check(await tel.locator("#ordina").count() === 0 && await tel.locator(".cta").count() === 0 && !/Scegli gli esami/.test(await testoTel(tel)),
   "(5) senza un esame scelto niente barra, e niente bottone spento «Scegli gli esami»: la barra compare scegliendo");
-// accanto agli esami, come sul PC: niente, finché non sono stati chiesti
+// accanto agli esami, come sul PC: niente se mai chiesto (TROPONINA US); «✓ 22:10» se già tornato (EMOCROMO POC, in verde)
 const ultTel = (nome) => tel.locator(`[data-a="esame"]:has-text("${nome}")`).first().locator(".ult").innerText({ timeout: 1000 }).catch(() => "");
-check(!(await ultTel("TROPONINA US")) && !(await ultTel("EMOCROMO POC")), "TROPONINA US ed EMOCROMO POC mai chiesti: accanto al nome niente");
+check(!(await ultTel("TROPONINA US")) && /^✓ \d\d:\d\d$/.test(await ultTel("EMOCROMO POC"))
+  && await tel.locator('[data-a="esame"]:has-text("EMOCROMO POC")').first().locator(".ult .uok").count() === 1,
+  `accanto al nome, come sul PC: TROPONINA US mai chiesta, niente; EMOCROMO POC già tornata, «${await ultTel("EMOCROMO POC")}» in verde`);
 await tocca(tel, '[data-a="esame"]:has-text("TROPONINA US")');
 await tocca(tel, '[data-a="esame"]:has-text("EMOCROMO POC")');
 check(await tel.locator("#ordina").count() === 1, "(5) scelto un esame, la barra c'è");
@@ -1365,7 +1375,7 @@ check(/Etichette prese in stampa sul PC/.test(await aspettaTel(tel, /Etichette p
 // gli esami appena ordinati, accanto al nome come nelle Richieste del PC: «0′» in attesa (ambra), e il perché nel nome per la voce
 await tocca(tel, '[data-a="scheda"][data-s="esiti"]');
 await tocca(tel, '[data-a="scheda"][data-s="richieste"]');
-check(await finche(async () => /^\d+′$/.test(await ultTel("TROPONINA US")) && /^\d+′$/.test(await ultTel("EMOCROMO POC")), 15000)
+check(await finche(async () => /^\d+′$/.test(await ultTel("TROPONINA US")) && /^✓ \d\d:\d\d \d+′$/.test(await ultTel("EMOCROMO POC")), 15000)
   && await tel.locator('[data-a="esame"]:has-text("TROPONINA US")').first().locator(".ult .uatt").count() === 1
   && /^TROPONINA US · in attesa dalle \d\d:\d\d( · letto alle \d\d:\d\d)?$/.test(await tel.locator('[data-a="esame"]:has-text("TROPONINA US")').first().getAttribute("aria-label")),
   `ordinati: accanto al nome «${await ultTel("TROPONINA US")}» in attesa, come sul PC — un doppione si vede prima di sceglierlo`);
@@ -2225,8 +2235,7 @@ await orologio();
 // il link del QR, invece, vale solo per il primo scambio, e poco: un QR nuovo, e passati 7 minuti non apre più
 await ponte2.reload();
 await ponte2.waitForSelector("#stato b");
-await ponte2.locator("#associa").click();
-await ponte2.waitForSelector("#qr svg", { timeout: 8000 });
+await nuovoQr(ponte2);   // (un telefono è già entrato: «Nuovo QR», due tocchi)
 const urlE = await qrUrl();
 await avanti(7 * 60e3);
 {
@@ -2269,15 +2278,20 @@ check(/ROSSI MARIO/.test(await aspettaTel(tel, /ROSSI MARIO/, 15000)) && (await 
 
 // ===========================================================================
 sezione("il browser del PC si chiude e si riapre");
+await guardaChiusa();
+const chiuso = Date.now();
 await ctx.close();
 ctx = await apriBrowser();
 sw = await swDi(ctx);
 check((await coppiaPc())?.k === K3, "riaperto il browser, l'associazione c'è ancora: sta su disco (storage.local) fino alla revoca");
-check(/estensione sul PC si è riavviata/.test(await aspettaTel(tel, /Sessione chiusa/, 30000)), "il telefono sa che la sessione di prima è finita: «L'estensione sul PC si è riavviata»");
+// la sessione di prima è finita (le sue chiavi stavano in memoria): il telefono se ne accorge e se ne apre una nuova da solo, senza «Sessione chiusa»
+check(await finche(async () => (await statoPonte())?.sessione?.dal > chiuso, 30000) && !(await tel.evaluate(() => window.__chiusa)),
+  "il telefono sa che la sessione di prima è finita, e si ricollega da solo (nessuno l'ha chiusa): niente «Sessione chiusa»");
 const doc3 = await ctx.newPage();
 await suPagina(doc3, A.worklistUrl);
-await tocca(tel, '[data-a="riapri"]');
-check(/ROSSI MARIO/.test(await aspettaTel(tel, /ROSSI MARIO/, 20000)), "«Riapri»: di nuovo l'elenco, senza QR nuovo");
+// (senza una scheda del gestionale l'elenco non si legge: «Riprova», o tornando sull'app)
+if (await tel.locator('[data-a="aggiornaLista"]').count()) await tocca(tel, '[data-a="aggiornaLista"]'); else await rileggiTel(tel);
+check(/ROSSI MARIO/.test(await aspettaTel(tel, /ROSSI MARIO/, 20000)), "aperto il gestionale: di nuovo l'elenco, senza QR nuovo");
 
 // ===========================================================================
 sezione("«Stampa un PDF» dal telefono, sull'A4 del PC");
@@ -2771,8 +2785,7 @@ sezione("«Scansiona il QR» dentro l'app");
   const pqr = await ctx.newPage();
   await pqr.goto(EXTURL("ponte.html"));
   await pqr.waitForSelector("#stato b");
-  await pqr.locator("#associa").click();
-  await pqr.waitForSelector("#qr svg", { timeout: 8000 });
+  await nuovoQr(pqr);   // (un telefono è già entrato: «Nuovo QR», due tocchi)
   const url4 = await qrUrl();
   const K4 = P.b64u(P.leggiFrammento(new URL(url4).hash).k);
 

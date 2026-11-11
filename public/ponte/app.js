@@ -1853,7 +1853,7 @@
       const on = pr.esami.every((k) => s.esami.has(k));
       return `<button class="chip prof${on ? " on" : ""}" data-a="profilo" data-g="${esc(g.nome)}" data-i="${i}">${ICO_PROFILO}${esc(pr.nome)}</button>`;
     }).join("")}</div>` : ""}<div class="griglia">${g.esami.map((k) => { const u = suffissoEsame(p.ep, k); return `<button class="esame${s.esami.has(k) ? " on" : ""}" data-a="esame" data-k="${esc(k)}"${
-      u ? ` aria-label="${esc(`${c.nomi[k] || k} · ${u.titolo}`)}"` : ""}>${esc(c.nomi[k] || k)}${u ? u.html : ""}</button>`; }).join("")}</div></div>`).join("");
+      u ? ` aria-label="${esc(`${c.nomi[k] || k} · ${u.titolo}`)}"` : ""}><span class="nm">${esc(c.nomi[k] || k)}</span>${u ? u.html : ""}</button>`; }).join("")}</div></div>`).join("");
     return `<div class="carta q-w"><input id="quesito" type="text" enterkeyhint="done" autocomplete="off" placeholder="Quesito diagnostico" value="${esc(s.q)}"><div class="chips">${quesiti}</div></div>
       <div class="carta">${gruppi}</div>${ristampeHtml(p)}`;
   }
@@ -2261,7 +2261,7 @@
     if (a === "menu") { S.menu = !S.menu; render(); }
     else if (a === "riapri") riapri();
     else if (a === "pc") attivaPc(b.dataset.id);                 // passa a un altro PC della lista
-    else if (a === "pcvia") dimenticaPcId(b.dataset.id);          // «Dimentica» un PC della lista
+    else if (a === "pcvia") dimenticaPcId(b.dataset.id);          // «Scollega» un PC della lista
     else if (a === "cambia") cambia();
     else if (a === "scansiona") apriScan();
     else if (a === "stacollega") collegaStazione();
