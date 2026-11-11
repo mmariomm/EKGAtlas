@@ -15,7 +15,8 @@
 (function (g) {
   // Il grezzo di una fonte («grezzi»: la registrazione a mano; «scorre»: gli
   // ultimi 10 minuti), da `da` in poi, già anonimizzato e chiuso in uno zip.
-  async function esporta({ fonte = "grezzi", st, errori = [], da = 0, opz = {} }) {
+  // `nomi`: i pazienti che l'estensione conosce (registra.js), sostituiti come quelli delle pagine.
+  async function esporta({ fonte = "grezzi", st, errori = [], da = 0, nomi = [], opz = {} }) {
     const pagine = [], flusso = [], note = [], schede = [], clic = [], grezzi = [], registro = [], diagnosi = [];
     for (const v of await RegistraDb.tx(fonte, "readonly", (s) => s.getAll())) {
       if (da && !((v.ts || 0) >= da)) continue;
@@ -63,7 +64,8 @@
       pdf.push(o);
     }
     const vocabolario = await (await fetch(chrome.runtime.getURL("registra-vocabolario.json"))).json();
-    const raccolta = { versione: st.versione, inizio: st.inizio, fine: st.fine, comeFinita: st.comeFinita, origini: st.origini, pagine, flusso, pdf, schede, clic, errori, testi };
+    const raccolta = { versione: st.versione, inizio: st.inizio, fine: st.fine, comeFinita: st.comeFinita, origini: st.origini, pagine, flusso, pdf, schede, clic, errori, testi,
+      nomi: Array.isArray(nomi) ? nomi.map(String) : [] };
     const r = RegistraAnonimo.anonimizza(raccolta, { vocabolario, ...opz });
     const zip = RegistraAnonimo.creaZip(r.files, new Date(st.inizio));
     return { zip, r };

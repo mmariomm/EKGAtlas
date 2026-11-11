@@ -132,10 +132,31 @@ writeFileSync(join(root, "extension/ponte-host.js"),
     for (const m of core.slice(a, b).matchAll(/\]:\s*"([^"]+)"/g)) tieni(m[1]);
   }
   const parole = new Set();
-  for (const t of testi) for (const w of t.normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase().split(/[^A-Z0-9']+/)) if (w.length >= 2 && !PAROLE_FINTE.has(w)) parole.add(w);
+  const metti = (t) => { for (const w of t.normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase().split(/[^A-Z0-9']+/)) if (w.length >= 2 && !PAROLE_FINTE.has(w)) parole.add(w); };
+  for (const t of testi) metti(t);
+  // Le parole che il programma conosce e che nel Registro stanno in maiuscolo in mezzo a una
+  // riga («ERRORE GRAVE», «SCOMPENSO CARDIACO», «KETOROLAC TROMETAMINA»): non persone. Solo le
+  // parole, non le frasi: i quesiti e i pacchetti, le aree, i consensi (core.js), i fogli di
+  // dimissione e l'esame obiettivo (src/); e i reparti e le parole cliniche che lì non ci sono.
+  {
+    const stringhe = (o, out = []) => { if (typeof o === "string") out.push(o); else if (o && typeof o === "object") for (const x of Object.values(o)) stringhe(x, out); return out; };
+    const blocco = (inizio, fine) => {
+      const a = core.indexOf(inizio), b = a < 0 ? -1 : core.indexOf(fine, a);
+      if (a < 0 || b < 0) { console.error("registra-vocabolario: non trovato in core.js: " + inizio); process.exit(1); }
+      return core.slice(a, b);
+    };
+    const daCore = [
+      ...blocco("const QUESITI_DEFAULT = [", "];").matchAll(/"([^"]+)"/g), ...blocco("const PACCHETTI = [", "\n  ];").matchAll(/\bq: "([^"]+)"/g),
+      ...blocco("const AREE_TITOLO = {", "};").matchAll(/: "([^"]+)"/g), ...blocco("const CONSENSI = [", "\n  ];").matchAll(/\b(?:nome|esteso): "([^"]+)"/g),
+    ].map((m) => m[1]);
+    const REPARTI_E_CLINICA = "ERRORE GRAVE MEDICINA CHIRURGIA GENERALE CARDIOLOGIA COMPLETO GLICEMIA SCOMPENSO KETOROLAC PARACETAMOLO "
+      + "ORTOPEDIA NEUROLOGIA PEDIATRIA GINECOLOGIA OSTETRICIA UROLOGIA GASTROENTEROLOGIA PNEUMOLOGIA NEFROLOGIA RIANIMAZIONE OCULISTICA "
+      + "OTORINOLARINGOIATRIA PSICHIATRIA DERMATOLOGIA ONCOLOGIA EMATOLOGIA GERIATRIA NEUROCHIRURGIA CARDIOCHIRURGIA VASCOLARE INTENSIVA CORONARICA";
+    for (const t of [...stringhe(dimissioni), ...stringhe(eo), ...daCore, REPARTI_E_CLINICA]) metti(t);
+  }
   const icone = Object.keys(JSON.parse(readFileSync(join(dir, "_icone.json"), "utf8")));
   writeFileSync(join(root, "extension/registra-vocabolario.json"), JSON.stringify({
-    nota: "Generato da tools/build.mjs: le parole delle pagine di esempio (esempi-gestionale/) e del catalogo. Il registratore le tiene.",
+    nota: "Generato da tools/build.mjs: le parole delle pagine di esempio (esempi-gestionale/), del catalogo e del programma (src/: esami, quesiti, aree, consensi, fogli, esame obiettivo), più reparti e parole cliniche. Il registratore le tiene.",
     testi: [...testi].sort(), parole: [...parole].sort(), codici: [...codici].sort(), icone: icone.sort(),
   }) + "\n");
 }
