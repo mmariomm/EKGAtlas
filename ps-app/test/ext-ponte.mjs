@@ -1005,6 +1005,26 @@ check(rxNuovoPrima && await finche(visteRx, 8000) && !(await nuovoRx()),
   const tx = await tel.evaluate(() => document.body.innerText);
   check(/ZQCORPO/.test(tx) && /RX TORACE[^\n]*22\/08\/2026/.test(tx) && !/ZQINTESTA|ZQREPARTO|ZQMODALITA|ZQOPER|ZQPIEDE/.test(tx),
     `il telefono mostra della radiografia la riga dell'esame e il corpo, non l'anagrafica né l'operatore né il piè di pagina (${tx.match(/ZQ\w+/g)} // ${tx.replace(/\s+/g, " ").slice(0, 700)})`);
+  // Il testo nella scheda del paziente è già quello che mostra il PC («mostrato»): il telefono non lo
+  // ritaglia (qui la firma che il RIS ha scritto fra i trattini, che il PC mostra, resta anche lì).
+  // Un testo salvato prima del taglio, senza il segno, si taglia una volta.
+  const RIGA = "69-140 RX TORACE (A6900) 22/08/2026 03:10";
+  for (const [mostrato, testo, resta, via, cosa] of [
+    [true, [RIGA, "Torace ZQCORPO nei limiti.", "Dott. Zqfirma"], /ZQCORPO[\s\S]*Zqfirma/, null, "già tagliato sul PC: com'è, firma compresa"],
+    [false, ["OSPEDALE ZQINTESTA", RIGA, "Torace ZQCORPO nei limiti."], /ZQCORPO/, /ZQINTESTA/, "salvato prima del taglio: tagliato una volta, via l'intestazione"]]) {
+    await sw.evaluate(([id, testo, mostrato]) => chrome.storage.local.get("storicoArch").then((o) => {
+      for (const r of Object.values(o.storicoArch || {})) r.referti = [{ id, quando: "2026-08-22 03:10:00.0", titolo: "RX TORACE", sistema: "HL7RIS", testo, ...(mostrato ? { mostrato } : {}) }];
+      return chrome.storage.local.set(o);
+    }), [ID_RX, testo.join("\n"), mostrato]);
+    await tocca(tel, '[data-a="indietro"]'); await aspettaTel(tel, /BIANCHI ANNA/);
+    const n = inoltrati.length;
+    await tocca(tel, '.paz[data-ep="999001"]'); await aspettaTel(tel, /RX TORACE/, 20000);
+    await finche(() => inoltrati.length >= n + 2, 15000); await sospendi(500);
+    await tocca(tel, '.ref:has-text("RX TORACE")');
+    if (!(await aspettaTel(tel, /ZQCORPO/, 4000))) { await tocca(tel, '.ref:has-text("RX TORACE")'); await aspettaTel(tel, /ZQCORPO/, 8000); }
+    const t = await tel.evaluate(() => document.body.innerText);
+    check(resta.test(t) && !(via && via.test(t)), `il testo dalla scheda del paziente, ${cosa} (${t.match(/ZQ\w+|Zqfirma/g)})`);
+  }
 }
 {
   // «● 2 nuovi» davanti sul telefono per qualche secondo vale come la finestra del PC aperta sugli Esiti:

@@ -196,7 +196,7 @@ const ESAME_LAB = "0-16 BILIRUBINA (450008) 28/09/26 10.06 28/09/26 10:06", ESAM
 for (const [nome, r, atteso] of [["senza trattini (laboratorio)", [...TESTA, ESAME_LAB, "OPERATORE 10"], [ESAME_LAB]],
   ["senza riga d'esame", [...TESTA, SEP, "Testo", SEP], ["Testo"]], ["trattini dispari", [...TESTA, ESAME_RX, SEP, "Testo"], [ESAME_RX, "Testo"]],
   ["esami e corpi che non tornano", [...TESTA, ESAME_RX, ESAME_BA, SEP, "Testo", SEP], [ESAME_RX, ESAME_BA, "Testo"]]]) {
-  const x = await prova((q) => refertoScrittoRx(q), r);
+  const x = await prova((q) => refertoScrittoRx(q, { nome: "ROSSI MARIO" }), r);   // (il pannello passa sempre il nome del paziente)
   check(!x.tagliato && JSON.stringify(x.righe) === JSON.stringify(atteso), `struttura non riconosciuta (${nome}): via anagrafica e trattini, resta il resto (got: ${JSON.stringify(x.righe)})`);
 }
 // i referti così come arrivano dal PDF (RIGHE: intestazione, quesito, titolo, corpo, firma): il nome, l'ospedale e il medico non ci sono più
@@ -211,8 +211,39 @@ check(JSON.stringify(identOut) === JSON.stringify(["RADIOGRAFIA TORACE", "Opacit
 const CLINICA = ["RX TORACE", "Paziente collaborante.", "Paziente: non collaborante, in barella.", "Età non determinabile.", "Il medico curante è informato dei reperti.", "Si consiglia controllo.", "Sesso e età compatibili."];
 const clin = await prova((r) => refertoScrittoRx(r, { nome: "ROSSI MARIO" }).righe, CLINICA);
 check(JSON.stringify(clin) === JSON.stringify(CLINICA), `le righe cliniche che somigliano alla cornice restano tutte (got: ${JSON.stringify(clin)})`);
-const tutta = await prova((r) => refertoScrittoRx(r, { nome: "ROSSI MARIO" }).righe, ["Paziente: ROSSI MARIO", "Nato il 01/01/1980"]);
+// …anche scritte tutte in maiuscolo, come molti referti: via la cornice, mai una riga del referto
+const MAIUSCOLA = ["AZIENDA SOCIO SANITARIA TERRITORIALE", "U.O.C. RADIOLOGIA", "PAZIENTE: ROSSI MARIO", "NATO IL 01/01/1980", "SESSO: M", "ETÀ: 45 ANNI", "RX TORACE",
+  "PAZIENTE: NON COLLABORANTE", "EPISODIO DI DOLORE TORACICO", "ETÀ OSSEA CORRISPONDENTE A 12 ANNI", "SESSO E ETÀ COMPATIBILI", "SENI COSTOFRENICI LIBERI.", "IL MEDICO RADIOLOGO", "DOTT. MARIO BIANCHI"];
+const maiu = await prova((r) => refertoScrittoRx(r, { nome: "ROSSI MARIO" }).righe, MAIUSCOLA);
+check(JSON.stringify(maiu) === JSON.stringify(MAIUSCOLA.slice(6, 12)), `in maiuscolo: via intestazione, identità e firma, il referto resta tutto (got: ${JSON.stringify(maiu)})`);
+// dopo la firma: si toglie solo una riga che è firma anche lei, mai una che «sembra un nome»
+for (const [nome, r, atteso] of [
+  ["un'aggiunta in maiuscolo", ["RX BACINO", "Frattura della branca ileo-pubica destra.", "Dott. Bianchi", "FRATTURA COMPOMESSA", "CONTROLLO TC"], null],
+  ["un addendum", ["RX TORACE", "Opacità basale destra.", "Il Medico Dott. Mario Bianchi", "ADDENDUM", "SI SEGNALA PNX APICALE DESTRO", "COMUNICATO AL MEDICO DI PS"], null],
+  ["parole con le iniziali maiuscole", ["RX TORACE", "Opacità basale.", "Dott. Bianchi", "Nessuna Variazione"], null],
+  ["una comunicazione col titolo", ["RX TORACE", "PNX APICALE DESTRO.", "DOTT. ROSSI INFORMATO TELEFONICAMENTE", "DOTT. BIANCHI"], ["RX TORACE", "PNX APICALE DESTRO.", "DOTT. ROSSI INFORMATO TELEFONICAMENTE"]],
+  ["una frase in testa", ["Struttura ossea regolare.", "Nessuna frattura."], null]]) {
+  const x = await prova((q) => refertoScrittoRx(q, { nome: "VERDI LUCA" }).righe, r);
+  check(JSON.stringify(x) === JSON.stringify(atteso || r), `${nome}: resta (got: ${JSON.stringify(x)})`);
+}
+const tutta =await prova((r) => refertoScrittoRx(r, { nome: "ROSSI MARIO" }).righe, ["Paziente: ROSSI MARIO", "Nato il 01/01/1980"]);
 check(tutta.length === 2, "se tutto sembrasse cornice, non si mostra niente di meno: resta com'era");
+// un secondo taglio non toglie più niente: lo stesso testo sul PC e, dalla scheda, sul telefono
+const FIRMA_IN_MEZZO = ["RX TORACE", "Opacità basale destra.", "Il Medico", "SENI LIBERI", "OMBRA CARDIACA NEI LIMITI", "NON PNX", "NON VERSAMENTO", "CUORE NORMALE", "Dott. Rossi"];
+const meta = await prova((r) => { const a = refertoScrittoRx(r, { nome: "VERDI LUCA" }).righe; return [a, refertoScrittoRx(a, { nome: "VERDI LUCA" }).righe]; }, FIRMA_IN_MEZZO);
+check(JSON.stringify(meta[0]) === JSON.stringify(FIRMA_IN_MEZZO.slice(0, 8)) && JSON.stringify(meta[1]) === JSON.stringify(meta[0]),
+  `una firma in mezzo: via solo quella in fondo, e tagliato di nuovo resta uguale (got: ${meta.map((x) => x.length).join(" → ")} righe)`);
+const CAMPIONI = [RIGHE, RIGHE_ESEMPIO, RIGHE_ALTRO, IDENT, CLINICA, MAIUSCOLA, RX1, RX2, RX2B, FIRMA_IN_MEZZO,
+  ["ECOGRAFIA ADDOME COMPLETO", "Fegato di dimensioni ed ecostruttura nei limiti.", "Conclusioni: ecografia addominale nei limiti."],
+  [...TESTA, ESAME_LAB, "OPERATORE 10"], [...TESTA, SEP, "Testo", SEP], [...TESTA, ESAME_RX, SEP, "Testo"], [...TESTA, ESAME_RX, ESAME_BA, SEP, "Testo", SEP],
+  ["RX BACINO", "Frattura della branca ileo-pubica destra.", "Dott. Bianchi", "FRATTURA COMPOMESSA", "CONTROLLO TC"],
+  ["RX TORACE", "PNX APICALE DESTRO.", "DOTT. ROSSI INFORMATO TELEFONICAMENTE", "DOTT. BIANCHI"], ["Struttura ossea regolare.", "Nessuna frattura."],
+  ["Paziente: ROSSI MARIO", "Nato il 01/01/1980"]];
+const stabili = await prova((tutti) => tutti.map((r) => {
+  const a = refertoScrittoRx(r, { nome: "ROSSI MARIO" }).righe;
+  return JSON.stringify(refertoScrittoRx(a, { nome: "ROSSI MARIO" }).righe) === JSON.stringify(a);
+}), CAMPIONI);
+check(stabili.every(Boolean), `tagliare due volte è tagliare una volta, su tutti i campioni (${stabili.filter(Boolean).length}/${CAMPIONI.length})`);
 
 console.log("\nla riga di anteprima di un referto");
 const ante = (r) => prova((q) => anteprimaReferto(q), r);
@@ -221,6 +252,12 @@ check(await ante(SENZA) === "Non focolai a carattere broncopneumonico.", "né il
 check(await ante(["RX TORACE", "Torace: nulla di rilevante.", "Conclusioni: quadro nei limiti."]) === "quadro nei limiti.", "le conclusioni, se ci sono, su una riga");
 check(await ante(["Conclusioni:", "Polmonite basale destra.", "Controllo in 7 giorni."]) === "Polmonite basale destra.", "«Conclusioni:» da sola: la riga dopo");
 check(await ante(["RX BACINO", "Torace: nulla di rilevante."]) === "Torace: nulla di rilevante.", "«Torace: …» è un reperto, non un'etichetta");
+check(await ante(["69-35 RX TORACE (6979) 01/10/2026 10:51", "NON FOCOLAI BRONCOPNEUMONICI IN ATTO.", "SENI COSTOFRENICI LIBERI."]) === "NON FOCOLAI BRONCOPNEUMONICI IN ATTO.",
+  "un referto tutto maiuscolo: la sua prima frase, non la riga dell'esame");
+check(await ante(["U.O.C. RADIOLOGIA DIAGNOSTICA", "RADIOGRAFIA TORACE 2 PROIEZIONI", "NON PNX.", "OMBRA CARDIACA NEI LIMITI."]) === "OMBRA CARDIACA NEI LIMITI.",
+  "in maiuscolo, né l'intestazione del reparto né il titolo dell'esame");
+check(await ante(["TORACE IN 2 PROIEZIONI", "69-35 RX TORACE", "Non focolai in atto."]) === "Non focolai in atto.",
+  "un titolo maiuscolo sopra un referto con le minuscole: resta la frase del referto");
 
 console.log("\nil referto è di questo paziente?");
 const ROSSI = { cf: "SMPRSS80A01F205X", nome: "ROSSI MARIO", nascita: "01/01/1980" };

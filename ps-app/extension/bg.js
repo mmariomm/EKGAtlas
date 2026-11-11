@@ -940,8 +940,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
 
   // «Dimentica i dati…» (⋯): schede cliniche, referti salvati, schede dietro
   // finite, chi aprì lo storico, ordini finiti e quello che il ponte ne
-  // ricorda. Restano stampanti, portale, associazione col telefono, e un
-  // ordine che non ha finito.
+  // ricorda, le letture di cartella e terapie per il telefono. Restano
+  // stampanti, portale, associazione col telefono, e un ordine che non ha finito.
   if (msg.t === "resetPazienti") {
     (async () => {
       await inFila(async () => {
@@ -958,8 +958,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
         for (const rec of l.filter((x) => !aperto.has(x.stato))) await togli(l, rec);
         await ordScrivi(l);
       });
-      // e la registrazione, che ha le pagine vere dei pazienti
+      // e la registrazione, che ha le pagine vere dei pazienti, e quello che il
+      // ponte tiene in memoria per il telefono (cartella, terapie, le sue note)
       if (typeof regCancella === "function") await regCancella().catch(() => {});
+      if (typeof ponteDimentica === "function") await ponteDimentica().catch(() => {});
       reply({ ok: true });
     })().catch(() => reply({ ok: false }));
     return true;
@@ -2254,7 +2256,7 @@ chrome.runtime.onMessage.addListener(ordMessaggio);
 // ruota, dove } (i nomi delle stampanti); `stampaEsito` = com'è andata l'ultima.
 // Scelte le due stampanti, con l'aiutante, la stampa è automatica: non c'è un
 // interruttore (il dialogo del browser è il ripiego, senza aiutante o senza le
-// due stampanti). `attiva: false`, l'interruttore di prima, se ne va una volta.
+// due stampanti). `attiva`, l'interruttore di prima, se ne va una volta (stampaMigra).
 const OSPITE = "it.psassist.stampa";
 const STAMPA_PDF_MAX = 25 * 1024 * 1024;   // come l'aiutante
 const STAMPA_ATTESA = 90e3;   // l'aiutante finisce entro 40 secondi; oltre questi, l'esito è sconosciuto
@@ -2291,9 +2293,17 @@ async function stampaScelte() {
   const s = (await chrome.storage.local.get("stampa")).stampa || {};
   return s.etichette && s.a4 ? s : null;
 }
+// L'interruttore di prima se ne va. Chi l'aveva spento stampava col dialogo del
+// browser, e così resta finché non risceglie le due stampanti in Impostazioni:
+// con lui se ne vanno i loro nomi (mai una stampa automatica che non ha
+// chiesto). Una stazione dell'infermeria le usava comunque per gli altri: le tiene.
 async function stampaMigra() {
-  const s = (await chrome.storage.local.get("stampa")).stampa;
-  if (s && "attiva" in s) { const { attiva, ...resto } = s; await chrome.storage.local.set({ stampa: resto }); }
+  const o = await chrome.storage.local.get(["stampa", "stazione.qui"]);
+  const s = o.stampa;
+  if (!s || !("attiva" in s)) return;
+  const { attiva, ...resto } = s;
+  if (attiva === false && !o["stazione.qui"]) { delete resto.etichette; delete resto.a4; }
+  await chrome.storage.local.set({ stampa: resto });
 }
 stampaMigra().catch(() => {});
 // SumatraPDF gira ogni etichetta più larga che alta: coi driver delle

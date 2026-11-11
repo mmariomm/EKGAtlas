@@ -438,6 +438,15 @@ if (await prova("la forma del pannello si sceglie in Impostazioni, e la scheda l
   installa(false);
   await scelte(null);
   await sw.evaluate(() => chrome.storage.local.remove("forma"));
+  // una scheda del portale aperta per prima dopo l'aggiornamento (un'altra origine, con una memoria
+  // sua, vuota) non sceglie la forma per il gestionale: la scelta di prima la porta solo il gestionale
+  await ctx.route("http://10.11.0.151/**", (r) => r.fulfill({ status: 200, headers: { "content-type": "text/html" }, body: "<!doctype html><title>Portale</title><body><p>portale</p></body>" }));
+  const por = await ctx.newPage();
+  await por.goto("http://10.11.0.151/clin-port/elenco-documenti");
+  const giraLi = await por.waitForSelector("#psassist-attesa", { state: "attached", timeout: 8000 }).then(() => true).catch(() => false);
+  check(giraLi && (await formaSw()) === undefined, `una scheda del portale aperta per prima (lì l'estensione gira: ${giraLi}) non scrive la forma (got ${await formaSw()})`);
+  await por.close();
+  await ctx.unroute("http://10.11.0.151/**");
   await suPagina(doc, A.patientUrl);
   await doc.evaluate(() => { localStorage.removeItem("psassist:forma.v1"); localStorage.removeItem("psassist:win.v1"); });
   await suPagina(doc, A.patientUrl);
@@ -677,28 +686,53 @@ if (await prova("aiutante disinstallato con le stampanti ancora scelte: dialogo,
 }
 
 // ---- 6. niente interruttore: scelte le due stampanti, la stampa è automatica ----
-// (una «spenta» di prima della 3.86 non vale più, e se ne va dalla memoria)
-if (await prova("niente interruttore: la stampa automatica «spenta» di prima torna da sola")) {
+// L'interruttore di prima della 3.86 se ne va dalla memoria. Un PC che l'aveva
+// spento resta col dialogo del browser, com'era, finché non risceglie le
+// stampanti in Impostazioni (se ne vanno anche i loro nomi); uno acceso resta automatico.
+const impostazioniDicono = async () => {
+  if (!impostazioni || impostazioni.isClosed()) { impostazioni = await ctx.newPage(); await impostazioni.goto(`chrome-extension://${ID}/portale.html`); }
+  else await impostazioni.reload();
+  await impostazioni.waitForFunction(() => !/controllo/.test(document.getElementById("sst").textContent), null, { timeout: 15000 }).catch(() => {});
+  return { interruttore: await impostazioni.locator("#sauto").count(), stato: (await impostazioni.locator("#sst").innerText()).trim() };
+};
+if (await prova("niente interruttore: la stampa automatica «spenta» di prima resta col dialogo, l'«accesa» resta automatica")) {
   installa(true);
-  await scelte({ ...ATTIVA, attiva: false });
+  // (una stazione dell'infermeria le sue stampanti le usava comunque, per gli altri: le tiene)
+  await sw.evaluate((s) => chrome.storage.local.set({ stampa: s, "stazione.qui": { dal: Date.now(), conferma: true } }), { ...ATTIVA, attiva: false });
+  await sw.evaluate(() => stampaMigra());
+  const sta = (await memoria()).stampa || {};
+  await sw.evaluate(() => chrome.storage.local.remove("stazione.qui"));
+  check(!("attiva" in sta) && sta.etichette === ATTIVA.etichette && sta.a4 === ATTIVA.a4, `«spenta» su una stazione: l'interruttore se ne va, le stampanti restano (got ${JSON.stringify(sta)})`);
+  await scelte({ ...ATTIVA, attiva: false, ruota: "no" });
+  await sw.evaluate(() => stampaMigra());
+  let m = (await memoria()).stampa || {};
+  check(!("attiva" in m) && !m.etichette && !m.a4 && m.ruota === "no",
+    `«spenta»: l'interruttore se ne va, e con lui i nomi delle due stampanti; il resto resta (got ${JSON.stringify(m)})`);
   await suPagina(doc, A.patientUrl);
   const voci = await menu(doc);
   check(!(await $panel(doc, "#stautosw").count()) && !/Stampa automatica/.test(voci), `nel menu ⋯ niente interruttore «Stampa automatica» (got: ${voci})`);
   await $panel(doc, "#menubtn").click();
+  check(!(await stampantina(doc)), "in intestazione niente stampantina: non è automatica");
+  await ristampaDallaPagina(doc);
+  await aspettaScheda(doc, "s.stato === 'stampo'");
+  const s = await scheda(doc);
+  check(s && s.dialoghi === 1 && lavori().length === 0, `la ristampa passa dal dialogo del browser, come prima; all'aiutante niente (got ${JSON.stringify(s)} · ${lavori().length})`);
+  await chiudiStampa(doc);
+  let imp = await impostazioniDicono();
+  check(!imp.interruttore && /scegli le due stampanti$/.test(imp.stato), `e le impostazioni: niente interruttore, «scegli le due stampanti» (got ${imp.stato})`);
+  // accesa: l'interruttore se ne va, le stampanti restano, e stampa da sola
+  await scelte({ ...ATTIVA });
+  await sw.evaluate(() => stampaMigra());
+  m = (await memoria()).stampa || {};
+  check(!("attiva" in m) && m.etichette === ATTIVA.etichette && m.a4 === ATTIVA.a4, `«accesa»: l'interruttore se ne va, le stampanti restano (got ${JSON.stringify(m)})`);
+  await suPagina(doc, A.patientUrl);
+  await apriPannello(doc);
   check(!!(await finche(() => stampantina(doc), 3000)), "la stampantina in intestazione c'è: la stampa è automatica");
   await azzeraStampe(doc);
   const { rec } = await ristampaSenzaScheda(doc);
-  check(!!rec && rec.stato === "avviso" && lavori().length === 2 && (await stampe(doc)).length === 0,
-    `la scelta «spenta» di prima non vale più: da sola, due fogli, niente dialogo (got ${lavori().length})`);
-  await sw.evaluate(() => stampaMigra());
-  const m = (await memoria()).stampa || {};
-  check(!("attiva" in m) && m.etichette === ATTIVA.etichette && m.a4 === ATTIVA.a4, `e la scelta di prima se ne va dalla memoria, le stampanti restano (got ${JSON.stringify(m)})`);
-  if (impostazioni && !impostazioni.isClosed()) {
-    await impostazioni.reload();
-    await impostazioni.waitForFunction(() => !/controllo/.test(document.getElementById("sst").textContent), null, { timeout: 15000 }).catch(() => {});
-    check((await impostazioni.locator("#sauto").count()) === 0 && /attiva$/.test((await impostazioni.locator("#sst").innerText()).trim()),
-      `e le impostazioni: niente interruttore, «Stampa automatica: attiva» (got ${(await impostazioni.locator("#sst").innerText()).trim()})`);
-  }
+  check(!!rec && rec.stato === "avviso" && lavori().length === 2 && (await stampe(doc)).length === 0, `e la ristampa va da sola: due fogli, niente dialogo (got ${lavori().length})`);
+  imp = await impostazioniDicono();
+  check(!imp.interruttore && /attiva$/.test(imp.stato), `e le impostazioni: niente interruttore, «Stampa automatica: attiva» (got ${imp.stato})`);
 }
 
 // ---- 7. l'ordine in sottofondo, il medico lontano --------------------------
@@ -1964,8 +1998,9 @@ if (await prova("doppio clic sulle icone di stampa del gestionale: uno apre il P
   check(s.link.length === 2 && s.link.every((x) => x.vero && !x.prev) && lavori().length === 0,
     `«Stampa Etichette» di un altro sito: i due clic arrivano al link com'è, niente stampa (got ${JSON.stringify(s.link)})`);
 
-  // la stampa automatica spenta: nessuna attesa, il doppio clic è quello della pagina
-  await scelte({ ...ATTIVA, attiva: false });
+  // senza le due stampanti (com'è, dopo l'aggiornamento, un PC che la stampa automatica l'aveva spenta):
+  // nessuna attesa, il doppio clic è quello della pagina
+  await scelte(null);
   await finche(async () => !(await stampantina(doc)), 3000);
   await sospendi(500);
   await daCapo();

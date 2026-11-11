@@ -1978,14 +1978,20 @@
       const dopo = r[i].replace(/^(?:conclusion[ei]|in conclusione|impressione(?:\s+diagnostica)?)\s*:?\s*/i, "");
       return unaRiga(dopo || r[i + 1] || "");
     }
-    // la riga dell'esame («69-35 RX TORACE (6979) 01/10/2026 10:51») o un titolo tutto maiuscolo
-    const titolo = (x) => /^\d+-\d+\s+\S.*\(\s*[A-Z0-9]+\s*\)\s+\d/i.test(x) || !/[a-zà-ù]/.test(x);
+    const parole = (x) => x.split(/\s+/).length;
+    const minuscole = (x) => /[a-zà-ù]/.test(x);
+    // la riga dell'esame («69-35 RX TORACE (6979) 01/10/2026 10:51») o, tutto maiuscolo, il titolo
+    // dell'esame, l'intestazione del reparto o una riga corta. Una riga maiuscola di tre parole o
+    // più, se no, è il referto: molti li scrivono così («NON FOCOLAI BRONCOPNEUMONICI IN ATTO.»)
+    const titolo = (x) => /^\d+-\d+\s+\S.*\(\s*[A-Z0-9]+\s*\)\s+\d/i.test(x) || (!minuscole(x) && (parole(x) < 3
+      || /^(?:\d+-\d+\s+)?(?:RX|RADIOGRAFIA|TC|TAC|RM|RMN|ECOGRAFIA|ECOCOLORDOPPLER|ECG|ELETTROCARDIOGRAMMA|ANGIO-?TC|MAMMOGRAFIA|U\.\s?O|S\.\s?C|RADIOLOGIA|RADIODIAGNOSTICA|DIAGNOSTICA PER IMMAGINI|REPARTO|SERVIZIO|DIPARTIMENTO|STRUTTURA|UNIT[ÀA] OPERATIVA)\b/.test(x)));
     const meta = /^(?:quesito(?:\s+diagnostico)?|anamnesi|dati\s+clinici|notizie\s+cliniche|tecnica|metodica|indicazione|motivo|richiesta|esame|data|ora|paziente|medico|operatore|modalit[àa]|reparto|confronto|precedenti)(?![A-Za-zÀ-ÿ])[^:]{0,20}:/i;
     const intest = /ospedale|azienda|presidio|\bdott|\bdr\.|medico|paziente|\bnat[oa]\b|\bdata\b|pagina/i;
-    const corpo = r.filter((x) => /[a-zà-ù]/.test(x) && !titolo(x) && !meta.test(x));
-    const parole = (x) => x.split(/\s+/).length;
-    return unaRiga(corpo.find((x) => parole(x) >= 4 && !intest.test(x))
-      || corpo.find((x) => parole(x) >= 2 && !intest.test(x))
+    const corpo = r.filter((x) => !titolo(x) && !meta.test(x) && !intest.test(x));
+    // prima una frase scritta con le minuscole; una riga maiuscola solo se non ce n'è
+    return unaRiga(corpo.find((x) => minuscole(x) && parole(x) >= 4)
+      || corpo.find((x) => minuscole(x) && parole(x) >= 2)
+      || corpo.find((x) => !minuscole(x))
       || r.find((x) => !titolo(x)) || r[0] || "");
   }
   // Al massimo due scaricamenti di referti insieme, per tutta la scheda: un
@@ -7949,16 +7955,26 @@
     // si sono lasciati leggere: il registratore (registra.js) li tiene solo se
     // sta tenendo qualcosa, e nello zip passano dall'anonimizzazione come ogni
     // pagina (testi/registro.txt, testi/diagnosi-N.txt). Il quesito, come in
-    // ⧉ Copia, non esce mai. Le righe vanno a mucchi, ogni secondo e mezzo.
+    // ⧉ Copia, non esce mai. Le righe vanno a mucchi, ogni secondo e mezzo, e
+    // subito quando la pagina se ne va (il gestionale ricarica a quasi ogni
+    // clic): quelle dell'ultimo secondo e mezzo non si perdono. Tutte, a
+    // mucchi di 200.
     registroAlRegistratore(riga) {
       if (!hasExt() || TABELLONE) return;
       (this._regRighe = this._regRighe || []).push(senzaQuesito(String(riga)).slice(0, 2000));
-      if (this._regRigheT) return;
-      this._regRigheT = setTimeout(() => {
-        const righe = this._regRighe.splice(0, 200);
-        this._regRighe = []; this._regRigheT = 0;
-        ask({ t: "regRegistro", righe }).catch(() => {});
-      }, 1500);
+      if (!this._regVia) {
+        this._regVia = true;
+        window.addEventListener("pagehide", () => this.registroManda());
+        document.addEventListener("visibilitychange", () => { if (document.hidden) this.registroManda(); });
+      }
+      if (!this._regRigheT) this._regRigheT = setTimeout(() => this.registroManda(), 1500);
+    }
+    registroManda() {
+      clearTimeout(this._regRigheT);
+      this._regRigheT = 0;
+      const tutte = this._regRighe || [];
+      this._regRighe = [];
+      while (tutte.length) ask({ t: "regRegistro", righe: tutte.splice(0, 200) });
     }
     segnaDiagnosi(d) {
       if (d && hasExt() && !TABELLONE) ask({ t: "regDiagnosi", testo: diagnosiTesto(d) }).catch(() => {});
@@ -12035,8 +12051,9 @@
       await mettiInScheda(chiave, null, (vecchio) => {
         const base = vecchio || vuota;
         const referti = (base.referti || []).filter((r) => r.id !== e.id);
+        // (righe è già il testo che si mostra, refertoMostrato: «mostrato», e nessuno lo ritaglia)
         referti.unshift({ id: e.id, quando: e.when || "", titolo: shortLabel(e.label || ""),
-                          sistema: e.sistema || "", testo: righe.slice(0, 200).join("\n").slice(0, 20000) });
+                          sistema: e.sistema || "", testo: righe.slice(0, 200).join("\n").slice(0, 20000), mostrato: true });
         return { ...base, referti: referti.slice(0, 40), letto: Date.now() };
       });
     }
@@ -14397,7 +14414,8 @@
     // disegno legge. Affianca mette la finestra nella colonna a destra; Al
     // passaggio la rimette al centro, se era lì. Finché in Impostazioni non
     // c'è una scelta, si scrive quella di qui (anche quella migrata dalla
-    // Finestra): la pagina mostra la forma com'è.
+    // Finestra): la pagina mostra la forma com'è. (Solo il gestionale: sul
+    // portale, un'altra origine con una memoria sua, il pannello non c'è.)
     seguiForma() {
       const metti = (f) => {
         if (TABELLONE || !FORME_PANNELLO.includes(f) || f === formaOra()) return;
@@ -14562,7 +14580,14 @@
       // due tocchi: il primo chiede, il secondo (entro pochi secondi) cancella
       $("#resetpaz")?.addEventListener("click", (e) => {
         e.stopPropagation();
-        if (!this.resetArmato()) { this._resetArmato = Date.now(); this.render(); return; }
+        if (!this.resetArmato()) {
+          this._resetArmato = Date.now(); this.render();
+          // passati i 6 secondi il bottone torna «Dimentica i dati…»: mai un «Tocca di nuovo» che non vale più
+          clearTimeout(this._resetArmatoT);
+          this._resetArmatoT = setTimeout(() => { if (this.menuAperto && !this.resetArmato()) this.render(); }, 6050);
+          return;
+        }
+        clearTimeout(this._resetArmatoT);
         this._resetArmato = 0; this.menuAperto = false;
         this.resetDatiPazienti();
       });
@@ -16069,10 +16094,13 @@
     const CF = /\b[A-Z]{6}[0-9LMNPQRSTUV]{2}[A-Z][0-9LMNPQRSTUV]{2}[A-Z][0-9LMNPQRSTUV]{3}[A-Z]\b/;
     const DATA = /\b\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}\b/;
     const PARTICELLE = new Set(["a", "il", "di", "de", "del", "della", "dal", "da", "la", "lo", "in", "van", "von", "dei", "degli", "e"]);
-    // un nome di persona: poche parole, ognuna con l'iniziale maiuscola (o una particella)
+    // il nome dopo un titolo di firma («Dott.», «Il Medico»): poche parole, ognuna con
+    // l'iniziale maiuscola (o una particella) — mai le parole di una comunicazione
+    // («DOTT. ROSSI INFORMATO TELEFONICAMENTE», «MEDICO CURANTE AVVISATO» sono referto)
     const nomeDi = (t) => {
       const w = String(t).replace(/[.,]/g, " ").split(/\s+/).filter(Boolean);
-      return w.length >= 1 && w.length <= 6 && w.every((x) => /^[A-ZÀ-Ü][A-Za-zÀ-ÿ'’-]*$/.test(x) || PARTICELLE.has(x.toLowerCase())) && w.some((x) => /^[A-ZÀ-Ü]/.test(x));
+      return w.length >= 1 && w.length <= 6 && w.every((x) => /^[A-ZÀ-Ü][A-Za-zÀ-ÿ'’-]*$/.test(x) || PARTICELLE.has(x.toLowerCase())) && w.some((x) => /^[A-ZÀ-Ü]/.test(x))
+        && !w.some((x) => /^(?:informat|avvisat|avvertit|contattat|comunicat|chiamat|allertat|sentit|curant)|mente$/i.test(x));
     };
     const norm = (t) => String(t || "").toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^A-Z0-9 ]+/g, " ").trim().replace(/\s+/g, " ");
     const mie = norm(paz && paz.nome).split(" ").filter((x) => x.length >= 2);
@@ -16081,27 +16109,27 @@
       const w = norm(r).split(" ").filter(Boolean);
       return mie.length >= 2 && w.length >= 2 && w.length <= mie.length + 1 && w.every((x) => mie.includes(x)) && mie.every((x) => w.includes(x));
     };
-    // l'identità, dove sta scritta: «Paziente: ROSSI MARIO», «Nato il 01/01/1980», «Codice fiscale …», «Sesso: M»
+    // l'identità, dove sta scritta: «Paziente: ROSSI MARIO», «Nato il 01/01/1980», «Codice fiscale …», «Sesso: M».
+    // Dopo l'etichetta conta solo un valore che è certamente un dato: un codice fiscale, una
+    // data, un numero, M/F, o il SUO nome intero — mai parole maiuscole qualsiasi
+    // («PAZIENTE: NON COLLABORANTE», «ETÀ OSSEA CORRISPONDENTE A 12 ANNI» sono referto)
+    const dato = (v) => !v || CF.test(v.toUpperCase()) || DATA.test(v) || /^\d[\d/.-]*(?:\s*anni)?$/i.test(v)
+      || /^(?:[MF]|maschi(?:o|le)|femmin(?:a|ile))$/i.test(v) || ilSuoNome(v);
     const identita = (r) => {
       if (CF.test(r.toUpperCase()) && !r.toUpperCase().replace(CF, "").replace(/\b(?:CODICE FISCALE|COD(?:\.|ICE)?\s*FISC(?:ALE|\.)?|C\.?\s?F\.?)\s*[:.]?/, "").replace(/[\s:.-]/g, "")) return true;
       if (ilSuoNome(r)) return true;
-      let m = /^(?:paziente|cognome\s+e\s+nome|cognome|nominativo|assistito|sig\.?(?:ra)?)\s*:\s*(.+)$/i.exec(r);
-      if (m) return CF.test(m[1].toUpperCase()) || DATA.test(m[1]) || (nomeDi(m[1]) && m[1].trim().split(/\s+/).length >= 2) || ilSuoNome(m[1]);
-      m = /^(?:nat[oa](?:\s+(?:il|a))?|data\s+di\s+nascita|d\.?\s?n\.?|luogo\s+di\s+nascita|codice\s+fiscale|cod(?:\.|ice)?\s*fisc(?:ale|\.)?|c\.?\s?f\.?|sesso|et[àa]|residen\w+|tessera\s+sanitaria|n\.?\s*episodio|episodio|nosologico|id\s+paziente)(?![A-Za-zÀ-ÿ])\s*[:.]?\s*(.*)$/i.exec(r);
-      if (m) {
-        const v = m[1].trim();
-        return !v || CF.test(v.toUpperCase()) || DATA.test(v) || /^\d+(?:\s*anni)?$/i.test(v) || /^[MF]$/i.test(v) || /^(?:maschio|femmina)$/i.test(v)
-          || (v.split(/\s+/).length <= 5 && v.split(/\s+/).every((x) => /^[A-ZÀ-Ü0-9][A-Za-zÀ-ÿ0-9'’/-]*$/.test(x) || PARTICELLE.has(x.toLowerCase())));
-      }
-      return false;
+      const m = /^(?:paziente|cognome\s+e\s+nome|cognome|nominativo|assistito|sig\.?(?:ra)?)\s*:\s*(.+)$/i.exec(r)
+        || /^(?:nat[oa](?:\s+(?:il|a))?|data\s+di\s+nascita|d\.?\s?n\.?|luogo\s+di\s+nascita|codice\s+fiscale|cod(?:\.|ice)?\s*fisc(?:ale|\.)?|c\.?\s?f\.?|sesso|et[àa]|residen\w+|tessera\s+sanitaria|n\.?\s*episodio|episodio|nosologico|id\s+paziente)(?![A-Za-zÀ-ÿ])\s*[:.]?\s*(.*)$/i.exec(r);
+      return !!m && dato(m[1].trim());
     };
     const esame = (r) => /^\d+-\d+\s+\S.*\(\s*[A-Z0-9]+\s*\)\s+\d{1,2}\/\d{1,2}\/\d{2,4}\s+\d{1,2}[:.]\d{2}/i.test(r);
-    // l'intestazione di chi referta (solo in testa, prima di ogni riga clinica)
-    const intestazione = (r) => /^(?:ospedale|azienda|asst|ats|ausl|asl|presidio|p\.\s?o\.|struttura|u\.\s?o\.\s?c?\.?|unit[àa]\s+operativa|reparto|servizio|dipartimento|istituto|policlinico|casa\s+di\s+cura)\b/i.test(r)
+    // l'intestazione di chi referta (solo in testa, prima di ogni riga clinica) — mai una
+    // frase che finisce col punto: «Struttura ossea regolare.» è referto
+    const intestazione = (r) => !/[a-zà-ù]{3}\.$/i.test(r) && (/^(?:ospedale|azienda|asst|ats|ausl|asl|presidio|p\.\s?o\.|struttura\s+(?:complessa|semplice|dipartimentale)|u\.\s?o\.\s?c?\.?|unit[àa]\s+operativa|reparto|servizio|dipartimento|istituto|policlinico|casa\s+di\s+cura)\b/i.test(r)
       || (/^(?:radiologia|radiodiagnostica|diagnostica\s+per\s+immagini|pronto\s+soccorso)\b\s*(?:[-–—:|]\s*(.*))?$/i.test(r)
         && (!/[-–—:|]/.test(r) || /ospedale|azienda|presidio|asst|ats|\bu\.\s?o\.|reparto|servizio|dipartimento|policlinico/i.test(r)))
       || /^(?:modalit[àa]|operatore|tecnico|esecutore|richiedente|medico\s+richiedente|reparto\s+richiedente|provenienza)(?![A-Za-zÀ-ÿ])/i.test(r)
-      || /^referto(?:\s+(?:radiologico|di\s+radiologia|medico))?\s*:?$/i.test(r);
+      || /^referto(?:\s+(?:radiologico|di\s+radiologia|medico))?\s*:?$/i.test(r));
     // la firma: «Il Medico DOTTORE ESEMPIO», «Dott.ssa A. Bianchi», «Firmato digitalmente da …» — con dopo solo un nome
     const firma = (r) => {
       const m = /^(?:(?:il|la)\s+)?(?:medico(?:\s+(?:refertante|radiologo|specialista))?|radiologo|dirigente\s+medico|refertato\s+da|referto\s+(?:redatto|firmato)\s+da|firmato(?:\s+digitalmente)?(?:\s+da)?|firma|validato(?:\s+da)?|dott\.?(?:ssa)?|dr\.?(?:ssa)?|prof\.?(?:ssa)?)(?![A-Za-zÀ-ÿ])\.?\s*:?\s*(.*)$/i.exec(r);
@@ -16118,10 +16146,10 @@
       if (!(testa && esame(r))) testa = false;
       out.push(r);
     }
-    // 2. la coda: da una riga di firma in poi, se dopo non c'è che firma, nomi, piè di pagina
-    for (let i = Math.max(0, out.length - 6); i < out.length; i++) {
-      if (firma(out[i]) && out.slice(i + 1).every((x) => firma(x) || nomeDi(x))) { out.length = i; break; }
-    }
+    // 2. la coda: le righe di firma in fondo, e solo quelle. Una riga dopo la firma che non è
+    // firma anche lei («ADDENDUM», «FRATTURA COMPOMESSA», «Nessuna variazione») è referto:
+    // resta, e con lei la firma che la precede. (Così un secondo taglio non toglie più niente.)
+    while (out.length && firma(out[out.length - 1])) out.length--;
     return out.length ? out : tutte;
   }
 
@@ -17366,10 +17394,12 @@
       // fiscale fosse noto sta nella scheda col suo nome.
       const perNome = "nome:" + normNome(p.name);
       const altra = perNome !== "nome:" && (!scelta || scelta.chiave !== perNome) && indice.some((v) => v.chiave === perNome) ? await leggi(perNome) : null;
-      // (un testo salvato prima del taglio, con l'intestazione dentro, si taglia anche qui)
+      // Il testo salvato è già quello che il PC mostra («mostrato»): non si ritaglia, o il
+      // telefono direbbe un'altra cosa. Solo un testo salvato prima del taglio, con
+      // l'intestazione dentro, si taglia — una volta, qui.
       for (const s of [altra, st]) for (const x of (s && s.referti) || []) if (x && x.id && x.testo) {
         const rif = referti.find((e) => e.id === x.id);
-        testi.set(x.id, rif && refertoTipo(rif) !== "ecg" ? refertoScrittoRx(String(x.testo).split("\n"), { nome: p.name || "" }).righe.join("\n") : x.testo);
+        testi.set(x.id, rif && refertoTipo(rif) !== "ecg" && !x.mostrato ? refertoScrittoRx(String(x.testo).split("\n"), { nome: p.name || "" }).righe.join("\n") : x.testo);
       }
     }
     const dati = st && st.righe && st.righe.length ? normalizzaStorico(st) : null;
@@ -17404,7 +17434,7 @@
       if (chiave) {
         await mettiInScheda(chiave, null, (vecchio) => {
           const base = vecchio || { paziente: { idMPI: "", cognome: "", nome: p.name || "" }, cf: cfImp, periodo: "", date: [], righe: [], scartate: [], letto: Date.now() };
-          const ref = [{ id: e.id, quando: e.when || "", titolo: shortLabel(e.label || ""), sistema: e.sistema || "", testo }, ...(base.referti || []).filter((r) => r.id !== e.id)];
+          const ref = [{ id: e.id, quando: e.when || "", titolo: shortLabel(e.label || ""), sistema: e.sistema || "", testo, mostrato: true }, ...(base.referti || []).filter((r) => r.id !== e.id)];
           return { ...base, referti: ref.slice(0, 40) };   // (l'ora dei valori resta la loro)
         }).catch(() => {});
       }

@@ -920,7 +920,7 @@ riprende da solo appena l'ordine ha finito. Si ferma se lasci il paziente (chi e
 parte). **Quello che da solo non è riuscito** (un referto, i valori) non si ritenta a ogni giro:
 da solo al più **due volte**, dopo 2 e dopo 10 minuti (i valori anche quando la loro firma nella
 pagina cambia); un tocco o un bottone ci provano sempre; un PDF che si è rivelato di un altro
-paziente da solo non si riprende più (un tocco lo riprende). Il laboratorio a metà,
+paziente da solo non si riprende più (un tocco, in quella scheda, ne ridice l'errore; in una scheda nuova lo riscarica e lo ricontrolla). Il laboratorio a metà,
 con la pagina aperta, si ricontrolla ogni 10 minuti **solo mentre la guardi** (tornandoci, se ne
 sono passati 10), e dopo due ricontrolli senza niente di nuovo smette: lo rifà aprire gli Esiti. Mentre lavora, accanto a **↻** c'è un discreto **«↓ 2»** — quanti ne restano —, e se il Lab
 non ha ancora una tabella dice **«Leggo i valori…»**; se non c'è proprio niente da leggere (né
@@ -942,7 +942,7 @@ richiesta da confermare.
   finestra Risultati c'è) non aspetta più: **«parziale 15:11»**, in grigio, **senza orologio** —
   i valori sono già in tabella. Gli orologi di ECG e immagini restano.
 - **Refertati**: una riga per referto, con data e ora, **una riga** di testo — le conclusioni se
-  ci sono, se no la prima frase del referto (mai il titolo o la riga dell'esame, né «Quesito: …») e «nuovo» finché non l'hai aperto. Il più recente **non ancora
+  ci sono, se no la prima frase del referto, anche scritto tutto in maiuscolo (mai il titolo o la riga dell'esame, né «Quesito: …») e «nuovo» finché non l'hai aperto. Il più recente **non ancora
   letto** che ha un testo (ECG, radiografia) è già **aperto**, finché non ne apri o chiudi uno
   tu. Un tocco apre il **testo lì
   sotto** (un secondo tocco lo richiude), con **⧉ Copia** (ora, esame e paziente in testa, per il
@@ -957,10 +957,12 @@ richiesta da confermare.
   data e ora) e il referto fra le due righe di trattini, mai l'anagrafica in testa, la modalità,
   l'operatore o il piè di pagina (stesso taglio sul PC, sul telefono e nella copia); se la struttura
   del PDF non è riconosciuta non si taglia a corpo, ma se ne vanno le righe che sono **certamente**
-  cornice — nome e dati anagrafici del paziente (nato il, codice fiscale, sesso, età, episodio),
-  intestazione di ospedale e reparto in testa, «Il Medico … / Dott. …» e il piè di pagina in coda,
-  i trattini — e **mai una riga di cui non si è sicuri** (il quesito, il titolo e ogni riga
-  clinica restano; se tutto sembrasse cornice, resta tutto). Gli altri documenti (consulenze…) stanno in **Altri
+  cornice — nome e dati anagrafici del paziente (nato il, codice fiscale, sesso, età, episodio:
+  solo se dopo l'etichetta c'è un dato, cioè codice fiscale, data, numero, M/F o il suo nome),
+  intestazione di ospedale e reparto in testa, «Il Medico … / Dott. …» e il piè di pagina in coda
+  (solo se dopo non c'è altro), i trattini — e **mai una riga di cui non si è sicuri** (il
+  quesito, il titolo e ogni riga clinica restano, anche scritte in maiuscolo; se tutto sembrasse
+  cornice, resta tutto). Gli altri documenti (consulenze…) stanno in **Altri
   documenti**, e si aprono nella loro scheda.
 - **Di chi è il referto**: prima di mostrare un testo, il codice fiscale scritto nel PDF (o nome e
   data di nascita) si confronta col paziente. Fra i PDF che il portale mostra, quello rimasto
@@ -1101,12 +1103,13 @@ attivi. L'elenco tiene un giorno e centocinquanta pazienti: un turno è di dodic
 pazienti scadono da soli in 12–24 ore.
 
 **⋯ → Dimentica i dati…** è l'**unico** comando che cancella: due
-tocchi («Dimentico tutto? Tocca di nuovo»), poi «Dati dei pazienti dimenticati · **Annulla**» per 8 secondi, come per ogni altra cosa
+tocchi («Dimentico tutto? Tocca di nuovo»: vale 6 secondi, poi il bottone torna «Dimentica i dati…»), poi «Dati dei pazienti dimenticati · **Annulla**» per 8 secondi, come per ogni altra cosa
 che si può rimpiangere: Annulla rimette tutto com'era (le altre schede e l'estensione si
 puliscono finiti gli 8 secondi, o subito se cambi pagina). Via **tutto** quello che sa dei pazienti e del turno — elenco, aree e posti
 nelle stanze, stato degli esami, «Da fare», note e segni, valori, referti salvati e il loro testo, schede
 cliniche, ordini finiti, richieste da confermare, quesiti, la memoria di ogni scheda aperta, gli
-ordini che ricorda il Ponte, la registrazione non salvata e gli ultimi minuti di quella automatica (gli zip salvati,
+ordini che ricorda il Ponte, le letture di cartella e terapie che il Ponte tiene per l'iPhone e le
+sue note coi nomi, la registrazione non salvata e gli ultimi minuti di quella automatica (gli zip salvati,
 anonimizzati, restano). **Restano**: stampanti e
 stampa automatica, indirizzo del portale, associazione con l'iPhone, fogli di dimissione ed EO,
 le stanze, le opzioni delle aree, la finestra. Non c'è mentre questa scheda manda un giro (un
@@ -1767,7 +1770,8 @@ Windows), con **Stampa una pagina di prova** per ciascuna. Da lì:
 - **Niente interruttore**: scelte le due stampanti, con l'aiutante, la stampa è automatica. Il
   dialogo del browser è il ripiego: senza aiutante, senza una delle due stampanti, o col preferito
   (bookmarklet), tutto è esattamente com'era — il dialogo, «Stampa finita». (Chi l'aveva spenta
-  dal ⋯ di prima la ritrova automatica: la scelta vecchia se ne va dalla memoria.) Le stampanti si
+  dal ⋯ di prima resta col dialogo: con la scelta vecchia se ne vanno i nomi delle due stampanti,
+  finché non le risceglie; una stazione dell'infermeria le tiene.) Le stampanti si
   scelgono solo in **Impostazioni**; dove stampano gli ordini, **Stampa su**, solo nel ⋯.
 - **In Windows non resta acceso niente.** Nessun programma che gira, nessuna icona: Chrome avvia
   l'aiutante solo per il secondo in cui stampa un foglio, e l'aiutante esce appena ha risposto.
