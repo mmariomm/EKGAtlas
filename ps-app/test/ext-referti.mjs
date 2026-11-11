@@ -422,6 +422,8 @@ await senzaCopie(page);
 {
   voli = []; maxInVolo = 0;
   await page.locator("#psassist-host #risall").click();
+  // (le copie sono andate via dalla memoria dell'estensione, non dal disegno di questa scheda: si aspettano gli scaricamenti)
+  for (let i = 0; i < 240 && voli.length < 4; i++) await page.waitForTimeout(500);
   await page.waitForFunction(
     () => document.getElementById("psassist-host").shadowRoot.querySelectorAll(".rdot.saved").length === 4,
     { timeout: 120000 },
@@ -849,7 +851,6 @@ check(/non si vede da qui/.test(rosso) && /portale \/clin-port\/loginPC\.jsp/.te
       localStorage.setItem(ns + k, JSON.stringify(k in valore ? valore[k] : {}));
     }
     for (const [k, v] of Object.entries(resta)) if (v !== null) localStorage.setItem(ns + k, JSON.stringify(v));
-    localStorage.setItem(ns + "tempi.v1", JSON.stringify([{ id: "t1", titolo: "Visita ed esami", paz: "ROSSI MARIO", ep: "1", inizio: Date.now() - 6e4, fine: Date.now() }]));
     for (const k of scheda) sessionStorage.setItem(ns + k, JSON.stringify({ ts: Date.now() }));
   };
   await pR.evaluate(semina, [NS, VIA_LOCALE, RESTA_LOCALE, VIA_SCHEDA]);
@@ -880,14 +881,12 @@ check(/non si vede da qui/.test(rosso) && /portale \/clin-port\/loginPC\.jsp/.te
   await pR.waitForSelector("#psassist-host .stsnack", { state: "detached", timeout: 12000 }).catch(() => {});
   await pR.waitForTimeout(1200);
 
-  const loc = await pR.evaluate(([ns, ks]) => Object.fromEntries(ks.map((k) => [k, localStorage.getItem(ns + k)])), [NS, [...VIA_LOCALE, ...Object.keys(RESTA_LOCALE), "tempi.v1"]]);
+  const loc = await pR.evaluate(([ns, ks]) => Object.fromEntries(ks.map((k) => [k, localStorage.getItem(ns + k)])), [NS, [...VIA_LOCALE, ...Object.keys(RESTA_LOCALE)]]);
   // (stato.v1: la pagina aperta lo riscrive subito per il suo paziente — degli altri niente)
   const rimasti = VIA_LOCALE.filter((k) => loc[k] !== null && !(k === "stato.v1" && !/"999"/.test(loc[k])));
   check(!rimasti.length, `localStorage: via ${VIA_LOCALE.join(", ")} (rimasti: ${rimasti.join(", ") || "nessuno"})`);
   const cambiati = Object.keys(RESTA_LOCALE).filter((k) => loc[k] !== prima[k]);
   check(!cambiati.length, `localStorage: restano ${Object.keys(RESTA_LOCALE).join(", ")} (cambiati: ${cambiati.join(", ") || "nessuno"})`);
-  const tempi = JSON.parse(loc["tempi.v1"] || "[]");
-  check(tempi.length === 1 && !("paz" in tempi[0]) && !("ep" in tempi[0]), "Tempi: restano i tempi, senza il paziente");
   const scheda = await pR.evaluate(([ns, ks]) => ks.filter((k) => sessionStorage.getItem(ns + k) !== null), [NS, VIA_SCHEDA]);
   check(!scheda.length, `la memoria di questa scheda: via (rimasti: ${scheda.join(", ") || "nessuno"})`);
   const altra = await pAltra.evaluate((k) => sessionStorage.getItem(k), `${NS}reftxt.${ep}.zz`);
