@@ -2382,9 +2382,11 @@ nella tendina del gestionale») — poi **Prepara nel gestionale** (o Ctrl+Invio
    sola. **«Conferma di nuovo»** (`ordineRiconferma`) c'è solo per «Non partita», parte solo dal
    tocco del medico e **una volta per richiesta** (annotata in `storage.session` prima di partire):
    è un ordine in coda come gli altri, la sua scheda apre quel carrello, rilegge la pagina del
-   paziente (se la elenca, niente si preme: si stampa — ma una richiesta che intanto non è più fra le «da
-   confermare», confermata a mano altrove, non si ripreme né si ristampa: «Confermata · era già
-   confermata», e la Ristampa resta in fondo alle sue Richieste), guarda il carrello **vivo** — la pagina che
+   paziente (se la elenca, niente si preme; le etichette si stampano una volta, se nessuna scheda le ha
+   già prese dopo la Conferma smentita — `conferme.v1`, «stampata», scritto dove `maybeAutoPrint` le
+   prende —; se sì, «Confermata · era già confermata», e la Ristampa resta in fondo alle sue
+   Richieste. Una richiesta che non è più fra le «da confermare» — provata altrove, «Ignora», le 12
+   ore — e che la pagina non elenca: il carrello, niente premuto), guarda il carrello **vivo** — la pagina che
    ha davanti: il suo bottone Conferma, e ogni esame della ricevuta per quell'erogatore ancora lì
    col suo «togli»; se no niente si preme, «Non partita · apri il carrello» — e preme la Conferma
    vera con tutti i controlli di `maybeAutoConfirm`; poi la stessa prova. Non presa di nuovo:

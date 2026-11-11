@@ -456,6 +456,8 @@ if (prova("la Conferma che il gestionale ignora: «Non partita» in pochi second
   check(conferme(A).length === 2 && conferme(A).every((q) => q.params.RICHIESTA_ID === rid) && A.state.richieste[rid].confirmed,
     `il tocco: una Conferma in più, sulla stessa richiesta, e il gestionale la prende (got ${conferme(A).length} conferme)`);
   check(rec?.pubblico?.titolo === "Confermata" && et.length === 1, `provata: «Confermata», le etichette pronte una volta (got ${JSON.stringify(rec && [rec.pubblico?.titolo, et.length])})`);
+  const segnata = await doc.evaluate((r) => (JSON.parse(localStorage.getItem("psassist:conferme.v1") || "[]").find((x) => x.rid === r) || {}).stampata > 0, rid);
+  check(segnata, "e le sue etichette risultano prese, per chi la ritrova confermata (conferme.v1)");
   check(inviati(A).length === 1, `nessun esame rimandato (got ${inviati(A).length} invii)`);
   // un secondo tocco (la stessa richiesta): niente
   const r2 = await sw.evaluate((id) => new Promise((res) => {
@@ -512,7 +514,13 @@ if (prova("la Conferma ignorata ma tornata coi suoi tempi: da controllare, anche
   check(conferme(A).length === 1, `una Conferma sola (got ${conferme(A).length})`);
   sess.dopoConferma = null; sess.confermaLenta = 0;
 }
-if (prova("«Conferma di nuovo» su una richiesta confermata intanto a mano: niente premuto, niente ristampato")) {
+// Non più «da confermare», e la pagina del paziente la elenca: niente si
+// preme. Le etichette: se una scheda le ha già prese (conferme.v1, «stampata»),
+// solo la Ristampa; se no — la richiesta tolta da «Ignora», da una pagina che
+// la elencava, e nessuno ha stampato — si stampano adesso, una volta.
+for (const stampata of [true, false]) {
+  if (!prova(stampata ? "«Conferma di nuovo» su una richiesta confermata intanto a mano, etichette già prese: niente premuto, niente ristampato"
+    : "«Conferma di nuovo» su una richiesta confermata intanto ma ignorata, etichette mai prese: niente premuto, le etichette una volta")) continue;
   await daCapo();
   A = createMock({ dopoConferma: 300 });
   Object.assign(sess, { corrente: null, log: [], ora: 0, forzaOra: null, area: null });
@@ -526,17 +534,31 @@ if (prova("«Conferma di nuovo» su una richiesta confermata intanto a mano: nie
   const prima = await striscia(doc, /ROSSI MARIO.*Non partita.*Conferma di nuovo/, 40000).catch(() => "");
   const rid = Object.keys(A.state.richieste)[0];
   check(!!prima && (await sorvegliate(doc)).some((x) => x.rid === rid), `«Non partita · Conferma di nuovo», e la richiesta è fra quelle da confermare (got «${prima}»)`);
-  // il medico la conferma a mano sul carrello: la sua scheda l'ha provata, stampato, e tolta dalle «da confermare»
+  // la richiesta risulta confermata e non è più fra le «da confermare»: la scheda del medico che l'ha
+  // provata ne ha preso le etichette (stampata) — o «Ignora», e nessuno le ha stampate
   A.state.richieste[rid].confirmed = true;
-  await doc.evaluate((r) => localStorage.setItem("psassist:daConfermare.v1", JSON.stringify(JSON.parse(localStorage.getItem("psassist:daConfermare.v1") || "[]").filter((x) => x.rid !== r))), rid);
+  await doc.evaluate(([r, s]) => {
+    localStorage.setItem("psassist:daConfermare.v1", JSON.stringify(JSON.parse(localStorage.getItem("psassist:daConfermare.v1") || "[]").filter((x) => x.rid !== r)));
+    const l = JSON.parse(localStorage.getItem("psassist:conferme.v1") || "[]"), x = l.find((y) => y.rid === r) || { rid: r };
+    if (s) localStorage.setItem("psassist:conferme.v1", JSON.stringify([...l.filter((y) => y !== x), { ...x, stampata: Date.now(), ts: Date.now() }]));
+  }, [rid, stampata]);
   const fogli0 = chiesti(A, /RcsStampaEtichetteLISHMIMU|jasperservlet/);
   await $panel(doc, AZIONE).click();
-  const vista = await striscia(doc, /ROSSI MARIO.*era già confermata/, 40000).catch(() => "");
-  await sospendi(4000);
-  const rec = (await ordini()).find((x) => x.paziente === "ROSSI MARIO" && /c$/.test(x.id));
-  check(/Confermata/.test(vista) && !!rec && !rec.stampa && rec.stato === "avviso", `«Confermata · era già confermata», senza fogli (got «${vista}» · ${JSON.stringify(rec && [rec.stato, !!rec.stampa])})`);
-  check(conferme(A).length === 1 && chiesti(A, /RcsStampaEtichetteLISHMIMU|jasperservlet/) === fogli0 && (await doc.locator("#psassist-print").count()) === 0,
-    `niente premuto e niente ristampato: le etichette le ha già stampate chi l'ha confermata (got ${conferme(A).length} conferme · ${chiesti(A, /RcsStampaEtichetteLISHMIMU|jasperservlet/) - fogli0} fogli)`);
+  if (stampata) {
+    const vista = await striscia(doc, /ROSSI MARIO.*era già confermata/, 40000).catch(() => "");
+    await sospendi(4000);
+    const rec = (await ordini()).find((x) => x.paziente === "ROSSI MARIO" && /c$/.test(x.id));
+    check(/Confermata/.test(vista) && /Ristampa/.test(vista) && !!rec && !rec.stampa && rec.stato === "avviso", `«Confermata · era già confermata: Ristampa…», senza fogli (got «${vista}» · ${JSON.stringify(rec && [rec.stato, !!rec.stampa])})`);
+    check(conferme(A).length === 1 && chiesti(A, /RcsStampaEtichetteLISHMIMU|jasperservlet/) === fogli0 && (await doc.locator("#psassist-print").count()) === 0,
+      `niente premuto e niente ristampato: le etichette le ha già prese chi l'ha confermata (got ${conferme(A).length} conferme · ${chiesti(A, /RcsStampaEtichetteLISHMIMU|jasperservlet/) - fogli0} fogli)`);
+  } else {
+    await finche(async () => (await ordini()).some((x) => x.paziente === "ROSSI MARIO" && /c$/.test(x.id) && x.stampa), 40000);
+    await sospendi(3000);
+    const rec = (await ordini()).find((x) => x.paziente === "ROSSI MARIO" && /c$/.test(x.id));
+    const et = (rec?.stampa?.jobs || []).filter((j) => /RcsStampaEtichetteLISHMIMU\.do\?RICHIESTA_ID=/.test(j.url || "") && param(j.url, "RICHIESTA_ID") === rid);
+    check(rec?.pubblico?.titolo === "Confermata" && et.length === 1, `nessuno le aveva stampate: «Confermata», le sue etichette pronte una volta (got ${JSON.stringify(rec && [rec.stato, rec.pubblico?.titolo, rec.pubblico?.testo, et.length])})`);
+    check(conferme(A).length === 1, `niente premuto: una Conferma sola, quella di prima (got ${conferme(A).length})`);
+  }
   sess.dopoConferma = null;
 }
 if (prova("«Conferma di nuovo» due volte per la stessa richiesta: la seconda non parte (il registro delle rifatte)")) {

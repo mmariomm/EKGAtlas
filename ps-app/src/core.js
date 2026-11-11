@@ -8701,34 +8701,35 @@
       if (!r || !r.ok) return;
       this.log(`${now()}  ── «Conferma di nuovo» per ${p.patientName || "il paziente"}: richiesta ${rid}, una volta ──`);
       this.segnala({ tag: "", testo: "Confermo di nuovo…", tono: "run" });
-      // Confermata intanto altrove (il medico sul carrello: la sua scheda l'ha
-      // provata, ha stampato le etichette e l'ha tolta dalle «da confermare»):
-      // niente si preme e niente si stampa da qui. Se la pagina del paziente
-      // la elenca, «Confermata · era già confermata» — la Ristampa resta in
-      // fondo alle sue Richieste, un tocco del medico; se no, il carrello.
-      if (!daConfermare().some((x) => x.rid === rid)) {
-        const gia = await provaConferma(rid, ep, { patientUrl: p.patientUrl || "", panel: this, una: true });
-        if (LAVORO !== L || this._lavoroChiuso) return;
-        if (gia && gia.doc) {
-          this.log(`${now()}  non è più da confermare, e la pagina del paziente la elenca: era già confermata — niente premuto, niente stampato`);
-          ricordaStampe(ep, printModel(gia.doc, gia.url), { gesto: L.gesto || L.id, rid });
-          return this.consegnaLavoro({ tag: "Confermata", testo: "era già confermata: Ristampa in fondo alle sue Richieste", tono: "ok" }, null, "avviso");
-        }
-        return alCarrello("non risulta più da confermare: guarda le sue richieste — niente premuto");
-      }
+      // Non più fra le «da confermare»: provata intanto altrove, o tolta senza
+      // prova («Ignora», «Svuota», una pagina che la elencava, le 12 ore).
+      // Da qui niente si preme: se la pagina del paziente non la elenca, il carrello.
+      const fuori = !daConfermare().some((x) => x.rid === rid);
       // la ricevuta del giro di allora, senza la foto delle richieste di prima:
       // le richieste nate da allora sono altri ordini, non si stampano con questa
       const { prima, ...rc } = p.receipt || {};
       tabStore.set("receipt.v1", { ...rc, ts: Date.now() });
-      ricordaDaConfermare(rid, ep, p.listUrl || location.href, (rc.items || []).length);
+      if (!fuori) ricordaDaConfermare(rid, ep, p.listUrl || location.href, (rc.items || []).length);
       const gia = await provaConferma(rid, ep, { patientUrl: p.patientUrl || "", panel: this, una: true });
       if (LAVORO !== L || this._lavoroChiuso) return;
       if (gia && gia.doc) {
-        this.log(`${now()}  la pagina del paziente la elenca già: era confermata, niente si preme`);
+        // La pagina del paziente la elenca: era confermata, niente si preme.
+        // Le sue etichette le ha già prese una scheda, dopo la Conferma che il
+        // carrello aveva smentito (conferme.v1: chi l'ha confermata a mano):
+        // niente si stampa, la Ristampa resta in fondo alle sue Richieste. Se
+        // no — nessuno le ha stampate: tolta da «Ignora», da una pagina che la
+        // elencava — si stampano adesso, una volta.
+        if (confermaDopo(rid, "stampata", p.premuta)) {
+          this.log(`${now()}  la pagina del paziente la elenca, e le sue etichette sono già state prese: era già confermata — niente premuto, niente stampato`);
+          ricordaStampe(ep, printModel(gia.doc, gia.url), { gesto: L.gesto || L.id, rid });
+          return this.consegnaLavoro({ tag: "Confermata", testo: "era già confermata: Ristampa in fondo alle sue Richieste", tono: "ok" }, null, "avviso");
+        }
+        this.log(`${now()}  la pagina del paziente la elenca già: era confermata, niente si preme — le sue etichette`);
         segnoStampa(ep, rid, tabStore.get("receipt.v1", null));
         if (maybeAutoPrint(this, gia.doc, gia.url)) return;
         return this.consegnaLavoro({ tag: "Confermata", testo: "era già confermata", tono: "ok" }, null, "avviso");
       }
+      if (fuori) return alCarrello("non risulta più da confermare: guarda le sue richieste — niente premuto");
       const items = Array.isArray(rc.items) ? rc.items : [];
       const last = items[items.length - 1];
       if (!last) return alCarrello("la ricevuta del giro non c'è più: niente premuto");
@@ -16916,8 +16917,12 @@
     // consegnaFogli). Solo quelle della richiesta dell'ordine, per il suo
     // paziente: una conferma fatta qui a mano per un altro paziente si stampa
     // qui, come sempre (con la stampa automatica, anche lei dal service worker).
+    // (le etichette di queste richieste le ha prese questa scheda — conferme.v1:
+    // «Conferma di nuovo» che le trova confermate non le ristampa)
+    const prese = () => ids.forEach((id) => segnaConferma(id, "stampata"));
     if (LAVORO && String(flag.episodeId || here) === String(LAVORO.ep)) {
       tabStore.set("print.v1", null);
+      prese();
       ricordaStampe(here, map, { gesto: LAVORO.gesto || LAVORO.id, rids: ids });   // (la pagina del medico non si ricarica: i fogli nuovi li vede da qui; e quali sono di questo tocco)
       if (panel) panel._lavoroChiuso = true;   // da qui la scheda non racconta più niente: l'ordine è delle etichette
       consegnaFogli(panel, LAVORO.id, jobs, fine);
@@ -16926,6 +16931,7 @@
     }
     if (wizardOpen) return false;   // keep the flag: these jobs must not vanish behind another wizard
     tabStore.set("print.v1", null);
+    prese();
     // (la Conferma: quando l'ha premuta lui — il giro, o il bottone del gestionale)
     const p = Number(tabStore.get(PREMUTO, 0)) || 0;
     const premuto = p && p <= (flag.ts || 0) + 1000 && (flag.ts || 0) - p < PRINT_FLAG_TTL ? p : flag.ts || 0;
