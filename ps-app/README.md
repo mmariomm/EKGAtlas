@@ -773,9 +773,11 @@ lette stanno in `sessionStorage` (`smart.giro.v1`) e muoiono con lei.
    Conferma vera **una volta**, coi controlli di sempre, poi la stessa prova. Una sola per
    richiesta: se il gestionale non prende nemmeno quella, «Non partita · apri il carrello», e lì
    decidi tu. E mai sopra la tua: ogni Conferma premuta — dal pannello, dal motore o a mano sul
-   bottone del gestionale, in qualunque scheda — si annota prima che il clic parta; se dopo quella
-   ignorata ne hai premuta un'altra (sul carrello, mentre il gestionale ci pensa), «Conferma di
-   nuovo» non preme niente e se ne va: «Da controllare». Una Conferma tornata **coi suoi tempi** non si giudica dal carrello (com'è il
+   bottone del gestionale, in qualunque scheda, anche prima che la pagina sia pronta — si annota
+   prima che il clic parta; se dopo quella ignorata ne hai premuta un'altra (sul carrello, mentre
+   il gestionale ci pensa), «Conferma di nuovo» non preme niente e se ne va: «Da controllare»; e
+   se la tua l'ha già confermata, non ne stampa le etichette (le stampa la scheda dove l'hai
+   premuta): «Confermata», e la Ristampa. Una Conferma tornata **coi suoi tempi** non si giudica dal carrello (com'è il
    carrello di una richiesta già confermata, le registrazioni non lo mostrano), né un carrello
    che non c'è più o senza la sua Conferma: la pagina del paziente si rilegge dopo 2, 4 e 8
    secondi, e se nemmeno così la richiesta risulta la striscia è **ambra**, «Da controllare ·
@@ -855,10 +857,16 @@ lette stanno in `sessionStorage` (`smart.giro.v1`) e muoiono con lei.
    **Sul suo carrello la riga ha due azioni**, anche riaperto più tardi (un ricarico, un'altra
    scheda: niente ricevuta né resoconto, e prima era un vicolo cieco): **Conferma e stampa** e
    **Svuota**, a due tocchi. Il primo legge il carrello vero, tutte le sezioni, e chiede coi nomi
-   — «Confermo 1 esame: PCR?», «Svuoto 1 esame: PCR?» —; il secondo fa (dopo 8 secondi si torna
-   a capo). Conferma preme la Conferma del gestionale, e la stampa parte; Svuota svuota come
+   — «Confermo 1 esame: PCR?», «Svuoto 1 esame: PCR?» —; il secondo fa (senza, dopo 8 secondi si
+   torna a capo). Conferma preme la Conferma del gestionale, e la stampa parte; Svuota svuota come
    «Svuota il carrello», senza rimettere niente, e la richiesta si dimentica; un carrello letto
    già vuoto si dimentica e basta. Solo se la pagina ha la Conferma.
+   **Una Conferma dal pannello, una volta per pagina** (questa e «Conferma per …» della
+   ricevuta): premuta, il bottone dice «Confermo…», spento, finché la pagina non se ne va — la
+   Conferma vera ci mette 3–14 s, e un secondo tocco ne manderebbe un'altra. E non preme se
+   un'altra Conferma per la stessa richiesta è partita nell'ultimo minuto (da un'altra scheda,
+   `conferme.v1`) e la richiesta non ha ancora la sua prova: «Una Conferma è già partita: guarda
+   le sue richieste».
    **Mentre scrivi, la pagina non cambia da sola.** Ogni salto di pagina deciso dal pannello
    (errore → carrello, revisione → carrello, conferma sospesa) prima guarda: se hai il cursore
    in un campo del gestionale, hai cambiato un campo, o hai premuto un tasto negli ultimi 15
@@ -1633,7 +1641,7 @@ gestionale resta quello di sempre: un tuo tocco.
 **Prima le etichette.** Senza la stampa automatica le etichette le stampa la tua scheda, col
 dialogo. Il secondo ordine dello stesso tocco (le Urgenze dopo il POC, l'RX) non parte finché la tua
 scheda non ha preso tutti i PDF del primo — li scarica tutti subito, uno dopo l'altro, e lo dice al
-service worker (dopo 18 secondi non ne comincia altri, e la coda aspetta al più 40 secondi: a 38 ogni lettura cominciata per quelle etichette — rinvii e corpo del PDF compresi, anche un foglio chiesto dal dialogo — si ferma, e un foglio chiesto dopo passa dal cancello del motore; se nessuna scheda può prenderli adesso, o quella che li ha presi
+service worker (dopo 18 secondi non ne comincia altri, e la coda aspetta al più 40 secondi: a 38 ogni lettura cominciata per quelle etichette — rinvii e corpo del PDF compresi, anche un foglio chiesto dal dialogo — si ferma, e un foglio chiesto dopo passa dal cancello del motore — così si richiede anche quello del dialogo fermato a metà, una volta; se nessuna scheda può prenderli adesso, o quella che li ha presi
 si chiude o cambia pagina, la coda non li aspetta).
 Sempre un motore alla volta: le pagine del gestionale sono di una sessione sola, e i PDF del primo
 ordine aspettavano dietro gli esami del secondo (3,5–8,6 secondi di «Aspetto le etichette…»).
@@ -2398,15 +2406,15 @@ nella tendina del gestionale») — poi **Prepara nel gestionale** (o Ctrl+Invio
    è un ordine in coda come gli altri, la sua scheda apre quel carrello, rilegge la pagina del
    paziente (se la elenca, niente si preme; le etichette si stampano una volta, se nessuna scheda le ha
    già prese dopo la Conferma smentita — `conferme.v1`, «stampata», scritto dove `maybeAutoPrint` le
-   prende —; se sì, «Confermata · era già confermata», e la Ristampa resta in fondo alle sue
-   Richieste. Una richiesta che non è più fra le «da confermare» — provata altrove, «Ignora», le 12
+   prende — né c'è un'altra Conferma premuta dopo di lei — «premuta»: le stampa la sua scheda —; se
+   sì, «Confermata · era già confermata», e la Ristampa resta in fondo alle sue Richieste. Una richiesta che non è più fra le «da confermare» — provata altrove, «Ignora», le 12
    ore — e che la pagina non elenca: il carrello, niente premuto), guarda il carrello **vivo** — la pagina che
    ha davanti: il suo bottone Conferma, e ogni esame della ricevuta per quell'erogatore ancora lì
    col suo «togli»; se no niente si preme, «Non partita · apri il carrello» — e preme la Conferma
    vera con tutti i controlli di `maybeAutoConfirm`; poi la stessa prova. Non presa di nuovo:
    «apri il carrello». Una Conferma in volo il gestionale non la mostra (3–14 s): ogni Conferma
-   premuta, in qualunque scheda, si annota **prima del clic** (`armPrintOnConfirm`; nella cornice,
-   `maybeAutoConfirm`) in memoria condivisa — `conferme.v1`, solo richiesta e ora — e al service
+   premuta, in qualunque scheda, si annota **prima del clic** (`armPrintOnConfirm`; prima che ci
+   sia, `confermaPresto`, su tutto il documento dall'avvio; nella cornice, `maybeAutoConfirm`) in memoria condivisa — `conferme.v1`, solo richiesta e ora — e al service
    worker (`ordinePremuta`). Se dopo quella smentita dal carrello (`premuta`, nella vista) ne è
    stata premuta un'altra, «Conferma di nuovo» non c'è o non parte: non la offre la scheda
    dell'ordine, il service worker la toglie ovunque (e conta come la volta in più) o la rifiuta, e
