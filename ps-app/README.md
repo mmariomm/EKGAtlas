@@ -193,13 +193,13 @@ pagina non ha voci non c'è. In cima **Forma** (vedi sopra), con **Al centro**. 
   lista, dove un paziente non c'è, la sezione si chiama **Dimissioni**);
 - **Strumenti**, quelli clinici: **Tabellone** e **iPhone** (il Ponte; solo con l'estensione),
   **Cronometro**, **Riferimenti** (i *can't-miss killers*), **Consegne** (vedi sotto); in fondo, sulla stanza, **Modifica la
-  stanza** e **Segue il gestionale**;
+  stanza**;
 - **Impostazioni**: **Impostazioni** (una pagina sola: stampanti, stazione di stampa, indirizzo del
   portale, iPhone), e — scelte le due stampanti — **Stampa automatica** (vedi
   «Stampa automatica»), **Registrazioni**, il **Registro** e per ultimo,
-  da solo sulla sua riga e in rosso, **Reset dati pazienti**. Le voci che si accendono e si spengono
-  (Segue il gestionale, Stampa automatica) si spuntano: al posto dell'icona il loro stato (il
-  pallino blu con la spunta, acceso);
+  da solo sulla sua riga e in rosso, **Reset dati pazienti**. Una voce che si accende e si spegne
+  (Stampa automatica) si spunta: al posto dell'icona il suo stato (il pallino blu con la spunta,
+  acceso);
 
 e in fondo la versione, con accanto **Ricarica** (l'estensione) e sopra, quando c'è una versione
 nuova, **Aggiorna app**. Le schermate che si aprono dal ⋯ (Riferimenti, Cronometro, Registrazioni,
@@ -370,11 +370,16 @@ partenza, mai scritto. Si trascina come gli altri (un tocco non apre niente: non
 portato su un letto o in un'area, quel posto si scrive e vince. Chi è già fra i pazienti ha il suo posto
 (o la lista) e non si sposta mai da qui. La lista del Triage letta più di 30 minuti fa non conta.
 
-**Segue il gestionale** (⋯, acceso di norma). Ogni lista non filtrata che apri aggiorna chi sta in
-quale area, come sempre. In più, **quando apri l'app sull'iPhone** (o ci torni sopra, o tocchi
-aggiorna: al più ogni 2 minuti; il telefono richiede l'elenco 25 secondi dopo) e subito col **⟳**
-— mai da solo a tempo —, il pannello rilegge la **lista smart** — tutto il PS, ogni area col suo nome e il
-triage, senza cambiare area. La apre **col suo link**, quello dell'icona `elenco_smart.png` della
+**Segue il gestionale** (sempre: non c'è più l'interruttore). Ogni lista non filtrata che apri aggiorna chi sta in
+quale area, come sempre. In più il pannello legge la **lista smart** — tutto il PS, ogni area col suo
+nome e il triage, senza cambiare area — **appena il gestionale è aperto** (la prima pagina dopo
+l'accesso, o dopo un «Reset»: la smart non ancora letta; un secondo e mezzo dopo, quando la pagina
+è nata), **quando apri l'app sull'iPhone** (o ci torni sopra, o tocchi aggiorna: al più ogni 2
+minuti; il telefono richiede l'elenco 25 secondi dopo) e subito col **⟳** — mai da solo a tempo.
+Mai mentre un ordine manda esami, né con un **carrello aperto** in una scheda (la creazione di una
+richiesta o una sua pagina: chi ordina a mano), perché la smart cambia la richiesta «corrente» della
+sessione: rimandata per uno di questi motivi, la prima pagina dopo 2 minuti ci riprova; una scheda
+dietro che si è aperta e non ha letto non si riapre da sola (il telefono e il ⟳ sì). La apre **col suo link**, quello dell'icona `elenco_smart.png` della
 lista dell'area (`window.open('…menuPsoSmart.do?MVPG=PsoPazientiSmart&PAZIENTI_FILTRO=…')`, annotato
 quando lo si vede: mai un indirizzo inventato; finché non c'è, il ⟳ lo dice), in una **scheda dietro**
 aperta dal service worker come quelle dei referti: legge, e si chiude; il medico resta dov'è. Della
@@ -520,10 +525,10 @@ fissata, una senza 24 ore dopo l'ultima modifica, una spuntata 5 minuti dopo. Ne
 cancella la pagina di login — una sessione scaduta non deve far perdere la troponina delle 11:30 —;
 «Svuota l'elenco» e 🗑 sì. I **parametri vitali** letti (l'ultima riga: ora e valori, mai un nome)
 stanno con lo stato degli esami, in `stato.v1`, e se ne vanno con lui.
-Il **tabellone**: la vista scelta (`tabellone.vista.v1`: `alta`, `bassa`, `entrambe`) e `tabellone.modo.v1` (`mappa`, `lista`; la riga di ognuno nella lista del gestionale è `n` in `aree.v1`), «segue il
-gestionale» (`segue.v1`, `false` se spento) e il link della lista smart (`smart.url.v1`, com'era
-nella pagina) sono impostazioni e restano; l'ultima lettura della smart (`smart.sync.v1`: quando,
-com'è andata, quante righe) e l'ultima uscita da annullare (`dimessi.v1`: episodi, «COGNOME N.» e i
+Il **tabellone**: la vista scelta (`tabellone.vista.v1`: `alta`, `bassa`, `entrambe`) e `tabellone.modo.v1` (`mappa`, `lista`; la riga di ognuno nella lista del gestionale è `n` in `aree.v1`) e il link
+della lista smart (`smart.url.v1`, com'era nella pagina) sono impostazioni e restano (`segue.v1`,
+l'interruttore di prima, se ne va da solo); l'ultima lettura della smart (`smart.sync.v1`: quando,
+com'è andata, quante righe, l'ultima riuscita; la pagina d'accesso la dimentica) e l'ultima uscita da annullare (`dimessi.v1`: episodi, «COGNOME N.» e i
 posti da rimettere) se ne vanno con «Reset dati pazienti». Chi è noto solo dalla smart sta in
 `patients.v1` con una chiave fatta dall'impronta (`sm…`), `smart: true`; l'ingresso in PS è
 `arrivo` (un istante, mai una data di nascita). Nella scheda dietro, le schede della smart già
@@ -1314,8 +1319,9 @@ più tempo; età, attesa e, se nota, l'area; la riga si tocca solo nel suo **«A
 «Accettare in ambulatorio»). Sparisce se è vuota, se è
 stata letta più di 30 minuti fa o se il PC (un'estensione più vecchia) non conosce il comando.
 Aprendo l'app (o tornandoci, o con aggiorna) il telefono chiede al PC di rileggere la lista smart
-(`triage` con `rileggi`, al più ogni 2 minuti, con «Segue il gestionale» acceso) e richiede
-l'elenco 25 secondi dopo: è l'unico giro della smart che parte da solo.
+(`triage` con `rileggi`, al più ogni 2 minuti) e richiede l'elenco 25 secondi dopo; il PC la legge
+anche da sé, appena il gestionale è aperto. Così nell'elenco del telefono c'è **tutto il PS**, ogni
+area, anche chi il PC non ha mai aperto.
 
 Lontano dal PC per qualche minuto, dal telefono: **i pazienti**, **gli esiti** di uno (con
 **↻ Rileggi** e l'ora in cui il PC li ha letti), **un ordine** (lo stesso «Conferma e
@@ -2413,7 +2419,8 @@ nella tendina del gestionale») — poi **Prepara nel gestionale** (o Ctrl+Invio
     altro aspetta **prima di partire**, mai a metà; un ordine nuovo, dal PC o dal telefono, va
     in coda. (Col bookmarklet, senza service worker, lo dice il battito `motore.v1` in
     localStorage.) Un ordine «muto» — «Ordine fermo · ⏹ la chiude» — tiene la coda ma non le
-    letture. La lista smart non si rilegge (riprova al giro dopo); le schede
+    letture. La lista smart non si rilegge (riprova al giro dopo) — e nemmeno con un carrello aperto in
+    una scheda, dove il medico ordina a mano —; le schede
     di sottofondo (referto, storico, telefono) si aprono dopo, e così la scheda che dà i PDF di
     una stampa chiesta dalla scheda del medico; i PDF di una stampa aspettano la fine del motore
     (al più 4 minuti), e il motore dopo aspetta che quei PDF siano presi. Le etichette non vanno a

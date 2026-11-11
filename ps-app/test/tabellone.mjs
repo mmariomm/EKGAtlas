@@ -144,6 +144,7 @@ function server() {
       return s.shell ? `<html><head><meta http-equiv="refresh" content="0; URL=menuPso.do?MVPG=PsoPazienti"></head><body></body></html>` : listaPage();
     }
     if (mvpg === "PsoPazienti") return shellPage();
+    if (mvpg === "PsoAccesso") return `<html><body><form><input type="text" name="u"><input type="password" name="p"></form></body></html>`;   // (la sessione scaduta)
     if (mvpg === "PsoPazientiAmbulatorio") return listaPage();
     if (mvpg === "PsoPsoImposta") return impostaPage();
     if (mvpg === "PsoPazientiSmart") return smartPage(u);
@@ -187,7 +188,8 @@ async function contesto(srv, { seed, finto, w = 1280, h = 900, focusFinto = fals
       const risposta = (m) => {
         chiesti.push(m);
         if (m.t === "smartChi") return { ok: !!finto.smartChi };
-        if (m.t === "smartSotto") return { ok: true, tabId: 9 };
+        // (localStorage «__smartNo»: il service worker la rimanda, con quel perché)
+        if (m.t === "smartSotto") return localStorage.getItem("__smartNo") ? { ok: false, why: localStorage.getItem("__smartNo") } : { ok: true, tabId: 9 };
         if (m.t === "smartFine") return { ok: true };
         if (m.t === "getStorico") return finto.storico ? (m.chiave ? { ok: true, dati: finto.storico.dati } : { ok: true, indice: [finto.storico.indice] }) : { ok: false };
         return { ok: false };
@@ -669,56 +671,97 @@ await blocco("Il Da fare del tabellone: il generale, e quello dei pazienti col c
   await context.close();
 });
 
-// --------------------------------------------- 4. segue il gestionale: il link, l'iPhone, il ⟳
-await blocco("Segue il gestionale: il link della pagina; si rilegge aprendo l'iPhone (al più ogni 2 minuti) e col ⟳, mai a tempo", async () => {
+// --------------------------------------------- 4. segue il gestionale: il link, l'apertura, l'iPhone, il ⟳
+await blocco("Segue il gestionale: il link della pagina; si legge appena aperto il gestionale, aprendo l'iPhone (al più ogni 2 minuti) e col ⟳, mai a tempo", async () => {
   const srv = server();
-  const { context, page } = await contesto(srv, { seed: semeTabellone(), finto: {} });
+  const { context, page } = await contesto(srv, { seed: { ...semeTabellone(), "segue.v1": false }, finto: {} });
   await page.clock.install();
   const sotto = () => page.evaluate(() => (window.__chiesti || []).filter((m) => m.t === "smartSotto").map((m) => m.url));
+  // (le richieste annotate stanno nella pagina: cambiando pagina si contano da capo)
+  let prima = 0;
+  const conta = async () => prima + (await sotto()).length;
+  const vai = async (url) => { prima += (await sotto().catch(() => [])).length; await page.goto(url); };
   // una lista senza il link: niente da aprire, nemmeno col ⟳
   srv.s.link = "";
-  await page.goto(URL_LISTA);
+  await vai(URL_LISTA);
   await pannello(page);
   await page.clock.runFor(3000);
   await $p(page, "#tbsync").click();
   await page.clock.runFor(500);
-  check((await sotto()).length === 0 && !(await ls(page, "smart.url.v1")), "senza il link della pagina: la smart non si apre, nemmeno col ⟳ (nessun indirizzo inventato)");
-  // la lista dell'area porta l'icona elenco_smart: il SUO indirizzo
+  check(await conta() === 0 && !(await ls(page, "smart.url.v1")), "senza il link della pagina: la smart non si apre, nemmeno col ⟳ (nessun indirizzo inventato)");
+  // «Segue il gestionale» non si spegne più: niente voce nel ⋯, e l'interruttore di prima (spento) se ne va
+  await $p(page, "#menubtn").click();
+  check(!(await $p(page, "#seguesw").count()) && (await ls(page, "segue.v1")) === null, "nel ⋯ non c'è più «Segue il gestionale»; lo «spento» salvato prima se ne va (segue.v1)");
+  await $p(page, "#menubtn").click();
+  // la lista dell'area porta l'icona elenco_smart: il SUO indirizzo, e il gestionale appena aperto (la smart mai letta) la legge subito, dietro
   srv.s.link = LINK_SMART;
-  await page.goto(URL_LISTA);
+  await vai(URL_LISTA);
   await pannello(page);
   await page.clock.runFor(2000);
-  check((await ls(page, "smart.url.v1"))?.url === URL_SMART_LINK && (await sotto()).length === 0, `il link letto dalla pagina; la smart non si apre da sola (got: ${JSON.stringify(await sotto())})`);
+  check((await ls(page, "smart.url.v1"))?.url === URL_SMART_LINK && (await sotto()).join() === URL_SMART_LINK,
+    `il link letto dalla pagina; il gestionale appena aperto: la smart si legge da sola, una volta, col suo link (got: ${JSON.stringify(await sotto())})`);
+  // un'altra pagina: già in lettura, niente di nuovo; e poi niente giri a tempo
+  await vai(URL_LISTA);
+  await pannello(page);
   await page.clock.runFor(25 * 60e3);
-  check((await sotto()).length === 0, "nemmeno dopo 25 minuti: niente giri a tempo");
+  check(await conta() === 1, `un'altra pagina, e 25 minuti: niente di nuovo — niente giri a tempo (got ${await conta()})`);
   // l'app aperta sull'iPhone (il comando «triage» con rileggi): la smart, dietro, col link della pagina; il telefono lo sa
   const iPhone = (rileggi = true) => page.evaluate((rileggi) => window.__alPc({ t: "ponteEsegui", cmd: "triage", args: rileggi ? { rileggi: true } : {} }), rileggi);
   const t1 = await iPhone();
-  check((await sotto()).join() === URL_SMART_LINK && t1?.ok && t1.dati?.rilegge === true, `aprendo l'app sull'iPhone: la smart, col suo link, e il telefono sa che si sta rileggendo (got: ${JSON.stringify(t1)} · ${JSON.stringify(await sotto())})`);
+  check(await conta() === 2 && (await sotto()).join() === URL_SMART_LINK && t1?.ok && t1.dati?.rilegge === true,
+    `aprendo l'app sull'iPhone: la smart, col suo link, e il telefono sa che si sta rileggendo (got: ${JSON.stringify(t1)} · ${JSON.stringify(await sotto())})`);
   await page.clock.runFor(60e3);
   const t2 = await iPhone();
-  check((await sotto()).length === 1 && t2?.dati?.rilegge === false, "riaperta dopo un minuto: niente di nuovo (al più ogni 2 minuti)");
+  check(await conta() === 2 && t2?.dati?.rilegge === false, "riaperta dopo un minuto: niente di nuovo (al più ogni 2 minuti)");
   await iPhone(false);
-  check((await sotto()).length === 1, "una semplice richiesta del telefono (senza «rileggi») non rilegge");
+  check(await conta() === 2, "una semplice richiesta del telefono (senza «rileggi») non rilegge");
   await page.clock.runFor(70e3);
   await iPhone();
-  check((await sotto()).length === 2, "passati i 2 minuti, riaprendo l'app: di nuovo");
-  // spento (⋯ → Segue il gestionale): nemmeno dall'iPhone; il ⟳ sì
-  await $p(page, "#menubtn").click();
-  await $p(page, "#seguesw").click();
-  check((await ls(page, "segue.v1")) === false, "«segue il gestionale» spento (segue.v1)");
-  await page.clock.runFor(25 * 60e3);
-  await iPhone();
-  check((await sotto()).length === 2, "spento: niente, nemmeno aprendo l'iPhone");
+  check(await conta() === 3, "passati i 2 minuti, riaprendo l'app: di nuovo — anche con lo «spento» di prima (non c'è più)");
   // (il ⟳ è l'icona che rilegge, la stessa di tutto il pannello: niente glifo)
   check((await $p(page, "#tbsync svg").count()) === 1 && !(await $p(page, "#tbsync").innerText()).trim(), "il ⟳ è un'icona del pannello, non il glifo");
+  // (la lettura di prima, qui senza fine — il service worker è per finta —, vale «in corso» per 45 secondi)
   await $p(page, "#tbsync").click();
   await page.clock.runFor(500);
-  check((await sotto()).length === 3, "⟳: subito");
+  check(await conta() === 3 && /si sta già rileggendo/.test(await $p(page, ".card").innerText().catch(() => "")), "⟳ mentre una lettura è in corso: niente di nuovo, e lo dice");
+  await page.clock.runFor(45e3);
+  await $p(page, "#tbsync").click();
+  await page.clock.runFor(500);
+  check(await conta() === 4, "⟳: subito");
+  // la sessione scade e si rientra: la prima pagina dopo l'accesso rilegge la smart (l'elenco se n'è andato col login)
+  await vai(`${ORIGIN}${DIR}menuPso.do?MVPG=PsoAccesso`);
+  await page.waitForFunction(() => !localStorage.getItem("psassist:smart.sync.v1"), null, { timeout: 8000 }).catch(() => {});
+  check(!(await ls(page, "smart.sync.v1")), "la pagina d'accesso dimentica l'ultima lettura della smart (smart.sync.v1)");
+  await vai(URL_LISTA);
+  await page.waitForSelector("#psassist-host", { state: "attached" });   // (dopo l'accesso il pannello riparte ridotto)
+  await page.clock.runFor(2000);
+  check(await conta() === 5, `rientrati: la prima pagina rilegge la smart, da sola (got ${await conta()})`);
+  // il service worker l'ha rimandata per un motivo del momento (un carrello aperto): la prima pagina dopo i 2 minuti ci riprova, da sola
+  await page.evaluate(() => { localStorage.removeItem("psassist:smart.sync.v1"); localStorage.setItem("__smartNo", "carrello aperto"); });
+  await vai(URL_LISTA);
+  await page.waitForSelector("#psassist-host", { state: "attached" });   // (dopo l'accesso il pannello riparte ridotto)
+  await page.clock.runFor(2000);
+  check(await conta() === 6 && (await ls(page, "smart.sync.v1"))?.esito === "carrello aperto", `rimandata dal service worker: «carrello aperto» (got ${JSON.stringify(await ls(page, "smart.sync.v1"))})`);
+  await page.evaluate(() => localStorage.removeItem("__smartNo"));
+  await vai(URL_LISTA);
+  await page.waitForSelector("#psassist-host", { state: "attached" });   // (dopo l'accesso il pannello riparte ridotto)
+  await page.clock.runFor(2000);
+  check(await conta() === 6, "una pagina subito dopo: non ancora (al più ogni 2 minuti)");
+  await page.clock.runFor(2 * 60e3);
+  await vai(URL_LISTA);
+  await page.waitForSelector("#psassist-host", { state: "attached" });   // (dopo l'accesso il pannello riparte ridotto)
+  await page.clock.runFor(2000);
+  check(await conta() === 7, `dopo i 2 minuti, la prima pagina ci riprova da sola (got ${await conta()})`);
+  // …mentre una lettura dietro aperta e finita male («pagina») non si riapre da sola: lo fanno il telefono e il ⟳
+  await page.evaluate(() => localStorage.setItem("psassist:smart.sync.v1", JSON.stringify({ ts: Date.now() - 10 * 60e3, fine: Date.now() - 10 * 60e3, esito: "pagina", n: 0 })));
+  await vai(URL_LISTA);
+  await page.waitForSelector("#psassist-host", { state: "attached" });   // (dopo l'accesso il pannello riparte ridotto)
+  await page.clock.runFor(2000);
+  check(await conta() === 7, "una scheda dietro che non ha letto («pagina») non si riapre da sola a ogni pagina");
   // un link che non è quello della smart (un altro parametro): non si prende
   srv.s.link = "menuPsoSmart.do?MVPG=PsoPazientiSmart&PAZIENTI_FILTRO=X&s_ASSISTITO=ROSSI";
   await page.evaluate(() => localStorage.removeItem("psassist:smart.url.v1"));
-  await page.goto(URL_LISTA);
+  await vai(URL_LISTA);
   await page.waitForSelector("#psassist-host", { state: "attached" });
   check(!(await ls(page, "smart.url.v1")), "un link con un filtro dentro non è la lista smart: non si tiene");
   await context.close();

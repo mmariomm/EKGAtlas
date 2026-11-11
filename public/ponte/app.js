@@ -1755,7 +1755,7 @@
     }
     if (S.modo === "dafare") return `<main>${stampaHtml()}${codaDi("")}${commutatore()}${corpo}${S.avviso && !S.avviso.alto ? "" : barraOrdini()}</main>`;
     return `<main>${stampaHtml()}${codaDi("")}${commutatore()}${S.pazienti.length ? corpo + triageHtml() + (prec.length ? `<button class="prec" data-a="precapri" aria-expanded="${S.precAperti}">Episodi precedenti (${prec.length})</button>${S.precAperti ? carta(prec) : ""}` : "")
-      : `<div class="vuoto">Nessun paziente nell'elenco del PC.<br>Si riempie aprendo i pazienti nel gestionale.</div>${triageHtml()}`}
+      : `<div class="vuoto">Nessun paziente nell'elenco del PC.<br>Si riempie da solo col gestionale aperto sul PC: la lista dell'area, e la lista smart con tutto il PS.</div>${triageHtml()}`}
       ${S.avviso && !S.avviso.alto ? "" : barraOrdini()}</main>`;
   }
   function tabellaHtml(t) {

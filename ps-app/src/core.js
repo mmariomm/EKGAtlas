@@ -3154,21 +3154,27 @@
 
   // ------------------------------------------------- SEGUE IL GESTIONALE
   // La lista smart (tutto il pronto soccorso, ogni area col suo nome e il
-  // colore del triage) si rilegge quando il medico apre l'app sull'iPhone (o
-  // ci torna sopra; al più ogni 2 minuti, con «segue il gestionale» acceso) e
-  // subito col ⟳ del tabellone. Niente giri da soli a tempo. Si apre come la apre il medico: col SUO link (l'icona
+  // colore del triage) si legge appena il gestionale è aperto (la prima pagina
+  // dopo l'accesso, o dopo un «Reset»), quando il medico apre l'app
+  // sull'iPhone (o ci torna sopra; al più ogni 2 minuti) e subito col ⟳ del
+  // tabellone. Niente giri da soli a tempo. Si apre come la apre il medico: col SUO link (l'icona
   // elenco_smart della lista dell'area, annotato quando lo si vede — mai un
   // indirizzo costruito), in una scheda dietro che si chiude appena letta.
-  const SEGUE = "segue.v1";                    // false: spento (di norma acceso) — un'impostazione
   const SMART_URL = "smart.url.v1";            // { url, ts } — dalla pagina, mai inventato; un'impostazione
-  const SMART_SYNC = "smart.sync.v1";          // { ts: partita, fine, esito, n, intera, dimessi }
+  const SMART_SYNC = "smart.sync.v1";          // { ts: partita, fine, esito, n, intera, dimessi, letta: l'ultima lettura riuscita }
   const DIMESSI = "dimessi.v1";                // { id, ts, eps, nomi, posti } — l'ultima uscita, per «Annulla»
-  const SMART_TEL = 2 * 60e3;                  // dall'iPhone: al più una rilettura ogni 2 minuti
+  const SMART_TEL = 2 * 60e3;                  // dall'iPhone (e al gestionale appena aperto): al più una rilettura ogni 2 minuti
+  // Il gestionale appena aperto: la smart non è ancora stata letta da quando
+  // (nessuna lettura riuscita), o il service worker l'ha rimandata per un motivo
+  // del momento (un ordine, un carrello aperto). Una scheda dietro che si è
+  // aperta e non ha letto non si riapre da sola: il telefono e il ⟳ ci riprovano.
+  const SMART_PIU_TARDI = new Set(["ordine in corso", "carrello aperto", "già in corso", "troppe letture in corso"]);
+  const smartDaLeggere = (s = store.get(SMART_SYNC, null)) => !s || (!s.letta && SMART_PIU_TARDI.has(s.esito));
+  const SMART_APERTO_MS = 1500;
   const SMART_GIRO = "smart.giro.v1";          // (nella scheda dietro) le schede della smart già lette
   const DIMESSI_MS = 8000;
   const DIMESSI_QUOTA = 0.3;                   // oltre il 30% in un colpo solo: non si archivia nessuno
   const NO_DIM_MS = 3 * 3600e3;                // «Annulla» su un dimesso: per 3 ore non si riarchivia da solo
-  const segueAcceso = () => store.get(SEGUE, true) !== false;
   // il link della lista smart, come lo scrive la lista dell'area: l'icona
   // elenco_smart.png dentro un <a onclick="window.open('<indirizzo>', …)">
   function smartLinkDi(doc, base) {
@@ -3362,7 +3368,7 @@
   async function smartSottoQui() {
     const fine = (esito, extra = {}) => {
       const s = store.get(SMART_SYNC, {}) || {};
-      store.set(SMART_SYNC, { ...s, fine: Date.now(), esito, ...extra });
+      store.set(SMART_SYNC, { ...s, fine: Date.now(), esito, ...extra, ...(esito === "ok" ? { letta: Date.now() } : {}) });
       tabStore.del(SMART_GIRO);
       return ask({ t: "smartFine", esito });
     };
@@ -3408,11 +3414,11 @@
     const u = store.get(SMART_URL, null)?.url;
     if (!u) return { ok: false, why: "nessun link" };
     const s = store.get(SMART_SYNC, null) || {}, ora = Date.now();
-    if (!forza && (!segueAcceso() || ora - (s.ts || 0) < SMART_TEL)) return { ok: false, why: "non ancora" };
+    if (!forza && ora - (s.ts || 0) < SMART_TEL) return { ok: false, why: "non ancora" };
     if (s.ts && !s.fine && ora - s.ts < 45e3) return { ok: false, why: "in corso" };
     // (una pagina della stessa sessione: mai mentre un motore manda esami — il prossimo giro, fra 30 secondi)
     if (motoreOvunque()) return { ok: false, why: "ordine in corso" };
-    store.set(SMART_SYNC, { ts: ora, fine: 0, esito: "", n: s.n || 0 });
+    store.set(SMART_SYNC, { ts: ora, fine: 0, esito: "", n: s.n || 0, ...(s.letta ? { letta: s.letta } : {}) });
     const r = await ask({ t: "smartSotto", url: u });
     if (!r || !r.ok) store.set(SMART_SYNC, { ...(store.get(SMART_SYNC, {}) || {}), fine: Date.now(), esito: (r && r.why) || "estensione" });
     return r || { ok: false };
@@ -9657,8 +9663,7 @@
                       `<button role="menuitem" id="rifmenu" title="Can't-miss killers: per sintomo, cosa escludere per primo">${mico("libro")}Riferimenti</button>`,
                       `<button role="menuitem" id="consmenu" title="Al cambio turno: una riga per paziente — posto, nome, età, da quanto è in PS, cosa aspetta, cosa c'è da fare — da copiare o stampare">${mico("dafare")}Consegne</button>`,
                       // (quelle della stanza ci sono solo sulla mappa: in fondo, così le altre non cambiano posto)
-                      inStanza && !this.stanzaEdit ? `<button role="menuitem" id="stmodmenu" title="Ritocca la stanza: aggiungi, sposta e rinomina letti, sedie e aree">${mico("matita")}Modifica la stanza</button>` : "",
-                      inStanza && !this.stanzaEdit && hasExt() ? `<button role="menuitemcheckbox" id="seguesw" aria-checked="${segueAcceso()}" title="${segueAcceso() ? "Acceso" : "Spento: tocca per accenderlo"} — quando apri l'app sull'iPhone (e col ⟳) la lista smart del gestionale, letta dietro: chi c'è, l'area, il triage; chi esce è dimesso">${mico(segueAcceso() ? "acceso" : "spento")}Segue il gestionale</button>` : ""])}
+                      inStanza && !this.stanzaEdit ? `<button role="menuitem" id="stmodmenu" title="Ritocca la stanza: aggiungi, sposta e rinomina letti, sedie e aree">${mico("matita")}Modifica la stanza</button>` : ""])}
                     ${this.menuSez("Impostazioni", [
                       hasExt() ? `<button role="menuitem" id="stampanti" title="Stampanti (etichettatrice e A4), stazione di stampa, indirizzo del portale, iPhone">${memo("🖨️")}Impostazioni</button>` : "",
                       this.stampaAuto && this.stampaAuto.sta ? `<div class="mforma" role="group" aria-label="Dove stampano gli ordini"><span>Stampa</span>${[["qui", "PC"], ["stazione", this.nomeStazione()]].map(([d, t]) =>
@@ -15118,12 +15123,6 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       $("#recchip")?.addEventListener("click", () => this.apriRegistrazioni());
       if (this.view === "registrazioni") this.legaRegistrazioni($);
       $("#stautow")?.addEventListener("click", (e) => { if (e.target.closest("#stauto")) this.apriStampanti(); });
-      // «Segue il gestionale» (⋯): acceso di norma; spento, la smart si rilegge solo col ⟳
-      $("#seguesw")?.addEventListener("click", () => {
-        store.set(SEGUE, !segueAcceso());
-        this.menuAperto = false;
-        this.render();
-      });
       $("#stautosw")?.addEventListener("click", () => {
         const s = { ...this.stampaAuto.s, attiva: this.stampaAuto.s.attiva === false };
         this.stampaAuto = { ...this.stampaAuto, s };
@@ -18356,6 +18355,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       // e la sessione del ponte verso l'iPhone si chiude (l'associazione resta: rientrati, il telefono riapre)
       if (hasExt()) ask({ t: "ponteLogin" });
       forgetAll();
+      store.del(SMART_SYNC);   // rientrati, la prima pagina rilegge la smart (l'elenco se n'è andato con forgetAll)
       if (mai || forse || aperti) {
         const d = document.createElement("div");
         d.id = "psassist-avviso-login";
@@ -18382,11 +18382,16 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     // pagine di mezzo (PsoPsoImposta, la lista dove atterra) fanno quello e basta
     if (lavoroAreaQui(document, location.href)) return;
     migraStanza();
+    store.del("segue.v1");   // («Segue il gestionale» non si spegne più: l'interruttore di prima se ne va)
     if (!LAVORO && !PONTE_VALORI) {
       smartUrlQui(document, location.href);   // il link della lista smart, quando la pagina lo porta
       leggiAreaPagina(document, location.href);
       if (areaVaiQui(document, location.href)) return;
       smartQui(document, location.href);
+      // il gestionale appena aperto (dopo l'accesso, o un «Reset»: la smart non è ancora stata letta):
+      // tutto il pronto soccorso, dietro, per il telefono e il tabellone (mai a tempo). Un attimo dopo:
+      // la pagina finisce di nascere prima che ne nasca un'altra accanto (se se ne va prima, la legge la prossima)
+      if (hasExt() && !eSmart(document, location.href) && smartDaLeggere()) setTimeout(() => { if (smartDaLeggere()) smartSync(false).catch(() => {}); }, SMART_APERTO_MS);
     }
     // La build mini (sola lettura): da qui niente pannello degli ordini, niente
     // sorveglianza delle conferme, niente stampa automatica — solo le letture
@@ -18430,7 +18435,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     });
     // Il tabellone segue il gestionale: quello che ha letto la scheda dietro
     // (o un'altra scheda) si vede qui, e chi è uscito porta il suo «Annulla».
-    // (la smart non si rilegge più a tempo: quando si apre l'app sull'iPhone, e col ⟳)
+    // (la smart non si rilegge a tempo: appena aperto il gestionale, aprendo l'app sull'iPhone, e col ⟳)
     window.addEventListener("storage", (ev) => {
       if (ev.key === NS + PROM || ev.key === NS + DF_GEN) return panel.promTick();   // un «Da fare» scritto in un'altra scheda: rifatto sul posto
       if (![NS + "patients.v1", NS + AREE, NS + SMART_SYNC, NS + DIMESSI].includes(ev.key)) return;
