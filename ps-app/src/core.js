@@ -2587,7 +2587,7 @@
         const r = segnaScheda(await ask({ t: "ordineMotore", id }));
         if (r.ok || (!r.occupato && (!r.perso || ++persi >= 3))) return true;
         if (r.occupato && Date.now() > fine) return false;
-        if (r.occupato && !detto && ui && ui.inCodaMotore) { detto = true; ui.inCodaMotore(true); }
+        if (r.occupato && !detto && ui && ui.inCodaMotore) { detto = true; ui.inCodaMotore(true, !!r.smart); }
         await sleep(1000);
       }
     } finally { if (detto) ui.inCodaMotore(false); }
@@ -8831,10 +8831,11 @@
       return false;
     }
     // Un giro che aspetta il suo turno (prendiMotore): lo dicono la striscia e il Registro.
-    inCodaMotore(on) {
+    inCodaMotore(on, smart = false) {
       if (on) {
-        this.log(`${now()}  un altro motore sta mandando esami: aspetto il turno, poi parto`);
-        this.segnala({ tag: "In coda", testo: "un altro ordine sta mandando esami: parto appena ha finito", tono: "run", paziente: this.runPatient || "", inCoda: true });
+        // (`smart`: ad aspettare non è un altro ordine ma la lista dei pazienti, letta dietro)
+        this.log(`${now()}  ${smart ? "la lista smart si sta leggendo" : "un altro motore sta mandando esami"}: aspetto il turno, poi parto`);
+        this.segnala({ tag: "In coda", testo: smart ? "leggo la lista dei pazienti, un attimo" : "un altro ordine sta mandando esami: parto appena ha finito", tono: "run", paziente: this.runPatient || "", inCoda: true });
       } else if (this.striscia && this.striscia.inCoda) this.segnala(null);
     }
     // Laboratorio e radiologia (il pacchetto «Dolore toracico» porta l'RX):
@@ -17773,7 +17774,7 @@
           const sc = scegliScheda((r && r.ok && r.indice) || [], String(p.pk || "").startsWith("cf:") ? p.pk.slice(3) : "", p.name, p.ep);
           dopo = !!sc && (Number(sc.letto) || 0) > fino;
         }
-        scriviStato(p.ep, (s) => ({ ...s, ...(dopo ? {} : { valori: { nuovi: 0, fuori: 0, fuoriTot: 0 } }), esitiVisto: ora, ...(fino > (s.valoriVisti || 0) ? { valoriVisti: fino } : {}) }));
+        scriviStato(p.ep, (s) => ({ ...s, ...(dopo ? {} : { valori: { nuovi: 0, fuori: 0, fuoriTot: 0 } }), esitiVisto: fino || ora, ...(fino > (s.valoriVisti || 0) ? { valoriVisti: fino } : {}) }));
       }
       if (!PANNELLO.root.activeElement) PANNELLO.render();
       return fatto({ ok: true, registro: `visti sul telefono: ${[ids.length ? (ids.length === 1 ? "un referto" : `${ids.length} referti`) : "", a.valori ? "gli esiti" : ""].filter(Boolean).join(" e ") || "niente"} di ${p.name}` });

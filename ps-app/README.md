@@ -930,7 +930,7 @@ paziente da solo non si riprende più (un tocco, in quella scheda, ne ridice l'e
 con la pagina aperta, si ricontrolla ogni 10 minuti **solo mentre la guardi** (tornandoci, se ne
 sono passati 10), e dopo due ricontrolli senza niente di nuovo smette: lo rifà aprire gli Esiti. Mentre lavora, accanto a **↻** c'è un discreto **«↓ 2»** — quanti ne restano —, e se il Lab
 non ha ancora una tabella dice **«Leggo i valori…»**; se non c'è proprio niente da leggere (né
-prelievi né referti di laboratorio), **«Nessun esame di laboratorio»** — anche col portale: lo storico resta un
+prelievi né referti di laboratorio), **«Nessun esame di laboratorio»** (mai se la pagina ha referti di laboratorio) — anche col portale: lo storico resta un
 tocco nel ↻ in cima (non il bottone grande), e dopo una lettura che non ha trovato niente dice quando («· letto
 14:32»). Non parte mai nella scheda di un ordine, del Ponte, di un giro ripreso o con una
 richiesta da confermare.
@@ -1411,10 +1411,11 @@ quella già letta (mai letto, o cambiata), un laboratorio a metà non si ricontr
 referto non è ancora salvato. Allora il telefono fa da sé il «↻ Rileggi» (`aggiornaValori` con
 `modo: "auto"`, che non tiene aperta la sessione) e la tabella dice **«Leggo i valori nuovi sul PC…
 · 14:32»** finché la risposta arriva. Solo con gli Esiti davanti (aperto sulle Richieste o sulla
-cartella, la sua pagina non si riapre); al più una volta ogni 10 minuti per paziente; quello che da
+cartella, la sua pagina non si riapre); al più una volta ogni 10 minuti per paziente e per PC (cambiando PC ricomincia; una lettura rifiutata non conta); quello che da
 solo non è riuscito il PC lo riprova solo più tardi (dopo 2 e 10 minuti, poi basta finché la pagina
 non cambia), e il telefono lo dice in una riga piccola. **↻ Rileggi** resta, per forzarlo. Dei TC,
-ecografie e visite c'è il PDF, non il testo, e il telefono lo dice.
+ecografie e visite c'è il PDF, non il testo, e il telefono lo dice. Un PDF **senza testo** (una scansione) non va al telefono —
+di chi è non si sa —: la copia sul PC ricorda `chi: "vuoto"` (non si rilegge a ogni apertura) e il telefono dice «PDF senza testo: aprilo sul PC».
 
 **Visto qui = visto sul PC.** Aprire un referto sul telefono lo segna visto (`visto` con i suoi
 numeri: non è più «nuovo», né qui né nel pannello); gli Esiti con qualcosa di nuovo davanti per 3
@@ -1519,7 +1520,7 @@ che non può leggere niente: cifrato da un capo all'altro, nessun dato su nessun
   Scollega»** (la spia è ferma), e ogni comando va nel **Registro**. Dopo **3 minuti senza comandi** del medico la
   sessione si chiude da sola — un tocco col telefono in mano (anche per scorrere) conta come un comando (al più
   uno al minuto, `tocco`): mentre leggi non si chiude —; tornando sull'app si riapre da sola, sul paziente e sulla scheda dov'eri
-  (in memoria, mai su disco, dopo che il PC ha risposto). Così anche se l'estensione sul PC si riavvia: il
+  (in memoria, mai su disco, dopo che il PC ha risposto). Riaperto da sé sulla Terapia non la legge (si leggerebbe aprendo una scheda sul PC senza un tocco): «Tocca per leggere la terapia». Così anche se l'estensione sul PC si riavvia: il
   telefono si ricollega da solo, senza «Sessione chiusa».
 - **Registrazioni** (⋯ sul telefono): gli zip salvati sul PC (⋯ → Registrazioni), con quando, quanto, a mano o
   automatica e perché, il controllo — niente pazienti. **Scarica** lo porta sul telefono a pezzi, cifrato come
@@ -2601,7 +2602,7 @@ nella tendina del gestionale») — poi **Prepara nel gestionale** (o Ctrl+Invio
     una scheda, dove il medico ordina a mano —, e lo stesso vale **prima di ogni salto** fra le sue
     schede (`smartAvanti`): un ordine partito o in coda, un motore chiesto, un carrello aperto
     intanto, e si ferma lì con quello che ha letto — mai «intera», nessuno dimesso da una lettura a
-    metà. Un motore che parte mentre lei legge la aspetta, al più 20 secondi dalla sua partenza. Con un
+    metà. Un motore che parte mentre lei legge la aspetta, al più 30 secondi dalla sua partenza (`SOTTO_MAX`, la sua vita vera); se la sua scheda si chiude, l'ordine in attesa parte subito. Con un
     carrello aperto non si apre nemmeno la pagina di un paziente da leggere dietro (il telefono, il ⟳ del
     tabellone, prima di ognuno): il telefono dice «c'è un carrello aperto sul PC», il ⟳ si ferma lì; le schede
     di sottofondo (referto, storico, telefono) si aprono dopo, e così la scheda che dà i PDF di

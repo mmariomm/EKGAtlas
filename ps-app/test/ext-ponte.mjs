@@ -1132,7 +1132,7 @@ check(rxNuovoPrima && await finche(visteRx, 8000) && !(await nuovoRx()),
   await doc.evaluate(() => { const K = "psassist:stato.v1", S = JSON.parse(localStorage.getItem(K) || "{}"); S["999001"] = { ...(S["999001"] || {}), valori: { nuovi: 2, fuori: 1, fuoriTot: 1 }, esitiVisto: 0 }; localStorage.setItem(K, JSON.stringify(S)); });
   const t0 = Date.now();
   const es = await esitiDi("999001", /● 2 nuovi/);
-  const visti = await finche(async () => { const s = await statoR(); return s.valori?.nuovi === 0 && s.valori?.fuori === 0 && s.esitiVisto >= t0 && s.valoriVisti > 0; }, 15000);
+  const visti = await finche(async () => { const s = await statoR(); return s.valori?.nuovi === 0 && s.valori?.fuori === 0 && s.esitiVisto > 0 && s.esitiVisto === s.valoriVisti && s.esitiVisto <= Date.now(); }, 15000);
   check(/● 2 nuovi/.test(es) && visti && await finche(async () => !/● 2 nuovi/.test(await testoTel(tel)), 5000) && /visti sul telefono: gli esiti di ROSSI MARIO/.test(await registroPonte()),
     `«● 2 nuovi» guardati sul telefono: visti anche sul PC — il pallino e «N nuovi» si spengono, qui e là; nel Registro (${JSON.stringify((await statoR()).valori)})`);
   // …ma una tabella letta sul PC dopo quella che il telefono ha mostrato (`fino`): quei valori nuovi non li ha visti nessuno

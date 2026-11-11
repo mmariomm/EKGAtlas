@@ -590,6 +590,45 @@ if (prova("la Conferma che il gestionale ignora: «Non partita» in pochi second
   check(!(r2 && r2.ok) && conferme(A).length === 2, `rifatta una volta: un secondo «Conferma di nuovo» non parte (got ${JSON.stringify(r2 && r2.ok)} · ${conferme(A).length})`);
   sess.dopoConferma = null;
 }
+if (prova("«Conferma di nuovo» dietro la lista smart: tenuta per tutta la sua vita, una Conferma sola, parte appena la scheda si chiude")) {
+  await daCapo();
+  // la finestra di attesa copre la vita vera della scheda smart (SOTTO_MAX, 30 s), non 20 s dalla partenza
+  const resto = await sw.evaluate(async () => {
+    await chrome.storage.session.set({ "sotto:99999": { cosa: "smart", esito: "attesa", ts: Date.now() - 25e3 } });
+    const r = await smartVivaFinoA();
+    await chrome.storage.session.remove("sotto:99999");
+    return r;
+  });
+  check(resto > 2000 && resto <= 5000, `una smart partita 25 s fa si aspetta ancora (fino ai 30 s): mancano ${resto} ms`);
+  A = createMock({ dopoConferma: 300 });
+  Object.assign(sess, { corrente: null, log: [], ora: 0, forzaOra: null, area: null });
+  await suPagina(doc, A.patientUrl);
+  await nienteSmart(doc);
+  ignoraLaPrima();
+  const nasce = nuovaPagina();
+  await ordina(doc, ["TROPONINA"]);
+  await nasce;
+  await suPagina(doc, B.patientUrl);
+  await striscia(doc, /ROSSI MARIO.*Non partita.*Conferma di nuovo/, 40000).catch(() => "");
+  check(conferme(A).length === 1, `(una Conferma, «Non partita»: ${conferme(A).length})`);
+  // la lista smart, lenta, che legge dietro: il tocco aspetta lei
+  Object.assign(sess, { smartVera: true, smartLenta: 15000 });
+  await smartDaRileggere(doc);
+  await telApre();
+  await finche(smartViva, 15000);
+  await $panel(doc, AZIONE).click();
+  await sospendi(3000);
+  check(await smartViva() && conferme(A).length === 1, `col tocco, la smart ancora al lavoro: la Conferma di nuovo aspetta, niente premuto (${conferme(A).length} conferme)`);
+  // la scheda della smart si chiude (il medico, o Chrome): l'ordine parte subito, non al timer
+  const tC = Date.now();
+  for (const pg of ctx.pages()) if (/menuPsoSmart|PsoPazientiSmart/.test(pg.url())) await pg.close().catch(() => {});
+  const partita = await finche(() => conferme(A).length > 1, 8000);
+  check(partita && conferme(A).length === 2 && conferme(A).every((q) => q.params.RICHIESTA_ID === Object.keys(A.state.richieste)[0]),
+    `chiusa la scheda smart, la Conferma di nuovo parte subito (${Date.now() - tC} ms), una Conferma in più sulla stessa richiesta`);
+  await sospendi(4000);
+  check(conferme(A).length === 2, `…e una sola, per un tocco (${conferme(A).length} conferme)`);
+  sess.dopoConferma = null; sess.smartVera = false;
+}
 if (prova("la Conferma rifatta che il gestionale ignora ancora: «Non partita», il carrello — mai una terza")) {
   await daCapo();
   A = createMock({ dopoConferma: 300 });
