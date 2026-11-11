@@ -839,7 +839,7 @@ check(/non si vede da qui/.test(rosso) && /portale \/clin-port\/loginPC\.jsp/.te
   const NS = "psassist:";
   const ep = new URL(mock.patientUrl).searchParams.get("EPISODIO_ID");
   const VIA_LOCALE = ["patients.v1", "stanza.posti.v1", "stanza.ps.posti.v1", "stanza.alta.posti.v1", "aree.v1", "area.vai.v1", "stato.v1", "dafare.v1", "promemoria.v1", "note.v1", "segni.v1",
-    "refVisti.v1", "refPortale", "daConfermare.v1", "quesiti", "quesiti.ts", "lastQ", "corsa.aperta.v1", "corsa.presidio.v1", "autoCarica.v1", "autoFalliti.v1", "smart.sync.v1", "dimessi.v1"];
+    "refVisti.v1", "refPortale", "daConfermare.v1", "conferme.v1", "quesiti", "quesiti.ts", "lastQ", "corsa.aperta.v1", "corsa.presidio.v1", "autoCarica.v1", "autoFalliti.v1", "smart.sync.v1", "dimessi.v1"];
   const RESTA_LOCALE = { "win.v1": null, "pillpos.v1": { left: 40, top: 40 }, "collapsed": false, "stanza.ps.v1": null, "stanza.alta.v1": null, "aree.opzioni.v1": { alta: { id: "00010001P", label: "AREA ALTA INTENSITA'" } }, "catalog.v1": null,
     "dimissioni.v1": { prova: { testo: "modello del medico" } }, "eo.v1": { prova: "EO del medico" }, "ordini.stampati": ["o1"], "attesaConferma.ms": 120000 };
   const VIA_SCHEDA = [`ris.${ep}.zz`, `visto.${ep}.zz`, `reftxt.${ep}.zz`, `log.${ep}`, `ui.${ep}`, "receipt.v1", "confirm.v1", "queue.v1",
