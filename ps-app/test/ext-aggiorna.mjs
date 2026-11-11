@@ -544,6 +544,64 @@ console.log("\naggiorna: l'aiutante che non risponde (può essere a metà della 
   comportati();
 }
 
+console.log("\naggiorna: un ordine premuto mentre l'aiutante scambia la cartella");
+{
+  // All'avvio del browser, con lo zip già scaricato e la scheda del medico aperta: lo scambio è nella fila
+  // degli ordini e aspetta l'aiutante (qui 5 secondi). Il medico preme «Conferma e stampa». La ricarica
+  // svuota storage.session: l'ordine non deve partire lì in mezzo e sparire senza dirlo — «Non partita»,
+  // niente inviato, nessuna scheda d'ordine, né prima né dopo la ricarica.
+  const PIU = "99.4.0";
+  gh.versione = PIU;
+  gh.zip = zipDi(PIU);
+  comportati();
+  azzeraLavori();
+  await dimentica();
+  await azzeraZip();
+  await controlla();
+  await doc.goto(A.patientUrl);
+  await doc.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
+  await sw.evaluate(() => { aggNato = Date.now(); });
+  const r0 = await sw.evaluate(() => aggiorna({ avvio: true }));
+  check(!r0.ok && r0.why === "Dopo la chiusura del gestionale", `(lo zip scaricato prima, lo scambio aspetta: ${r0.why})`);
+  // la richiesta pronta nel pannello (un campo di testo, non un testo da salvare): manca solo il tocco
+  await apriPannello();
+  if (!(await $panel(doc, "#q").count())) await $panel(doc, '[data-seg="richieste"]').click();
+  await $panel(doc, "#q").fill("dolore toracico");
+  await $panel(doc, '.opt[title*="TROPONINA"]').click();
+  // (le strisce della scheda del medico, una per una: la ricarica arriva subito dopo)
+  await doc.evaluate(() => {
+    window.__strisce = [];
+    setInterval(() => {
+      const r = document.getElementById("psassist-host")?.shadowRoot;
+      const t = (r?.querySelector(".pill.run")?.innerText || r?.querySelector(".gchip[data-riga]")?.dataset.riga || "").replace(/\s+/g, " ").trim();
+      if (t && window.__strisce[window.__strisce.length - 1] !== t) window.__strisce.push(t);
+    }, 25);
+  });
+  comportati({ lento: 5000 });
+  const prima = A.state.requests.length, schede = [];
+  const contaSchede = (p) => schede.push(p);
+  ctx.on("page", contaSchede);
+  await sw.evaluate(() => { aggNato = Date.now(); });
+  const nasce = ctx.waitForEvent("serviceworker", { timeout: 40000 }).catch(() => null);
+  await sw.evaluate(() => { aggAuto(true).catch(() => {}); return true; });
+  // lo scambio è nella fila e aspetta l'aiutante («chi» è passato, lo zip è da lui)
+  await finche(async () => lavori().some((x) => x.chi), 15000);
+  await sospendi(1500);
+  await $panel(doc, "#goconfirm").click();
+  const nuovo = await nasce;
+  const v = nuovo ? await entro(nuovo.evaluate(() => chrome.runtime.getManifest().version), 5000) : "";
+  await sospendi(3000);
+  ctx.off("page", contaSchede);
+  const strisce = await doc.evaluate(() => window.__strisce || []).catch(() => []);
+  const scritti = A.state.requests.slice(prima).filter((q) => q.method !== "GET");
+  check(v === PIU && lavori().filter((x) => x.aggiorna && x.ok).length === 1, `(lo scambio fatto, e la ricarica: ${v || "nessuna"})`);
+  check(strisce.some((t) => /Non partita/.test(t) && /ricarica la pagina e riprova/.test(t)),
+    `l'ordine premuto durante lo scambio: «Non partita», si rifà dopo la ricarica (got ${JSON.stringify(strisce)})`);
+  check(scritti.length === 0 && schede.length === 0, `…e davvero non partito: niente al gestionale, nessuna scheda d'ordine (got ${scritti.length} POST, ${schede.length} schede)`);
+  if (nuovo) sw = nuovo;
+  comportati();
+}
+
 check(fuori.length === 0, `nessun'altra richiesta fuori dall'ospedale (got ${fuori.slice(0, 3).join(", ")})`);
 await ctx.close();
 for (const d of [BASE, PROFILE, FINTO]) rmSync(d, { recursive: true, force: true });

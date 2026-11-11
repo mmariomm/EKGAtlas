@@ -38,6 +38,7 @@ const AGG_APERTO = new Set(["coda", "avvio", "corre", "stampo", "stampa"]);   //
 const AGG_CARTELLA = "%LOCALAPPDATA%\\PSAssist\\estensione";
 const AGG_OCCUPATO = "Dopo l'ordine in corso";
 const AGG_SCHEDE = "Dopo la chiusura del gestionale";
+let aggScambio = false;                  // lo scambio è deciso: fino alla ricarica nessun ordine nuovo (ordineNuovo, bg.js)
 // La build è di sola lettura? Allora scarica il SUO zip (quello mini). La
 // versione (VERSION.txt) è unica per le due build, che escono insieme dallo
 // stesso `npm run dist`.
@@ -247,19 +248,29 @@ async function aggiorna({ avvio = false } = {}) {
   return inFilaOrd(async () => {
     if (await aggOccupato()) return { ok: false, why: AGG_OCCUPATO };
     if (await aspetta()) return { ok: false, why: AGG_SCHEDE };   // (una scheda aperta intanto, o il minuto passato)
-    if (!i.gia) {
-      const h = await ospite({ t: "aggiorna", versione: v, zip: b64(t.buf) }, AGG_ATTESA);
-      // Nessuna risposta: l'aiutante può essere ancora a metà della copia, e la
-      // ricarica lo chiuderebbe lì (una cartella mezza vecchia e mezza nuova,
-      // che Chrome carica al prossimo avvio). Niente ricarica: la pausa, poi
-      // si chiede all'aiutante che cosa c'è nella cartella (qui sopra, `gia`).
-      if (h.ignoto) return aggNo(v, `L'aiutante non ha risposto: ${corto(h.why || "", 120)}`);
-      if (!h.ok) return aggNo(v, `Aggiornamento non riuscito: ${corto(h.why || "l'aiutante ha detto di no", 160)}`);
+    // Da qui alla ricarica nessun ordine nuovo parte (ordineNuovo, bg.js, dice «Non partita»): la
+    // ricarica svuota storage.session, e un ordine scritto lì sparirebbe senza dirlo.
+    aggScambio = true;
+    let fatto = false;
+    try {
+      if (!i.gia) {
+        const h = await ospite({ t: "aggiorna", versione: v, zip: b64(t.buf) }, AGG_ATTESA);
+        // Nessuna risposta: l'aiutante può essere ancora a metà della copia, e la
+        // ricarica lo chiuderebbe lì (una cartella mezza vecchia e mezza nuova,
+        // che Chrome carica al prossimo avvio). Niente ricarica: la pausa, poi
+        // si chiede all'aiutante che cosa c'è nella cartella (qui sopra, `gia`).
+        if (h.ignoto) return aggNo(v, `L'aiutante non ha risposto: ${corto(h.why || "", 120)}`);
+        if (!h.ok) return aggNo(v, `Aggiornamento non riuscito: ${corto(h.why || "l'aiutante ha detto di no", 160)}`);
+      }
+      await caches.delete(AGG_CACHE).catch(() => {});
+      await chrome.storage.local.remove(AGG_PAUSA).catch(() => {});
+      await chrome.storage.local.set({ aggiorna: { ts: 0, nuova: "", puo: false, come: "", fatto: v, quando: Date.now() } });
+      fatto = true;
+      setTimeout(() => chrome.runtime.reload(), 400);
+      return { ok: true, versione: v, ricarica: true };
+    } finally {
+      if (!fatto) aggScambio = false;   // (andata male: gli ordini ripartono, quello in fila compreso)
     }
-    await caches.delete(AGG_CACHE).catch(() => {});
-    await chrome.storage.local.remove(AGG_PAUSA).catch(() => {});
-    await chrome.storage.local.set({ aggiorna: { ts: 0, nuova: "", puo: false, come: "", fatto: v, quando: Date.now() } });
-    return { ok: true, versione: v, ricarica: true };
   });
 }
 
@@ -323,7 +334,6 @@ async function aggAuto(avvio = false) {
       await new Promise((res) => setTimeout(res, 10e3));
       r = await aggiorna({ avvio }).catch(() => null);
     }
-    if (r && r.ricarica) setTimeout(() => chrome.runtime.reload(), 400);
   } finally {
     aggAutoInCorso = false;
   }

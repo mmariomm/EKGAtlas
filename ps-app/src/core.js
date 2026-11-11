@@ -8814,6 +8814,14 @@
           onStop: () => this.segnala(null) });
         return false;
       }
+      // PS Assist si stava aggiornando: niente partito, e niente da mandare da qui (questa pagina sta per
+      // perdere l'estensione: la pillola «Ricarica la pagina»)
+      if (r.aggiorna) {
+        this.log(`${now()}  ordine non partito: PS Assist si stava aggiornando`);
+        this.segnala({ tag: "Non partita", testo: "niente inviato: ricarica la pagina e riprova", quesito: "PS Assist si stava aggiornando", tono: "err", paziente: chi,
+          onStop: () => this.segnala(null) });
+        return false;
+      }
       // niente scheda di sottofondo (non si apre, o la pagina non va): l'ordine lo manda questa pagina, come sempre
       this.log(`${now()}  scheda di sottofondo non disponibile (${r.why || "?"}): mando da questa pagina`);
       if (this.striscia && this.striscia.daOrdine) this.segnala(null);

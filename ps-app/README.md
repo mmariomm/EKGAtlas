@@ -64,7 +64,8 @@ stesso paziente, nella stessa scheda), quindi in pratica non te ne accorgi.
 - **la ferma** un ordine in corso o in coda (anche dal telefono), una stampa o un foglio che arriva
   sulla stazione di stampa, una registrazione (anche quella automatica che sta per salvarsi), un
   **testo non salvato** in una scheda del gestionale (una cartella, una dimissione riscritta, la
-  terapia a metà, il pannello). Nel dubbio (una scheda non risponde) aspetta;
+  terapia a metà, il pannello). Nel dubbio (una scheda non risponde) aspetta. Un ordine premuto
+  mentre l'aiutante scambia la cartella non parte: **«Non partita»**, si rifà dopo la ricarica;
 - **se va storto** (lo zip sbagliato, l'aiutante che dice di no o non risponde) quella versione
   aspetta **sei ore**, mai un tentativo a ogni giro. Se l'aiutante non risponde non si ricarica
   (potrebbe essere a metà della copia): dopo, gli chiede che cosa c'è nella cartella, e se è già la
