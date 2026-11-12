@@ -792,18 +792,20 @@ await staSw.evaluate(() => {
 // connessioni tutta la notte); il PC del medico la vede «non presente».
 // Riaperta la pagina, la presa c'è di nuovo.
 sezione("fuori turno: senza la sua pagina né il gestionale, la stazione non sta sul ponte");
+// (i 2 minuti dopo che non serve più, qui accorciati: la presa la chiude il documento fuori schermo, alla sua ora)
+await staSw.evaluate(() => { FUORI.dopo = 1500; });
 await pSta.close();
 const vuota = await staCtx.newPage();
 await vuota.goto("about:blank");
-await staSw.evaluate(() => stzAvvia());
 check(!!(await finche(async () => (await pubblicoPc())?.presente === false && !(relay.prese().stazione) && !(await staSw.evaluate(() => !!stz.presa.ws)), 10000))
   && !!(await staSw.evaluate(() => chrome.storage.local.get("stazione.qui").then((o) => o["stazione.qui"]))),
-  "chiusa la pagina della stazione, nessun gestionale sul suo PC: la presa si chiude (l'abbinamento resta), il PC del medico la vede «non presente»");
+  "chiusa la pagina della stazione, nessun gestionale sul suo PC: la presa si chiude da sola, poco dopo (l'abbinamento resta), il PC del medico la vede «non presente»");
+await staSw.evaluate(() => { FUORI.dopo = 2 * 60e3; });
 const entrateSta = relay.entrate().stazione;
 await staSw.evaluate(() => stzAvvia());
 await staSw.evaluate(() => stzAvvia());
 await sospendi(1500);
-check(relay.entrate().stazione === entrateSta, "e i risvegli (la sveglia di ogni minuto) non la riaprono");
+check(relay.entrate().stazione === entrateSta && !(await staSw.evaluate(() => chrome.alarms.get("stazione"))), "e i risvegli non la riaprono (e non c'è più la sveglia di ogni minuto)");
 pSta = await staCtx.newPage();
 await pSta.goto(EXTURL("stazione.html"));
 check(!!(await finche(async () => (await pubblicoPc())?.presente === true, 20000)) && relay.prese().stazione === 1, "riaperta la sua pagina: di nuovo sul ponte, una presa");
