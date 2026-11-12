@@ -287,7 +287,7 @@ frequenza di Cloudflare vorrebbe un dominio proprio: su `workers.dev` non c'è.)
 dell'ospedale, con l'estensione vera, sulla strada vera del ponte. Entra in una stanza di prova — un
 numero casuale, buttato alla fine — sia come PC sia come telefono, sulla presa `/ponte/ws`, e dice
 quanto ci mette ad aprirsi e quanto un messaggio a fare il giro. **Tieni aperto 15 minuti** la tiene
-aperta come la tiene il ponte (un battito ogni 30 secondi) e dice quando e perché è caduta, col
+aperta con un battito ogni 20 secondi (più spesso del ponte, che ne fa uno ogni 30) e dice quando e perché è caduta, col
 codice di chiusura. Nessun altro sito, nessun UDP. «Copia il risultato» lo mette negli appunti con un
 blocco **«Per l'IT»**, da mandare così com'è.
 

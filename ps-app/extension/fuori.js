@@ -22,6 +22,9 @@
 (function () {
   "use strict";
   const prese = new Map();   // nome → PresaWs
+  // (questo documento: gli stati di una presa si contano da qui — un documento nuovo ricomincia da capo)
+  const VITA = Math.random().toString(36).slice(2, 10);
+  const scatto = (p) => ({ ...p.stato(), vita: VITA });
   const b64 = (buf) => {
     const u = new Uint8Array(buf);
     let s = "";
@@ -42,14 +45,14 @@
     if (!p) {
       p = new PresaWs(nome, {
         // (con lo stato della presa: un service worker appena ripartito sa subito di che stanza è)
-        dati: (b) => alSw({ t: "fuoriDati", nome, url: p.url, b: b64(b), stato: p.stato() }),
-        stato: (s) => alSw({ t: "fuoriStato", ...s }),
+        dati: (b) => alSw({ t: "fuoriDati", nome, url: p.url, b: b64(b), stato: scatto(p) }),
+        stato: (s) => alSw({ t: "fuoriStato", ...s, vita: VITA }),
       });
       prese.set(nome, p);
     }
     return p;
   }
-  const stati = () => Object.fromEntries([...prese].map(([n, p]) => [n, p.stato()]));
+  const stati = () => Object.fromEntries([...prese].map(([n, p]) => [n, scatto(p)]));
 
   // Il registratore: i suoi file, una volta, nell'ordine della sua pagina di prima (registra-esporta.html).
   let registratore = null;
@@ -75,7 +78,7 @@
       const fino = m.fino === null ? null : Number(m.fino) || 0;
       const p = url || prese.has(nome) ? presa(nome) : null;
       if (p) p.tieni(url, fino, m.subito === true);
-      reply({ ok: true, stato: p ? p.stato() : null });
+      reply({ ok: true, stato: p ? scatto(p) : null });
       return;
     }
     if (m.t === "fuoriManda") {

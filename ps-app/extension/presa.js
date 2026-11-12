@@ -37,15 +37,17 @@
   class PresaWs {
     // eventi: { dati(ArrayBuffer), stato(stato) }
     constructor(nome, eventi = {}) {
-      Object.assign(this, { nome, eventi, url: "", ws: null, su: false, pari: false, fino: 0, fermo: 0, aperta: 0,
+      Object.assign(this, { nome, eventi, url: "", ws: null, su: false, pari: false, fino: 0, fermo: 0, aperta: 0, ver: 0,
         tentativi: 0, prossimo: 0, entrate: 0, codice: 0, tRiprova: 0, tPong: 0, tFino: 0 });
       this.tBattito = setInterval(() => this.battito(), PRESA.battito);
     }
     // tenuta: aperta, in apertura, o in attesa del prossimo tentativo
     get tenuta() { return !!this.url; }
+    // Com'è adesso, con un numero che cresce a ogni sguardo (`ver`): chi lo riceve per due strade
+    // (la risposta a «tieni», un messaggio) tiene il più nuovo, mai uno vecchio arrivato dopo.
     stato() {
       return { nome: this.nome, url: this.url, su: this.su, pari: this.pari, fino: this.fino, fermo: this.fermo, codice: this.codice,
-        collego: !!this.ws && !this.su, prossimo: this.prossimo, aperta: this.aperta, entrate: this.entrate };
+        collego: !!this.ws && !this.su, prossimo: this.prossimo, aperta: this.aperta, entrate: this.entrate, ver: ++this.ver };
     }
     dici() { try { this.eventi.stato && this.eventi.stato(this.stato()); } catch { /* chi ascolta non c'è più */ } }
     // Serve verso `url` fino a `fino` (ms; null = senza scadenza; 0 o passato = chiudi).

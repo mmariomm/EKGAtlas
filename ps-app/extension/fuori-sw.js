@@ -120,7 +120,7 @@ class Presa {
   // ascolta: { dati(Uint8Array), pari(bool), stato() }
   constructor(nome, ascolta = {}) {
     Object.assign(this, { nome, ascolta, url: "", su: false, pari: false, fino: 0, fermo: 0, codice: 0, collego: false, prossimo: 0,
-      locale: null, filaM: Promise.resolve() });
+      vita: "", ver: 0, persi: 0, locale: null, filaM: Promise.resolve() });
     FUORI.prese.set(nome, this);
   }
   get tenuta() { return !!this.url; }
@@ -130,6 +130,12 @@ class Presa {
   // lo stato vero, dal documento (o dalla presa qui, nel ripiego)
   applica(s) {
     if (!s) return;
+    // (uno stato più vecchio di quello che si sa, arrivato dopo per l'altra strada — la risposta a «tieni» e i
+    // messaggi del documento non si aspettano —: si ignora; un documento nuovo ricomincia a contare)
+    if (s.vita && Number.isSafeInteger(s.ver)) {
+      if (s.vita === this.vita && s.ver <= this.ver) return;
+      this.vita = s.vita; this.ver = s.ver;
+    }
     const prima = this.stato();
     this.url = String(s.url || "");
     this.su = !!s.su; this.pari = !!s.pari; this.collego = !!s.collego;
@@ -188,9 +194,10 @@ class Presa {
   manda(f) {
     const b = f instanceof Uint8Array ? f : new Uint8Array(f);
     if (this.locale) return Promise.resolve(this.locale.manda(b));
-    if (!this.url || !this.su) return Promise.resolve(false);
+    // (se è aperta lo sa il documento: qui basta la stanza — uno stato in ritardo non fa perdere un messaggio)
+    if (!this.url) { this.persi++; return Promise.resolve(false); }
     const url = this.url, nome = this.nome, testo = fuoriB64(b);
-    const p = this.filaM.then(() => fuoriChiedi({ t: "fuoriManda", nome, url, b: testo })).then((r) => !!(r && r.ok), () => false);
+    const p = this.filaM.then(() => fuoriChiedi({ t: "fuoriManda", nome, url, b: testo })).then((r) => { if (!(r && r.ok)) this.persi++; return !!(r && r.ok); }, () => { this.persi++; return false; });
     this.filaM = p;
     return p;
   }

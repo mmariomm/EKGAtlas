@@ -1412,7 +1412,10 @@ async function ponteDimentica() {
   ponteFilaCartella = ponteFilaCartella.then(() => chrome.storage.session.remove(PONTE_CARTELLA)).catch(() => {});
   ponteFilaTerapiaMemo = ponteFilaTerapiaMemo.then(() => chrome.storage.session.remove(PONTE_TERAPIA)).catch(() => {});
   pt.registro = [];
-  await Promise.all([ponteFilaCartella, ponteFilaTerapiaMemo, ponteScriviStato()]);
+  // (e le risposte delle scritture tenute per un riavvio: resta solo com'è andata, così rimandate non si rifanno)
+  const t = pt.sessione && pt.sessione.rqSalvo;
+  if (t) for (const x of Object.values(t)) if (x && x.r) x.r = { ok: !!x.r.ok, ...(x.r.incerto ? { incerto: true } : {}) };
+  await Promise.all([ponteFilaCartella, ponteFilaTerapiaMemo, ponteScriviStato(), ponteSessioneSalva()]);
 }
 // (questa può fallire: chi annota «inviato» non deve credere di averlo fatto)
 let ponteFilaTerapiaRq = Promise.resolve();
