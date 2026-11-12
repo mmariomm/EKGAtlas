@@ -17,6 +17,8 @@ import { readFileSync, mkdirSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+// (mai la rete vera: nessun proxy, ogni nome risolto in locale — il gestionale finto passa dalle route di Playwright)
+const RETE_CHIUSA = ["--proxy-server=direct://", "--host-resolver-rules=MAP * 127.0.0.1"];
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const CONTENT = process.env.PSA_CONTENT || join(root, "extension/content.js");
 readFileSync(CONTENT);
@@ -984,7 +986,7 @@ await blocco("Con l'estensione: la smart si apre in una scheda dietro e si chiud
   const exe = process.env.CHROMIUM_PATH || ["/opt/pw-browsers/chromium-1243/chrome-linux/chrome", "/opt/pw-browsers/chromium-1194/chrome-linux/chrome", "/opt/pw-browsers/chromium"].find((p) => { try { return readFileSync(p) && true; } catch { return false; } });
   const ctx = await chromium.launchPersistentContext(PROFILO, {
     headless: true, ...(exe ? { executablePath: exe } : {}),
-    args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`, ...(process.env.PSA_CHROMIUM_ARGS || "").split(/\s+/).filter(Boolean)],
+    args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`, ...(process.env.PSA_CHROMIUM_ARGS || "").split(/\s+/).filter(Boolean), ...RETE_CHIUSA],
   });
   ctx.setDefaultTimeout(10000);
   const finoA2 = async (fn, ms) => { for (const t0 = Date.now(); Date.now() - t0 < ms; await new Promise((r) => setTimeout(r, 300))) if (await fn()) return true; return false; };

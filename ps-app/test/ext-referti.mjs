@@ -12,6 +12,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { rmSync, existsSync, statSync } from "node:fs";
 
+// (mai la rete vera: nessun proxy, ogni nome risolto in locale — il gestionale finto passa dalle route di Playwright)
+const RETE_CHIUSA = ["--proxy-server=direct://", "--host-resolver-rules=MAP * 127.0.0.1"];
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const EXT = join(root, "extension");
 const PROFILE = join("/tmp", "psa-ext-" + process.pid);
@@ -65,7 +67,7 @@ const eDoc = (u) => /Sa4ViewerExtRedirect\.do/.test(u) && /REFERTO_ID=/.test(u);
 const ctx = await chromium.launchPersistentContext(PROFILE, {
   headless: true,
   executablePath: process.env.CHROMIUM_PATH || chromiumPath(),
-  args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`, ...(process.env.PSA_CHROMIUM_ARGS || "").split(/\s+/).filter(Boolean)],
+  args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`, ...(process.env.PSA_CHROMIUM_ARGS || "").split(/\s+/).filter(Boolean), ...RETE_CHIUSA],
 });
 // aperto, il pannello è una finestra all'85% che copre la pagina: qui i test
 // cliccano anche la pagina, quindi parte come colonna a destra
