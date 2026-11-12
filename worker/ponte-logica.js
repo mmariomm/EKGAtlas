@@ -110,16 +110,17 @@ export class Stanza {
     // in stanza; ritirarla senza dirglielo la lascerebbe sorda per sempre, chiuderla costa)
     this.io.scrivi(presa, { ruolo, ...nuovoConto(ora) });
     // TUTTE le altre dello stesso ruolo, non solo la prima: chi si rifà non ne
-    // lascia indietro. Il telefono che ha appena battuto (un'altra scheda, un
-    // altro telefono) è vivo: la chiusura gli arriva subito, «Aperto su un altro
-    // dispositivo»; zitto da più di 30 s è in sottofondo o morto: si ritira, e
-    // se torna e parla la chiusura gli arriva allora. Un PC, una stazione: la
-    // presa vecchia è di un service worker che non c'è più (uno vivo chiude la
-    // sua prima di aprirne un'altra) — si ritira.
+    // lascia indietro. Quella che ha appena battuto (un'altra scheda, un altro
+    // telefono — o chi conosce il numero della stanza ed entra al posto del PC o
+    // della stazione) è viva: la chiusura le arriva subito, e un PC o una stazione
+    // così riprova da sé e si riprende il posto (mai sorda per sempre: il suo
+    // battito lo risponde il ripetitore, non passa di qui). Zitta da più di 30 s
+    // è in sottofondo o morta: si ritira, e se torna e parla la chiusura le
+    // arriva allora (a una presa morta non si manda niente: costa).
     for (const p of tutte) {
       const st = this.io.leggi(p);
       if (!st || st.via || st.ruolo !== ruolo) continue;
-      if (ruolo === "tel" && ora - Math.max(st.ultimo || 0, this.io.battito(p) || 0) <= PONTE.vivoMs) this.chiudi(p, st, 4001, "sostituita", false, ora);
+      if (ora - Math.max(st.ultimo || 0, this.io.battito(p) || 0) <= PONTE.vivoMs) this.chiudi(p, st, 4001, "sostituita", false, ora);
       else this.ritira(p, st, 4001, false, ora);   // (al posto suo c'è già quella nuova: nessun avviso)
     }
     const ritirate = tutte.filter((p) => this.io.leggi(p)?.via && !this.io.leggi(p).chiusa);

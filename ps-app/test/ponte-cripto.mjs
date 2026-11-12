@@ -139,11 +139,11 @@ check(PONTE.inattivoMs === 75e3 && !("prossimaSveglia" in L) && !/sveglia/i.test
   check(io.inviati.length === 1 && io.inviati[0][0] === "tel2", "il PC parla: arriva alla presa nuova, non alla vecchia");
   esce(st, tel, 6);
   check(io.inviati.length === 1, "…e la vecchia che esce non dice al PC «non c'è più nessuno»");
-  // il PC che si rifà (il suo service worker ripartito): la presa vecchia è morta — ritirata, nessuna chiusura sulla rete
+  // il PC che si rifà (il suo service worker ripartito): la presa vecchia è morta (zitta da più di 30 s) — ritirata, nessuna chiusura sulla rete
   const pcVecchio = pc, pc2 = nuova("pc2");
   pcVecchio.battito = 5;
   io.inviati.length = 0;
-  st.entra(pc2, "pc", 7);
+  st.entra(pc2, "pc", 5 + PONTE.vivoMs + 1);
   check(pcVecchio.st.via === 4001 && io.chiusi.length === 1 && !io.inviati.some(([, d]) => d === '{"pari":false}') && io.inviati.some(([n, d]) => n === "tel2" && d === '{"pari":true}'),
     "il PC che si rifà ritira la presa vecchia (4001) senza mandarle niente: fuori dai conti; il telefono vede solo «c'è»");
   st.messaggio(pcVecchio, dati, 8);
@@ -194,6 +194,22 @@ check(PONTE.inattivoMs === 75e3 && !("prossimaSveglia" in L) && !/sveglia/i.test
   for (let i = 0; i <= PONTE.alMinuto; i++) st.messaggio(pc, new Uint8Array(1), 1000);
   check(io.chiusi.some(([n, c]) => n === "pc" && c === 1008), `più di ${PONTE.alMinuto} messaggi in un minuto: chiusa (1008)`);
 }
+// Chi entra come «pc» o «stazione» al posto di una presa viva (un estraneo che
+// conosce solo il numero della stanza): quella vera riceve subito la chiusura
+// (4001) e riprova da sé — mai ritirata in silenzio, sorda per sempre col suo
+// battito che il ripetitore risponde da solo.
+{
+  for (const ruolo of ["pc", "stazione"]) {
+    const { io, nuova, st } = finto();
+    const vera = nuova("vera");
+    st.entra(vera, ruolo, 0);
+    vera.battito = 50e3;
+    const estranea = nuova("estranea");
+    st.entra(estranea, ruolo, 60e3);
+    check(JSON.stringify(io.chiusi) === JSON.stringify([["vera", 4001, "sostituita"]]),
+      `${ruolo}: chi entra al posto della presa viva (ha battuto 10 s fa) la chiude subito, 4001: la vera riprova e si riprende il posto (${JSON.stringify(io.chiusi)})`);
+  }
+}
 // Prese vecchie dello stesso ruolo ancora aperte per il ripetitore (morte senza
 // dirlo: un service worker fermato, una rete caduta): chi entra le ritira TUTTE,
 // non solo la prima, senza mandare chiusure; l'altra parte vede solo «c'è».
@@ -202,7 +218,7 @@ check(PONTE.inattivoMs === 75e3 && !("prossimaSveglia" in L) && !/sveglia/i.test
   const tel = nuova("tel");
   st.entra(tel, "tel", 0);
   const vecchie = [nuova("pc1"), nuova("pc2"), nuova("pc3")];
-  for (const v of vecchie) { v.st = { ruolo: "pc", inizio: 0, n: 0, ultimo: 0 }; v.battito = 40e3; }   // (entrate senza che nessuna ritirasse l'altra)
+  for (const v of vecchie) { v.st = { ruolo: "pc", inizio: 0, n: 0, ultimo: 0 }; v.battito = 20e3; }   // (entrate senza che nessuna ritirasse l'altra; zitte da 40 s)
   io.inviati.length = 0;
   const nuovaPc = nuova("pc4");
   tel.battito = 50e3;
@@ -333,8 +349,9 @@ await blocco(async () => {
     const r1 = await entra("pc");
     check(r1.status === 101 && ctx.auto && ctx.auto.q === "ping" && ctx.auto.r === "pong" && prese[0].att?.ruolo === "pc" && prese[0].mandati[0] === '{"pari":false}',
       "il Durable Object: la presa entra (101), il battito lo risponde Cloudflare («ping» → «pong»)");
-    battiti.set(prese[0], Date.now());
-    await entra("pc");   // il service worker del PC è ripartito: la presa vecchia è morta, e nessuno l'ha detto
+    battiti.set(prese[0], Date.now() - 40e3);
+    prese[0].att = { ...prese[0].att, inizio: Date.now() - 40e3, ultimo: Date.now() - 40e3 };
+    await entra("pc");   // il service worker del PC è ripartito: la presa vecchia è morta (zitta da 40 s), e nessuno l'ha detto
     check(prese[0].att.via === 4001 && prese[0].chiusa === null && prese[1].att.ruolo === "pc", "un PC che si rifà: la presa vecchia ritirata, nessuna chiusura mandata");
     const tel = await entra("tel");
     check(tel.status === 101 && prese[2].mandati[0] === '{"pari":true}' && prese[1].mandati.at(-1) === '{"pari":true}' && !prese[0].mandati.includes('{"pari":true}'),
