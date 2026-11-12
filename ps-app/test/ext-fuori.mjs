@@ -27,6 +27,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { existsSync, statSync, rmSync } from "node:fs";
 
+// (mai la rete vera: nessun proxy, ogni nome risolto in locale — il gestionale finto passa dalle route di Playwright)
+const RETE_CHIUSA = ["--proxy-server=direct://", "--host-resolver-rules=MAP * 127.0.0.1"];
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 await import(join(root, "../public/ponte/cripto.js"));
 const P = globalThis.PonteCripto;
@@ -60,9 +62,7 @@ const ctx = await chromium.launchPersistentContext(PROFILE, {
   executablePath: process.env.CHROMIUM_PATH || chromiumPath(),
   viewport: { width: 1366, height: 768 },
   args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`,
-    // (mai verso il ripetitore vero, nemmeno per sbaglio: il suo nome non si risolve)
-    "--host-resolver-rules=MAP *.workers.dev ~NOTFOUND",
-    ...(process.env.PSA_CHROMIUM_ARGS || "").split(/\s+/).filter(Boolean)],
+    ...(process.env.PSA_CHROMIUM_ARGS || "").split(/\s+/).filter(Boolean), ...RETE_CHIUSA],
 });
 let login = false;   // il gestionale risponde con la pagina d'accesso (sessione scaduta)
 const LOGIN = `<html><head><title>Accesso</title></head><body><form name="Login" method="post" action="login.do"><input name="username"><input type="password" name="password"><input type="submit" value="Accedi"></form></body></html>`;
