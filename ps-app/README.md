@@ -63,7 +63,8 @@ aggiornato: sul PC tocca «Ricarica la pagina»».
   stazione di stampa, un giro di esami in una scheda, un comando del telefono che lavora in una
   scheda (valori, cartella, terapia, accettazione), una registrazione (anche quella automatica che
   sta per salvarsi); da sé, anche il telefono in uso (una sessione aperta o finita da meno di 10
-  minuti). Nel dubbio (una scheda non risponde) aspetta il giro dopo. Un ordine premuto
+  minuti). Nel dubbio (una scheda non risponde) aspetta il giro dopo; una scheda dove PS Assist non
+  entra (la pagina d'errore di Chrome, un PDF) non la ferma. Un ordine premuto
   mentre l'aiutante scambia la cartella non parte: **«Non partita · niente inviato»**, si rifà dopo
   la ricarica;
 - **subito prima dello scambio** rilegge `VERSION.txt`: se lì c'è ormai un'altra versione (quella di

@@ -110,8 +110,10 @@ async function aggControlla(ora) {
 // da meno di 10 minuti; una registrazione in corso, che si sta salvando, o
 // quella automatica che aspetta il suo minuto (REG_INC). Nel dubbio — una
 // scheda che non risponde in tempo — è occupato. Non contano le schede
-// scartate da Chrome o non caricate, e quelle dei PDF delle stampe (lì il
-// pannello non nasce). "" se è libero; se no, perché.
+// scartate da Chrome o non caricate, quelle dei PDF delle stampe (lì il
+// pannello non nasce), e quelle, caricate, dove lo script non entra (la
+// pagina d'errore di Chrome, un altro PDF: lì il pannello non c'è; se no
+// sarebbe «occupato» per sempre). "" se è libero; se no, perché.
 const aggPdf = (t) => (chrome.runtime.getManifest().content_scripts?.[0]?.exclude_matches || []).some((m) => String(t.url || "").startsWith(m.replace(/\*$/, "")));
 async function aggOccupato(auto = false) {
   if ((await ordLeggi()).some((x) => AGG_APERTO.has(x.stato)) || motoreDiScheda()) return AGG_OCCUPATO;   // (anche il motore di una scheda)
@@ -136,10 +138,12 @@ async function aggOccupato(auto = false) {
           const c = leggi(sessionStorage, "corsa.v1"), p = leggi(localStorage, "corsa.presidio.v1");
           return !!(c && Date.now() - (c.ts || 0) < corsaTtl) || !!(p && Date.now() - (p.ts || 0) < presidioMs);
         },
-      }).catch(() => null),
+      }).catch(() => "no"),
       new Promise((res) => setTimeout(() => res(null), 3000)),
     ]);
-    if (!r || !r[0] || r[0].result !== false) return AGG_OCCUPATO;   // (libera solo se lo dice: un «no» detto)
+    // (a metà di un caricamento lo script può non entrare per un attimo: quella resta occupata)
+    if (r === "no" && (await chrome.tabs.get(t.id).catch(() => null))?.status === "complete") continue;
+    if (!Array.isArray(r) || !r[0] || r[0].result !== false) return AGG_OCCUPATO;   // (libera solo se lo dice: un «no» detto)
   }
   return "";
 }

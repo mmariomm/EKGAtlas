@@ -26,7 +26,8 @@
  * gestionale aperta: aggiornata, e la pillola (il telefono, intanto: «sul PC
  * tocca Ricarica la pagina»); un ordine premuto mentre
  * l'aiutante scambia la cartella: «Non partita · niente inviato», mai perso in
- * silenzio né mandato due volte.
+ * silenzio né mandato due volte; una scheda del gestionale con la pagina
+ * d'errore di Chrome (lo script non entra) non la ferma per sempre.
  *   node test/ext-aggiorna.mjs
  */
 import { chromium } from "playwright";
@@ -522,6 +523,25 @@ console.log("\naggiorna: un ordine premuto mentre l'aiutante scambia la cartella
   comportati();
   await altra.close().catch(() => {});
   if (nuovo) { sw = nuovo; await svegliaLontana(); }
+}
+
+console.log("\naggiorna: una scheda del gestionale dove lo script non entra (la pagina d'errore di Chrome)");
+{
+  if (await finche(() => pillola(doc), 3000)) await riapriDallaPillola(doc);
+  await nessunOrdine();
+  await doc.evaluate(() => { sessionStorage.removeItem("psassist:corsa.v1"); localStorage.removeItem("psassist:corsa.presidio.v1"); });
+  check((await sw.evaluate(() => aggOccupato())) === "", "(niente in corso: libero)");
+  // il gestionale non risponde: Chrome mostra la sua pagina d'errore, all'indirizzo del gestionale
+  const rotta = await ctx.newPage();
+  await rotta.route("**/*", (r) => r.abort("connectionrefused"));
+  const ROTTA = A.patientUrl + "&rotta=1";
+  await rotta.goto(ROTTA).catch(() => {});
+  const vista = await finche(() => sw.evaluate((u) => chrome.tabs.query({ url: SA4 + "/*" }).then((l) => l.find((t) => t.url === u && t.status === "complete"))
+    .then((t) => t && chrome.scripting.executeScript({ target: { tabId: t.id }, func: () => 1 }).then(() => "entra", (e) => e.message)), ROTTA), 10000);
+  check(/error page/.test(vista || ""), `(la scheda c'è, all'indirizzo del gestionale, e lo script non entra: «${vista}»)`);
+  const r = await sw.evaluate(() => aggOccupato());
+  check(r === "", `la pagina d'errore di Chrome (lì il pannello non c'è): non tiene fermo l'aggiornamento per sempre (got «${r}»)`);
+  await rotta.close();
 }
 
 check(fuori.length === 0, `nessun'altra richiesta fuori dall'ospedale (got ${fuori.slice(0, 3).join(", ")})`);
