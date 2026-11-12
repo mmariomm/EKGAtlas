@@ -416,6 +416,23 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
       .catch((e) => reply({ ok: false, why: String(e && e.message || e).slice(0, 80) }));
     return true;
   }
+  // L'anonimizzatore delle registrazioni (registra-anonimo.js), il suo
+  // vocabolario e le origini come le vede il registratore, nello stesso mondo
+  // isolato del pannello, come pdf.js: «⧉ Copia» e «⧉ Diagnosi» escono dagli
+  // appunti pseudonimizzati come lo zip (core.js, testoDaCopiare).
+  if (msg.t === "anonimo") {
+    const tabId = _sender && _sender.tab && _sender.tab.id;
+    if (tabId == null) return reply({ ok: false, why: "nessuna scheda" }), true;
+    const target = { tabId, frameIds: [_sender.frameId || 0] };
+    (async () => {
+      const vocabolario = await (await fetch(chrome.runtime.getURL("registra-vocabolario.json"))).json();
+      const origini = typeof regOrigini === "function" ? regOrigini() : { gestionale: SA4, altri: [...ALLOWED_ORIGINS].filter((x) => x !== SA4) };
+      await chrome.scripting.executeScript({ target, files: ["registra-anonimo.js"] });
+      await chrome.scripting.executeScript({ target, func: (v, o) => { globalThis.__psaVocabolario = v; globalThis.__psaOrigini = o; }, args: [vocabolario, origini] });
+      reply({ ok: true });
+    })().catch((e) => reply({ ok: false, why: String(e && e.message || e).slice(0, 80) }));
+    return true;
+  }
 
   if (msg.t === "cacheRef") {
     const salva = async (data, size) => {

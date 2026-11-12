@@ -1959,6 +1959,15 @@ minuti (`testi/registro.txt`, senza il quesito, col testo dei promemoria inventa
 cifre o più rimappato come un identificativo) e la **diagnosi** di ogni documento che non si è
 lasciato leggere (`testi/diagnosi-N.txt`: la struttura, senza numeri né valori, codici fiscali e date come `[CF]` e `[data]`), anonimizzati come
 le pagine e ricontrollati dal cancello. Col preferito (bookmarklet) la voce mostra solo il Registro.
+**⧉ Copia** del Registro e **⧉ Diagnosi** (nella stampa) mettono il testo negli appunti — e da lì
+finisce in una mail o in una chat: con l'estensione passa prima dallo **stesso anonimizzatore** delle
+registrazioni (caricato nel pannello la prima volta, come pdf.js), coi pazienti che il pannello conosce
+(la lista, il Triage, il paziente aperto): nomi, codici fiscali, date e numeri dei casi diventano
+finti, come in `testi/registro.txt` e `testi/diagnosi-N.txt`, e se il controllo trova qualcosa la
+copia lo dice in testa. Senza l'estensione (il preferito) l'anonimizzatore non c'è: vanno via almeno i
+nomi che il pannello conosce — interi, girati, una parola sola — come `[paziente N]`, e i codici
+fiscali. In tutti e due i casi il resto del testo resta (una frase della pagina, un esame): il
+bottone lo dice, e la copia anche — rileggila prima di mandarla.
 
 - **● Registra** (solo con l'**estensione**) fa partire; la pill e
   l'intestazione mostrano **● REC** (un tocco sul ● REC riapre la vista). Lavori come sempre.
