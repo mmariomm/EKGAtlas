@@ -543,18 +543,25 @@ async function ponteSessioneRiprendi() {
 const PONTE_RQ_INCERTO = { ok: false, incerto: true, errore: "Il PC si è riavviato mentre lo faceva: non si sa se è fatto, guarda sul PC" };
 const PONTE_RQ_PROPRI = new Set(["terapiaAggiungi", "accetta", "areaApri"]);   // (tengono già le loro, coi passi: ponte.terapia.rq, ponte.accetta.rq, ponte.area.rq)
 const PONTE_RQ_TIENI = { n: 20, ms: 15 * 60e3, byte: 8000 };
+// Una risposta tenuta senza i suoi dati (troppo grande, o i nomi via): riuscita, non è più un «fatto»
+// che il telefono possa mostrare — è «guarda sul PC», come un dubbio; non riuscita, l'errore.
+const ponteRqCorta = (r) => (r && r.ok
+  ? { ok: false, incerto: true, errore: "Fatto sul PC, ma la risposta non si è tenuta: guarda sul PC" }
+  : { ok: false, ...(r && r.errore ? { errore: corto(r.errore, 200) } : {}), ...(r && r.incerto ? { incerto: true } : {}) });
 async function ponteRqSegna(s, rq, r) {
   if (pt.sessione !== s) return;
   const t = s.rqSalvo || (s.rqSalvo = {}), ora = ponteOra();
   let tieni = r;
   if (r) {
-    try { if (JSON.stringify(r).length > PONTE_RQ_TIENI.byte) tieni = { ok: !!r.ok, ...(r.errore ? { errore: corto(r.errore, 200) } : {}), ...(r.incerto ? { incerto: true } : {}) }; }
-    catch { tieni = { ok: !!r.ok }; }
+    try { if (JSON.stringify(r).length > PONTE_RQ_TIENI.byte) tieni = ponteRqCorta(r); }
+    catch { tieni = ponteRqCorta(r); }
   }
   t[rq] = { ts: ora, r: tieni || null };
-  for (const x of Object.keys(t)) if (ora - (t[x].ts || 0) > PONTE_RQ_TIENI.ms) delete t[x];
-  const k = Object.keys(t);
-  if (k.length > PONTE_RQ_TIENI.n) for (const x of k.sort((a, b) => t[a].ts - t[b].ts).slice(0, k.length - PONTE_RQ_TIENI.n)) delete t[x];
+  // (una che sta andando non si toglie mai per far posto: rimandata dopo un riavvio, «non si sa», mai rifatta —
+  // solo dopo un'ora, quando il telefono non la rimanda più da un pezzo)
+  for (const x of Object.keys(t)) if (ora - (t[x].ts || 0) > (t[x].r ? PONTE_RQ_TIENI.ms : 4 * PONTE_RQ_TIENI.ms)) delete t[x];
+  const finite = Object.keys(t).filter((x) => t[x].r), troppe = Object.keys(t).length - PONTE_RQ_TIENI.n;
+  if (troppe > 0) for (const x of finite.sort((a, b) => t[a].ts - t[b].ts).slice(0, troppe)) delete t[x];
   await ponteSessioneSalva();
 }
 
@@ -1472,7 +1479,8 @@ async function ponteDimentica() {
   // I passaggi d'area, ponte.area.rq, restano come sono: episodio, area, fase, mai un nome)
   await ponteCaricato;
   const t = pt.sessione && pt.sessione.rqSalvo;
-  if (t) for (const x of Object.values(t)) if (x && x.r) x.r = { ok: !!x.r.ok, ...(x.r.incerto ? { incerto: true } : {}) };
+  // (riuscita e senza più i suoi dati: «guarda sul PC», mai un «fatto» vuoto)
+  if (t) for (const x of Object.values(t)) if (x && x.r) x.r = x.r.ok ? ponteRqCorta(x.r) : { ok: false, ...(x.r.incerto ? { incerto: true } : {}) };
   await Promise.all([ponteFilaCartella, ponteFilaTerapiaMemo, ponteFilaAccettaRq, ponteScriviStato(), ponteSessioneSalva()]);
 }
 // (questa può fallire: chi annota «inviato» non deve credere di averlo fatto)

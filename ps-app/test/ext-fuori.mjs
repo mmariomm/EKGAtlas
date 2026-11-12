@@ -473,6 +473,26 @@ sezione("storage.session piena: quello che non si annota non si fa — e la sess
     return { n: JSON.stringify(m).length, pazienti: Object.keys(m).length, ultimo: !!m.ep39 };
   });
   check(c.n <= 300e3 && c.ultimo, `ponte.cartella, 40 pazienti con 5 campi lunghi: ${Math.round(c.n / 1000)} KB (${c.pazienti} pazienti, l'ultimo letto c'è), ben dentro 1 MB`);
+  // (revisione 3.87, P3-5) le 20 scritture tenute: una che sta andando non si toglie per far posto; una risposta
+  // troppo grande, tenuta senza i dati, non è un «fatto» vuoto
+  const q = await sw.evaluate(async () => {
+    const prima = pt.sessione;
+    const nTel = PonteCripto.casuale(16), nPc = PonteCripto.casuale(16);
+    const s = { canale: PonteCripto.canalePc(await PonteCripto.chiaviSessione(pt.k, nTel, nPc)), dal: Date.now(), ultimo: Date.now(), n: 0, nTel: PonteCripto.b64u(nTel), nPc: PonteCripto.b64u(nPc) };
+    pt.sessione = s;
+    try {
+      await ponteRqSegna(s, "rqinvolo00001", null);
+      for (let i = 0; i < 25; i++) await ponteRqSegna(s, "rqfatta" + String(i).padStart(5, "0"), { ok: true, dati: { n: i } });
+      const inVolo = !!s.rqSalvo.rqinvolo00001 && s.rqSalvo.rqinvolo00001.r === null;
+      await ponteRqSegna(s, "rqgrande00001", { ok: true, dati: { x: "y".repeat(20000) } });
+      return { inVolo, n: Object.keys(s.rqSalvo).length, grande: s.rqSalvo.rqgrande00001 && s.rqSalvo.rqgrande00001.r };
+    } finally {
+      pt.sessione = prima;
+      await ponteSessioneSalva().catch(() => {});
+    }
+  });
+  check(q.inVolo && q.n <= 21, `25 scritture fatte dopo una che sta andando: quella resta («sta andando»), le fatte più vecchie se ne vanno (${q.n} tenute)`);
+  check(!!q.grande && q.grande.ok === false && q.grande.incerto === true, `una risposta troppo grande, tenuta senza i dati: «${q.grande && q.grande.errore}» (incerto), non un «fatto» vuoto`);
 }
 
 await ctx.close();
