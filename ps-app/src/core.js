@@ -1143,6 +1143,73 @@
     try { const u = new URL(d.url, location.href); dove = u.pathname + "?" + [...u.searchParams.keys()].join("&"); } catch { /* com'è */ }
     return [`PS Assist ${VERSION} · ${d.quando || ""} · ${d.cosa || ""}`, dove, d.diag || "", "---", mascheraDiagnosi(d.html)].join("\n");
   }
+  // «⧉ Copia» (il Registro) e «⧉ Diagnosi» vanno negli appunti, e da lì in una
+  // mail, una chat, una segnalazione. Prima passano dallo STESSO anonimizzatore
+  // delle registrazioni (registra-anonimo.js, che il service worker mette la
+  // prima volta nel mondo isolato del pannello, come pdf.js), coi pazienti che
+  // il pannello conosce: nomi, codici fiscali, date, numeri dei casi diventano
+  // quelli finti, come in testi/registro.txt e testi/diagnosi-N.txt dello zip.
+  // Il resto del testo (una frase della pagina, un esame) resta, come nello zip.
+  // Senza l'estensione, o se l'anonimizzatore non c'è: almeno i nomi che il
+  // pannello conosce — interi, girati e parola per parola — e i codici fiscali.
+  // Mai il testo com'è.
+  let anonimoInArrivo = null;
+  function anonimoPronto() {
+    const c = () => !!(globalThis.RegistraAnonimo?.anonimizza && globalThis.__psaVocabolario);
+    if (c()) return Promise.resolve(true);
+    if (!hasExt() || TABELLONE) return Promise.resolve(false);
+    return anonimoInArrivo = anonimoInArrivo || ask({ t: "anonimo" }).then((r) => { anonimoInArrivo = null; return !!(r && r.ok) && c(); });
+  }
+  // i pazienti che il pannello conosce: la lista (anche gli archiviati), chi aspetta al Triage, e chi dice chi chiama
+  function nomiNoti(piu = []) {
+    const s = new Set();
+    const metti = (n) => { const t = String(n || "").replace(/\s+/g, " ").trim().slice(0, 60); if (t.length >= 4) s.add(t); };
+    try { for (const p of tuttiPazienti()) metti(p && p.name); } catch { /* niente da qui */ }
+    try { const t = store.get(TRIAGE_LISTA, null); for (const r of Array.isArray(t?.righe) ? t.righe : []) metti(r && r.nome); } catch { /* niente da qui */ }
+    for (const n of piu) metti(n);
+    return [...s].slice(0, 400);
+  }
+  const PARTICELLE_NOME = /^(?:DEL|DELLA|DELLE|DELLO|DEI|DEGLI|DAL|DALLA|DALLE|DALLO|VAN|VON|SAN|SANTA|SANTO|MAC)$/;
+  // il ripiego: ogni nome noto (intero, girato, e ogni sua parola di 4 lettere o più) → «[paziente N]», i codici fiscali → «[CF]»
+  function senzaNomiNoti(testo, nomi) {
+    const reEsc = (w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const L = "A-Za-zÀ-ÿ'’";
+    let t = String(testo).replace(/(?<![A-Za-z0-9])(?=[A-Za-z]{0,15}\d)[A-Za-z]{6}[\dLMNPQRSTUV]{2}[A-Za-z][\dLMNPQRSTUV]{2}[A-Za-z][\dLMNPQRSTUV]{3}[A-Za-z](?![A-Za-z0-9])/g, "[CF]");
+    const numero = new Map();
+    const segno = (k) => { if (!numero.has(k)) numero.set(k, numero.size + 1); return `[paziente ${numero.get(k)}]`; };
+    const interi = [], parole = new Map();
+    for (const n of nomi) {
+      const w = String(n).replace(/\s*[(\[].*$/, "").split(/[^A-Za-zÀ-ÿ'’]+/).filter(Boolean);
+      if (w.length < 2) continue;
+      const k = w.join(" ").toUpperCase();
+      for (const o of [w, [...w].reverse()]) interi.push({ re: o.map(reEsc).join("(?:[\\s,.+_-]|&nbsp;|%20)+"), k });
+      for (const x of w) if (x.length >= 4 && !PARTICELLE_NOME.test(x.toUpperCase()) && !parole.has(x.toUpperCase())) parole.set(x.toUpperCase(), k);
+    }
+    for (const { re, k } of interi.sort((a, b) => b.re.length - a.re.length)) t = t.replace(new RegExp(`(?<![${L}])${re}(?![${L}])`, "gi"), () => segno(k));
+    if (parole.size) {
+      const re = new RegExp(`(?<![${L}])(?:${[...parole.keys()].sort((a, b) => b.length - a.length).map(reEsc).join("|")})(?![${L}])`, "gi");
+      t = t.replace(re, (m) => segno(parole.get(m.toUpperCase())));
+    }
+    return t;
+  }
+  // il testo da mettere negli appunti, e come è stato ripulito
+  async function testoDaCopiare(nome, testo, piu = []) {
+    const nomi = nomiNoti(piu);
+    if (await anonimoPronto().catch(() => false)) {
+      try {
+        const r = globalThis.RegistraAnonimo.anonimizza({ inizio: Date.now(), origini: globalThis.__psaOrigini || { gestionale: location.origin }, pagine: [],
+          testi: [{ nome, testo: String(testo) }], nomi }, { vocabolario: globalThis.__psaVocabolario });
+        const t = r?.files?.[`testi/${nome}`];
+        if (typeof t === "string") return { testo: t, come: "anonimizzato", punti: r.gate && !r.gate.ok ? r.gate.punti || 1 : 0 };
+      } catch { /* il ripiego, qui sotto */ }
+    }
+    return { testo: senzaNomiNoti(testo, nomi), come: "nomi", punti: 0 };
+  }
+  const COPIA_COME = {
+    anonimizzato: "(pseudonimizzato come le registrazioni: nomi, codici fiscali, date e numeri dei casi sono finti; il resto resta — rileggilo prima di mandarlo)",
+    nomi: "(i nomi dei pazienti che il pannello conosce e i codici fiscali sono tolti; il resto resta com'è — rileggilo prima di mandarlo)",
+  };
+  const copiaAvviso = (c) => [COPIA_COME[c.come] || "", ...(c.punti ? [`ATTENZIONE: restano ${c.punti} dati da controllare`] : [])].filter(Boolean).join("\n");
   const bufDaB64 = (b64) => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)).buffer;
   // I referti già aperti (o segnati «visti»), per episodio: gli altri sono
   // «nuovi». Solo gli id dei documenti, niente del loro contenuto; un giorno.
@@ -1208,7 +1275,8 @@
   let harvestSeq = 0;
   function harvestInlinePdf(url, { html, baseUrl, signal, timeoutMs = 6000 } = {}) {
     return new Promise((resolve, reject) => {
-      const cb = `__psaH${++harvestSeq}`;
+      // (il segno dei messaggi della replica: a caso, non un contatore che uno script della pagina indovina)
+      const cb = `__psaH${++harvestSeq}_${[...crypto.getRandomValues(new Uint8Array(12))].map((b) => b.toString(16).padStart(2, "0")).join("")}`;
       const iframe = document.createElement("iframe");
       iframe.setAttribute("sandbox", "allow-scripts allow-same-origin"); // no top-nav: framebusters are inert
       iframe.style.cssText = "position:fixed;width:2px;height:2px;left:-9999px;top:-9999px;visibility:hidden";
@@ -1228,7 +1296,7 @@
       const tt = setTimeout(() => finish(reject, new ViewerError(url)), timeoutMs);
       const onMsg = (e) => {
         const d = e.data;
-        if (!d || d.__psassist !== cb) return;
+        if (!d || d.__psassist !== cb || e.source !== iframe.contentWindow) return;   // (solo dalla replica, col suo segno)
         if (isPdfBlob(d.blob)) return finish(resolve, { blob: d.blob, url });
         if (typeof d.nav === "string" && d.nav) {
           let u;
@@ -3563,7 +3631,7 @@
   // turno, qui e nella memoria di questa scheda. Restano le impostazioni
   // (finestra, stanze, le opzioni delle aree, catalogo, stampe già fatte) e i
   // modelli del medico; chi sta in quale area se ne va.
-  const DIMENTICA_TITOLO = "Dimentica quello che il pannello tiene dei pazienti — elenco, posti, valori, referti salvati, Da fare, note — in questo browser e nell'estensione. Restano le impostazioni e i tuoi fogli. Due tocchi; per 8 secondi si annulla. (Da soli i dati scadono comunque in 12–24 ore.)";
+  const DIMENTICA_TITOLO = "Dimentica quello che il pannello tiene dei pazienti — elenco, posti, valori, referti salvati, Da fare, note, registrazioni — in questo browser e nell'estensione. Restano le impostazioni, i tuoi fogli e l'associazione con l'iPhone. Due tocchi; per 8 secondi si annulla. (Da soli i dati scadono comunque in 12–24 ore.)";
   const RESET_VIA = () => ["patients.v1", ...TUTTI_I_POSTI(), "stanza.posti.v1", AREE, AREA_VAI, SMART_SYNC, DIMESSI, STATO, PROM, PROM_VECCHI, DF_GEN, noteKey, segniKey, "refVisti.v1",
     "refPortale", DA_CONFERMARE, CONFERME, "quesiti", "quesiti.ts", "lastQ", APERTA, PRESIDIO, AUTO_CARICA, FALLITI, TRIAGE_LISTA];
   function azzeraScheda() {
@@ -13610,7 +13678,10 @@
     viewRegistrazioni() {
       // in fondo, chiuso, il Registro delle operazioni di questa scheda (⧉ Copia, senza il quesito); senza
       // l'estensione (il preferito) c'è solo lui, aperto
-      const registro = `<details class="sec reg" id="registro"${this.registroAperto || !hasExt() ? " open" : ""}><summary>Registro <button class="mini" id="copylog" title="Copia il registro negli appunti (il quesito viene omesso)">⧉ Copia</button></summary><div class="log" aria-live="polite">${esc(this.logLines.join("\n"))}</div></details>`;
+      const copiaTit = hasExt() && !TABELLONE
+        ? "Copia il registro negli appunti, pseudonimizzato come le registrazioni: nomi, codici fiscali, date e numeri dei casi diventano finti, il quesito viene omesso. Il resto resta: rileggilo prima di mandarlo."
+        : "Copia il registro negli appunti: i nomi dei pazienti che il pannello conosce e i codici fiscali vengono tolti, il quesito viene omesso. Il resto resta com'è: rileggilo prima di mandarlo.";
+      const registro = `<details class="sec reg" id="registro"${this.registroAperto || !hasExt() ? " open" : ""}><summary>Registro <button class="mini" id="copylog" title="${esc(copiaTit)}">⧉ Copia</button></summary><div class="log" aria-live="polite">${esc(this.logLines.join("\n"))}</div></details>`;
       if (!hasExt()) return registro;
       const L = this.regLista;
       if (!L) { this.caricaRegistrazioni(); return `<div class="sec"><div class="hint">Leggo le registrazioni…</div></div>${registro}`; }
@@ -14239,11 +14310,13 @@
       this.esiti = esitiModel(document, location.href);
     }
 
-    // Copy the log for reporting. The quesito is the only clinical text that
-    // can end up in it, so it is masked out before leaving the page.
+    // Copy the log for reporting. The quesito is masked out before leaving the
+    // page, and the rest goes through the recorder's anonymizer (testoDaCopiare):
+    // the Registro names the patients («iPhone · nota di …»).
     async copyLog() {
-      const head = [`PS Assist ${VERSION} · pagina ${this.pageType}`, `${navigator.userAgent}`, `${new Date().toLocaleString("it-IT")}`, ""].join("\n");
-      const text = head + this.logLines.map(senzaQuesito).join("\n");
+      const c = await testoDaCopiare("registro.txt", this.logLines.map(senzaQuesito).join("\n"), [this.nomePaziente()]);
+      const head = [`PS Assist ${VERSION} · pagina ${this.pageType}`, `${navigator.userAgent}`, `${new Date().toLocaleString("it-IT")}`, copiaAvviso(c), ""].join("\n");
+      const text = head + c.testo;
       const ok = await copiaTesto(text);
       const b = this.root.querySelector("#copylog");
       segnaCopia(b, ok);
@@ -16686,7 +16759,7 @@
           : `<button class="pwbtn re" id="pwre" title="Riapre la finestra di stampa del browser" ${cur ? "" : "disabled"}>${icoIn("stampante")}Stampa</button>`}
         <button class="pwbtn next" id="pwnext" title="${i + 1 < jobs.length ? "Passa al documento successivo" : "Chiude: hai stampato tutto"}">${nextLbl}</button>
         ${viewer ? "" : `<button class="pwbtn ghost" id="pwtab" title="Se la stampa non parte, aprilo in una scheda">${icoIn("esterno")}Scheda</button>`}
-        ${viewer && ultimaDiag ? `<button class="pwbtn ghost" id="pwdiag" title="Copia com'è fatto il visualizzatore (senza numeri), da mandare a chi fa il pannello">⧉&nbsp; Diagnosi</button>` : ""}
+        ${viewer && ultimaDiag ? `<button class="pwbtn ghost" id="pwdiag" title="Copia com'è fatto il visualizzatore, da mandare a chi fa il pannello: senza numeri, date né valori dei campi, e ${hasExt() && !TABELLONE ? "pseudonimizzato come le registrazioni (nomi e codici fiscali finti)" : "senza i nomi dei pazienti che il pannello conosce"}. Il testo della pagina resta: rileggilo prima di mandarlo.">⧉&nbsp; Diagnosi</button>` : ""}
         <button class="pwbtn exit" id="pwexit" title="Chiude senza stampare il resto (Esc)">✕&nbsp; Chiudi</button>
         <div class="pwhint">${viewer
           ? `Questo documento non si lascia stampare da qui: <b>Apri e stampa</b>, poi Ctrl+P → <b>${esc(job.printer)}</b>, e qui «→ Avanti».`
@@ -16697,7 +16770,8 @@
       piede.querySelector("#pwtab").onclick = () => openTab(job.url, "_blank"); // user-activated → not popup-blocked
       piede.querySelector("#pwdiag")?.addEventListener("click", async () => {
         const b = piede.querySelector("#pwdiag");
-        segnaCopia(b, await copiaTesto(diagnosiTesto(ultimaDiag)));
+        const c = await testoDaCopiare("diagnosi-1.txt", diagnosiTesto(ultimaDiag), [opzioni.paziente, panel?.nomePaziente?.()]);
+        segnaCopia(b, await copiaTesto([c.testo, copiaAvviso(c)].join("\n")));
       });
     };
 

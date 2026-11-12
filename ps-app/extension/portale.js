@@ -13,11 +13,28 @@ const mostra = async () => {
 };
 mostra();
 
+// Due tocchi: il primo dice QUALE sito riceverà il pannello e il registratore,
+// il secondo (lo stesso sito, entro 30 secondi) lo autorizza — e il permesso
+// di Chrome, che vuole il gesto, si chiede proprio su quel secondo tocco.
+const OK_TESTO = $("ok").textContent;
+let daConfermare = null;
+const conferma = (o) => {
+  clearTimeout(conferma.t);
+  daConfermare = o ? { origine: o, ts: Date.now() } : null;
+  $("ok").textContent = o ? `Conferma: autorizza ${o}` : OK_TESTO;
+  if (o) conferma.t = setTimeout(() => conferma(null), 30e3);
+};
+$("u").addEventListener("input", () => conferma(null));
 $("ok").addEventListener("click", async () => {
   let origine;
   try { origine = new URL($("u").value.trim()).origin; }
-  catch { return dice("Non è un indirizzo. Incolla quello che vedi nella barra del browser, per intero.", false); }
-  if (!/^https?:$/.test(new URL(origine).protocol)) return dice("Serve un indirizzo http o https.", false);
+  catch { conferma(null); return dice("Non è un indirizzo. Incolla quello che vedi nella barra del browser, per intero.", false); }
+  if (!/^https?:\/\/[^/]+$/.test(origine)) { conferma(null); return dice("Serve un indirizzo http o https.", false); }
+  if (!daConfermare || daConfermare.origine !== origine || Date.now() - daConfermare.ts > 30e3) {
+    conferma(origine);
+    return dice(`Il pannello e il registratore gireranno anche su ${origine}, con le pagine che vi apri. È il portale dell'ospedale? Premi «Conferma» per autorizzarlo.`, true);
+  }
+  conferma(null);
   let dato;
   try { dato = await chrome.permissions.request({ origins: [origine + "/*"] }); }
   catch (e) { return dice("Chrome ha rifiutato: " + (e && e.message || e), false); }

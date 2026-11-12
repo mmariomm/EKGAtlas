@@ -304,8 +304,10 @@ durata; i messaggi veri passano solo quando il telefono o la stampa si usano. Ca
 di rado: da 1 secondo, il doppio ogni volta, fino a 5 minuti fra un tentativo e l'altro, col caso (±50 %); il
 conto ricomincia solo dopo una connessione rimasta su 2 minuti. Rifiutata dal ripetitore (codice 4403): niente
 nuovi tentativi, e la pagina ⋯ → iPhone dice «Scollegato». Nessuna porta in entrata, nessun UDP, nessun altro host. Dentro il TLS i messaggi sono cifrati
-una seconda volta, da un capo all'altro (AES-256-GCM): si può **escludere dall'ispezione TLS** senza
-esporre niente, e né l'IT né Cloudflare possono leggerli. Il gestionale non vede niente di nuovo: le
+una seconda volta, da un capo all'altro (AES-256-GCM): né l'IT né Cloudflare possono leggerli. Conviene
+anzi **escluderlo dall'ispezione TLS**: l'indirizzo della presa porta il numero della stanza (`?r=…`), e un
+proxy che ispeziona lo vede — con quello chiunque può occupare il posto del PC (non leggere né scrivere
+niente: solo farlo tacere). Il gestionale non vede niente di nuovo: le
 pagine che l'estensione apre o legge per un comando sono le stesse, con le stesse richieste, di quando
 il medico usa il pannello.
 
@@ -585,11 +587,13 @@ controllare».
 telefono — o, nella stanza di una stazione di stampa, una del PC del medico e una della stazione (`medico`,
 `stazione`): ognuno parla solo col suo pari — (una nuova dello stesso ruolo prende il posto di **tutte** le
 vecchie, 4001); inoltra solo il binario, così com'è; messaggi oltre 1 MB o più di 1200 al minuto chiudono la
-presa; una presa muta da 75 secondi (tre battiti persi) non conta più. Serve dell'app del telefono solo i suoi
+presa. Una presa muta da 75 secondi (tre battiti persi) *dovrebbe* non contare più: la regola c'è
+(`Stanza.muta`), ma oggi nessuno la chiama — una presa muta conta finché Cloudflare non chiude la
+connessione o una nuova dello stesso ruolo non la sostituisce. Serve dell'app del telefono solo i suoi
 file (`FILE_APP`). Niente su disco, niente sveglie, niente nei log: il Durable Object usa l'ibernazione delle
 WebSocket, il battito lo risponde Cloudflare senza svegliarlo, e lo svegliano solo una presa che entra, una che
 esce e un messaggio cifrato. **Nessuna chiusura a chi non può rispondere**: una presa sostituita (di un PC il
-cui service worker è ripartito) o muta si *ritira* — fuori dai conti subito, senza scrivere niente sulla rete —
+cui service worker è ripartito) si *ritira* — fuori dai conti subito, senza scrivere niente sulla rete —
 perché una chiusura mandata a un capo morto resta in sospeso (Cloudflare la tiene fino a 15 minuti) e tiene
 sveglio il Durable Object. Se una presa ritirata parla (era viva: un telefono rimasto in sottofondo), la
 chiusura le arriva allora; il telefono ancora vivo che un'altra scheda sostituisce la riceve subito.
@@ -716,8 +720,10 @@ suo aiutante non l'ha stampato (e il suo file temporaneo, come per ogni foglio).
   quello che la sessione del gestionale aperta lì espone — i pazienti che il collega loggato sta già
   gestendo — e si stampa, ma **non si scrive**. Ogni comando di scrittura del gestionale (ordine,
   terapia, cartella, accettazione, Da fare, mappa) è rifiutato **sul PC** («Questo PC è in sola
-  lettura»), nel service worker prima di toccare una scheda, e il codice di scrittura è anche **escluso
-  dalla build** (niente pannello degli ordini, niente ricetta SISS). La testata del telefono dice chi è
+  lettura»), nel service worker prima di toccare una scheda, e di nuovo nella scheda (e nelle schede di
+  sottofondo) prima di toccare il gestionale. Dalla build è tolta solo la ricetta SISS (il suo content
+  script); il resto del codice di scrittura c'è, ma spento dalla bandiera della build (`sola-lettura.js`):
+  niente pannello degli ordini, e ogni comando di scrittura si ferma a quei muri. La testata del telefono dice chi è
   loggato nel gestionale su quel PC: informazione, non un blocco — l'accesso resta attribuito, dal
   gestionale, al collega loggato lì, come quando è lui a guardare la pagina. Un PC di sola lettura non
   può mandare comandi né al telefono né al PC completo.

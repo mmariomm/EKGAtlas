@@ -1141,10 +1141,15 @@ puliscono finiti gli 8 secondi, o subito se cambi pagina). Via **tutto** quello 
 nelle stanze, stato degli esami, «Da fare», note e segni, valori, referti salvati e il loro testo, schede
 cliniche, ordini finiti, richieste da confermare, quesiti, la memoria di ogni scheda aperta, gli
 ordini che ricorda il Ponte, le letture di cartella e terapie che il Ponte tiene per l'iPhone e le
-sue note coi nomi, la registrazione non salvata e gli ultimi minuti di quella automatica (gli zip salvati,
-anonimizzati, restano). **Restano**: stampanti e
+sue note coi nomi, la registrazione non salvata e gli ultimi minuti di quella automatica, **gli zip
+salvati** (anonimizzati, ma di questo turno), del registro degli errori le voci che portano un paziente
+(un episodio, una richiesta, un referto, il testo di una pagina) e, dai numeri delle accettazioni mandate
+dal telefono, il nome. **Restano**: stampanti e
 stampa automatica, indirizzo del portale, associazione con l'iPhone, fogli di dimissione ed EO,
-le stanze, le opzioni delle aree, la finestra. Non c'è mentre questa scheda manda un giro (un
+le stanze, le opzioni delle aree, la finestra; le altre voci del registro degli errori (stampe, Ponte,
+registratore, eccezioni); i **numeri** delle terapie e delle accettazioni mandate dal telefono (episodio,
+fase, esito — per una terapia la riga del farmaco), perché un rinvio dello stesso numero non rifaccia
+mai il clic; la cache del browser (Chrome: la svuota lui, o le sue impostazioni) e gli zip già scaricati. Non c'è mentre questa scheda manda un giro (un
 ordine in coda o delle etichette che aspettano non lo tolgono).
 
 **Il nome viene dal riquadro del paziente**, quello colorato in testa alla scheda (episodio, nome,
@@ -1952,8 +1957,8 @@ mai attaccati a un referto (niente li collega). Il referto in PDF resta lì acca
   → suo endpoint PDF) e a salvare i byte nella memoria dell'estensione, su questa macchina.
   Solo con l'**estensione**: il bookmarklet non può farlo. Se un referto non è
   salvabile resta senza pallino e il **motivo** compare passandoci sopra col mouse (e nel Registro).
-  Scadono in **8 ore**, massimo 25, e si azzerano alla chiusura del browser; **⋯ → Dimentica i
-  dati…**, subito.
+  Scadono in **8 ore**, massimo 200, e si azzerano al **riavvio** del browser (chiuso, restano su
+  disco fino alla prossima apertura); **⋯ → Dimentica i dati…**, subito.
 
 > **Da configurare una volta**: l'host del visualizzatore è dichiarato in
 > `extension/manifest.json` → `host_permissions` (oggi `http://10.11.0.151:9080/*`). Se nella tua
@@ -1970,6 +1975,15 @@ minuti (`testi/registro.txt`, senza il quesito, col testo dei promemoria inventa
 cifre o più rimappato come un identificativo) e la **diagnosi** di ogni documento che non si è
 lasciato leggere (`testi/diagnosi-N.txt`: la struttura, senza numeri né valori, codici fiscali e date come `[CF]` e `[data]`), anonimizzati come
 le pagine e ricontrollati dal cancello. Col preferito (bookmarklet) la voce mostra solo il Registro.
+**⧉ Copia** del Registro e **⧉ Diagnosi** (nella stampa) mettono il testo negli appunti — e da lì
+finisce in una mail o in una chat: con l'estensione passa prima dallo **stesso anonimizzatore** delle
+registrazioni (caricato nel pannello la prima volta, come pdf.js), coi pazienti che il pannello conosce
+(la lista, il Triage, il paziente aperto): nomi, codici fiscali, date e numeri dei casi diventano
+finti, come in `testi/registro.txt` e `testi/diagnosi-N.txt`, e se il controllo trova qualcosa la
+copia lo dice in testa. Senza l'estensione (il preferito) l'anonimizzatore non c'è: vanno via almeno i
+nomi che il pannello conosce — interi, girati, una parola sola — come `[paziente N]`, e i codici
+fiscali. In tutti e due i casi il resto del testo resta (una frase della pagina, un esame): il
+bottone lo dice, e la copia anche — rileggila prima di mandarla.
 
 - **● Registra** (solo con l'**estensione**) fa partire; la pill e
   l'intestazione mostrano **● REC** (un tocco sul ● REC riapre la vista). Lavori come sempre.
@@ -2024,7 +2038,8 @@ le pagine e ricontrollati dal cancello. Col preferito (bookmarklet) la voce most
   **mai nomi, codici fiscali, date di nascita, testo libero**; nello zip passa dall'anonimizzazione
   e dal controllo come il resto. Nello zip a mano vanno quelle dall'ultima registrazione a mano
   salvata (restano sul PC: si sposta solo il segno); in quello automatico, quelle dei suoi minuti.
-  «Dimentica i dati…» non lo cancella. Sugli errori d'ordine
+  «Dimentica i dati…» ne toglie le voci che portano un paziente (un episodio, una richiesta, un
+  referto, il testo di una pagina: gli ordini, la ricetta SISS, di chi è un PDF); le altre restano. Sugli errori d'ordine
   più difficili («… non risulta nel carrello», «Conferma non verificata», e il «Riprova i mancanti»
   con com'è finito) la voce porta la **traccia** del giro, quella che il motore ha già sotto gli
   occhi (nessuna richiesta in più): l'ordine, ogni esame col suo codice e la sua risorsa, ogni
@@ -2034,11 +2049,16 @@ le pagine e ricontrollati dal cancello. Col preferito (bookmarklet) la voce most
   è stato il server o il pannello.
 - **Cosa non esce mai**: il grezzo resta nella memoria dell'estensione su questo PC (IndexedDB),
   e ne esce solo anonimizzato, nello zip, **qui**, con lo stesso metodo di `tools/esempi.mjs`: ogni
-  testo diventa inventato a meno che sia vocabolario del programma (compare per almeno **due
-  pazienti diversi**, o nelle pagine di esempio, o nel catalogo); nomi → nomi finti sempre uguali
+  testo diventa inventato a meno che sia vocabolario del programma (nelle pagine di esempio, nel
+  catalogo, un'etichetta della pagina — o visto per almeno **due persone diverse** *e* con la forma di
+  un'etichetta: corto, senza numeri lunghi, fatto per almeno metà di parole del vocabolario). Due
+  episodi della stessa persona (oggi e uno di prima: lo stesso nome, codice fiscale o assistito) sono
+  **una** persona: la sua storia, la via, i parenti non diventano «vocabolario» perché si vedono due
+  volte; e una frase che due parenti hanno in comune non resta. Nomi → nomi finti sempre uguali
   per la stessa persona — anche i pazienti che l'estensione conosce (la lista del pannello, quelli
   aperti, chi aspetta al Triage, gli ordini) dove nessuna pagina li mostra, come il Registro di un'altra
-  scheda; i nomi degli analiti che il pannello conosce (le sue sigle) non sono persone; nel
+  scheda — e **ogni parola di un nome di paziente da sola** (il cognome in una cella, il nome di un
+  parente) diventa la stessa parola del suo nome finto, ovunque; i nomi degli analiti che il pannello conosce (le sue sigle) non sono persone; nel
   Registro un COGNOME NOME in maiuscolo senza parole del programma o cliniche diventa un nome finto
   solo lì (mai nelle pagine, né dentro il markup della diagnosi); personale e utenti → `OPERATORE n` / `UTENTEn`; codici fiscali, date di
   nascita, tessere, telefoni, indirizzi, email tolti; anamnesi, esame obiettivo, diario, note,
@@ -2046,7 +2066,8 @@ le pagine e ricontrollati dal cancello. Col preferito (bookmarklet) la voce most
   sempre gli stessi (i collegamenti restano); ospedale e fornitore → `OSPEDALE ESEMPIO`. Dei PDF
   viaggia solo il testo anonimizzato. Niente parte da solo verso nessuno: lo zip lo mandi tu.
 - **Il controllo**: prima di scrivere lo zip si rilegge tutto cercando quello che è stato visto
-  di vero (codici fiscali, nomi, date di nascita, episodi). Se resta qualcosa lo zip si salva
+  di vero (codici fiscali, nomi — anche una parola sola di un nome, di 4 lettere o più, che non sia
+  del programma —, date di nascita, episodi). Se resta qualcosa lo zip si salva
   **lo stesso**, ma la vista dice «restano N dati da controllare» e lo stesso avviso apre
   `riepilogo.txt`, con il file e il tipo di dato di ognuno — mai il valore: **controlla quei punti
   prima di mandarlo**.
@@ -2552,8 +2573,8 @@ nella tendina del gestionale») — poi **Prepara nel gestionale** (o Ctrl+Invio
     nessuna parte: non c'è una richiesta, né una notifica fuori dal pannello. Ma valori e testi dei referti letti in un turno stanno nel
     `sessionStorage` della scheda: **Chrome lo tiene anche su disco**, nel profilo, per poter
     ripristinare le schede — muore chiudendo la scheda, non prima. I PDF salvati stanno nella
-    memoria dell'estensione (su disco), scadono dopo 8 ore, massimo 25, e si azzerano alla
-    chiusura del browser. Le **schede cliniche** (tabella multi-prelievo, testi dei referti letti)
+    memoria dell'estensione (su disco), scadono dopo 8 ore, massimo 200, e si azzerano al
+    riavvio del browser (fra la chiusura e la prossima apertura restano su disco). Le **schede cliniche** (tabella multi-prelievo, testi dei referti letti)
     stanno nella memoria dell'estensione, quindi **su disco**: un turno dura dodici ore e non si
     può perdere tutto chiudendo il browser. Scadono da sole **24 ore** dopo l'ultima lettura, al
     massimo 200 pazienti. La pagina di login cancella il resto — ma il `sessionStorage` è

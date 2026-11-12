@@ -522,7 +522,7 @@ async function ponteSessioneRiprendi() {
 // Una scrittura del telefono (rq): «sta andando» (r = null), poi la sua risposta. Poche e fresche: il
 // telefono rimanda una scrittura senza risposta al più per 10 minuti, e storage.session è piccola (1 MB su Chrome 109).
 const PONTE_RQ_INCERTO = { ok: false, incerto: true, errore: "Il PC si è riavviato mentre lo faceva: non si sa se è fatto, guarda sul PC" };
-const PONTE_RQ_PROPRI = new Set(["terapiaAggiungi", "accetta"]);   // (tengono già le loro, coi passi: ponte.terapia.rq, ponte.accetta.rq)
+const PONTE_RQ_PROPRI = new Set(["terapiaAggiungi", "accetta", "areaApri"]);   // (tengono già le loro, coi passi: ponte.terapia.rq, ponte.accetta.rq, ponte.area.rq)
 const PONTE_RQ_TIENI = { n: 20, ms: 15 * 60e3, byte: 8000 };
 async function ponteRqSegna(s, rq, r) {
   if (pt.sessione !== s) return;
@@ -739,7 +739,7 @@ async function ponteRisposta(s, d) {
     }
     return { ok: false, errore: "Comando sconosciuto" };
   } catch (e) {
-    if (typeof segnaErrore === "function") segnaErrore("ponte", { comando: String(d && d.c || "").slice(0, 30), messaggio: corto(e && e.message || e, 120) });
+    if (typeof segnaErrore === "function") segnaErrore("ponte", { comando: String(d && d.cmd || "").slice(0, 30), messaggio: corto(e && e.message || e, 120) });
     return { ok: false, errore: "Errore sul PC: " + corto(e && e.message || e, 80) };
   }
 }
@@ -1426,11 +1426,25 @@ const ponteTerapiaMemoScrivi = (ep, l) => (ponteFilaTerapiaMemo = ponteFilaTerap
 async function ponteDimentica() {
   ponteFilaCartella = ponteFilaCartella.then(() => chrome.storage.session.remove(PONTE_CARTELLA)).catch(() => {});
   ponteFilaTerapiaMemo = ponteFilaTerapiaMemo.then(() => chrome.storage.session.remove(PONTE_TERAPIA)).catch(() => {});
+  // I numeri delle terapie e delle accettazioni mandate dal telefono RESTANO: un
+  // rinvio dello stesso numero ha la stessa risposta e non rifà il clic. Tengono
+  // l'episodio, la fase («inviato» prima del clic) e l'esito; quello di
+  // un'accettazione riuscita porta anche il nome: quello va via (nella stessa fila
+  // di chi scrive, così nessuna fase si perde).
+  ponteFilaAccettaRq = ponteFilaAccettaRq.then(async () => {
+    const m = await ponteAccettaRqTutti();
+    let tolti = 0;
+    for (const x of Object.values(m)) if (x && x.esito && x.esito.dati && "nome" in x.esito.dati) { const { nome, ...resto } = x.esito.dati; x.esito = { ...x.esito, dati: resto }; tolti++; }
+    if (tolti) await chrome.storage.session.set({ [PONTE_ACCETTA_RQ]: m });
+  }).catch(() => {});
   pt.registro = [];
-  // (e le risposte delle scritture tenute per un riavvio: resta solo com'è andata, così rimandate non si rifanno)
+  // (e le risposte delle scritture tenute per un riavvio: resta solo com'è andata, così rimandate non si rifanno —
+  // dopo che il service worker appena ripartito ha ripreso la sessione, se no la ritroverebbe intera.
+  // I passaggi d'area, ponte.area.rq, restano come sono: episodio, area, fase, mai un nome)
+  await ponteCaricato;
   const t = pt.sessione && pt.sessione.rqSalvo;
   if (t) for (const x of Object.values(t)) if (x && x.r) x.r = { ok: !!x.r.ok, ...(x.r.incerto ? { incerto: true } : {}) };
-  await Promise.all([ponteFilaCartella, ponteFilaTerapiaMemo, ponteScriviStato(), ponteSessioneSalva()]);
+  await Promise.all([ponteFilaCartella, ponteFilaTerapiaMemo, ponteFilaAccettaRq, ponteScriviStato(), ponteSessioneSalva()]);
 }
 // (questa può fallire: chi annota «inviato» non deve credere di averlo fatto)
 let ponteFilaTerapiaRq = Promise.resolve();

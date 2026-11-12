@@ -647,6 +647,47 @@ const riga = (inizio) => { const i = core.indexOf(inizio); return core.slice(i, 
     `gli analiti che il pannello conosce non diventano nomi finti nella pagina, e la riga del Registro resta com'era; il paziente no (celle: ${celle.join(" | ")} · Registro: ${(reg.split("\n")[1] || "").slice(0, 90)})`);
 }
 
+// ------------- due episodi della stessa persona, due parenti: «visto due volte» non basta
+// Una stringa vista nelle pagine di due episodi era «vocabolario». Ma l'episodio di oggi e
+// uno di prima sono la STESSA persona (lo stesso nome nel titolo e nella cella «Assistito»):
+// il suo cognome da solo, la via, la figlia, l'allergia restavano, e il controllo passava.
+// Due parenti (lo stesso cognome, due persone) idem. Adesso: le unità della stessa persona
+// sono una; «visto per due persone» tiene solo quello che ha la forma di un'etichetta del
+// programma; ogni parola di un nome di paziente, da sola, si sostituisce, e il cancello la vede.
+{
+  const T7 = Date.UTC(2026, 9, 29, 10, 0, 0);
+  const liberi = ["portatrice di pacemaker dal 2019, vive sola in via dei Glicini, assistita dalla figlia Ornella", "ZANICHELLI",
+    "Allergia nota a mezzi di contrasto iodati (shock nel 2021)", "vive con la moglie in via dei Glicini 12"];
+  const pagZ = (ep, nome, ts, extra = "") => ({ url: `${G}/sa4pso/restrict/menuPsoEpisodio.do?MVPG=PsoEpisodioClinicoAmbulatorio&EPISODIO_ID=${ep}`, ts: T7 + ts, scheda: 1, alto: true,
+    html: `<html><head><title>${nome}</title></head><body><table><tr><td>Assistito</td><td>${nome}</td></tr>${liberi.map((t) => `<tr><td>${t}</td></tr>`).join("")}
+    <tr><td>Stato barella libera</td></tr></table>${extra}<a href="menuPsoEpisodio.do?MVPG=PsoEpisodioClinicoAmbulatorio&amp;EPISODIO_ID=${ep}">x</a></body></html>` });
+  const fuori = (r) => Object.values(r.files).join("\n");
+  // (a) oggi e un episodio di prima, la stessa persona
+  const r1 = anonimizza({ inizio: T7, origini: { gestionale: G }, pagine: [pagZ("120001", "ZANICHELLI ORNELLA", 1000), pagZ("119555", "ZANICHELLI ORNELLA", 3000)] }, { vocabolario, sfasamento: 30 });
+  const t1 = fuori(r1);
+  check(!liberi.some((t) => t1.includes(t)) && !/ZANICHELLI|Glicini|iodati|Ornella/i.test(t1) && r1.gate.ok,
+    `due episodi della stessa persona: niente del suo resta — cognome, via, figlia, allergia (${liberi.filter((t) => t1.includes(t)).map((t) => t.slice(0, 20)).join(" | ") || "tutto sostituito"}; cancello ${r1.gate.punti} punti)`);
+  check(cancello(r1.files, { nomi: ["ZANICHELLI ORNELLA"] }).ok, "e ricontrollata dal di fuori col nome vero, l'uscita è pulita");
+  // (b) due parenti: lo stesso cognome, due persone, gli stessi testi; un'etichetta del programma resta
+  const r2 = anonimizza({ inizio: T7, origini: { gestionale: G }, pagine: [pagZ("120001", "ZANICHELLI ORNELLA", 1000), pagZ("120002", "ZANICHELLI ARTURO", 3000)] }, { vocabolario, sfasamento: 30 });
+  const t2 = fuori(r2), pg2 = Object.entries(r2.files).filter(([k]) => k.startsWith("pagine/")).map(([, v]) => v);
+  check(!/ZANICHELLI|Glicini|iodati|pacemaker|moglie/i.test(t2) && r2.gate.ok,
+    `due parenti, due persone: il cognome da solo e le frasi che hanno in comune non restano (cancello ${r2.gate.punti} punti)`);
+  check(pg2.length === 2 && pg2.every((p) => p.includes("Stato barella libera")), "…mentre un'etichetta del programma vista per due persone resta");
+  // (c) una parola del nome, da sola, dentro un testo che resta (il titolo di un link di navigazione) — e di un paziente
+  // che solo l'estensione conosce (la lista del pannello): sostituita come il resto del nome, con la stessa parola finta
+  const nav = `<a href="menuPso.do?MVPG=PsoPazientiAmbulatorio" title="Referto di Zanichelli">Lista</a><span>Box CALDERONI</span>`;
+  const r3 = anonimizza({ inizio: T7, origini: { gestionale: G }, nomi: ["CALDERONI PIETRO"], pagine: [pagZ("120001", "ZANICHELLI ORNELLA", 1000, nav)] }, { vocabolario, sfasamento: 30 });
+  const p3 = Object.entries(r3.files).find(([k]) => k.startsWith("pagine/"))?.[1] || "";
+  const finto = ((/<title>([^<]+)<\/title>/.exec(p3) || [])[1] || "").split(" ")[0] || "?";
+  check(!/ZANICHELLI|CALDERONI/i.test(fuori(r3)) && new RegExp(`title="Referto di ${finto[0]}${finto.slice(1).toLowerCase()}"`).test(p3) && r3.gate.ok,
+    `il cognome da solo in un titolo che resta diventa il cognome finto della stessa persona (${(/title="Referto di [^"]*"/.exec(p3) || ["—"])[0]}); anche quello di un paziente della lista del pannello`);
+  // (d) il cancello vede un nome conosciuto da solo, ovunque — una volta, e non due dentro il nome intero
+  const cz = cancello({ a: "<td>Zanichelli</td>", b: "<td>ZANICHELLI ORNELLA</td>", c: "<td>De Ornella</td>", d: "<td>il sig. DE</td>" }, { nomi: ["ZANICHELLI ORNELLA", "DE LUCA PIA"] });
+  check(!cz.ok && cz.dove.a?.nome === 1 && cz.dove.b?.nome === 1 && cz.dove.c?.nome === 1 && !cz.dove.d,
+    `il cancello vede ogni parola di un nome conosciuto da sola, una volta; mai le particelle (${JSON.stringify(cz.dove)})`);
+}
+
 // --------------------------------------------------------------- lo zip
 const zip = creaZip({ "a.txt": "ciao", "pagine/001-x.html": "<p>è</p>" });
 const dir = mkdtempSync(join(tmpdir(), "psa-zip-"));

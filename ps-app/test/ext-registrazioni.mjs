@@ -148,6 +148,30 @@ check(!(await sw.evaluate(() => RegistraDb.tx("scorre", "readonly", (s) => s.get
   "e non rilegge niente dalla cache");
 
 // ===========================================================================
+// «⧉ Copia» mette il Registro negli appunti, e da lì in una mail: il Registro nomina i pazienti.
+// Con l'estensione passa dallo stesso anonimizzatore delle registrazioni (caricato nel pannello
+// dal service worker), coi pazienti che il pannello conosce: come testi/registro.txt nello zip.
+sezione("«⧉ Copia»: il Registro negli appunti, pseudonimizzato come le registrazioni");
+await ctx.grantPermissions(["clipboard-read", "clipboard-write"]);
+await doc.evaluate(() => {
+  const k = "psassist:log.999001", l = JSON.parse(sessionStorage.getItem(k) || "null") || { lines: [] };
+  l.lines.push("10:02:11  iPhone · nota di ROSSI MARIO", "10:03:00  cercato Rossi (RSSMRA80A01H501U), episodio 999001");
+  sessionStorage.setItem(k, JSON.stringify({ ts: Date.now(), lines: l.lines }));
+});
+await suPagina(doc, A.patientUrl);
+await vista(doc);
+await doc.evaluate(() => { const d = document.getElementById("psassist-host").shadowRoot.querySelector("details#registro"); if (d) d.open = true; });
+await doc.evaluate(() => navigator.clipboard.writeText("vuoto"));
+await $panel(doc, "#copylog").click();
+await finche(async () => (await doc.evaluate(() => navigator.clipboard.readText().catch(() => ""))) !== "vuoto", 10000);
+const clipE = await doc.evaluate(() => navigator.clipboard.readText().catch(() => ""));
+const notaE = (/nota di ([^\n]+)/.exec(clipE) || [])[1] || "";
+check(/^[A-Z]+ [A-Z]+$/.test(notaE) && notaE !== "ROSSI MARIO" && /cercato [A-Z][a-z]+ \(ESMPIO80A01Z\d{3}X\), episodio 9\d{5}/.test(clipE) && !/ROSSI|Rossi|MARIO|RSSMRA|999001/.test(clipE),
+  `negli appunti il nome finto, il codice fiscale finto, l'episodio rimappato — come nello zip (${(clipE.match(/[^\n]*(?:nota di|cercato)[^\n]*/g) || ["—"]).join(" | ")})`);
+check(/pseudonimizzato come le registrazioni/.test(clipE) && /pseudonimizzato come le registrazioni/.test(await $panel(doc, "#copylog").getAttribute("title") || ""),
+  "e lo dice, negli appunti e sul bottone");
+
+// ===========================================================================
 sezione("niente più vecchio di 3 minuti");
 await sw.evaluate(async () => {
   await RegistraDb.tx("scorre", "readwrite", (s) => { s.add({ tipo: "pagina", ts: Date.now() - 4 * 60e3, url: "https://smarthealth.multimedica.it/vecchia", html: "<html>vecchia</html>" }); });

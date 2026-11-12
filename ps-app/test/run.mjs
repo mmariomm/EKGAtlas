@@ -4421,6 +4421,27 @@ async function scenarioResizeAndLog(browser) {
   check(scen, /aggiunto ✓/.test(clip), "contiene le righe del registro");
   check(scen, !/dolore toracico/.test(clip), "il quesito NON finisce negli appunti");
   check(scen, /✓ copiato/.test(await $panel(page, "#copylog").innerText()), "il bottone conferma la copia");
+  // Il Registro nomina i pazienti («iPhone · nota di …»): senza l'estensione (qui) l'anonimizzatore delle
+  // registrazioni non c'è, e negli appunti vanno almeno via i nomi che il pannello conosce — interi,
+  // girati, e una parola sola — e i codici fiscali; il bottone lo dice.
+  await page.evaluate((ep) => {
+    const k = "psassist:log." + ep, l = JSON.parse(sessionStorage.getItem(k) || "null") || { lines: [] };
+    l.lines.push("10:02:11  iPhone · nota di ROSSI MARIO", "10:03:00  cercato Mario Rossi (RSSMRA80A01H501U), poi Rossi da solo");
+    sessionStorage.setItem(k, JSON.stringify({ ts: Date.now(), lines: l.lines }));
+  }, new URL(mock.patientUrl).searchParams.get("EPISODIO_ID"));
+  await page.reload();
+  await page.waitForSelector("#psassist-host #menubtn", { timeout: 15000 });
+  await registro(page);
+  const aVista = await $panel(page, "details#registro .log").innerText();
+  await $panel(page, "#copylog").click();
+  await page.waitForTimeout(300);
+  const clip2 = await page.evaluate(() => navigator.clipboard.readText());
+  check(scen, /nota di ROSSI MARIO/.test(aVista) && /nota di \[paziente 1\]/.test(clip2) && /cercato \[paziente 1\] \(\[CF\]\), poi \[paziente 1\] da solo/.test(clip2)
+    && !/ROSSI|Rossi|RSSMRA/.test(clip2),
+    `negli appunti il paziente che il pannello conosce non c'è, né intero né girato né da solo, e nemmeno il codice fiscale (${(clip2.match(/[^\n]*nota di[^\n]*/) || ["—"])[0]})`);
+  check(scen, /i nomi dei pazienti che il pannello conosce e i codici fiscali sono tolti/.test(clip2)
+    && /nomi dei pazienti che il pannello conosce/.test(await $panel(page, "#copylog").getAttribute("title")),
+    "e lo dice, negli appunti e sul bottone");
   await context.close();
 }
 

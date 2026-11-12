@@ -5,7 +5,7 @@
  * (registra-esporta.html), così la versione e le tabelle sono una sola cosa.
  *   grezzi   la registrazione a mano, com'è vista (pagine, flusso, PDF):
  *            si cancella appena salvato lo zip
- *   scorre   la registrazione automatica: gli ultimi 10 minuti, potati di
+ *   scorre   la registrazione automatica: gli ultimi 3 minuti, potati di
  *            continuo (indice «ts»), cancellati all'avvio del browser
  *   zip      gli zip salvati, anonimizzati: i dati (nome, ora, misura, motivo,
  *            controllo, riepilogo) — leggere l'elenco non legge i byte

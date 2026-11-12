@@ -120,8 +120,12 @@ const b64 = (buf) => {
 // dati}: pagina è solo l'MVPG; dati solo numeri, codici, impronte, messaggi
 // del nostro codice — mai nomi, codici fiscali, date di nascita, testo libero
 // (chi chiama passa solo quelli, e qui si ripulisce lo stesso). «Registra» lo
-// mette nello zip (errori.json); «Dimentica i dati…» non lo tocca.
+// mette nello zip (errori.json); «Dimentica i dati…» toglie le voci che portano
+// un paziente (errorePaziente: i suoi numeri, o il testo di una pagina).
 const ERRORI = "errori.v1", ERRORI_MAX = 500;
+const ERRORE_PAZIENTE = /^(?:episodio|ep|richiesta|referto|paziente|nome|cf)$/i;
+const errorePaziente = (x) => !x || typeof x !== "object" || ["ricetta", "identita", "terapia", "referto", "ponte valori"].includes(x.tipo)
+  || Object.entries(x.dati && typeof x.dati === "object" ? x.dati : {}).some(([k, v]) => ERRORE_PAZIENTE.test(k) && v != null && v !== "");
 let codaErrori = Promise.resolve();
 const pulito = (v, d = 0) => {
   if (v == null || typeof v === "number" || typeof v === "boolean") return v;
@@ -398,7 +402,44 @@ chrome.tabs.onRemoved.addListener((id) => {
   }).catch(() => {});
 });
 
+// Chi può chiedere i comandi qui sotto (referti salvati, schede cliniche, le
+// schede di sottofondo, il portale, «Dimentica i dati…»): le pagine
+// dell'estensione (impostazioni, tabellone, il riquadro del ponte), o il
+// pannello — content.js, solo nella cornice in alto — in una scheda del
+// gestionale, del portale clinico o del portale che il medico ha aggiunto. Il
+// registratore nelle pagine del SISS, del visualizzatore e nei riquadri parla
+// solo con registra.js: qui, niente. Aggiungere e togliere il portale: solo la
+// pagina delle impostazioni.
+const BG_TIPI = new Set(["errore", "pdfjs", "anonimo", "cacheRef", "getRef", "delRef", "chiRef", "listRef", "apreStorico", "chiAprivo", "schedaNostra",
+  "apriNelGestionale", "tabelloneApriPagina", "tabellone", "smartSotto", "smartChi", "smartAvanti", "smartFine", "apriStoricoSotto", "apriRefertoSotto",
+  "refertoSotto", "refertoSottoDiag", "esitoSotto", "sottoLogin", "putStorico", "getStorico", "portale", "apriImpostazioni", "togliPortale",
+  "aggiungiPortale", "clearRef", "resetPazienti"]);
+const BG_SOLO_ESTENSIONE = new Set(["aggiungiPortale", "togliPortale"]);
+const bgDaEstensione = (s) => !!s && s.id === chrome.runtime.id && String(s.url || "").startsWith(chrome.runtime.getURL(""));
+// true: sì; false: no; null: forse il portale aggiunto dal medico (si guarda in storage)
+function bgMittente(s) {
+  if (bgDaEstensione(s)) return true;
+  if (!s || s.id !== chrome.runtime.id || !s.tab || s.frameId) return false;
+  let u;
+  try { u = new URL(String(s.url || "")); } catch { return false; }
+  // (il portale clinico: content.js ci gira su ogni porta, come dice il suo modello nel manifest)
+  if (u.origin === "https://smarthealth.multimedica.it" || (/^https?:$/.test(u.protocol) && u.hostname === "10.11.0.151")) return true;
+  return /^https?:$/.test(u.protocol) ? null : false;
+}
 chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
+  if (!msg || typeof msg !== "object" || !BG_TIPI.has(msg.t)) return;
+  const chi = BG_SOLO_ESTENSIONE.has(msg.t) ? bgDaEstensione(_sender) : bgMittente(_sender);
+  if (chi === true) return bgComandi(msg, _sender, reply);
+  const no = () => reply({ ok: false, why: "non da qui" });
+  if (!chi) return no(), true;
+  chrome.storage.local.get("portale").then((o) => {
+    let da = "";
+    try { da = new URL(String(_sender.url || "")).origin; } catch { /* no */ }
+    if (o.portale && da === o.portale) bgComandi(msg, _sender, reply); else no();
+  }).catch(no);
+  return true;
+});
+const bgComandi = (msg, _sender, reply) => {
   if (!msg || typeof msg !== "object") return;
   // un errore dal pannello: nel registro degli errori
   if (msg.t === "errore") { segnaErrore(msg.tipo, msg.dati, msg.pagina).then(() => reply({ ok: true })); return true; }
@@ -414,6 +455,23 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
       files: ["pdfjs/pdf.min.js", "pdfjs/pdf.worker.min.js"],
     }).then(() => reply({ ok: true }))
       .catch((e) => reply({ ok: false, why: String(e && e.message || e).slice(0, 80) }));
+    return true;
+  }
+  // L'anonimizzatore delle registrazioni (registra-anonimo.js), il suo
+  // vocabolario e le origini come le vede il registratore, nello stesso mondo
+  // isolato del pannello, come pdf.js: «⧉ Copia» e «⧉ Diagnosi» escono dagli
+  // appunti pseudonimizzati come lo zip (core.js, testoDaCopiare).
+  if (msg.t === "anonimo") {
+    const tabId = _sender && _sender.tab && _sender.tab.id;
+    if (tabId == null) return reply({ ok: false, why: "nessuna scheda" }), true;
+    const target = { tabId, frameIds: [_sender.frameId || 0] };
+    (async () => {
+      const vocabolario = await (await fetch(chrome.runtime.getURL("registra-vocabolario.json"))).json();
+      const origini = typeof regOrigini === "function" ? regOrigini() : { gestionale: SA4, altri: [...ALLOWED_ORIGINS].filter((x) => x !== SA4) };
+      await chrome.scripting.executeScript({ target, files: ["registra-anonimo.js"] });
+      await chrome.scripting.executeScript({ target, func: (v, o) => { globalThis.__psaVocabolario = v; globalThis.__psaOrigini = o; }, args: [vocabolario, origini] });
+      reply({ ok: true });
+    })().catch((e) => reply({ ok: false, why: String(e && e.message || e).slice(0, 80) }));
     return true;
   }
 
@@ -960,11 +1018,15 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
     return true;
   }
   if (msg.t === "aggiungiPortale") {
+    // Solo dalla pagina delle impostazioni (portale.html), col gesto del medico
+    // e la sua conferma: mai da una pagina web o da un content script. E solo un
+    // sito http/https — mai chrome:, file:, l'estensione stessa.
+    if (!String(_sender && _sender.url || "").startsWith(chrome.runtime.getURL("portale.html"))) return reply({ ok: false, why: "Si aggiunge solo dalla pagina delle impostazioni." }), true;
     (async () => {
       let origine;
       try { origine = new URL(String(msg.url || "").trim()).origin; }
       catch { return reply({ ok: false, why: "Non è un indirizzo: incolla quello che vedi nella barra del browser." }); }
-      if (!/^https?:$/.test(new URL(origine).protocol)) return reply({ ok: false, why: "Serve un indirizzo http o https." });
+      if (!/^https?:\/\/[^/]+$/.test(origine) || origine === new URL(chrome.runtime.getURL("")).origin) return reply({ ok: false, why: "Serve un indirizzo http o https." });
       const pattern = origine + "/*";
       // Il permesso si chiede dalla PAGINA delle impostazioni, non da qui:
       // chrome.permissions.request vuole un gesto dell'utente, e un gesto non
@@ -1015,11 +1077,20 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
       // ponte tiene in memoria per il telefono (cartella, terapie, le sue note)
       if (typeof regCancella === "function") await regCancella().catch(() => {});
       if (typeof ponteDimentica === "function") await ponteDimentica().catch(() => {});
+      // e gli zip salvati (anonimizzati, ma di questo turno), e del registro degli
+      // errori le voci che portano un paziente — un episodio, una richiesta, un
+      // referto, il testo di una pagina (la ricetta del SISS, la Terapia, di chi
+      // è un PDF): restano quelle del programma (stampe, ponte, registratore, eccezioni)
+      if (typeof regZipTutti === "function") { await regZipTutti().catch(() => {}); if (typeof regAvvisaElenco === "function") await regAvvisaElenco().catch(() => {}); }
+      await (codaErrori = codaErrori.then(async () => {
+        const l = (await chrome.storage.local.get(ERRORI))[ERRORI];
+        if (Array.isArray(l)) await chrome.storage.local.set({ [ERRORI]: l.filter((x) => !errorePaziente(x)) });
+      }).catch(() => {}));
       reply({ ok: true });
     })().catch(() => reply({ ok: false }));
     return true;
   }
-});
+};
 
 // ---------------------------------------------------------------------------
 // L'ORDINE IN UNA SCHEDA DI SOTTOFONDO. «Conferma e stampa» (e «solo
@@ -1912,12 +1983,18 @@ chrome.tabs.onUpdated.addListener((id, info, tab) => {
 });
 chrome.windows?.onFocusChanged?.addListener(ordStampaOra);
 
+// Il terzo muro della build mini (il primo è nel ponte, ponte-sw.js; il secondo
+// nella scheda, core.js): niente che inserisca o confermi esami nel gestionale —
+// un ordine nuovo, la sua scheda di sottofondo che parte, «Conferma di nuovo».
+// Le stampe e le ristampe restano: non scrivono nel gestionale.
+const ORD_SCRITTURE = new Set(["ordineNuovo", "ordineParto", "ordineRiconferma"]);
 // (con un nome: i test lo chiamano due volte con la stessa domanda)
 function ordMessaggio(msg, sender, reply) {
   if (!msg || typeof msg !== "object" || typeof msg.t !== "string" || !msg.t.startsWith("ordin")) return;
   const tab = sender && sender.tab;
   const daGestionale = !!tab && sulGestionale(sender.url);
   if (!daGestionale) return reply({ ok: false, no: true, why: "non dal gestionale" }), true;
+  if (self.PSA_SOLA_LETTURA === true && ORD_SCRITTURE.has(msg.t)) return reply({ ok: false, no: true, solaLettura: true, why: "Questo PC è in sola lettura" }), true;
   const fai = (fn) => { inFilaOrd(fn).catch((e) => reply({ ok: false, why: corto(e && e.message || e, 80) })); return true; };
   const faiDopoIlMotore = (fn) => { dopoIlMotore().then(() => fai(fn)); return true; };
   // la scheda di un ordine che gira: solo lei parla per lui
