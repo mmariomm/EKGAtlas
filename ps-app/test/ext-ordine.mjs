@@ -42,10 +42,15 @@ const shot = async (page, nome) => { if (SHOTS) await page.screenshot({ path: jo
 // Due pazienti, due simulatori: ROSSI MARIO (999001) e BIANCHI ANNA (999002).
 // Le richieste di BIANCHI partono da 800001, così i numeri non si confondono.
 let A, B;
+// Ogni prova ha i suoi numeri di richiesta, come nel gestionale vero: la Conferma
+// annotata da una prova di prima (conferme.v1, meno di un minuto fa) non è di questa.
+let giro = 0;
 const nuovi = (optsA = {}) => {
   A = createMock(optsA);
   B = createMock({ name: "BIANCHI ANNA", episodeId: "999002" });
-  B.state.nextRichiestaId = 800001;
+  A.state.nextRichiestaId = 700001 + giro * 100;
+  B.state.nextRichiestaId = 800001 + giro * 100;
+  giro++;
 };
 nuovi();
 const quale = (url) => {
