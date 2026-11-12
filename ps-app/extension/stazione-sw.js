@@ -33,16 +33,20 @@
  * stampato» se è arrivato e la risposta no. Mai stampato altrove da solo, mai
  * due volte.
  */
-/* global PonteCripto, ponteIndirizzo, corto, stampaPdf, ruotaDi, STAMPA_PDF_MAX, ospite, Presa, fuoriRipiego, psaGestionale */
+/* global PonteCripto, ponteIndirizzo, corto, stampaPdf, ruotaDi, STAMPA_PDF_MAX, ospite, Presa, fuoriRipiego, psaGestionale, cassaLeggi, cassaScrivi, cassaTogli */
 
+// (3.87) Le chiavi — K della coppia, sui due PC, e la chiave privata dell'offerta — stanno nella cassa
+// (cassa.js: l'IndexedDB del service worker, CryptoKey non estraibili), mai in chrome.storage: in
+// storage.local resta solo quello che non è segreto, con l'`id` della chiave.
 const STA = {
   // sul PC del medico
-  coppia: "stazione.coppia",     // storage.local: { k, nome, dal, via, codice, revoca? }
+  coppia: "stazione.coppia",     // storage.local: { id, nome, dal, via, codice, revoca?, staProva? } (la chiave: nella cassa)
   pubblico: "stazione",          // storage.session: quello che le pagine del PC mostrano (niente chiavi)
   // sulla stazione
-  qui: "stazione.qui",           // storage.local: { k, dal, codice, conferma, revoca? }: questo PC è una stazione
+  qui: "stazione.qui",           // storage.local: { id, dal, codice, conferma, revoca? }: questo PC è una stazione (la chiave: nella cassa)
   nome: "stazione.nome",         // storage.local: il nome che il medico vede («Infermeria»)
-  offerta: "stazione.offerta",   // storage.session: l'offerta del QR, finché vale
+  offerta: "stazione.offerta",   // la cassa: l'offerta del QR, finché vale (fino alla 3.86 in storage.session: da lì si toglie)
+  ultimo: "stazione.ultimo",     // storage.session: il numero dell'ultimo saluto del PC del medico (lega un «riparti» a quella sessione)
   stato: "stazione.stato",       // storage.session: quello che la pagina della stazione mostra
   lavori: "stazione.lavori",     // storage.local: gli ultimi fogli: ora, tipo, pagine, copie, esito — niente pazienti
   rq: "stazione.rq",             // storage.local: i fogli già ricevuti, per numero (stampati una volta sola)
@@ -88,7 +92,29 @@ async function staChiaveK(priv, pubAltro, s, pubMedico, pubStazione) {
   return staHkdf(z, staUnisci(STA_SALE, s, pubMedico, pubStazione), "stazione", 32);
 }
 const staCodiceOfferta = (s, pub) => PonteCripto.codice(staUnisci(s, pub));
-const staUrl = (host, stanza, ruolo) => { const u = new URL(host); return `${u.protocol === "https:" ? "wss:" : "ws:"}//${u.host}/ponte/ws?r=${stanza}&ruolo=${ruolo}`; };
+// L'indirizzo della presa, con le chiavi d'entrata nel frammento (presa.js: alla rete va senza). Il PC del
+// medico tiene la sua (`c`: la stanza la registra la prima volta) e, quando sa che la stazione sa provare,
+// dà alla stanza anche quella della stazione (`a`); la stazione prova con la sua (`p`).
+const staUrl = (host, stanza, ruolo, entra = null, altro = false) => {
+  const u = new URL(host);
+  const base = `${u.protocol === "https:" ? "wss:" : "ws:"}//${u.host}/ponte/ws?r=${stanza}&ruolo=${ruolo}`;
+  if (!entra) return base;
+  return ruolo === "medico" ? `${base}#c=${entra.medico}${altro ? "&a=" + entra.stazione : ""}` : `${base}#p=${entra.stazione}`;
+};
+// la cassa: la chiave di una coppia (`id`), come CryptoKey; una coppia della 3.86 (con `k` su disco) ci si sposta
+const staId = () => PonteCripto.b64u(PonteCripto.casuale(9));
+async function staMigra(nome, c) {
+  if (!c || typeof c.k !== "string") return c;
+  const { k, ...resto } = c, id = staId();
+  await cassaScrivi(nome, { id, k: await PonteCripto.chiaveDa(PonteCripto.daB64u(k)) });
+  const nuova = { ...resto, id };
+  await chrome.storage.local.set({ [nome]: nuova });
+  return nuova;
+}
+async function staChiave(nome, c) {
+  const x = c ? await cassaLeggi(nome) : null;
+  return x && x.id === c.id && x.k ? x.k : null;
+}
 // L'offerta, come la porta il QR: «<chiave pubblica>.<s>.<scadenza>» (e il nome a parte)
 function staOffertaDa(testo) {
   const m = /^([A-Za-z0-9_-]{87})\.([A-Za-z0-9_-]{22})\.(\d{10,15})$/.exec(String(testo || ""));
@@ -134,7 +160,12 @@ stm.presa = new Presa("medico", {
 let stmLavori = 0;
 const stmOccupato = () => stmLavori > 0 || !!stmSalutoInCorso || stm.attese.size > 0;
 const staGestionale = async () => (typeof psaGestionale === "function" ? psaGestionale().catch(() => true) : true);
-const stmUrl = () => staUrl(stm.host, stm.chiavi.stanza, "medico");
+// (le chiavi d'entrata cambiano l'indirizzo, e un indirizzo nuovo rifà la presa: mai con un foglio in viaggio)
+const stmUrl = () => {
+  const u = staUrl(stm.host, stm.chiavi.stanza, "medico", stm.entra, !!(stm.coppia && stm.coppia.staProva));
+  if (stm.urlUsato && stmOccupato() && stm.urlUsato.split("#")[0] === u.split("#")[0]) return stm.urlUsato;
+  return (stm.urlUsato = u);
+};
 // (una alla volta: una decisione vecchia non arriva dopo una nuova)
 const staInFila = (fila, fn) => { const p = fila.p.then(fn); fila.p = p.catch(() => {}); return p; };
 const stmFilaServe = { p: Promise.resolve() };
@@ -164,17 +195,21 @@ const stmAvvia = (serve = true) => (stmFilaAvvio = stmFilaAvvio.then(() => stmAv
 async function stmAvviaOra(serve = true) {
   stm.host = await ponteIndirizzo().catch(() => "");
   let c = (await chrome.storage.local.get(STA.coppia))[STA.coppia] || null;
-  if (c && c.revoca && staOra() - c.revoca > STA_REVOCA_MAX) { await chrome.storage.local.remove(STA.coppia); c = null; }
-  if (c && stm.chiaviDi !== c.k) {
+  if (c && c.revoca && staOra() - c.revoca > STA_REVOCA_MAX) { await chrome.storage.local.remove(STA.coppia); await cassaTogli(STA.coppia).catch(() => {}); c = null; }
+  if (c && (stm.chiaviDi !== c.id || typeof c.k === "string")) {
     try {
-      stm.k = PonteCripto.daB64u(c.k);
-      stm.chiavi = await PonteCripto.chiaviCoppia(stm.k);
-      stm.chiaviDi = c.k;
+      c = await staMigra(STA.coppia, c);
+      const k = await staChiave(STA.coppia, c);
+      if (!k) throw new Error("coppia senza chiave");
+      stm.k = k;
+      stm.chiavi = await PonteCripto.chiaviCoppia(k);
+      stm.entra = await PonteCripto.chiaviEntra(k);
+      stm.chiaviDi = c.id;
       stmFineSessione();
-    } catch { await chrome.storage.local.remove(STA.coppia); c = null; }
+    } catch { await chrome.storage.local.remove(STA.coppia); await cassaTogli(STA.coppia).catch(() => {}); c = null; }
   }
   stm.coppia = c;
-  if (!c) { stm.k = null; stm.chiavi = null; stm.chiaviDi = ""; stmFineSessione(); }
+  if (!c) { stm.k = null; stm.chiavi = null; stm.chiaviDi = ""; stm.entra = null; stmFineSessione(); }
   if (!c || !stm.host) await stm.presa.ferma();
   else if (serve || fuoriRipiego()) await stmAssicura();
   staSveglia();
@@ -195,14 +230,22 @@ async function stmRicevi(b) {
     try { m = (await PonteCripto.apri(stm.chiavi.salutoPc, b, PonteCripto.TIPO.SALUTO_PC)).dati; } catch { return; }
     if (!m || m.v !== 1) return;
     if (m.revoca) return stmRevocata();
-    if (m.revocaVista) { if (stm.coppia && stm.coppia.revoca) { await chrome.storage.local.remove(STA.coppia); await stmAvvia(); } return; }
+    if (m.revocaVista) { if (stm.coppia && stm.coppia.revoca) { await chrome.storage.local.remove(STA.coppia); await cassaTogli(STA.coppia).catch(() => {}); await stmAvvia(); } return; }
     // (la stazione non ha più la sessione: le domande in volo non avranno risposta, se ne apre un'altra)
-    if (m.riparti) { stmFineSessione(); return; }
+    // Solo se parla di QUESTA sessione (3.87: `eco`, il numero del nostro saluto): un «riparti» vecchio,
+    // rimandato da chi sta nella stanza, non ferma un foglio che sta stampando. (Una stazione della 3.86 lo
+    // manda senza: allora si aspetta la risposta che non arriva, e si chiede com'è andata su una sessione nuova.)
+    if (m.riparti) { if (stm.sessione && typeof m.eco === "string" && m.eco === stm.sessione.n) stmFineSessione(); return; }
     const sa = stm.saluto;
     if (!sa || m.eco !== sa.n || !stmAttiva()) return;
     stm.saluto = null;
     stm.sentito = staOra();
     if (m.no) return sa.risolvi(null);
+    // la stazione sa provare l'entrata (3.87): da adesso la stanza ha anche la sua chiave
+    if (m.entra === 1 && !stm.coppia.staProva) {
+      stm.coppia = { ...stm.coppia, staProva: true };
+      await chrome.storage.local.set({ [STA.coppia]: stm.coppia });   // (la presa la usa quando si rifà senza fogli in viaggio: stmUrl)
+    }
     try {
       const canale = PonteCripto.canaleTel(await PonteCripto.chiaviSessione(stm.k, PonteCripto.daB64u(sa.n), PonteCripto.daB64u(m.n)));
       stm.sessione = { canale, n: sa.n };
@@ -326,11 +369,45 @@ async function stazioneStampaOra(tipo, pdf, copie, rq) {
 // L'iPhone ha inquadrato il QR della stazione (ponte-sw.js, comando
 // «stazioneCollega»): l'offerta va alla stazione, e K nasce qui e là.
 const STA_COLLEGA = new Map();   // l'offerta → la risposta (una volta sola)
+// (3.87) Una stazione già collegata non si sostituisce dal telefono, in silenzio: il telefono chiede, e il
+// medico conferma sul PC (la pagina iPhone), finché l'offerta vale. Solo in memoria: l'offerta apre la stanza
+// dell'abbinamento, e non va dove gli script delle pagine leggono.
+let staChiesta = null;           // { sta, nome, prima, codice, scade }
 function stazioneCollega(d) {
   const testo = typeof d.sta === "string" ? d.sta : "";
-  if (!STA_COLLEGA.has(testo)) STA_COLLEGA.set(testo, stazioneCollegaOra(testo, corto(String(d.nome || "").trim(), 40)).finally(() => setTimeout(() => STA_COLLEGA.delete(testo), 60e3)));
+  const nome = corto(String(d.nome || "").trim(), 40);
+  if (stmAttiva()) return stazioneDaConfermare(testo, nome);
+  if (!STA_COLLEGA.has(testo)) STA_COLLEGA.set(testo, stazioneCollegaOra(testo, nome).finally(() => setTimeout(() => STA_COLLEGA.delete(testo), 60e3)));
   return STA_COLLEGA.get(testo);
 }
+async function stazioneDaConfermare(testo, nome) {
+  const o = staOffertaDa(testo);
+  if (!o) return { ok: false, errore: "Questo QR non è di una stazione di stampa" };
+  if (o.scade < staOra()) return { ok: false, errore: "QR scaduto: sulla stazione ne compare uno nuovo, inquadra quello" };
+  if (o.scade > staOra() + STA_OFFERTA_MAX + 60e3) return { ok: false, errore: "Questo QR non è di una stazione di stampa" };
+  const prima = (stm.coppia && stm.coppia.nome) || STA_NOME;
+  staChiesta = { sta: testo, nome: nome || STA_NOME, prima, codice: await staCodiceOfferta(o.s, o.pub), scade: o.scade };
+  stmNota(`L'iPhone chiede di collegare «${staChiesta.nome}» al posto di «${prima}»: si conferma sul PC`);
+  await stmScriviStato();
+  return { ok: false, errore: `Sul PC è collegata «${prima}»: per sostituirla, conferma sul PC (⋯ → iPhone) entro 5 minuti`, conferma: { nome: staChiesta.nome, prima } };
+}
+// per la pagina iPhone: niente dell'offerta, solo i nomi e il codice da confrontare con quello della stazione
+function stazioneChiesta() {
+  const c = staChiesta;
+  if (!c) return null;
+  if (c.scade < staOra()) { staChiesta = null; return null; }
+  return { nome: c.nome, prima: c.prima, codice: c.codice, scade: c.scade };
+}
+// il medico, sul PC: «Sostituisci» (si) o «No»
+async function stazioneConferma(si) {
+  const c = staChiesta;
+  staChiesta = null;
+  if (!c || c.scade < staOra()) return { ok: false, errore: "La richiesta è scaduta: inquadra di nuovo il QR della stazione" };
+  if (!si) return { ok: true, dati: { nome: c.prima, tenuta: true } };
+  return stazioneCollegaOra(c.sta, c.nome);
+}
+// la stazione collegata dal telefono (per «Revoca l'iPhone»: la pagina chiede se scollegare anche lei)
+const stazioneDelTelefono = () => (stmAttiva() && stm.coppia.via === "telefono" ? stm.coppia.nome || STA_NOME : "");
 async function stazioneCollegaOra(testo, nomeQr) {
   const o = staOffertaDa(testo);
   if (!o) return { ok: false, errore: "Questo QR non è di una stazione di stampa" };
@@ -350,7 +427,7 @@ async function stazioneCollegaOra(testo, nomeQr) {
       if (m && m.v === 1 && m.eco === pubTxt.slice(0, 22)) risolvi(m);
     } catch { /* non è per noi */ }
   } });
-  await p.tieni(staUrl(host, ab.stanza, "medico"), staOra() + STA_ATTESA.abbina + 10e3, true);
+  await p.tieni(staUrl(host, ab.stanza, "medico", await PonteCripto.chiaviEntra(o.s)), staOra() + STA_ATTESA.abbina + 10e3, true);
   // il saluto, ogni secondo e mezzo finché la stazione non risponde (il ripetitore non tiene niente)
   const fine = staOra() + STA_ATTESA.abbina;
   let m = null;
@@ -361,10 +438,11 @@ async function stazioneCollegaOra(testo, nomeQr) {
   await p.ferma();
   if (!m) return { ok: false, errore: "La stazione non risponde: tieni aperta la sua pagina, col QR, e riprova" };
   if (m.no) return { ok: false, errore: "Questo QR è già stato usato: sulla stazione ne compare uno nuovo" };
-  const k = await staChiaveK(e.privateKey, o.pub, o.s, pubM, o.pub);
+  const k = await PonteCripto.chiaveDa(await staChiaveK(e.privateKey, o.pub, o.s, pubM, o.pub));
   const nome = corto(String(m.nome || nomeQr || STA_NOME).replace(/\s+/g, " ").trim(), 40) || STA_NOME;
-  const codice = await PonteCripto.codice(k);
-  await chrome.storage.local.set({ [STA.coppia]: { k: PonteCripto.b64u(k), nome, dal: staOra(), via: "telefono", codice } });
+  const codice = await PonteCripto.codice(k), id = staId();
+  await cassaScrivi(STA.coppia, { id, k });
+  await chrome.storage.local.set({ [STA.coppia]: { id, nome, dal: staOra(), via: "telefono", codice } });
   await stmAvvia();
   // il primo saluto con K: la stazione c'è, e ha la stessa chiave
   if (!(await stmSessione(10e3))) {
@@ -383,6 +461,7 @@ async function stmRevocata() {
   const nome = stm.coppia.nome || STA_NOME;
   stm.presa.manda(await PonteCripto.sigilla(stm.chiavi.salutoTel, PonteCripto.TIPO.SALUTO_TEL, 0, { v: 1, revocaVista: true }));
   await chrome.storage.local.remove(STA.coppia);
+  await cassaTogli(STA.coppia).catch(() => {});
   stmNota(`${nome} ha scollegato questo PC`);
   await stmAvvia();
 }
@@ -442,8 +521,10 @@ const stzFilaServe = { p: Promise.resolve() };
 const stzAssicura = (subito = false) => staInFila(stzFilaServe, async () => {
   if (!stz.qui || !stz.host || !stz.chiavi) return stz.presa.ferma();
   const fine = await stzPagina() || await staGestionale() ? Infinity : stzLavora() ? staOra() + STA_LAVORO_MAX : 0;
-  await stz.presa.servi(staUrl(stz.host, stz.chiavi.stanza, "stazione"), fine, subito);
+  await stz.presa.servi(staUrl(stz.host, stz.chiavi.stanza, "stazione", stz.entra), fine, subito);
 });
+// l'offerta del QR, via dalla cassa (e da storage.session, dove la teneva la 3.86 con la chiave privata in JWK)
+const staOffertaVia = () => Promise.all([cassaTogli(STA.offerta).catch(() => {}), chrome.storage.session.remove(STA.offerta).catch(() => {})]);
 const stzAttiva = () => !!stz.qui && !stz.qui.revoca;
 const stzNome = async () => corto(String((await chrome.storage.local.get(STA.nome))[STA.nome] || "").trim(), 40) || STA_NOME;
 const stzStampanti = async () => (await chrome.storage.local.get("stampa")).stampa || {};
@@ -463,54 +544,61 @@ const stzAvvia = (serve = true) => (stzFilaAvvio = stzFilaAvvio.then(() => stzAv
 async function stzAvviaOra(serve = true) {
   stz.host = await ponteIndirizzo().catch(() => "");
   let q = (await chrome.storage.local.get(STA.qui))[STA.qui] || null;
-  if (q && q.revoca && staOra() - q.revoca > STA_REVOCA_MAX) { await chrome.storage.local.remove(STA.qui); q = null; }
+  const via = async () => { await chrome.storage.local.remove(STA.qui); await cassaTogli(STA.qui).catch(() => {}); };
+  if (q && q.revoca && staOra() - q.revoca > STA_REVOCA_MAX) { await via(); q = null; }
   // collegata ma mai confermata (il PC non ha salutato), e l'offerta è finita: non vale
-  if (q && !q.conferma && !q.revoca && !(stz.offerta && stz.offerta.scade + 60e3 > staOra())) { await chrome.storage.local.remove(STA.qui); q = null; }
-  if (q && stz.chiaviDi !== q.k) {
+  if (q && !q.conferma && !q.revoca && !(stz.offerta && stz.offerta.scade + 60e3 > staOra())) { await via(); q = null; }
+  if (q && (stz.chiaviDi !== q.id || typeof q.k === "string")) {
     try {
-      stz.k = PonteCripto.daB64u(q.k);
-      stz.chiavi = await PonteCripto.chiaviCoppia(stz.k);
-      stz.chiaviDi = q.k;
+      q = await staMigra(STA.qui, q);
+      const k = await staChiave(STA.qui, q);
+      if (!k) throw new Error("stazione senza chiave");
+      stz.k = k;
+      stz.chiavi = await PonteCripto.chiaviCoppia(k);
+      stz.entra = await PonteCripto.chiaviEntra(k);
+      stz.chiaviDi = q.id;
       stz.sessione = null; stz.attesa = null;
-    } catch { await chrome.storage.local.remove(STA.qui); q = null; }
+    } catch { await via(); q = null; }
   }
   stz.qui = q;
-  if (!q) { stz.k = null; stz.chiavi = null; stz.chiaviDi = ""; stz.sessione = null; stz.attesa = null; }
+  if (!q) { stz.k = null; stz.chiavi = null; stz.chiaviDi = ""; stz.entra = null; stz.sessione = null; stz.attesa = null; }
   const vale = serve || fuoriRipiego();
   if (!q || !stz.host) await stz.presa.ferma();
   else if (vale) await stzAssicura();
   // l'offerta: finché vale e nessun PC l'ha presa, la sua stanza resta aperta (fino alla sua scadenza: la chiude la presa)
   const o = stz.offerta;
-  if (o && o.scade <= staOra()) { stz.offerta = null; await chrome.storage.session.remove(STA.offerta).catch(() => {}); }
+  if (o && o.scade <= staOra()) { stz.offerta = null; await staOffertaVia(); }
   if (!stz.offerta || !stz.host || (q && q.conferma)) await stz.abbina.ferma();
-  else if (vale) await stz.abbina.tieni(staUrl(stz.host, stz.offerta.ab.stanza, "stazione"), stz.offerta.scade);
+  else if (vale) await stz.abbina.tieni(staUrl(stz.host, stz.offerta.ab.stanza, "stazione", stz.offerta.entra), stz.offerta.scade);
   staSveglia();
   await stzScriviStato();
 }
 // Un QR nuovo (la pagina della stazione lo chiede): una chiave ECDH nuova e un
 // numero casuale, per cinque minuti e per un PC solo. La chiave privata sta
-// in storage.session (la memoria del browser: muore con lui) finché vale.
+// nella cassa (cassa.js), non estraibile, finché vale — mai in storage.session,
+// che gli script delle pagine leggono.
 async function stzOfferta() {
   if (stzAttiva()) return stzScriviStato();
   const o = stz.offerta;
   if (o && !o.usata && o.scade - staOra() > 60e3) return stzScriviStato();
-  const e = await crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, true, ["deriveBits"]);
+  const e = await crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, false, ["deriveBits"]);
   const pub = new Uint8Array(await crypto.subtle.exportKey("raw", e.publicKey)), s = PonteCripto.casuale(16);
-  const nuova = { pub, s, scade: staOra() + STA_OFFERTA_MAX, priv: e.privateKey, ab: await staChiaviAbbina(s), codice: await staCodiceOfferta(s, pub) };
+  const nuova = { pub, s, scade: staOra() + STA_OFFERTA_MAX, priv: e.privateKey, ab: await staChiaviAbbina(s), codice: await staCodiceOfferta(s, pub), entra: await PonteCripto.chiaviEntra(s) };
   stz.offerta = nuova;
-  await chrome.storage.session.set({ [STA.offerta]: { pub: PonteCripto.b64u(pub), s: PonteCripto.b64u(s), scade: nuova.scade, priv: await crypto.subtle.exportKey("jwk", e.privateKey) } });
+  await cassaScrivi(STA.offerta, { pub, s, scade: nuova.scade, priv: e.privateKey });
+  await chrome.storage.session.remove(STA.offerta).catch(() => {});
   await stzAvvia();
   return stzScriviStato();
 }
 // (il service worker si è riavviato mentre il QR era sullo schermo)
 async function stzRiprendiOfferta() {
-  const x = (await chrome.storage.session.get(STA.offerta))[STA.offerta];
+  await chrome.storage.session.remove(STA.offerta).catch(() => {});   // (la 3.86 la teneva lì, con la chiave privata: via)
+  const x = await cassaLeggi(STA.offerta).catch(() => null);
   if (!x || x.scade <= staOra() || stz.offerta) return;
   try {
-    const pub = PonteCripto.daB64u(x.pub), s = PonteCripto.daB64u(x.s);
-    const priv = await crypto.subtle.importKey("jwk", x.priv, { name: "ECDH", namedCurve: "P-256" }, false, ["deriveBits"]);
-    stz.offerta = { pub, s, scade: x.scade, priv, ab: await staChiaviAbbina(s), codice: await staCodiceOfferta(s, pub) };
-  } catch { await chrome.storage.session.remove(STA.offerta).catch(() => {}); }
+    const pub = new Uint8Array(x.pub), s = new Uint8Array(x.s);
+    stz.offerta = { pub, s, scade: x.scade, priv: x.priv, ab: await staChiaviAbbina(s), codice: await staCodiceOfferta(s, pub), entra: await PonteCripto.chiaviEntra(s) };
+  } catch { await staOffertaVia(); }
 }
 // Nella stanza dell'abbinamento: il PC del medico manda la sua chiave
 // pubblica (cifrata con la chiave da `s`). Il primo vince; lo stesso PC che
@@ -528,9 +616,11 @@ async function stzAbbina(b) {
   if (o.usata) return rispondi(o.usata === m.pub ? { nome: await stzNome() } : { no: "usata" });
   if (stzAttiva() && stz.qui.conferma) return rispondi({ no: "usata" });
   let k;
-  try { k = await staChiaveK(o.priv, pubM, o.s, pubM, o.pub); } catch { return; }
+  try { k = await PonteCripto.chiaveDa(await staChiaveK(o.priv, pubM, o.s, pubM, o.pub)); } catch { return; }
   o.usata = m.pub;
-  await chrome.storage.local.set({ [STA.qui]: { k: PonteCripto.b64u(k), dal: staOra(), codice: await PonteCripto.codice(k), conferma: false } });
+  const id = staId();
+  await cassaScrivi(STA.qui, { id, k });
+  await chrome.storage.local.set({ [STA.qui]: { id, dal: staOra(), codice: await PonteCripto.codice(k), conferma: false } });
   await rispondi({ nome: await stzNome() });
   await stzAvvia();
 }
@@ -548,10 +638,11 @@ async function stzSaluto(b) {
   if (m.revoca) {   // il PC ha scollegato questa stazione
     await stzSalutoPc({ revocaVista: true });
     await chrome.storage.local.remove(STA.qui);
+    await cassaTogli(STA.qui).catch(() => {});
     await stzAvvia();
     return;
   }
-  if (m.revocaVista) { if (stz.qui && stz.qui.revoca) { await chrome.storage.local.remove(STA.qui); await stzAvvia(); } return; }
+  if (m.revocaVista) { if (stz.qui && stz.qui.revoca) { await chrome.storage.local.remove(STA.qui); await cassaTogli(STA.qui).catch(() => {}); await stzAvvia(); } return; }
   if (typeof m.n !== "string") return;
   if (stz.qui && stz.qui.revoca) return stzSalutoPc({ eco: m.n, revoca: true });
   let nTel;
@@ -562,12 +653,16 @@ async function stzSaluto(b) {
     stz.qui = { ...stz.qui, conferma: true };
     await chrome.storage.local.set({ [STA.qui]: stz.qui });
     stz.offerta = null;
-    await chrome.storage.session.remove(STA.offerta).catch(() => {});
+    await staOffertaVia();
     stz.abbina.ferma();
   }
   const nPc = PonteCripto.casuale(16);
   stz.attesa = { canale: PonteCripto.canalePc(await PonteCripto.chiaviSessione(stz.k, nTel, nPc)), n: m.n };
-  await stzSalutoPc({ n: PonteCripto.b64u(nPc), eco: m.n, nome: await stzNome() });
+  // (il numero del saluto: se il service worker riparte, il «riparti» porta questo — vale solo per questa sessione)
+  stz.ultimoN = m.n;
+  await chrome.storage.session.set({ [STA.ultimo]: m.n }).catch(() => {});
+  // `entra`: questa stazione sa provare l'entrata nella stanza (3.87): il PC del medico le dà la sua chiave
+  await stzSalutoPc({ n: PonteCripto.b64u(nPc), eco: m.n, nome: await stzNome(), entra: 1 });
   await stzScriviStato();
 }
 async function stzDati(b) {
@@ -584,7 +679,12 @@ async function stzDati(b) {
     } catch { /* né l'una né l'altra */ }
   }
   // una sessione che qui non c'è più (il service worker si è riavviato): il PC ne apre un'altra
-  if (!stz.sessione && !stz.attesa && staOra() - stz.ripartito > 2000) { stz.ripartito = staOra(); stzSalutoPc({ riparti: true }); }
+  // (con il numero dell'ultimo saluto: il PC lo accetta solo per quella sessione — un «riparti» ripetuto più tardi non ferma niente)
+  if (!stz.sessione && !stz.attesa && staOra() - stz.ripartito > 2000) {
+    stz.ripartito = staOra();
+    const eco = stz.ultimoN || (await chrome.storage.session.get(STA.ultimo).catch(() => ({})))[STA.ultimo] || "";
+    stzSalutoPc({ riparti: true, ...(eco ? { eco } : {}) });
+  }
 }
 // Solo questi: un pezzo di un foglio, e com'è andato un foglio.
 async function stzComando(s, d) {
@@ -665,7 +765,7 @@ async function stzDiRevoca() {
   if (stz.chiavi && stz.presa.pari) await stzSalutoPc({ revoca: true });
 }
 async function stzScollega() {
-  if (!stz.qui) { stz.offerta = null; await chrome.storage.session.remove(STA.offerta).catch(() => {}); return stzAvvia(); }
+  if (!stz.qui) { stz.offerta = null; await staOffertaVia(); return stzAvvia(); }
   if (!stz.qui.conferma) { await chrome.storage.local.remove(STA.qui); return stzAvvia(); }
   if (stz.qui.revoca) return;
   stz.qui = { ...stz.qui, revoca: staOra() };
