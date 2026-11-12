@@ -69,7 +69,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.85.2";
+  const VERSION = "3.85.3";
   const NS = "psassist:"; // storage namespace
   // La build «mini» (PS Assist · Lettura e stampa): sola lettura. La bandiera
   // la mette sola-lettura.js, caricato prima di content.js (vedi manifest). Qui
@@ -337,6 +337,12 @@
   }
   // il momento in cui il medico ha premuto Conferma (il giro, la conferma dal pannello o dal gestionale), in questa scheda
   const PREMUTO = "premuto.v1";
+  // La Conferma premuta in questa pagina — dal pannello («Conferma per …», «Conferma
+  // e stampa»), dalla conferma automatica o sul bottone del gestionale —: una volta
+  // sola dal pannello, finché la pagina non se ne va. La Conferma vera
+  // torna in 3–14 s, e intanto la pagina col bottone è ancora lì: un secondo
+  // tocco manderebbe la stessa richiesta due volte.
+  let confermaPremutaQui = false;
   function osservaScrittura() {
     if (scrittura.attivo) return;
     scrittura.attivo = true;
@@ -8760,6 +8766,14 @@
           onStop: () => this.segnala(null) });
         return false;
       }
+      // PS Assist si stava aggiornando: niente partito, e niente da mandare da qui (questa pagina sta per
+      // perdere l'estensione: la pillola «Ricarica la pagina»)
+      if (r.aggiorna) {
+        this.log(`${now()}  ordine non partito: PS Assist si stava aggiornando`);
+        this.segnala({ tag: "Non partita", testo: "niente inviato: ricarica la pagina e riprova", quesito: "PS Assist si stava aggiornando", tono: "err", paziente: chi,
+          onStop: () => this.segnala(null) });
+        return false;
+      }
       // niente scheda di sottofondo (non si apre, o la pagina non va): l'ordine lo manda questa pagina, come sempre
       this.log(`${now()}  scheda di sottofondo non disponibile (${r.why || "?"}): mando da questa pagina`);
       if (this.striscia && this.striscia.daOrdine) this.segnala(null);
@@ -9121,7 +9135,8 @@
     daConfAzioni() {
       const q = this.daConfQui();
       if (!q) return "";
-      const a = this._daconf && this._daconf.rid === q.rid && !this._daconf.vuoto ? this._daconf : null;
+      const a = confermaPremutaQui ? { cosa: "conferma", testo: "Confermo…" }
+        : this._daconf && this._daconf.rid === q.rid && !this._daconf.vuoto ? this._daconf : null;
       const titoli = {
         dcconferma: "Preme la Conferma del gestionale per questa richiesta, poi parte la stampa. Il primo tocco legge il carrello e dice che cosa conferma",
         dcsvuota: "Toglie dal carrello tutti gli esami di questa richiesta col «Svuota carrello» del gestionale, controlla che sia vuoto e la dimentica. Il primo tocco legge il carrello e dice che cosa toglie",
@@ -9132,6 +9147,7 @@
       return `<span class="dcaz">${lnk("dcconferma", "Conferma e stampa")}${lnk("dcsvuota", "Svuota")}</span>`;
     }
     async daConfTocco(cosa) {
+      if (confermaPremutaQui) return;   // premuta: niente altro da questa pagina
       const a = this._daconf;
       if (a && a.cosa === cosa && a.ok) return cosa === "conferma" ? this.daConfConferma(a) : this.daConfSvuota(a);
       if (a && !a.vuoto) return;   // legge, o ha detto di no: si aspetta che torni a capo
@@ -9164,12 +9180,14 @@
     // come quello della ricevuta. La richiesta è di PS Assist (è fra quelle da
     // confermare), quindi il gancio sul bottone arma la stampa.
     daConfConferma(a) {
+      if (confermaPremutaQui) return;
       const q = this.daConfQui();
       if (!q || q.rid !== a.rid) { this._daconf = null; this.render(); return; }
-      const ora = this._daconf = { rid: q.rid, cosa: "conferma", testo: "Confermo…" };
+      // (la pagina se ne va col modulo; finché resta, la riga dice «Confermo…» e non torna a capo:
+      // la Conferma può essere ancora in volo)
+      confermaPremutaQui = true;
+      this._daconf = { rid: q.rid, cosa: "conferma", testo: "Confermo…" };
       this.render();
-      // (la pagina se ne va col modulo; se restasse, la riga torna a capo)
-      setTimeout(() => { if (this._daconf === ora) { this._daconf = null; this.render(); } }, 8000);
       this.log(`${now()}  conferma della richiesta rimasta da confermare: ${a.nomi.length} ${a.nomi.length === 1 ? "esame" : "esami"} · ${a.nomi.join(" · ")} · click nativo su Conferma`);
       tabStore.set(PREMUTO, Date.now());   // (la Conferma è sua)
       q.live.confirmButton.click();
@@ -11398,7 +11416,7 @@
       // Il bottone che fa uscire gli esami dice per chi: «Conferma per ROSSI M. · 68 M · 6 esami»
       const perChi = this.idBreve();
       const confermaOra = receipt && live && live.confirmButton
-        ? `<div class="btnrow"><button class="btn primary" id="confirmnow" title="Preme la Conferma del gestionale per questa richiesta, poi parte la stampa">${esc(perChi ? `Conferma per ${perChi}` : "Conferma e stampa")}</button></div>` : "";
+        ? `<div class="btnrow"><button class="btn primary" id="confirmnow" title="Preme la Conferma del gestionale per questa richiesta, poi parte la stampa"${confermaPremutaQui ? " disabled" : ""}>${esc(confermaPremutaQui ? "Confermo…" : perChi ? `Conferma per ${perChi}` : "Conferma e stampa")}</button></div>` : "";
 
       // La ricevuta mostra il carrello e un bottone solo. La griglia degli
       // esami resta dietro «+ aggiungi»: aggiungere ancora è l'eccezione.
@@ -15094,10 +15112,14 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       }));
       $("#goqueued")?.addEventListener("click", () => { if (this.pending) goToQueued(this.pending); });
       $("#confirmnow")?.addEventListener("click", () => {
-        // native click → server confirm → print handoff (armed at boot)
-        tabStore.set(PREMUTO, Date.now());   // (la Conferma è sua)
+        // native click → server confirm → print handoff (armed at boot); una volta sola per pagina
+        if (confermaPremutaQui) return;
         const live = examModel(document, location.href);
-        live.confirmButton?.click();
+        if (!live.confirmButton) return;
+        confermaPremutaQui = true;
+        tabStore.set(PREMUTO, Date.now());   // (la Conferma è sua)
+        live.confirmButton.click();
+        this.render();
       });
       // la ricevuta tiene la griglia chiusa: «+ aggiungi» la apre
       $("#aggiungi")?.addEventListener("click", () => { this.aggiungi = true; this.render(); });
@@ -15694,6 +15716,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         tabStore.set("queue.v1", restano.length ? { ...q, items: restano, ts: Date.now() } : null);
       }
     }
+    confermaPremutaQui = true;   // (in volo: «Conferma per …» non la rimanda)
     model.confirmButton.click(); // native click → server confirm → label print flow
     return true;
   }
@@ -16751,6 +16774,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     const arm = (e) => {
       // (la Conferma del gestionale premuta da lui: da qui contano i suoi tocchi — quella del motore no)
       if (e && e.isTrusted) tabStore.set(PREMUTO, Date.now());
+      confermaPremutaQui = true;   // premuta, da chiunque: «Conferma per …» non la rimanda
       if (!richiestaNostra(model.richiestaId)) return;
       const q = tabStore.get("queue.v1", null);
       if (q && q.items) { // this richiesta is done: drop it from the walk
@@ -17493,7 +17517,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       jobs: jobs.map(({ name, printer, url, breve }) => ({ name, printer, url, ...(breve ? { breve } : {}) })) };
     let r = { ok: false };
     for (let k = 0; k < 3 && !r.ok && !r.no; k++) r = await ask({ t: "ordineFogli", job });
-    if (r.no) return { ok: false, errore: "Ristampa non partita: la stampa automatica non è impostata sul PC" };
+    if (r.no) return { ok: false, errore: r.aggiorna ? `Ristampa non partita: ${r.why}` : "Ristampa non partita: la stampa automatica non è impostata sul PC" };
     if (!r.ok) return { ok: false, incerto: true, errore: "Non so se la stampa è partita: guarda la stampante prima di rifarla" };
     return { ok: true, dati: { ordini: [{ id: r.id || a.id, ep: p.ep, paziente: p.name, n: jobs.length }] }, registro: "ristampa di una richiesta di " + p.name };
   }
