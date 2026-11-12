@@ -899,8 +899,10 @@ async function ponteChiSono() {
   const s = (await chrome.storage.session.get(PONTE_OPERATORE).catch(() => ({})))[PONTE_OPERATORE];
   const operatore = s && typeof s.nome === "string" && Date.now() - (s.ts || 0) < 36e5 ? s.nome.slice(0, 60) : "";
   const versione = ponteVersione();
-  return { kind: ponteSolaLettura() ? "lettura" : "completo", nome, ...(versione ? { versione } : {}), ...(operatore ? { operatore } : {}),
-    ...(pt.coppia && pt.coppia.pausa ? { pausa: PONTE_PAUSA } : {}) };
+  // (P3: in pausa — un altro utente nel gestionale — il telefono non sa chi è: né il suo nome, né quello di prima)
+  const pausa = !!(pt.coppia && pt.coppia.pausa);
+  return { kind: ponteSolaLettura() ? "lettura" : "completo", nome, ...(versione ? { versione } : {}), ...(operatore && !pausa ? { operatore } : {}),
+    ...(pausa ? { pausa: PONTE_PAUSA } : {}) };
 }
 // Il cambio turno (3.87): l'associazione ricorda chi era entrato nel gestionale quando si è fatta (il nome
 // nella testata). Se su questo profilo entra un altro utente, il telefono si ferma — niente letture, niente

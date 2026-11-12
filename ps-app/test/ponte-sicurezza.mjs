@@ -435,6 +435,7 @@ await blocco(async () => {
   const ciao = await A2.chiedi("ciao"), paz = await A2.chiedi("pazienti");
   check(ciao?.ok && /altro utente/.test(ciao.dati.pausa || "") && paz && !paz.ok && /Sul PC è entrato un altro utente: riconferma sul PC/.test(paz.errore),
     "in pausa: il «ciao» lo dice, una lettura è rifiutata con «Sul PC è entrato un altro utente: riconferma sul PC»");
+  check(ciao?.ok && !("operatore" in ciao.dati), "P3. in pausa il «ciao» non dice chi è entrato nel gestionale (nessun nome al telefono)");
   const cs = await A2.chiedi("cartellaSalva", { ep: "1", rq: P.b64u(P.casuale(12)) });
   check(cs && !cs.ok && cs.pausa === true, "…e anche una scrittura");
   check((await pc.pagina({ t: "ponteRiconferma" }))?.ok && !pc.locale["ponte.coppia"].pausa, "«Riconferma l'iPhone» sulla pagina iPhone: l'associazione è di chi c'è adesso");
@@ -579,6 +580,15 @@ await blocco(async () => {
   check(kSt !== qrStanza && await finche(() => pc2.ev("pt.presa.url").includes(`r=${kSt}&`), 3000), "P2-1. …finita la finestra, passa alla stanza della chiave nuova");
   B.chiudi();
   await pc2.ev("pt.presa.ferma()");
+});
+await blocco(async () => {
+  // P3: il «ciao» del PC in pausa non porta il nome di chi è entrato nel gestionale
+  const pc = await pcVero();
+  await pc.ev("chrome.storage.session.set({ [PONTE_OPERATORE]: { nome: 'VERDI DOTT. CARLA', ts: Date.now() } })");
+  pc.ev("pt.coppia = { id: 'x', pausa: { ts: Date.now(), operatore: 'VERDI DOTT. CARLA' } }");
+  const chi = await pc.ev("ponteChiSono()");
+  pc.ev("pt.coppia = null");
+  check(!!chi.pausa && !("operatore" in chi), "P3. il «ciao» del PC in pausa: nessun nome al telefono (né di chi è entrato, né di prima)");
 });
 sezione("il taglio (P1): le coppie di prima e le stazioni non restano fuori");
 await blocco(async () => {
