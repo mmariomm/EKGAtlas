@@ -16937,19 +16937,30 @@
   // Prima del gancio (bootGestionale, dopo la risposta del service worker:
   // fino a 3 s) la Conferma del gestionale premuta a mano si annota lo stesso,
   // prima che il clic parta: dall'avvio, un ascolto su tutto il documento.
+  // Come col gancio: i bottoni del pannello si spengono.
   function confermaPresto(e) {
     const b = e.isTrusted && e.target && e.target.closest ? e.target.closest('input[type="submit"]') : null;
     if (!b || (b.name !== "Update" && b.name !== "Update1")) return;
     const m = examModel(document, location.href);
-    if (m.form && m.richiestaId && b.form === m.form) segnaConferma(m.richiestaId, "premuta");
+    if (!m.form || !m.richiestaId || b.form !== m.form) return;
+    segnaConferma(m.richiestaId, "premuta");
+    confermaAMano();
+  }
+  // La Conferma del gestionale premuta da lui (un clic vero): da qui contano i
+  // suoi tocchi (PREMUTO) — quella del motore no —, e i bottoni del pannello su
+  // questa pagina non premono più: la Conferma vera torna in 3–14 s, e intanto
+  // la pagina col bottone è ancora lì (confermaPannello).
+  function confermaAMano() {
+    tabStore.set(PREMUTO, Date.now());
+    confermaPannello = "Confermo…";
+    PANNELLO?.render();
   }
   function armPrintOnConfirm(model, episodeId) {
     if (!model.form || !model.richiestaId) return;
     const arm = (e) => {
       // (ogni Conferma su questo carrello, di chiunque: prima che il clic parta — conferme.v1)
       segnaConferma(model.richiestaId, "premuta");
-      // (la Conferma del gestionale premuta da lui: da qui contano i suoi tocchi — quella del motore no)
-      if (e && e.isTrusted) tabStore.set(PREMUTO, Date.now());
+      if (e && e.isTrusted) confermaAMano();
       if (!richiestaNostra(model.richiestaId)) return;
       const q = tabStore.get("queue.v1", null);
       if (q && q.items) { // this richiesta is done: drop it from the walk

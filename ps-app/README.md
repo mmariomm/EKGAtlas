@@ -865,11 +865,12 @@ lette stanno in `sessionStorage` (`smart.giro.v1`) e muoiono con lei.
    «Svuota il carrello», senza rimettere niente, e la richiesta si dimentica; un carrello letto
    già vuoto si dimentica e basta. Solo se la pagina ha la Conferma.
    **Una Conferma dal pannello, una volta per pagina** (questa e «Conferma per …» della
-   ricevuta): premuta, il bottone dice «Confermo…», spento, finché la pagina non se ne va — la
-   Conferma vera ci mette 3–14 s, e un secondo tocco ne manderebbe un'altra. E non preme se
-   un'altra Conferma per la stessa richiesta è partita nell'ultimo minuto (da un'altra scheda,
-   `conferme.v1`) e la richiesta non ha ancora la sua prova: «Una Conferma è già partita: guarda
-   le sue richieste».
+   ricevuta): premuta — qui o a mano, sulla Conferma del gestionale in quella pagina —, il
+   bottone dice «Confermo…», spento, finché la pagina non se ne va — la Conferma vera ci mette
+   3–14 s, e un secondo tocco ne manderebbe un'altra. E non preme se un'altra Conferma per la
+   stessa richiesta è partita nell'ultimo minuto (da un'altra scheda, `conferme.v1`), il
+   carrello non l'ha smentita («Non partita») e la richiesta non ha ancora la sua prova: «Una
+   Conferma è già partita: guarda le sue richieste».
    **Mentre scrivi, la pagina non cambia da sola.** Ogni salto di pagina deciso dal pannello
    (errore → carrello, revisione → carrello, conferma sospesa) prima guarda: se hai il cursore
    in un campo del gestionale, hai cambiato un campo, o hai premuto un tasto negli ultimi 15

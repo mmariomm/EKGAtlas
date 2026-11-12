@@ -1081,6 +1081,27 @@ if (prova("la Conferma premuta a mano prima che la pagina sia pronta: annotata l
   check(!!cf && cf.premuta >= t0 - 50, `annotata prima che il clic parta (got ${JSON.stringify(cf)})`);
 }
 
+// La Conferma del gestionale premuta a mano chiude anche i bottoni del pannello su quella pagina: la
+// Conferma vera torna in 3–14 s, e il medico che non vede niente tocca «Conferma per …». Una Conferma
+// sola, anche con la richiesta tolta dalle «da confermare» (lì il minuto di conferme.v1 non vale).
+for (const togli of [false, true]) {
+  if (!prova(`a mano sulla Conferma del gestionale e poi «Conferma per …» mentre la prima è in volo: una Conferma sola${togli ? " (richiesta non fra le da confermare)" : ""}`)) continue;
+  const { rid } = await soloCarrello();
+  check(conferme(A).length === 0, "solo carrello: niente confermato da solo");
+  if (togli) await doc.evaluate(() => localStorage.removeItem("psassist:daConfermare.v1"));
+  sess.confermaLenta = 6000;
+  // 1,5 s dopo il clic vero sulla Conferma della pagina, «Conferma per …» del pannello
+  await doc.evaluate(() => setTimeout(() => {
+    const r = document.getElementById("psassist-host")?.shadowRoot;
+    if (!r?.querySelector("#confirmnow")) (r?.querySelector(".pill.run") || r?.querySelector("#expand"))?.click();
+    setTimeout(() => r?.querySelector("#confirmnow")?.click(), 400);
+  }, 1500));
+  await doc.click('input[type="submit"][name="Update"], input[type="submit"][name="Update1"]', { noWaitAfter: true });
+  await sospendi(10000);
+  check(conferme(A).length === 1 && conferme(A)[0].params.RICHIESTA_ID === rid, `una Conferma sola (got ${conferme(A).length})`);
+  sess.confermaLenta = 0;
+}
+
 // Una Conferma che il carrello ha smentito («Non partita»: provata non presa) non è in volo: non
 // ferma quella del medico. La rifatta non presa, il carrello aperto: «Conferma per …» preme subito,
 // senza aspettare il minuto di conferme.v1.
