@@ -196,7 +196,13 @@ const coppiaPc = () => sw.evaluate(() => chrome.storage.local.get("ponte.coppia"
 const registroPonte = async () => ((await statoPonte())?.registro || []).map((x) => x.testo).join("\n");
 const nuovaPagina = (timeout = 15000) => ctx.waitForEvent("page", { timeout }).catch(() => null);
 async function suPagina(p, url) {
-  await p.goto(url);
+  // (la pagina che si ricarica da sola — salvata dal telefono — può interrompere questo goto: finita la sua, si rifà)
+  for (let i = 0; ; i++) {
+    try { await p.goto(url); break; } catch (e) {
+      if (i >= 2 || !/interrupted by another navigation/.test(String(e && e.message))) throw e;
+      await p.waitForLoadState("load").catch(() => {});
+    }
+  }
   await p.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
 }
 const registroPc = (p) => p.evaluate(() => Object.entries(sessionStorage).filter(([k]) => /^psassist:log\./.test(k)).map(([, v]) => (JSON.parse(v).lines || []).join("\n")).join("\n"));
