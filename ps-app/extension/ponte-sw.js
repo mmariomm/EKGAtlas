@@ -2019,6 +2019,16 @@ function ponteAreaApri(d) {
     if (prima && prima.esito) return prima.esito;   // com'è andata
     // (il service worker è ripartito dopo averlo dato alla scheda: non si sa, e non si rifà)
     if (prima && prima.fase === "inviato") return { ok: false, incerto: true, errore: "Incerto: guarda sul PC su che area è il gestionale" };
+    // Come un ordine: più di 30 secondi dopo il tocco (rimasto in una presa morta, rimandato tardi) non si
+    // fa — il medico intanto fa altro. `nato`: l'ora del tocco, sull'orologio del PC. (Annotato: rimandato, lo stesso.)
+    const eta = ponteOra() - d.nato;
+    if (!Number.isFinite(d.nato) || eta > PONTE_ORDINE_MAX || eta < -PONTE_ORDINE_MAX) {
+      const esito = { ok: false, scaduto: true, errore: "Scaduta: niente cambiato" };
+      ponteNota("iPhone · «Passa il PC all'area» arrivato tardi: scaduto, niente cambiato");
+      await ponteScriviStato();
+      await ponteAreaRqScrivi(rq, { fase: "fatto", esito }).catch(() => {});
+      return esito;
+    }
     return ponteAreaApriOra(a.ep, rq);
   })();
   pt.areaRq.set(rq, p);

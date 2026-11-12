@@ -303,6 +303,23 @@ try {
   await sospendi(1500);
   check(!!rq && di.every((x) => x.ok && x.dati.area === "Bassa" && x.dati.ep === BLU.ep) && srv.conferme.length === c0 && imposte().length === i0,
     `lo stesso numero rimandato (due volte insieme): «PC ora sull'area Bassa» com'era, nessun Imposta, nessun «Conferma» (${JSON.stringify(di[0])})`);
+  // (il tocco su BLU qui sopra è passato: il telefono manda l'ora del tocco — senza, il PC dice «Scaduta»)
+  check(!(await registro()).some((t) => /arrivato tardi/.test(t)), "il tocco del telefono porta la sua ora (`nato`): il PC l'ha fatto");
+
+  // ---- (revisione 3.87, P2-3) arrivato più di 30 secondi dopo il tocco: niente cambiato; rimandato, la stessa risposta
+  {
+    const c1 = srv.conferme.length, i1 = imposte().length, nv1 = navMedico, rqT = "rq-tardi-prova-01";
+    const tardi = await sw.evaluate(({ ep, rq }) => ponteAreaApri({ ep, rq, nato: Date.now() - 60e3 }), { ep: chiaveSmart(GRIGI), rq: rqT });
+    const ancora = await sw.evaluate(({ ep, rq }) => ponteAreaApri({ ep, rq, nato: Date.now() }), { ep: chiaveSmart(GRIGI), rq: rqT });
+    const senza = await sw.evaluate(({ ep }) => ponteAreaApri({ ep, rq: "rq-senza-ora-01" }), { ep: chiaveSmart(GRIGI) });
+    await sospendi(1500);
+    const annotato = ((await sw.evaluate(() => chrome.storage.session.get("ponte.area.rq")))["ponte.area.rq"] || {})[rqT];
+    check(!!tardi && tardi.ok === false && tardi.errore === "Scaduta: niente cambiato" && !!senza && senza.errore === tardi.errore
+      && srv.conferme.length === c1 && imposte().length === i1 && navMedico === nv1,
+      `un «Passa il PC all'area» arrivato 60 secondi dopo il tocco (o senza l'ora): «${tardi && tardi.errore}», nessun Imposta, la scheda del medico ferma`);
+    check(!!ancora && ancora.errore === "Scaduta: niente cambiato" && !!annotato && annotato.esito && annotato.esito.scaduto === true,
+      `…annotato in ponte.area.rq: rimandato con lo stesso numero, la stessa risposta («${ancora && ancora.errore}»)`);
+  }
 
   // ---- sul PC di sola lettura: rifiutato (il primo muro, nel service worker)
   const mini = await sw.evaluate(async () => {

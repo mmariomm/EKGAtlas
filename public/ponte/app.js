@@ -2000,7 +2000,10 @@
       if (e.message && /^PC ora sull'area/.test(e.message)) aggiornaLista(true);   // (l'area è cambiata comunque: l'elenco lo sa)
     };
     try {
-      si(await chiedi("areaApri", { ep }, ATTESA_AREA, false, { rq: x.rq, tardi: (d) => { if (d.ok) si(d.dati); else no(errDa(d)); render(); } }));
+      // (come un ordine: l'ora del tocco, e oltre 30 secondi non parte più — il PC, arrivato tardi, non lo fa)
+      const quando = Date.now();
+      si(await chiedi("areaApri", { ep, nato: Math.round(quando + S.scarto) }, ATTESA_AREA, false, { rq: x.rq, scade: quando + 30e3,
+        tardi: (d) => { if (d.ok) si(d.dati); else no(errDa(d)); render(); } }));
     } catch (e) {
       no(e.inviata ? Object.assign(new Error("Incerto: il PC non ha ancora risposto — guarda sul PC su che area è"), { incerto: true }) : e);
     }
