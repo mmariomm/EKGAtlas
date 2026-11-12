@@ -693,7 +693,7 @@
     render();
     caricaEsiti(ep, auto);
     if (S.scheda === "terapia" && !S.terapiaSi) S.scheda = "esiti";
-    if (S.scheda === "cartella") caricaCartella(ep);
+    if (S.scheda === "cartella") caricaCartella(ep, auto);   // (riaperto da sé: una domanda da sé, il PC non apre niente)
     if (S.scheda === "terapia" && !auto) caricaTerapie(ep);   // (riaperto da sé: niente lettura — c'è la copia, o «Tocca per leggere la terapia»)
     if (S.scheda === "richieste") caricaRistampe(ep);
     if (S.scheda === "richieste") caricaCatalogo();

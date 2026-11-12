@@ -245,6 +245,32 @@ try {
   await sospendi(1000);
   check(!ancora.ok && /già letta da poco/.test(ancora.testo) && liste(true).length === l2b, `richiesta subito di nuovo: la lista non si rilegge, al più una ogni 10 minuti per paziente («${ancora.testo}»)`);
 
+  // ---- (revisione 3.87, P3-1) la sessione che riparte da sé (l'estensione riavviata), sul paziente e sulla
+  // sua Cartella: il telefono la richiede da sé — non è un tocco, e il PC non apre la lista dietro.
+  // (NERO PIO, aperto qui coi 10 minuti già contati: il tocco non legge la lista; poi i 10 minuti via)
+  {
+    await sw.evaluate((ep) => pt.listaPer.set(ep, { ts: Date.now(), promessa: null }), chiaveSmart(NERO));
+    await apriSulTel(NERO);
+    await tel.locator('[data-a="scheda"][data-s="cartella"]').click();
+    await sospendi(3000);
+    await sw.evaluate(() => {
+      self.__conLista = [];
+      const prima = ponteConLista;
+      ponteConLista = (d, a, fai) => { self.__conLista.push({ cmd: d.cmd, auto: !!d.auto }); return prima(d, a, fai); };
+      pt.listaPer.clear();
+    });
+    const lr = liste(true).length;
+    await sw.evaluate(async () => { pt.sessione = null; pt.ripartito = 0; await ponteSessioneSalva(); await ponteRiparti(); });
+    const ripresa = await finche(async () => (await sw.evaluate(() => self.__conLista)).some((x) => x.cmd === "cartella"), 90000);
+    await sospendi(4000);
+    const visti = await sw.evaluate(() => self.__conLista);
+    check(ripresa && /NERO PIO/.test(await testata()), `il telefono si ricollega da sé, su NERO PIO, e ne richiede la Cartella (${JSON.stringify(visti)})`);
+    check(visti.filter((x) => x.cmd === "cartella").every((x) => x.auto) && liste(true).length === lr,
+      `…da sé (auto): nessuna lista aperta dietro sul PC (${liste(true).length - lr} liste)`);
+    await sw.evaluate(() => pt.listaPer.clear());
+    if (await tel.locator('[data-a="scheda"][data-s="esiti"]').count()) await tel.locator('[data-a="scheda"][data-s="esiti"]').click();
+  }
+
   // ---- la sua riga porta l'episodio di un altro paziente: Errore grave, niente aperto
   srv.nascosti.delete(NERO.ep);
   const l3 = liste(true).length;
