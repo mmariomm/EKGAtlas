@@ -108,11 +108,12 @@ const URL_CARRELLO = `${ORIGIN}${DIR}menuPsoEpisodio.do?MVPG=RcsRichiestaPrestaz
 // Il gestionale vero non si raggiunge mai, nemmeno per sbaglio: ogni sua pagina la dà il finto qui sotto, e
 // il browser non apre connessioni verso quel nome (le preconnessioni di Chromium, che passerebbero dal proxy
 // della macchina): niente proxy, e il nome porta a questo computer.
+const RETE_CHIUSA = ["--proxy-server=direct://", "--host-resolver-rules=MAP * 127.0.0.1"];
 const ctx = await chromium.launchPersistentContext(PROFILE, {
   headless: true,
   executablePath: process.env.CHROMIUM_PATH || chromiumPath(),
   viewport: { width: 1400, height: 900 },
-  args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`, "--proxy-server=direct://", "--host-resolver-rules=MAP smarthealth.multimedica.it 127.0.0.1",
+  args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`, ...RETE_CHIUSA,
     ...(process.env.PSA_CHROMIUM_ARGS || "").split(/\s+/).filter(Boolean)],
 });
 let sw = ctx.serviceWorkers().find((w) => w.url().endsWith("bg.js"));
@@ -187,7 +188,7 @@ try {
   const qr = await sw.evaluate(() => ponteQr());
   await pp.close();
   await doc.bringToFront();
-  telBrowser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_PATH || chromiumPath() });
+  telBrowser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_PATH || chromiumPath(), args: RETE_CHIUSA });
   const telCtx = await telBrowser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, locale: "it-IT",
     userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1" });
   const tel = await telCtx.newPage();

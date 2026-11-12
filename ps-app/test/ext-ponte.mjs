@@ -1077,14 +1077,31 @@ check(rxNuovoPrima && await finche(visteRx, 8000) && !(await nuovoRx()),
 {
   // Un PDF come quelli del RIS: anagrafica in testa, riga dell'esame, corpo fra due righe di trattini. Il telefono
   // riceve la riga dell'esame e il corpo, non l'anagrafica né l'operatore.
+  // (Qui la copia della radiografia è finta: una lettura dietro dei valori partita da sé — gli esiti che dicono
+  // «c'è del nuovo sul PC» — riaprirebbe la pagina vera di ROSSI e la riscriverebbe mentre il telefono la legge.
+  // Per questi controlli niente letture dietro: la lettura «riesce» senza aprire niente. E si aspetta la risposta
+  // agli esiti di ROSSI, contata nel service worker, non i messaggi che passano dal ripetitore.)
+  await finche(() => sw.evaluate(() => ponteValoriLetture.size === 0 && pt.valori.size === 0), 60000);
+  await sw.evaluate(() => {
+    self.__veroSotto = ponteValoriSotto;
+    ponteValoriSotto = () => Promise.resolve({ ok: true, testo: "(prova: niente lettura dietro)" });
+    self.__veraRisposta = ponteRisposta;
+    self.__esitiRossi = 0;
+    ponteRisposta = async (s, d) => {
+      const r = await self.__veraRisposta(s, d);
+      if (d && (d.cmd === "esiti" || d.cmd === "aggiornaValori") && d.ep === "999001") self.__esitiRossi++;
+      return r;
+    };
+  });
+  const esitiRossi = () => sw.evaluate(() => self.__esitiRossi);
   const TR = "_".repeat(37);
   const pdfRis = refertoRxPdf(["OSPEDALE ZQINTESTA", "Reparto ZQREPARTO", "69-140 RX TORACE (A6900) 22/08/2026 03:10", "Modalita ZQMODALITA", "OPERATORE ZQOPER", TR, "Torace ZQCORPO nei limiti.", TR, "Firma ZQPIEDE"]);
   await sw.evaluate(([k, ep, data]) => chrome.storage.local.set({ [k]: { ep, data, ts: Date.now() } }), ["ref:" + ID_RX, "999001", pdfRis.toString("base64")]);
   await sw.evaluate(() => chrome.storage.local.get("storicoArch").then((o) => { for (const r of Object.values(o.storicoArch || {})) r.referti = []; return chrome.storage.local.set(o); }));
   await tocca(tel, '[data-a="indietro"]'); await aspettaTel(tel, /BIANCHI ANNA/);
-  const n1 = inoltrati.length;
+  const n1 = await esitiRossi();
   await tocca(tel, '.paz[data-ep="999001"]'); await aspettaTel(tel, /RX TORACE/, 20000);
-  await finche(() => inoltrati.length >= n1 + 2, 15000); await sospendi(500);   // (la risposta nuova, non quella di prima)
+  await finche(async () => (await esitiRossi()) > n1, 15000); await sospendi(500);   // (la risposta nuova, non quella di prima)
   await tocca(tel, '.ref:has-text("RX TORACE")');
   // (se la riga era rimasta aperta dal controllo di prima, il tocco l'ha chiusa: un secondo la riapre)
   if (!(await aspettaTel(tel, /ZQCORPO/, 4000))) { await tocca(tel, '.ref:has-text("RX TORACE")'); await aspettaTel(tel, /ZQCORPO/, 8000); }
@@ -1103,14 +1120,15 @@ check(rxNuovoPrima && await finche(visteRx, 8000) && !(await nuovoRx()),
       return chrome.storage.local.set(o);
     }), [ID_RX, testo.join("\n"), mostrato]);
     await tocca(tel, '[data-a="indietro"]'); await aspettaTel(tel, /BIANCHI ANNA/);
-    const n = inoltrati.length;
+    const n = await esitiRossi();
     await tocca(tel, '.paz[data-ep="999001"]'); await aspettaTel(tel, /RX TORACE/, 20000);
-    await finche(() => inoltrati.length >= n + 2, 15000); await sospendi(500);
+    await finche(async () => (await esitiRossi()) > n, 15000); await sospendi(500);
     await tocca(tel, '.ref:has-text("RX TORACE")');
     if (!(await aspettaTel(tel, /ZQCORPO/, 4000))) { await tocca(tel, '.ref:has-text("RX TORACE")'); await aspettaTel(tel, /ZQCORPO/, 8000); }
     const t = await tel.evaluate(() => document.body.innerText);
     check(resta.test(t) && !(via && via.test(t)), `il testo dalla scheda del paziente, ${cosa} (${t.match(/ZQ\w+|Zqfirma/g)})`);
   }
+  await sw.evaluate(() => { ponteValoriSotto = self.__veroSotto; ponteRisposta = self.__veraRisposta; });
 }
 {
   // Un PDF senza testo (una scansione): di chi è non si sa, quindi al telefono non va (niente «PDF», fail-closed) — e il
