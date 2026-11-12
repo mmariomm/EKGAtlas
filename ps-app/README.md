@@ -776,8 +776,9 @@ lette stanno in `sessionStorage` (`smart.giro.v1`) e muoiono con lei.
    Conferma vera **una volta**, coi controlli di sempre, poi la stessa prova. Una sola per
    richiesta: se il gestionale non prende nemmeno quella, «Non partita · apri il carrello», e lì
    decidi tu. E mai sopra la tua: ogni Conferma premuta — dal pannello, dal motore o a mano sul
-   bottone del gestionale, in qualunque scheda, anche prima che la pagina sia pronta — si annota
-   prima che il clic parta; se dopo quella ignorata ne hai premuta un'altra (sul carrello, mentre
+   bottone del gestionale, in qualunque scheda, anche prima che la pagina sia pronta (e lì, su
+   una richiesta di PS Assist, la stampa si arma come sempre) — si annota prima che il clic
+   parta; se dopo quella ignorata ne hai premuta un'altra (sul carrello, mentre
    il gestionale ci pensa), «Conferma di nuovo» non preme niente e se ne va: «Da controllare»; e
    se la tua l'ha già confermata, non ne stampa le etichette (le stampa la scheda dove l'hai
    premuta): «Confermata», e la Ristampa. Una Conferma tornata **coi suoi tempi** non si giudica dal carrello (com'è il

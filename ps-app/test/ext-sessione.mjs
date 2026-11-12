@@ -1079,6 +1079,11 @@ if (prova("la Conferma premuta a mano prima che la pagina sia pronta: annotata l
   const cf = JSON.parse((await doc.evaluate(() => localStorage.getItem("psassist:conferme.v1")).catch(() => null)) || "[]").find((x) => x.rid === rid);
   check(prima && conferme(A).length === 1, `premuta a mano a pagina non ancora pronta (nessun pannello): una Conferma (got ${prima} · ${conferme(A).length})`);
   check(!!cf && cf.premuta >= t0 - 50, `annotata prima che il clic parta (got ${JSON.stringify(cf)})`);
+  // la richiesta è di PS Assist: la stampa si arma come col gancio — le etichette escono, una volta
+  const re = new RegExp("RcsStampaEtichetteLISHMIMU\\.do\\?RICHIESTA_ID=" + rid);
+  await finche(() => chiesti(A, re) > 0, 20000);
+  await sospendi(4000);
+  check(chiesti(A, re) === 1, `e le sue etichette escono, una volta (got ${chiesti(A, re)})`);
 }
 
 // La Conferma del gestionale premuta a mano chiude anche i bottoni del pannello su quella pagina: la

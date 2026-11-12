@@ -16937,7 +16937,7 @@
   // Prima del gancio (bootGestionale, dopo la risposta del service worker:
   // fino a 3 s) la Conferma del gestionale premuta a mano si annota lo stesso,
   // prima che il clic parta: dall'avvio, un ascolto su tutto il documento.
-  // Come col gancio: i bottoni del pannello si spengono.
+  // Come col gancio: i bottoni del pannello si spengono, e la stampa si arma.
   function confermaPresto(e) {
     const b = e.isTrusted && e.target && e.target.closest ? e.target.closest('input[type="submit"]') : null;
     if (!b || (b.name !== "Update" && b.name !== "Update1")) return;
@@ -16945,6 +16945,7 @@
     if (!m.form || !m.richiestaId || b.form !== m.form) return;
     segnaConferma(m.richiestaId, "premuta");
     confermaAMano();
+    confermaNostra(m.richiestaId, findEpisodeId(document, location.href));
   }
   // La Conferma del gestionale premuta da lui (un clic vero): da qui contano i
   // suoi tocchi (PREMUTO) — quella del motore no —, e i bottoni del pannello su
@@ -16955,19 +16956,23 @@
     confermaPannello = "Confermo…";
     PANNELLO?.render();
   }
+  // La Conferma di una richiesta di PS Assist: lascia il giro, e la stampa si arma.
+  function confermaNostra(rid, episodeId) {
+    if (!richiestaNostra(rid)) return;
+    const q = tabStore.get("queue.v1", null);
+    if (q && q.items) { // this richiesta is done: drop it from the walk
+      const left = q.items.filter((it) => it.rid !== rid);
+      tabStore.set("queue.v1", left.length ? { ...q, items: left, ts: Date.now() } : null);
+    }
+    segnoStampa(episodeId, rid, tabStore.get("receipt.v1", null));
+  }
   function armPrintOnConfirm(model, episodeId) {
     if (!model.form || !model.richiestaId) return;
     const arm = (e) => {
       // (ogni Conferma su questo carrello, di chiunque: prima che il clic parta — conferme.v1)
       segnaConferma(model.richiestaId, "premuta");
       if (e && e.isTrusted) confermaAMano();
-      if (!richiestaNostra(model.richiestaId)) return;
-      const q = tabStore.get("queue.v1", null);
-      if (q && q.items) { // this richiesta is done: drop it from the walk
-        const left = q.items.filter((it) => it.rid !== model.richiestaId);
-        tabStore.set("queue.v1", left.length ? { ...q, items: left, ts: Date.now() } : null);
-      }
-      segnoStampa(episodeId, model.richiestaId, tabStore.get("receipt.v1", null));
+      confermaNostra(model.richiestaId, episodeId);
     };
     for (const name of ["Update", "Update1"]) {
       const b = model.form.elements.namedItem(name);
