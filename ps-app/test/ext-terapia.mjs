@@ -853,6 +853,12 @@ try {
   await sospendi(4000);
   check(srv.pagineTer.length === p25 && schede().length === n25 && /Tocca per leggere la terapia/.test(await testoTel()),
     `…senza aprire la pagina Terapia sul PC (${srv.pagineTer.length - p25} pagine): «Tocca per leggere la terapia» (${(await testoTel()).replace(/\s+/g, " ").slice(0, 200)})`);
+  // …e tornati ancora sull'app (la rilettura di chi torna), col PC senza una lettura salvata: niente pagina nemmeno così
+  await sw.evaluate(() => chrome.storage.session.remove(PONTE_TERAPIA));
+  await tel.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+  await sospendi(4000);
+  check(srv.pagineTer.length === p25 && schede().length === n25 && /Tocca per leggere la terapia/.test(await testoTel()),
+    `…tornati ancora sull'app, senza la lettura salvata sul PC: niente pagina Terapia (${srv.pagineTer.length - p25} pagine)`);
   await tel.locator('[data-a="trileggi"]').click();
   check(await finche(async () => (await righeTel()).length > 0, 60000) && srv.pagineTer.length === p25 + 1, "…e il tocco la legge: una pagina, le terapie");
   await finche(async () => schede().length === n25, 10000);

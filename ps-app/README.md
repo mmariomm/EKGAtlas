@@ -1541,7 +1541,7 @@ che non può leggere niente: cifrato da un capo all'altro, nessun dato su nessun
   Scollega»** (la spia è ferma), e ogni comando va nel **Registro**. Dopo **3 minuti senza comandi** del medico la
   sessione si chiude da sola — un tocco col telefono in mano (anche per scorrere) conta come un comando (al più
   uno al minuto, `tocco`): mentre leggi non si chiude —; tornando sull'app si riapre da sola, sul paziente e sulla scheda dov'eri
-  (in memoria, mai su disco, dopo che il PC ha risposto). Riaperto da sé sulla Terapia non la legge (si leggerebbe aprendo una scheda sul PC senza un tocco): «Tocca per leggere la terapia». Così anche se l'estensione sul PC si riavvia: il
+  (in memoria, mai su disco, dopo che il PC ha risposto). Riaperto da sé sulla Terapia non la legge (si leggerebbe aprendo una scheda sul PC senza un tocco): «Tocca per leggere la terapia»; né la rilegge tornando sull'app, finché non è stata letta. Così anche se l'estensione sul PC si riavvia: il
   telefono si ricollega da solo, senza «Sessione chiusa».
 - **Registrazioni** (⋯ sul telefono): gli zip salvati sul PC (⋯ → Registrazioni), con quando, quanto, a mano o
   automatica e perché, il controllo — niente pazienti. **Scarica** lo porta sul telefono a pezzi, cifrato come
