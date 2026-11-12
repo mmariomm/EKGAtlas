@@ -337,8 +337,9 @@
   }
   // il momento in cui il medico ha premuto Conferma (il giro, la conferma dal pannello o dal gestionale), in questa scheda
   const PREMUTO = "premuto.v1";
-  // La Conferma premuta dal pannello in questa pagina («Conferma per …», «Conferma
-  // e stampa»): una volta sola, finché la pagina non se ne va. La Conferma vera
+  // La Conferma premuta in questa pagina — dal pannello («Conferma per …», «Conferma
+  // e stampa»), dalla conferma automatica o sul bottone del gestionale —: una volta
+  // sola dal pannello, finché la pagina non se ne va. La Conferma vera
   // torna in 3–14 s, e intanto la pagina col bottone è ancora lì: un secondo
   // tocco manderebbe la stessa richiesta due volte.
   let confermaPremutaQui = false;
@@ -15715,6 +15716,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         tabStore.set("queue.v1", restano.length ? { ...q, items: restano, ts: Date.now() } : null);
       }
     }
+    confermaPremutaQui = true;   // (in volo: «Conferma per …» non la rimanda)
     model.confirmButton.click(); // native click → server confirm → label print flow
     return true;
   }
@@ -16772,6 +16774,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     const arm = (e) => {
       // (la Conferma del gestionale premuta da lui: da qui contano i suoi tocchi — quella del motore no)
       if (e && e.isTrusted) tabStore.set(PREMUTO, Date.now());
+      confermaPremutaQui = true;   // premuta, da chiunque: «Conferma per …» non la rimanda
       if (!richiestaNostra(model.richiestaId)) return;
       const q = tabStore.get("queue.v1", null);
       if (q && q.items) { // this richiesta is done: drop it from the walk

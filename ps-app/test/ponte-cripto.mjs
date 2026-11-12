@@ -795,6 +795,28 @@ await blocco(async () => {
   check(JSON.stringify(a("nota")) === "[7,8]", `una nota sì, alla scheda dopo (${JSON.stringify(a("nota"))})`);
 });
 await blocco(async () => {
+  // PS Assist si è aggiornato da sé: le schede del gestionale aperte prima hanno
+  // il pannello vecchio, che non risponde più (chrome.tabs.sendMessage: «Receiving
+  // end does not exist»). Il telefono dice che cosa fare, non «non risponde».
+  const orfana = () => { throw new Error("Could not establish connection. Receiving end does not exist."); };
+  const prova = async (locale, solaLettura = false) => {
+    const pc = await pcFinto({ scheda: orfana, locale, solaLettura });
+    const k = kDalQr((await pc.pagina({ t: "ponteAssocia" })).qr);
+    await sospendi(30);
+    const t = await telFinto(pc, k, DEV);
+    await t.manda({ id: 1, cmd: "ciao" });
+    return ((await t.manda({ id: 2, cmd: "pazienti" })).find((x) => x.re === 2) || {}).errore || "";
+  };
+  let e = await prova({ aggiornaUltima: { v: "3.85.3", quando: Date.now() - 20 * 60e3 } });
+  check(e === "PS Assist si è aggiornato: sul PC tocca «Ricarica la pagina»", `aggiornata 20 minuti fa, nessuna scheda risponde: «sul PC tocca Ricarica la pagina» (${e})`);
+  e = await prova({ aggiornaUltima: { v: "3.85.3", quando: Date.now() - 20 * 60e3 } }, true);
+  check(e === "PS Assist si è aggiornato: sul PC ricarica la pagina del gestionale", `la build mini (niente pillola): «ricarica la pagina del gestionale» (${e})`);
+  e = await prova({ aggiornaUltima: { v: "3.85.3", quando: Date.now() - 2 * 864e5 } });
+  check(e === "Il gestionale sul PC non risponde: ricarica la sua pagina", `aggiornata due giorni fa: «non risponde», come sempre (${e})`);
+  e = await prova({});
+  check(e === "Il gestionale sul PC non risponde: ricarica la sua pagina", `mai aggiornata: lo stesso (${e})`);
+});
+await blocco(async () => {
   // Una scrittura rimandata dopo una presa caduta (stesso rq, messaggio nuovo):
   // mentre va e quando è finita, il PC non la rifà — risponde com'è andata.
   const fatti = [];

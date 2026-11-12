@@ -18,13 +18,17 @@
  * che parte (e lo dice all'aiutante), la pillola «Ricarica la pagina» nella
  * scheda col pannello vecchio, e il tocco sulla pillola che la riapre.
  * Da sé (3.85.3, anche la build completa): la sveglia ogni sei ore; mai con un
- * ordine o una registrazione in corso; VERSION.txt riletta subito prima dello
+ * ordine, una registrazione o un comando del telefono in corso, né col telefono
+ * in uso; VERSION.txt riletta subito prima dello
  * scambio; una prova andata male aspetta sei ore, senza riscaricare lo zip;
  * l'aiutante che non risponde: niente ricarica, e dopo «già nella cartella»
  * (solo la ricarica, niente zip); la sveglia che suona con la scheda del
- * gestionale aperta: aggiornata, e la pillola; un ordine premuto mentre
+ * gestionale aperta: aggiornata, e la pillola (il telefono, intanto: «sul PC
+ * tocca Ricarica la pagina»); un ordine premuto mentre
  * l'aiutante scambia la cartella: «Non partita · niente inviato», mai perso in
- * silenzio né mandato due volte.
+ * silenzio né mandato due volte; una scheda del gestionale con la pagina
+ * d'errore di Chrome (lo script non entra) non la ferma per sempre; dopo
+ * ripristina.cmd la versione tolta non torna da sé (a mano sì).
  *   node test/ext-aggiorna.mjs
  */
 import { chromium } from "playwright";
@@ -33,7 +37,7 @@ import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
-import { rmSync, existsSync, statSync, mkdirSync, writeFileSync, readFileSync, chmodSync, cpSync, readdirSync } from "node:fs";
+import { rmSync, existsSync, statSync, mkdirSync, writeFileSync, readFileSync, chmodSync, cpSync, readdirSync, renameSync } from "node:fs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const BASE = join("/tmp", "psa-agg-" + process.pid);
@@ -352,6 +356,27 @@ console.log("\naggiorna: da sé, mai a metà di qualcosa");
   r = await daSe();
   check(!!r && r.why === "Dopo la registrazione in corso", `una registrazione che aspetta di salvarsi: nemmeno (got ${JSON.stringify(r)})`);
   await sw.evaluate(() => chrome.storage.session.remove("registra.incidente"));
+  // il telefono: da sé non mentre il medico lo usa (dopo la ricarica le schede aperte non gli rispondono più)
+  const TEL = "Dopo il comando dall'iPhone in corso";
+  const telefono = (x) => sw.evaluate((y) => {
+    pt.sessione = y.sessione ? { canale: null, dal: Date.now(), ultimo: Date.now(), n: 1 } : null;
+    pt.fine = y.finita ? { perche: "inattivo", testo: "", ts: Date.now() - y.finita } : null;
+  }, x);
+  await telefono({ sessione: true });
+  r = await daSe();
+  check(!!r && r.why === TEL, `una sessione col telefono aperta: la sveglia non aggiorna (got ${JSON.stringify(r)})`);
+  check((await sw.evaluate(() => aggOccupato())) === "", "…a mano sì (il medico è al PC: vede «Ricarica la pagina»)");
+  await telefono({ finita: 5 * 60e3 });
+  r = await daSe();
+  check(!!r && r.why === TEL, `la sessione finita da 5 minuti: nemmeno (got ${JSON.stringify(r)})`);
+  await telefono({ finita: 11 * 60e3 });
+  check((await sw.evaluate(() => aggOccupato(true))) === "", "finita da più di 10 minuti: si può");
+  await telefono({});
+  // un comando del telefono che lavora in una scheda di sottofondo (la cartella): né da sé né a mano
+  await sw.evaluate(() => chrome.storage.session.set({ "ponte.cartelle": { 4242: { ep: "1", ts: Date.now() } } }));
+  r = await sw.evaluate(() => aggiorna());
+  check(!r.ok && r.why === TEL, `la cartella che il telefono sta salvando: nemmeno a mano (got ${JSON.stringify(r)})`);
+  await sw.evaluate(() => chrome.storage.session.remove("ponte.cartelle"));
   check(zipChiesti() === z0 && !scambi() && (await versioneSw()) === NUOVA,
     "niente zip scaricato, niente all'aiutante, la versione è quella di prima");
 }
@@ -439,6 +464,11 @@ console.log("\naggiorna: da sé, con la scheda del gestionale aperta");
     `la sveglia: aggiornata da sé alla ${NUOVA3}, con la scheda del gestionale aperta (got ${v || "nessun service worker nuovo"})`);
   const pill = await finche(() => pillola(doc), 15000);
   check(pill === "PS Assist aggiornata · Ricarica la pagina", `nella scheda aperta la pillola «Ricarica la pagina» (got «${pill}»)`);
+  // il telefono, intanto: la scheda col pannello vecchio non gli risponde più, e lo si dice
+  const SI = "PS Assist si è aggiornato: sul PC tocca «Ricarica la pagina»";
+  const tel = nuovo ? await finche(async () => { const e = (await nuovo.evaluate(() => ponteSuScheda("pazienti", {}))).errore; return e === SI ? e : null; }, 10000)
+    || (await nuovo.evaluate(() => ponteSuScheda("pazienti", {})).catch((e) => ({ errore: String(e) }))).errore : "";
+  check(tel === SI, `un comando dal telefono, prima di «Ricarica la pagina»: «${SI}» (got «${tel}»)`);
   if (nuovo) { sw = nuovo; await svegliaLontana(); }
   if (pill) await riapriDallaPillola(doc);
 }
@@ -494,6 +524,57 @@ console.log("\naggiorna: un ordine premuto mentre l'aiutante scambia la cartella
   comportati();
   await altra.close().catch(() => {});
   if (nuovo) { sw = nuovo; await svegliaLontana(); }
+}
+
+console.log("\naggiorna: una scheda del gestionale dove lo script non entra (la pagina d'errore di Chrome)");
+{
+  if (await finche(() => pillola(doc), 3000)) await riapriDallaPillola(doc);
+  await nessunOrdine();
+  await doc.evaluate(() => { sessionStorage.removeItem("psassist:corsa.v1"); localStorage.removeItem("psassist:corsa.presidio.v1"); });
+  check((await sw.evaluate(() => aggOccupato())) === "", "(niente in corso: libero)");
+  // il gestionale non risponde: Chrome mostra la sua pagina d'errore, all'indirizzo del gestionale
+  const rotta = await ctx.newPage();
+  await rotta.route("**/*", (r) => r.abort("connectionrefused"));
+  const ROTTA = A.patientUrl + "&rotta=1";
+  await rotta.goto(ROTTA).catch(() => {});
+  const vista = await finche(() => sw.evaluate((u) => chrome.tabs.query({ url: SA4 + "/*" }).then((l) => l.find((t) => t.url === u && t.status === "complete"))
+    .then((t) => t && chrome.scripting.executeScript({ target: { tabId: t.id }, func: () => 1 }).then(() => "entra", (e) => e.message)), ROTTA), 10000);
+  check(/error page/.test(vista || ""), `(la scheda c'è, all'indirizzo del gestionale, e lo script non entra: «${vista}»)`);
+  const r = await sw.evaluate(() => aggOccupato());
+  check(r === "", `la pagina d'errore di Chrome (lì il pannello non c'è): non tiene fermo l'aggiornamento per sempre (got «${r}»)`);
+  await rotta.close();
+}
+
+console.log("\naggiorna: ripristina.cmd — da sé, la versione tolta non torna");
+{
+  // ripristina.cmd: estensione.prima torna estensione; poi ⟳ in chrome://extensions
+  const da = await versioneSw(), PRIMA = join(CASA, "estensione.prima"), TOLTA = join(CASA, "estensione.tolta");
+  const prima = JSON.parse(readFileSync(join(PRIMA, "manifest.json"), "utf8")).version;
+  renameSync(EST, TOLTA);
+  renameSync(PRIMA, EST);
+  let nasce = ctx.waitForEvent("serviceworker", { timeout: 30000 }).catch(() => null);
+  await sw.evaluate(() => chrome.runtime.reload()).catch(() => {});
+  let nuovo = await nasce;
+  if (nuovo) { sw = nuovo; await svegliaLontana(); }
+  check(da === NUOVA4 && prima === NUOVA3 && (await versioneSw()) === NUOVA3, `rimessa la versione di prima (${da} → ${await versioneSw()})`);
+  gh.versione = NUOVA4;
+  gh.zip = zipDi(NUOVA4);
+  azzeraLavori();
+  await dimentica();
+  await togliPausa();
+  const z0 = zipChiesti();
+  const r = await daSe();
+  check(r === null && zipChiesti() === z0 && !scambi() && (await versioneSw()) === NUOVA3,
+    `da sé la ${NUOVA4}, tolta con ripristina.cmd, non torna: niente zip, niente all'aiutante (got ${JSON.stringify(r)})`);
+  const m = await memoria();
+  check(!!m && m.nuova === NUOVA4 && m.puo === true, `a mano resta: il puntino e «Aggiorna app» (got ${JSON.stringify(m)})`);
+  nasce = ctx.waitForEvent("serviceworker", { timeout: 30000 }).catch(() => null);
+  await sw.evaluate(() => { aggiorna(); });
+  nuovo = await nasce;
+  const v = nuovo ? await nuovo.evaluate(() => chrome.runtime.getManifest().version).catch(() => "") : "";
+  check(v === NUOVA4, `«Aggiorna app», a mano, la rimette (got ${v || "nessun service worker nuovo"})`);
+  if (nuovo) { sw = nuovo; await svegliaLontana(); }
+  rmSync(TOLTA, { recursive: true, force: true });
 }
 
 check(fuori.length === 0, `nessun'altra richiesta fuori dall'ospedale (got ${fuori.slice(0, 3).join(", ")})`);
