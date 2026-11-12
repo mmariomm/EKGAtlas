@@ -2565,9 +2565,13 @@ await tocca(tel, '[data-a="scheda"][data-s="richieste"]');
 await aspettaTel(tel, /Richieste/, 10000);
 await tocca(tel, '[data-a="scheda"][data-s="cartella"]');
 await sospendi(2000);
-check(!(await tel.evaluate(() => window.__chiusa)) && (await statoPonte())?.sessione?.dal === dalS0 && await sessioniNuove() === saluti0 && relay.entrate().pc === presePc0
-  && await tel.locator('.seg [data-s="cartella"].on').count() === 1 && /BIANCHI ANNA/.test(await tel.locator(".top").innerText().catch(() => "")),
-  "il service worker ripartito ritrova la sessione: il telefono continua sulla stessa (nessun saluto nuovo, nessuna presa nuova), sullo stesso paziente e sulla stessa scheda, senza «Sessione chiusa»");
+// (una sessione nuova avrebbe un altro «dal»: il registro, che tiene 60 righe, non si conta)
+{
+  const r = { chiusa: await tel.evaluate(() => window.__chiusa), dal: (await statoPonte())?.sessione?.dal === dalS0, pc: relay.entrate().pc - presePc0,
+    scheda: await tel.locator('.seg [data-s="cartella"].on').count(), bianchi: /BIANCHI ANNA/.test(await tel.locator(".top").innerText().catch(() => "")) };
+  check(!r.chiusa && r.dal && r.pc === 0 && r.scheda === 1 && r.bianchi,
+    `il service worker ripartito ritrova la sessione: il telefono continua sulla stessa (nessun saluto nuovo, nessuna presa nuova), sullo stesso paziente e sulla stessa scheda, senza «Sessione chiusa» (${JSON.stringify(r)})`);
+}
 await shot(tel, "tel-7-riavvio-ricollegato");
 // La sessione che non si ritrova (qui tolta di mano; per davvero: il browser riaperto, un'altra associazione):
 // il telefono lo sa al primo messaggio («riparti») e se ne apre una nuova da solo, senza «Sessione chiusa»
