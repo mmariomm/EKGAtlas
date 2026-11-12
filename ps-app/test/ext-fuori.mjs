@@ -365,6 +365,75 @@ sezione("il ripiego: senza documento fuori schermo, la presa nel service worker 
   await doc3.close();
 }
 
+// ===========================================================================
+// (revisione 3.87, P2-2) storage.session che rifiuta la scrittura (1 MB su Chrome 109): chi annota prima
+// di fare non fa. Una sessione finta, legata alla stessa associazione; la scrittura vera al posto di
+// ponteRisposta, le risposte al posto di ponteInvia.
+sezione("storage.session piena: quello che non si annota non si fa — e la sessione occupa poco");
+{
+  const r = await sw.evaluate(async () => {
+    const vero = { set: chrome.storage.session.set, risposta: ponteRisposta, invia: ponteInvia, sessione: pt.sessione };
+    const setVero = vero.set.bind(chrome.storage.session);
+    const nTel = PonteCripto.casuale(16), nPc = PonteCripto.casuale(16);
+    const ch = await PonteCripto.chiaviSessione(pt.k, nTel, nPc);
+    const s = { canale: PonteCripto.canalePc(ch), dal: Date.now(), ultimo: Date.now(), n: 0, nTel: PonteCripto.b64u(nTel), nPc: PonteCripto.b64u(nPc) };
+    const telC = PonteCripto.canaleTel(ch);
+    let fatte = 0, scritture = 0, piena = false;
+    const risposte = [];
+    const out = {};
+    try {
+      pt.sessione = s;
+      await ponteSessioneSalva();
+      ponteRisposta = async () => { fatte++; return { ok: true, dati: { salvato: true } }; };
+      ponteInvia = async (_s, obj) => { risposte.push(obj); return true; };
+      chrome.storage.session.set = (o) => {
+        if ("ponte.sessione" in o) { scritture++; if (piena) return Promise.reject(new Error("QUOTA_BYTES quota exceeded")); }
+        return setVero(o);
+      };
+      // il segno «sta andando» non si annota: niente fatto, e lo si dice
+      piena = true;
+      await ponteComando(s, { id: 7, cmd: "cartellaSalva", rq: "rqpieno12345", ep: "1" });
+      out.primo = risposte.at(-1) || null;
+      out.fatte1 = fatte;
+      // il service worker riparte (la sessione di prima), e il telefono la rimanda: si fa, una volta
+      piena = false;
+      pt.sessione = null;
+      out.ripresa = await ponteSessioneRiprendi();
+      await ponteComando(pt.sessione, { id: 7, cmd: "cartellaSalva", rq: "rqpieno12345", ep: "1" });
+      out.fatte2 = fatte;
+      // il numero d'ordine visto non si annota: il comando (cifrato dal telefono) non si fa
+      piena = true;
+      await ponteDati(await telC.cifra({ id: 8, cmd: "cartellaSalva", rq: "rqpieno67890", ep: "1" }));
+      await new Promise((ok) => setTimeout(ok, 300));
+      out.fatte3 = fatte;
+      // niente di cambiato: non si riscrive
+      piena = false;
+      await ponteSessioneSalva();
+      const w0 = scritture;
+      for (let i = 0; i < 5; i++) await ponteSessioneSalva();
+      out.riscritte = scritture - w0;
+    } finally {
+      chrome.storage.session.set = vero.set; ponteRisposta = vero.risposta; ponteInvia = vero.invia;
+      pt.sessione = vero.sessione;
+      await ponteSessioneSalva().catch(() => {});
+    }
+    return out;
+  });
+  check(!!r.primo && r.primo.ok === false && /niente fatto/.test(r.primo.errore || "") && r.fatte1 === 0,
+    `il segno «sta andando» non si annota: niente fatto, e il telefono lo sa («${r.primo && (r.primo.errore || JSON.stringify(r.primo))}», fatte ${r.fatte1})`);
+  check(r.ripresa === true && r.fatte2 === 1, `ripartito il service worker, la stessa rq rimandata: fatta una volta sola (fatte ${r.fatte2})`);
+  check(r.fatte3 === 1, `il numero d'ordine visto non si annota: il comando arrivato non si fa (fatte ${r.fatte3})`);
+  check(r.riscritte === 0, `niente di cambiato: ponte.sessione non si riscrive (${r.riscritte} scritture su 5)`);
+  const c = await sw.evaluate(async () => {
+    const v = "x".repeat(20000), ora = Date.now();
+    for (let i = 0; i < 40; i++) await ponteCartellaMemoScrivi("ep" + i, { letto: ora - 40e3 + i * 1000, campi: Object.keys(PONTE_CARTELLA_CAMPI).map((nome) => ({ nome, v })) });
+    const m = (await chrome.storage.session.get("ponte.cartella"))["ponte.cartella"] || {};
+    await chrome.storage.session.remove("ponte.cartella");
+    return { n: JSON.stringify(m).length, pazienti: Object.keys(m).length, ultimo: !!m.ep39 };
+  });
+  check(c.n <= 300e3 && c.ultimo, `ponte.cartella, 40 pazienti con 5 campi lunghi: ${Math.round(c.n / 1000)} KB (${c.pazienti} pazienti, l'ultimo letto c'è), ben dentro 1 MB`);
+}
+
 await ctx.close();
 await relay.chiudi();
 rmSync(PROFILE, { recursive: true, force: true });
