@@ -212,13 +212,14 @@ export class Stanza {
   // le chiavi d'entrata di un ruolo, in questa stanza ([] = nessuna: entra chiunque, nel passaggio)
   // (scadute non contano: P2-8). L'archivio guasto o che non risponde: Guasto — chi entra esce (1011), mai
   // «nessuna chiave», che nel passaggio vorrebbe dire «entra chiunque, e il primo si registra».
-  chiavi(ruolo, ora = Date.now()) {
+  // (`scadute`: anche quelle — un ruolo che ha avuto una chiave deve provare, anche se è scaduta)
+  chiavi(ruolo, ora = Date.now(), scadute = false) {
     const a = this.io.archivio;
     if (!a) return [];
     if (a.guasto) throw new Guasto("archivio");
     let v;
     try { v = a.leggi("entra:" + ruolo); } catch { throw new Guasto("archivio"); }
-    return conScadenza(v || [], 4).filter((x) => !x.fino || x.fino > ora).map((x) => x.c);
+    return conScadenza(v || [], 4).filter((x) => scadute || !x.fino || x.fino > ora).map((x) => x.c);
   }
   // true se scritta (e riletta uguale)
   scriviChiavi(ruolo, l) {
@@ -258,7 +259,7 @@ export class Stanza {
     this.pulisci(presa, ruolo, ora);
     const sfida = sfidaNuova();
     let note;
-    try { note = this.chiavi(ruolo, ora); } catch { this.guasto(presa, ruolo, ora); return; }
+    try { note = this.chiavi(ruolo, ora, true); } catch { this.guasto(presa, ruolo, ora); return; }
     // Un ruolo con la sua chiave (o, dopo il taglio, qualunque ruolo): entra solo con la prova. Dopo il taglio la
     // sfida lo dice (`obbligo`): il PC (o il PC del medico) dà allora alla stanza anche le chiavi dell'altro ruolo.
     if (this.io.archivio && (note.length || !PONTE.senzaProva)) {
@@ -340,6 +341,8 @@ export class Stanza {
       // chiave: non esce — aspetta (senza ricevere niente, senza scadenza) che il PC la dia, e allora ha
       // una sfida nuova (risfida). Quante ne aspettano: al più PONTE.inAttesaMax (pulisci).
       if (st.attende && !note.length && !CAPO.has(st.ruolo)) { this.io.scrivi(presa, { ...st, sfida: "", aspetta: true }); return; }
+      // (la prova della sfida di prima, arrivata dopo quella nuova: si aspetta quella giusta — una volta)
+      if (st.attende && st.risfidata) { this.io.scrivi(presa, { ...st, risfidata: false }); return; }
       if (st.attende) this.chiudi(presa, st, 4403, "prova sbagliata", false, ora);
       // (entrata senza prova nel passaggio, e la prova non torna: resta com'era — nessuno le ha ancora dato la chiave)
       return;
@@ -369,7 +372,7 @@ export class Stanza {
       const st = this.io.leggi(p);
       if (!st || st.via || !st.attende || st.ruolo !== ruolo || !this.io.aperta(p)) continue;
       const sfida = sfidaNuova();
-      this.io.scrivi(p, { ...st, sfida, aspetta: false, inizio: ora });
+      this.io.scrivi(p, { ...st, sfida, aspetta: false, inizio: ora, risfidata: !st.aspetta });
       this.io.invia(p, JSON.stringify({ sfida }));
     }
   }

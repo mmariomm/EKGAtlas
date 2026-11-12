@@ -341,7 +341,10 @@ await blocco(async () => {
     acceptWebSocket(w, tags) { w.tags = tags; prese.push(w); },
     getWebSockets(tag) { return prese.filter((w) => !w.uscita && (!tag || w.tags.includes(tag))); },
     getWebSocketAutoResponseTimestamp(w) { return battiti.has(w) ? new Date(battiti.get(w)) : null; },
-    storage: new Proxy({}, { get: (_, k) => async () => { disco.push(String(k)); return null; } }),
+    // (lo SQLite del Durable Object, con l'API sincrona: le chiavi d'entrata; tutto il resto — sveglie, l'API
+    // asincrona — si conta, e non deve servire)
+    storage: new Proxy({ kv: (() => { const m = new Map(); return { get: (k) => m.get(k), put: (k, v) => { m.set(k, structuredClone(v)); } }; })() },
+      { get: (o, k) => (k in o ? o[k] : async () => { disco.push(String(k)); return null; }) }),
   };
   try {
     const d = new PonteStanza(ctx, {});
@@ -567,6 +570,9 @@ await blocco(async () => {
   pcR.salta(14 * 3600e3);
   await pcR.ev("ponteControlla()");
   check(!!pcR.pt().coppia && ("ponte.coppia" in pcR.locale), "dopo 14 ore l'associazione non scade più: la chiave resta (in RAM e sul disco)");
+  // (finita la finestra del QR, la chiave d'entrata del telefono che è ancora quella del QR non si dà più alla stanza:
+  // l'indirizzo cambia, e la presa si rifà — P2-8)
+  for (let i = 0; i < 50 && pcR.presa()?.readyState !== 1; i++) await sospendi(20);
   check(!pcR.pt().sessione && pcR.presa().readyState === 1, "la sessione ferma da oltre 3 minuti si chiude (inattività), ma il PC resta nella stanza, raggiungibile");
 
   // la pagina del telefono si ricarica mentre la sessione vecchia è viva

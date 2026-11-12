@@ -99,7 +99,8 @@ const staUrl = (host, stanza, ruolo, entra = null, altro = false) => {
   const u = new URL(host);
   const base = `${u.protocol === "https:" ? "wss:" : "ws:"}//${u.host}/ponte/ws?r=${stanza}&ruolo=${ruolo}`;
   if (!entra) return base;
-  return ruolo === "medico" ? `${base}#c=${entra.medico}${altro ? "&a=" + entra.stazione : ""}` : `${base}#p=${entra.stazione}`;
+  // (senza `a`, `q`: la presa la dà alla stanza solo dopo il taglio, quando la stazione senza la sua chiave aspetterebbe)
+  return ruolo === "medico" ? `${base}#c=${entra.medico}${altro ? "&a=" : "&q="}${entra.stazione}` : `${base}#p=${entra.stazione}`;
 };
 // la cassa: la chiave di una coppia (`id`), come CryptoKey; una coppia della 3.86 (con `k` su disco) ci si sposta
 const staId = () => PonteCripto.b64u(PonteCripto.casuale(9));
@@ -427,7 +428,8 @@ async function stazioneCollegaOra(testo, nomeQr) {
       if (m && m.v === 1 && m.eco === pubTxt.slice(0, 22)) risolvi(m);
     } catch { /* non è per noi */ }
   } });
-  await p.tieni(staUrl(host, ab.stanza, "medico", await PonteCripto.chiaviEntra(o.s)), staOra() + STA_ATTESA.abbina + 10e3, true);
+  // (la stazione nella stanza dell'abbinamento è una 3.87, e sa provare: la sua chiave la dà il medico, `a` — P1)
+  await p.tieni(staUrl(host, ab.stanza, "medico", await PonteCripto.chiaviEntra(o.s), true), staOra() + STA_ATTESA.abbina + 10e3, true);
   // il saluto, ogni secondo e mezzo finché la stazione non risponde (il ripetitore non tiene niente)
   const fine = staOra() + STA_ATTESA.abbina;
   let m = null;

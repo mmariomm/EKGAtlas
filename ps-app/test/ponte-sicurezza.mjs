@@ -468,6 +468,68 @@ await blocco(async () => {
   vecchio.chiudi();
   await pc.ev("pt.presa.ferma()");
 });
+sezione("il taglio (P1): le coppie di prima e le stazioni non restano fuori");
+await blocco(async () => {
+  // una coppia della 3.86 migrata, il cui telefono non ha ancora detto di saper provare (telProva no), dopo il taglio:
+  // il PC dà alla stanza la chiave del telefono quando la sfida dice «obbligo» — il telefono (aggiornato) entra
+  const prima = L.PONTE.senzaProva;
+  L.PONTE.senzaProva = false;
+  try {
+    const K = P.casuale(32), dev = P.b64u(P.casuale(16)), stanza = (await P.chiaviCoppia(K)).stanza;
+    const pc = await pcVero({ locale: { "ponte.coppia": { k: P.b64u(K), creata: Date.now() - 864e5, usata: true, dev, nTel: "" } } });
+    const tel = telNode(stanza, K, dev);
+    const presaTel = tel.apri();   // (prima del PC: aspetta)
+    await sospendi(150);
+    await pc.ev("ponteAvvia()");
+    check(await presaTel && tel.p.chiusa === null, "dopo il taglio, il telefono di una coppia migrata (il PC non aveva mai dato la sua chiave alla stanza) entra quando entra il PC");
+    check(!!(await tel.saluta()) && (await tel.chiedi("ciao"))?.ok, "…e lavora");
+    tel.chiudi();
+    await pc.ev("pt.presa.ferma()");
+    // la stazione: nella stanza dell'abbinamento il medico dà la sua chiave (`a`), nella stanza di sempre `q`
+    const o = P.casuale(32), e = await P.chiaviEntra(o);
+    for (const [altro, nome] of [[true, "della stanza dell'abbinamento («a»)"], [false, "di sempre, prima che la stazione abbia detto di saper provare («q»)"]]) {
+      const r = stanzaNuova();
+      const sta = presa(r, "stazione", { prove: [e.stazione] });
+      await sta.aperta; await sospendi(80);
+      pc.ev(`globalThis.__med = new PresaWs("medico", {}); __med.tieni(staUrl(${JSON.stringify(relay.url)}, "${r}", "medico", ${JSON.stringify(e)}, ${altro}), null)`);
+      check(await finche(() => sta.pari === true, 3000) && sta.chiusa === null, `dopo il taglio, la stazione entra nella stanza ${nome}`);
+      pc.ev("__med.chiudi()"); sta.chiudi();
+    }
+    check(/staUrl\(host, ab\.stanza, "medico", await PonteCripto\.chiaviEntra\(o\.s\), true\)/.test(EXT("stazione-sw.js")), "(e il PC del medico, nella stanza dell'abbinamento, dà la chiave della stazione: stazione-sw.js)");
+  } finally { L.PONTE.senzaProva = prima; }
+});
+await blocco(async () => {
+  // P2-8: le chiavi d'entrata del telefono che vengono dal QR, il PC le dà alla stanza con la loro scadenza
+  const pc = await pcVero();
+  const r = await pc.pagina({ t: "ponteAssocia" });
+  const k = P.leggiFrammento(new URL(r.qr).hash).k, telQr = (await P.chiaviEntra(k)).tel;
+  await finche(() => pc.ev("pt.presa.su"));
+  const fino = pc.locale["ponte.coppia"].creata + 6 * 60e3;
+  check(pc.ev("pt.presa.url").includes(`${telQr}~${fino}`), "P2-8. la chiave d'entrata del telefono che viene dal QR: alla stanza con la sua scadenza (la fine della finestra), che la stanza tiene da sé");
+  await pc.ev("pt.presa.ferma()");
+  pc.salta(7 * 60e3);
+  await pc.ev("ponteAvvia(false)");
+  check(!pc.ev("ponteUrlPresa()").includes(telQr), "P2-8. …e finita la finestra, una chiave che è ancora quella del QR (mai rinnovata) il PC non la dà più");
+});
+await blocco(async () => {
+  // P3: la chiave d'entrata di prima del PC resta finché la stanza non dice di tenere quella nuova (mai a un'ora)
+  const pc = await pcVero();
+  const r = await pc.pagina({ t: "ponteAssocia" });
+  const k = P.leggiFrammento(new URL(r.qr).hash).k, stanza = (await P.chiaviCoppia(k)).stanza;
+  await finche(() => pc.ev("pt.presa.su"));
+  const A = telNode(stanza, k, P.b64u(P.casuale(16)));
+  await A.apri(); await A.saluta(); await A.chiedi("ciao"); await A.rinnova(); await A.saluta();
+  check(await finche(() => !pc.ev("pt.vecchia") && !pc.cassa.get("ponte").vecchia, 3000), "P3. il PC rinnovato: la stanza dice «registrata», e solo allora la chiave d'entrata di prima esce dalla cassa");
+  A.chiudi();
+  await pc.ev("pt.presa.ferma()");
+  // una «vecchia» che la stanza non ha confermato: resta, anche due giorni dopo (il PC era spento)
+  const x = pc.cassa.get("ponte");
+  pc.cassa.set("ponte", { ...x, vecchia: { entra: P.b64u(P.casuale(32)), fino: Date.now() + 1000 } });
+  pc.ev("pt.cassaDi = ''");
+  pc.salta(2 * 864e5);
+  await pc.ev("ponteAvvia(false)");
+  check(!!pc.cassa.get("ponte").vecchia && !!pc.ev("pt.vecchia"), "P3. …una non ancora confermata resta anche due giorni dopo: il PC spento a lungo non resta fuori dalla sua stanza");
+});
 
 sezione("la stazione di stampa");
 await blocco(async () => {

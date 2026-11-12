@@ -63,7 +63,7 @@
 /* global PonteCripto, PONTE_HOST_FISSO, ordLeggi, sulGestionale, leggibileOrd, corto, KEY, REF_TTL, stampaScelte, stampaDalTel, stampaTelVista, regElenco, regPezzo, regZipVia, stazioneCollega, Presa, fuoriRipiego, staCambio, cassaLeggi, cassaScrivi, cassaTogli, stazioneChiesta, stazioneDelTelefono, stazioneConferma */
 
 const PONTE_HOST_PROVA = "ponte.host";      // storage.local: solo per le prove, e solo verso questo PC
-// storage.local, niente di segreto: { id, gen, stanza, creata, usata, dev, nTel, cambiata?, cambi?, rinnovata?, telProva?, operatore?, pausa? }
+// storage.local, niente di segreto: { id, gen, stanza, creata, usata, dev, nTel, cambiata?, cambi?, rinnovata?, telProva?, suQr? (la chiave di adesso è ancora quella del QR), operatore?, pausa? }
 // (fino alla 3.86 c'era anche `k`: al primo avvio va nella cassa, e da qui se ne va)
 const PONTE_COPPIA = "ponte.coppia";
 // la cassa (cassa.js): { id, k (la chiave di adesso), qr? (quella del QR, finché vale la sua finestra), qrRaw? (i suoi
@@ -239,6 +239,11 @@ async function ponteCassaScrivi(x) {
   await cassaScrivi(PONTE_CASSA, x);
   pt.cassaDi = "";   // (si rilegge al prossimo avvio)
 }
+// (P3) Chi legge la cassa per riscriverla (il rinnovo, la chiave che torna quella del QR, la pulizia dell'avvio, la
+// «vecchia» confermata): uno alla volta, e ognuno rilegge dentro la fila — mai una scrittura su una lettura vecchia.
+// (Dentro, mai un'altra chiamata in fila: si aspetterebbe da sola.)
+let ponteFilaCassa = Promise.resolve();
+const ponteInCassa = (fn) => { const p = ponteFilaCassa.then(fn, fn); ponteFilaCassa = p.catch(() => {}); return p; };
 
 // ---------------------------------------------------------------- la presa
 // Una alla volta: le schede che svegliano, un QR nuovo e un nuovo tentativo
@@ -250,26 +255,39 @@ let ponteFilaAvvio = Promise.resolve();
 const ponteAvvia = (serve = true) => (ponteFilaAvvio = ponteFilaAvvio.then(() => ponteAvviaOra(serve), () => ponteAvviaOra(serve)));
 async function ponteAvviaOra(serve = true) {
   pt.host = await ponteIndirizzo();
+  // (nella fila della cassa: un rinnovo a metà non si mescola con quello che si rilegge qui)
+  const c = await ponteInCassa(ponteLeggiCoppia);
+  if (!c) Object.assign(pt, { coppia: null, k: null, chiavi: null, codice: "", chiaviDi: "", entra: null, cassaDi: "", qr: null, qrRaw: null, prossima: null, vecchia: null, scartata: null });
+  else pt.coppia = c;
+  if (!pt.host || !pt.coppia) await pt.presa.ferma();
+  // (nel ripiego la presa sta qui, ed è morta col service worker di prima: si riapre, se serve)
+  else if (serve || fuoriRipiego()) await ponteAssicura();
+  await ponteScriviStato();
+}
+// La coppia da disco e le sue chiavi dalla cassa, in `pt` (se sono cambiate). Ritorna la coppia, o null.
+async function ponteLeggiCoppia() {
   let c = (await chrome.storage.local.get(PONTE_COPPIA))[PONTE_COPPIA] || null;
+  if (!c) return null;
   try {
     c = await ponteMigra(c);
-    const x = c ? await cassaLeggi(PONTE_CASSA) : null;
-    if (c && (!x || x.id !== c.id || !x.k || !/^[0-9a-f]{32}$/.test(c.stanza || ""))) throw new Error("coppia senza chiave");
+    const x = await cassaLeggi(PONTE_CASSA);
+    if (!x || x.id !== c.id || !x.k || !/^[0-9a-f]{32}$/.test(c.stanza || "")) throw new Error("coppia senza chiave");
     // la finestra del QR è finita: la sua chiave non vale più (e i suoi byte nemmeno per disegnarlo)
-    const fuori = ponteOra() - c.creata >= PONTE_QR_PRIMO + 60e3;
-    if (x && (((x.qr || x.scartata) && fuori) || (x.qrRaw && (c.usata || ponteOra() - c.creata >= PONTE_QR_MAX))
-      || (x.vecchia && !(ponteOra() < x.vecchia.fino)))) {
+    const fuori = ponteOra() - (c.creata || 0) >= PONTE_QR_PRIMO + 60e3;
+    // (la chiave d'entrata di prima, `vecchia`, resta finché la stanza non dice di tenere quella nuova:
+    // ponteRegistrata — mai a un'ora, che il PC spento per un giorno la perderebbe e resterebbe fuori)
+    if (x && (((x.qr || x.scartata) && fuori) || (x.qrRaw && (c.usata || ponteOra() - c.creata >= PONTE_QR_MAX)))) {
       const { qr, qrRaw, vecchia, scartata, ...resto } = x;
       const tieni = { ...resto };
       if (qr && !fuori) tieni.qr = qr;
       if (scartata && !fuori) tieni.scartata = scartata;
       if (qrRaw && !c.usata && ponteOra() - c.creata < PONTE_QR_MAX) tieni.qrRaw = qrRaw;
-      if (vecchia && ponteOra() < vecchia.fino) tieni.vecchia = vecchia;
+      if (vecchia) tieni.vecchia = vecchia;
       await ponteCassaScrivi(tieni);
       Object.assign(x, { qr: tieni.qr, qrRaw: tieni.qrRaw, vecchia: tieni.vecchia, scartata: tieni.scartata });
     }
-    const firma = x ? `${c.id}.${c.gen || 0}.${!!x.qr}.${!!x.qrRaw}.${!!x.prossima}.${!!x.vecchia}.${!!x.scartata}` : "";
-    if (c && pt.cassaDi !== firma) {
+    const firma = `${c.id}.${c.gen || 0}.${!!x.qr}.${!!x.qrRaw}.${!!x.prossima}.${!!x.vecchia}.${!!x.scartata}`;
+    if (pt.cassaDi !== firma) {
       const ora = await ponteDa(x.k);
       pt.k = ora.k; pt.chiavi = { ...ora.chiavi, stanza: c.stanza }; pt.entra = ora.entra;
       pt.codice = await PonteCripto.codice(x.k);
@@ -284,14 +302,9 @@ async function ponteAvviaOra(serve = true) {
   } catch {   // una chiave rovinata (o che manca) non tiene fermo il ponte per sempre: serve un QR nuovo
     await chrome.storage.local.remove(PONTE_COPPIA).catch(() => {});
     await cassaTogli(PONTE_CASSA).catch(() => {});
-    c = null;
+    return null;
   }
-  if (!c) Object.assign(pt, { coppia: null, k: null, chiavi: null, codice: "", chiaviDi: "", entra: null, cassaDi: "", qr: null, qrRaw: null, prossima: null, vecchia: null, scartata: null });
-  else pt.coppia = c;
-  if (!pt.host || !pt.coppia) await pt.presa.ferma();
-  // (nel ripiego la presa sta qui, ed è morta col service worker di prima: si riapre, se serve)
-  else if (serve || fuoriRipiego()) await ponteAssicura();
-  await ponteScriviStato();
+  return c;
 }
 
 // ------------------------------------------------------------ quando serve
@@ -371,8 +384,17 @@ function ponteUrlPresa() {
   const base = `${u.protocol === "https:" ? "wss:" : "ws:"}//${u.host}/ponte/ws?r=${pt.chiavi.stanza}&ruolo=pc`;
   if (!pt.entra) return base;
   const prove = [pt.qr && pt.qr.entra.pc, pt.vecchia && pt.vecchia.entra].filter((x) => x && x !== pt.entra.pc);
-  const tel = pt.coppia && pt.coppia.telProva ? [pt.entra.tel, ponteFinestra() && pt.qr ? pt.qr.entra.tel : "", ponteFinestra() && pt.scartata ? pt.scartata.entra.tel : ""].filter(Boolean) : [];
-  return `${base}#c=${pt.entra.pc}${prove.length ? "&p=" + [...new Set(prove)].join(",") : ""}${tel.length ? "&a=" + tel.join(",") : ""}`;
+  // (P2-8) le chiavi del telefono che vengono dal QR (o dal telefono sostituito nella sua finestra) valgono, per
+  // la stanza, fino alla fine della finestra: la scadenza la tiene lei (`chiave~ms`), non un timer di qui. Finita
+  // la finestra, una chiave che è ancora quella del QR (il telefono non l'ha rinnovata) non si dà più.
+  const fino = pt.coppia ? pt.coppia.creata + PONTE_QR_PRIMO + 60e3 : 0, finestra = ponteFinestra();
+  const suQr = !!(pt.coppia && pt.coppia.suQr);
+  const tutte = [suQr ? (finestra ? `${pt.entra.tel}~${fino}` : "") : pt.entra.tel,
+    finestra && pt.qr ? `${pt.qr.entra.tel}~${fino}` : "", finestra && pt.scartata ? `${pt.scartata.entra.tel}~${fino}` : ""].filter(Boolean);
+  // `a`: quando si sa che il telefono sa provare; se no `q`, che la presa dà alla stanza solo dopo il taglio (P1)
+  const tel = pt.coppia && pt.coppia.telProva ? tutte : [];
+  const q = !tel.length && tutte.length ? "&q=" + tutte.join(",") : "";
+  return `${base}#c=${pt.entra.pc}${prove.length ? "&p=" + [...new Set(prove)].join(",") : ""}${tel.length ? "&a=" + tel.join(",") : ""}${q}`;
 }
 // La presa: nel documento fuori schermo (fuori-sw.js), che la tiene, la batte, la riprova e la
 // chiude alla sua ora. Quello che arriva sveglia il service worker, e passa di qui.
@@ -389,6 +411,7 @@ pt.presa = new Presa("pc", {
       pt.scollegato = ponteOra();
       ponteNota("Scollegato: il ponte ha rifiutato questo PC. Associa di nuovo l'iPhone (Nuovo QR), o chiedi all'IT");
     } else if (pt.presa.fermo !== 4403) pt.scollegato = 0;
+    if (pt.presa.registrata && pt.vecchia) ponteRegistrata().catch(() => {});
     ponteScriviStato();
   },
 });
@@ -489,9 +512,22 @@ async function ponteSaluto(b) {
   // le chiavi d'entrata sono cambiate: la presa si rifà (dopo la risposta), e la stanza tiene le nuove
   if (riapri) await ponteAvvia();
 }
+// La stanza ha detto di tenere la chiave d'entrata di adesso (presa.js: `registrata`, per l'indirizzo con
+// quella): quella di prima non serve più.
+const ponteRegistrata = () => ponteInCassa(ponteRegistrataOra);
+async function ponteRegistrataOra() {
+  const v = pt.vecchia;
+  if (!v || !pt.entra || !String(pt.presa.url || "").includes(`#c=${pt.entra.pc}`)) return;
+  const x = await cassaLeggi(PONTE_CASSA);
+  if (!x || !pt.coppia || x.id !== pt.coppia.id || !x.vecchia || x.vecchia.entra !== v.entra) return;
+  const { vecchia, ...resto } = x;
+  await ponteCassaScrivi(resto);
+  if (pt.vecchia === v) pt.vecchia = null;
+}
 // La chiave rinnovata ha salutato: da adesso è lei. Quella di prima resta solo per la finestra del QR
 // (se c'è ancora: «Usa questo telefono») e, come chiave d'entrata, per provare alla stanza che è il PC.
-async function ponteRinnovata() {
+const ponteRinnovata = () => ponteInCassa(ponteRinnovataOra);
+async function ponteRinnovataOra() {
   const x = await cassaLeggi(PONTE_CASSA);
   if (!x || !x.prossima || x.id !== pt.coppia.id) return;
   const vecchia = { entra: pt.entra.pc, fino: ponteOra() + PONTE_VECCHIA_MAX };
@@ -499,7 +535,7 @@ async function ponteRinnovata() {
   const qr = ponteFinestra() ? x.qr || x.k : null;
   await ponteCassaScrivi({ ...resto, k: prossima, vecchia, ...(qr ? { qr } : {}) });
   const gen = (pt.coppia.gen || 0) + 1, ora = ponteOra();
-  await ponteScriviCoppia({ ...pt.coppia, gen, rinnovata: ora, telProva: true });
+  await ponteScriviCoppia({ ...pt.coppia, gen, rinnovata: ora, telProva: true, suQr: false });
   const prima = { k: pt.k, chiavi: pt.chiavi, entra: pt.entra };
   pt.k = pt.prossima.k; pt.chiavi = { ...pt.prossima.chiavi, stanza: pt.coppia.stanza }; pt.entra = pt.prossima.entra;
   pt.codice = await PonteCripto.codice(pt.k);
@@ -512,7 +548,8 @@ async function ponteRinnovata() {
 // della Home), o con quella del telefono che un altro aveva sostituito (si riprende il posto): la chiave torna
 // quella. Quella di adesso, se è una chiave rinnovata (non quella del QR), resta «scartata» fino alla fine della
 // finestra: il suo telefono si sente dire «un altro telefono», e può riprendersi il posto.
-async function ponteTornaA(quale, perche) {
+const ponteTornaA = (quale, perche) => ponteInCassa(() => ponteTornaAOra(quale, perche));
+async function ponteTornaAOra(quale, perche) {
   const x = await cassaLeggi(PONTE_CASSA);
   const nuova = x && (quale === "qr" ? x.qr : x.scartata);
   const da = quale === "qr" ? pt.qr : pt.scartata;
@@ -522,7 +559,7 @@ async function ponteTornaA(quale, perche) {
   const vecchia = { entra: pt.entra.pc, fino: ponteOra() + PONTE_VECCHIA_MAX };
   await ponteCassaScrivi({ ...resto, k: nuova, vecchia, ...(scarto ? { scartata: scarto } : {}) });
   const gen = (pt.coppia.gen || 0) + 1;
-  await ponteScriviCoppia({ ...pt.coppia, gen });
+  await ponteScriviCoppia({ ...pt.coppia, gen, suQr: quale === "qr" });
   const prima = { k: pt.k, chiavi: pt.chiavi, entra: pt.entra };
   pt.vecchia = vecchia;
   pt.k = da.k; pt.chiavi = { ...da.chiavi, stanza: pt.coppia.stanza }; pt.entra = da.entra;
@@ -553,9 +590,11 @@ async function ponteCambio(m, quale) {
   // (col QR: la chiave torna quella del QR, la sola che questo telefono ha; la chiave nuova si rifà con lui)
   if (quale === "qr" || quale === "scartata") await ponteTornaA(quale, "cambio");
   else if (pt.prossima) {
-    const x = await cassaLeggi(PONTE_CASSA);
-    if (x && x.prossima) { const { prossima, ...resto } = x; await ponteCassaScrivi(resto); }
-    pt.prossima = null;
+    await ponteInCassa(async () => {
+      const x = await cassaLeggi(PONTE_CASSA);
+      if (x && x.prossima) { const { prossima, ...resto } = x; await ponteCassaScrivi(resto); }
+      pt.prossima = null;
+    });
   }
   const { errori, blocco, ...c } = pt.coppia;   // (errori e blocco: i conti del codice di prima, via)
   await ponteScriviCoppia({ ...c, cambi, dev: m.dev, usata: true, nTel: m.n, cambiata: ora });
@@ -780,13 +819,16 @@ async function ponteRinnova(d) {
   let pubTel;
   try { pubTel = PonteCripto.daB64u(d.pub); } catch { pubTel = null; }
   if (!pubTel || pubTel.length !== 65 || pubTel[0] !== 4) return { ok: false, errore: "Chiave non valida" };
-  const x = await cassaLeggi(PONTE_CASSA);
-  if (!x || !pt.coppia || x.id !== pt.coppia.id) return { ok: false, errore: "Associazione non trovata" };
-  const e = await PonteCripto.coppiaEcdh();
-  const k2 = await PonteCripto.rinnova(pt.k, e.privata, pubTel, pubTel, e.pub);
-  await ponteCassaScrivi({ ...x, prossima: k2 });
-  pt.prossima = await ponteDa(k2);
-  return { ok: true, dati: { pub: PonteCripto.b64u(e.pub) } };
+  // (P3: nella fila della cassa, e la cassa riletta lì — mai una scrittura su una lettura di prima)
+  return ponteInCassa(async () => {
+    const x = await cassaLeggi(PONTE_CASSA);
+    if (!x || !pt.coppia || x.id !== pt.coppia.id) return { ok: false, errore: "Associazione non trovata" };
+    const e = await PonteCripto.coppiaEcdh();
+    const k2 = await PonteCripto.rinnova(pt.k, e.privata, pubTel, pubTel, e.pub);
+    await ponteCassaScrivi({ ...x, prossima: k2 });
+    pt.prossima = await ponteDa(k2);
+    return { ok: true, dati: { pub: PonteCripto.b64u(e.pub) } };
+  });
 }
 // La build mini (PS Assist · Lettura e stampa) è di SOLA LETTURA: il ponte
 // risponde solo ai comandi di lettura e alla ristampa (legge la pagina aperta e
@@ -2704,7 +2746,7 @@ function ponteDaPagina(msg, sender, reply) {
       const stanza = (await PonteCripto.chiaviCoppia(raw)).stanza, operatore = await ponteOperatoreOra();
       // la chiave nella cassa (i suoi byte solo per disegnare il QR, due minuti); su disco quello che non è segreto
       await ponteCassaScrivi({ id, k: K, qr: K, qrRaw: raw });
-      await ponteScriviCoppia({ id, gen: 0, stanza, creata: ora, usata: false, dev: "", nTel: "", telProva: true, ...(operatore ? { operatore } : {}) });
+      await ponteScriviCoppia({ id, gen: 0, stanza, creata: ora, usata: false, dev: "", nTel: "", telProva: true, suQr: true, ...(operatore ? { operatore } : {}) });
       if (pt.avviso) pt.avviso = null;
       ponteNota(`Nuovo QR: vale per il primo scambio fino alle ${hhmmPonte(ora + PONTE_QR_PRIMO)}`);
       // (finita la finestra del QR, la sua chiave non vale più: anche per la stanza del ripetitore)

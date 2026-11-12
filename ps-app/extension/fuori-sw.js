@@ -160,7 +160,7 @@ class Presa {
   get tenuta() { return !!this.url; }
   // (aperta o in apertura: come la `ws` di prima)
   get ws() { return this.url && (this.su || this.collego) ? this : null; }
-  stato() { return { url: this.url, su: this.su, pari: this.pari, fino: this.fino, fermo: this.fermo, codice: this.codice, collego: this.collego, prossimo: this.prossimo }; }
+  stato() { return { url: this.url, su: this.su, pari: this.pari, registrata: !!this.registrata, fino: this.fino, fermo: this.fermo, codice: this.codice, collego: this.collego, prossimo: this.prossimo }; }
   // lo stato vero, dal documento (o dalla presa qui, nel ripiego)
   applica(s) {
     if (!s) return;
@@ -173,11 +173,11 @@ class Presa {
     }
     const prima = this.stato();
     this.url = String(s.url || "");
-    this.su = !!s.su; this.pari = !!s.pari; this.collego = !!s.collego;
+    this.su = !!s.su; this.pari = !!s.pari; this.collego = !!s.collego; this.registrata = !!s.registrata;
     this.fino = s.fino === null ? null : Number(s.fino) || 0;
     this.fermo = Number(s.fermo) || 0; this.codice = Number(s.codice) || 0; this.prossimo = Number(s.prossimo) || 0;
     if (prima.pari !== this.pari) { try { this.ascolta.pari && this.ascolta.pari(this.pari); } catch { /* niente */ } }
-    if (prima.su !== this.su || prima.url !== this.url || prima.collego !== this.collego || prima.fermo !== this.fermo) {
+    if (prima.su !== this.su || prima.url !== this.url || prima.collego !== this.collego || prima.fermo !== this.fermo || prima.registrata !== this.registrata) {
       try { this.ascolta.stato && this.ascolta.stato(); } catch { /* niente */ }
     }
   }

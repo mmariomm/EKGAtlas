@@ -31,7 +31,12 @@
  *     arrivano dal service worker nel frammento dell'indirizzo
  *     (`#p=<chiavi per la prova>&c=<la propria>&a=<quelle dell'altro ruolo>`),
  *     che resta qui: alla rete va l'indirizzo senza frammento, e nessun
- *     segreto viaggia mai nell'indirizzo.
+ *     segreto viaggia mai nell'indirizzo. Una chiave dell'altro ruolo può
+ *     portare la sua scadenza (`chiave~ms`: la stanza la tiene fino ad allora);
+ *     `q=` sono quelle che si danno alla stanza solo se la sfida dice che la
+ *     prova è ormai obbligo (`obbligo`: dopo il taglio, l'altro ruolo senza la
+ *     sua chiave aspetterebbe per sempre). `registrata`: la stanza ha detto di
+ *     tenere la chiave propria (`c`) — solo allora si butta quella di prima.
  */
 (function (g) {
   "use strict";
@@ -42,12 +47,19 @@
   const B64U = /^[A-Za-z0-9_-]{43}$/;
   function entrata(url) {
     const i = url.indexOf("#");
-    if (i < 0) return { rete: url, prova: [], chiave: "", altro: [] };
+    if (i < 0) return { rete: url, prova: [], chiave: "", altro: [], obbligo: [] };
     const q = new URLSearchParams(url.slice(i + 1));
     const lista = (x) => String(q.get(x) || "").split(",").filter((c) => B64U.test(c)).slice(0, 4);
+    // (chiave, o chiave~scadenza: { c, fino })
+    const conFino = (x) => String(q.get(x) || "").split(",").map((t) => /^([A-Za-z0-9_-]{43})(?:~(\d{1,15}))?$/.exec(t))
+      .filter(Boolean).map((m) => (m[2] ? { c: m[1], fino: Number(m[2]) } : m[1])).slice(0, 3);
     const c = String(q.get("c") || "");
-    return { rete: url.slice(0, i), prova: lista("p"), chiave: B64U.test(c) ? c : "", altro: lista("a") };
+    return { rete: url.slice(0, i), prova: lista("p"), chiave: B64U.test(c) ? c : "", altro: conFino("a"), obbligo: conFino("q") };
   }
+  const soloProve = (u1, u2) => {
+    const a = entrata(u1), b = entrata(u2), s = JSON.stringify;
+    return a.rete === b.rete && a.chiave === b.chiave && s(a.altro) === s(b.altro);
+  };
   const b64u = (b) => { let s = ""; for (const x of b) s += String.fromCharCode(x); return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""); };
   const daB64u = (t) => Uint8Array.from(atob(t.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((t.length + 3) % 4)), (c) => c.charCodeAt(0));
   async function prova(chiave, sfida) {
@@ -59,7 +71,7 @@
   class PresaWs {
     // eventi: { dati(ArrayBuffer), stato(stato) }
     constructor(nome, eventi = {}) {
-      Object.assign(this, { nome, eventi, url: "", ws: null, su: false, pari: false, fino: 0, fermo: 0, aperta: 0, ver: 0,
+      Object.assign(this, { nome, eventi, url: "", ws: null, su: false, pari: false, registrata: false, fino: 0, fermo: 0, aperta: 0, ver: 0,
         tentativi: 0, prossimo: 0, entrate: 0, codice: 0, tRiprova: 0, tPong: 0, tFino: 0 });
       this.tBattito = setInterval(() => this.battito(), PRESA.battito);
     }
@@ -68,7 +80,7 @@
     // Com'è adesso, con un numero che cresce a ogni sguardo (`ver`): chi lo riceve per due strade
     // (la risposta a «tieni», un messaggio) tiene il più nuovo, mai uno vecchio arrivato dopo.
     stato() {
-      return { nome: this.nome, url: this.url, su: this.su, pari: this.pari, fino: this.fino, fermo: this.fermo, codice: this.codice,
+      return { nome: this.nome, url: this.url, su: this.su, pari: this.pari, registrata: this.registrata, fino: this.fino, fermo: this.fermo, codice: this.codice,
         collego: !!this.ws && !this.su, prossimo: this.prossimo, aperta: this.aperta, entrate: this.entrate, ver: ++this.ver };
     }
     dici() { try { this.eventi.stato && this.eventi.stato(this.stato()); } catch { /* chi ascolta non c'è più */ } }
@@ -79,6 +91,9 @@
       clearTimeout(this.tFino); this.tFino = 0;
       this.fino = fino == null ? null : fino;
       if (fino != null) this.tFino = setTimeout(() => { this.tFino = 0; if (this.fino != null && this.fino <= ora() + 50) this.chiudi(); }, Math.min(TETTO, fino - ora()));
+      // (cambiano solo le chiavi con cui si prova, `p`/`q`, su una presa già entrata: valgono solo per entrare —
+      // la prossima volta; questa resta, e non si perde niente di quello che passa adesso)
+      if (url !== this.url && this.su && this.registrata && soloProve(url, this.url)) this.url = url;
       if (url !== this.url) {
         this.chiudiPresa();
         clearTimeout(this.tRiprova); this.tRiprova = 0; this.prossimo = 0;
@@ -101,7 +116,7 @@
     }
     chiudiPresa() {
       const ws = this.ws;
-      this.ws = null; this.su = false; this.pari = false; this.aperta = 0;
+      this.ws = null; this.su = false; this.pari = false; this.registrata = false; this.aperta = 0;
       clearTimeout(this.tPong); this.tPong = 0;
       if (ws) {
         ws.onopen = ws.onmessage = ws.onclose = ws.onerror = null;
@@ -124,11 +139,14 @@
           let m = null;
           try { m = JSON.parse(ev.data); } catch { return; }
           if (m && typeof m.pari === "boolean" && m.pari !== this.pari) { this.pari = m.pari; this.dici(); }
+          // entrata: la stanza tiene la chiave propria (l'aveva già, o l'ha appena scritta)
+          if (m && typeof m.entrato === "number" && e.chiave) { const r = m.registrata !== false; if (r !== this.registrata) { this.registrata = r; this.dici(); } }
           // la sfida dell'entrata: la prova con ogni chiave che si ha, e (il PC) le chiavi da tenere
           if (m && typeof m.sfida === "string" && /^[A-Za-z0-9_-]{8,64}$/.test(m.sfida) && (e.prova.length || e.chiave)) {
             Promise.all([...new Set([e.chiave, ...e.prova].filter(Boolean))].map((c) => prova(c, m.sfida))).then((l) => {
               if (this.ws !== ws || ws.readyState !== 1) return;
-              ws.send(JSON.stringify({ prova: l, ...(e.chiave ? { chiave: e.chiave } : {}), ...(e.altro.length ? { altro: e.altro } : {}) }));
+              const altro = e.altro.length ? e.altro : m.obbligo ? e.obbligo : [];
+              ws.send(JSON.stringify({ prova: l, ...(e.chiave ? { chiave: e.chiave } : {}), ...(altro.length ? { altro } : {}) }));
             }).catch(() => {});
           }
           return;
