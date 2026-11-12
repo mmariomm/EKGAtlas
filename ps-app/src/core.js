@@ -18534,10 +18534,15 @@
   // tutte le schede: lo dicono il Registro, la pagina dove si atterra e il
   // telefono. Mai con un ordine al lavoro, mai sopra un passaggio d'area, mai su
   // una pagina dove il medico ha scritto qualcosa e non l'ha salvato.
+  const AREA_TEL_RQ = "area.tel.rq.v1";   // i numeri dei tocchi già dati a una scheda (gli ultimi 30)
   function ponteAreaApri(p, a) {
     if (ponteUrlPaziente(p)) return { ok: true, dati: { ep: p.ep, gia: true, nome: p.name } };   // la sua pagina c'è già: niente da passare
     const k = areeLeggi().membri[p.ep]?.k, nome = k ? areaVaiNome(k) : "";
     if (!k) return { ok: false, errore: "Il PC non sa in che area è: aprilo sul PC, dalla lista smart" };
+    // (già su quell'area — un telefono rimasto indietro, un secondo tocco dopo «PC ora sull'area …»: niente da
+    // passare, e la scheda del medico non si muove)
+    const ora = store.get(AREA_ORA, null);
+    if (ora && ora.k === k) return { ok: false, errore: "Il PC è già su quell'area: aprilo dalla lista" };
     const chi = p.nato ? { nome: normNome(p.name), nato: p.nato } : null;
     if (!chi || tuttiPazienti().filter((x) => normNome(x.name) === chi.nome && x.nato === chi.nato).length !== 1) {
       return { ok: false, errore: "Sul PC non so riconoscerlo da solo: aprilo sul PC, dalla lista smart" };
@@ -18550,6 +18555,10 @@
     if (paginaToccata()) return { ok: false, errore: "Sul PC, nella pagina del gestionale, c'è qualcosa di scritto e non salvato: niente cambiato" };
     const rq = typeof a.rq === "string" && /^[\w-]{8,40}$/.test(a.rq) ? a.rq : "";
     if (!rq) return { ok: false, errore: "Richiesta non valida: niente cambiato" };
+    // (un numero già dato a una scheda — anche a un'altra: la memoria è del gestionale — non muove più niente)
+    const dati = store.get(AREA_TEL_RQ, []), visti = Array.isArray(dati) ? dati : [];
+    if (visti.includes(rq)) return { ok: false, incerto: true, errore: "Già chiesto: guarda sul PC su che area è il gestionale" };
+    store.set(AREA_TEL_RQ, [...visti, rq].slice(-30));
     // (la risposta parte prima della pagina nuova)
     apriArea(k, chi, (u) => { setTimeout(() => nav(u), 150); return true; }, rq);
     return { ok: true, dati: { ep: p.ep, k, area: nome, nome: p.name }, registro: `passo il gestionale all'area ${nome} e apro ${p.name}` };

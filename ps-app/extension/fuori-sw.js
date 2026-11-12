@@ -30,11 +30,15 @@
 /* global PresaWs */
 
 const FUORI_URL = "fuori.html";
-const FUORI_RIPIEGO = "fuori.ripiego";      // storage.session: il documento non si è aperto (in questa sessione del browser non si riprova)
+const FUORI_RIPIEGO = "fuori.ripiego";      // storage.session: il documento non si è aperto ({ ts }: per FUORI_RIPIEGO_MS non si riprova)
+const FUORI_RIPIEGO_MS = 30 * 60e3;         // poi, alla prossima occasione (una presa da tenere), il documento si riprova
 const FUORI = {
   dopo: 2 * 60e3,          // quanto resta una presa dopo che non serve più (i test lo accorciano)
   ripiego: !(chrome.offscreen && chrome.offscreen.createDocument),
+  ripiegoDal: 0,           // da quando (0: per sempre — senza chrome.offscreen)
   aperto: false,           // l'ultima volta che si è guardato, c'era (e rispondeva)
+  fresco: 60e3,            // lo stato di una presa, dal documento: più vecchio di così, «servi» glielo richiede
+  prova: false,            // solo i test (fuoriRegola): mai acceso nell'estensione
   motivi: new Set(),       // chi tiene il documento oltre le prese: «registra» (uno zip in corso)
   prese: new Map(),        // nome → Presa
   fila: Promise.resolve(), // il documento (aprirlo, chiuderlo) e le richieste alle prese: una cosa alla volta
@@ -53,7 +57,15 @@ const fuoriDaB64 = (t) => {
   for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i);
   return u;
 };
-const fuoriRipiego = () => FUORI.ripiego;
+// Il ripiego scade: dopo FUORI_RIPIEGO_MS il documento si riprova (true: scaduto adesso).
+function fuoriRipiegoScaduto() {
+  if (!FUORI.ripiego || !FUORI.ripiegoDal || !(chrome.offscreen && chrome.offscreen.createDocument)) return false;
+  if (fuoriOra() - FUORI.ripiegoDal < FUORI_RIPIEGO_MS) return false;
+  FUORI.ripiego = false; FUORI.ripiegoDal = 0;
+  chrome.storage.session.remove(FUORI_RIPIEGO).catch(() => {});
+  return true;
+}
+const fuoriRipiego = () => { fuoriRipiegoScaduto(); return FUORI.ripiego; };
 
 // Al documento: la sua risposta, o null se non c'è (nessuno ascolta).
 async function fuoriChiedi(m) {
@@ -67,9 +79,16 @@ async function fuoriPing() {
 }
 async function fuoriRipiega(e) {
   if (FUORI.ripiego) return;
-  FUORI.ripiego = true;
+  FUORI.ripiego = true; FUORI.ripiegoDal = fuoriOra();
   console.warn("PS Assist: il documento fuori schermo non si apre, le prese restano nel service worker", e);
-  await chrome.storage.session.set({ [FUORI_RIPIEGO]: { ts: fuoriOra(), why: String(e && e.message || e).slice(0, 120) } }).catch(() => {});
+  await chrome.storage.session.set({ [FUORI_RIPIEGO]: { ts: FUORI.ripiegoDal, why: String(e && e.message || e).slice(0, 120) } }).catch(() => {});
+  // le prese che il documento tiene ancora (se risponde): chiuse — mai due, una là e una qui; poi, se
+  // nessuno lo usa, il documento stesso
+  const r = await fuoriPing();
+  for (const [nome, s] of Object.entries((r && r.prese) || {})) {
+    if (s && s.url) await fuoriChiedi({ t: "fuoriTieni", nome, url: "", fino: 0 });
+  }
+  if (r) fuoriForseChiudi();
 }
 // Il documento, aperto se manca. true: c'è e risponde. `forza`: anche in ripiego (lo zip del
 // registratore non ha un'altra strada: ci prova lo stesso, come prima).
@@ -104,6 +123,8 @@ function fuoriForseChiudi(ms = 10e3) {
       if (FUORI.motivi.size || [...FUORI.prese.values()].some((p) => p.tenuta && !p.locale)) return;
       const r = await fuoriPing();
       if (!r) { FUORI.aperto = false; return; }
+      // (uno zip in corso là, anche se questo service worker non lo sa: è ripartito a metà)
+      if (r.occupato) return;
       // (lo stato vero è il suo: una presa tenuta là non si chiude da qui)
       if (Object.values(r.prese || {}).some((s) => s && s.url)) return;
       await chrome.offscreen.closeDocument().catch(() => {});
@@ -112,15 +133,28 @@ function fuoriForseChiudi(ms = 10e3) {
   }, ms);
 }
 // Il registratore (registra.js): il documento per uno zip, e poi lo lascia.
-const fuoriPrendi = async (motivo) => { FUORI.motivi.add(motivo); return fuoriApri(true); };
-const fuoriLascia = (motivo) => { FUORI.motivi.delete(motivo); fuoriForseChiudi(1000); };
+// (Lo sa anche il documento: un service worker che riparte a metà zip non lo chiude sotto.)
+const fuoriPrendi = async (motivo) => {
+  FUORI.motivi.add(motivo);
+  const ok = await fuoriApri(true);
+  if (ok) await fuoriChiedi({ t: "fuoriPrendi", motivo });
+  return ok;
+};
+const fuoriLascia = (motivo) => {
+  FUORI.motivi.delete(motivo);
+  if (!FUORI.motivi.size) fuoriChiedi({ t: "fuoriLascia" });
+  fuoriForseChiudi(1000);
+};
+// Solo i test: battito e tentativi più corti, nel documento. Spento (FUORI.prova) non parte niente; il
+// documento lo accetta solo da qui e col segno della prova.
+const fuoriRegola = (regole) => (FUORI.prova === true ? fuoriChiedi({ ...regole, t: "fuoriRegola", prova: true }) : Promise.resolve(null));
 
 // ------------------------------------------------------------------ una presa
 class Presa {
   // ascolta: { dati(Uint8Array), pari(bool), stato() }
   constructor(nome, ascolta = {}) {
     Object.assign(this, { nome, ascolta, url: "", su: false, pari: false, fino: 0, fermo: 0, codice: 0, collego: false, prossimo: 0,
-      vita: "", ver: 0, persi: 0, locale: null, filaM: Promise.resolve() });
+      vita: "", ver: 0, visto: 0, persi: 0, locale: null, filaM: Promise.resolve() });
     FUORI.prese.set(nome, this);
   }
   get tenuta() { return !!this.url; }
@@ -130,6 +164,7 @@ class Presa {
   // lo stato vero, dal documento (o dalla presa qui, nel ripiego)
   applica(s) {
     if (!s) return;
+    this.visto = fuoriOra();   // (l'ultima volta che si è saputo com'è)
     // (uno stato più vecchio di quello che si sa, arrivato dopo per l'altra strada — la risposta a «tieni» e i
     // messaggi del documento non si aspettano —: si ignora; un documento nuovo ricomincia a contare)
     if (s.vita && Number.isSafeInteger(s.ver)) {
@@ -151,6 +186,15 @@ class Presa {
   tieni(url, fino, subito = false) {
     const chiudi = !url || fino === 0 || (fino != null && !(fino > fuoriOra()));
     return fuoriInFila(async () => {
+      // (il ripiego scaduto: la presa qui resta finché è tenuta; chiusa — o da chiudere — si lascia, e si torna al documento)
+      fuoriRipiegoScaduto();
+      if (!FUORI.ripiego && this.locale && (chiudi || !this.locale.tenuta)) {
+        const l = this.locale;
+        this.locale = null;
+        l.tieni("", 0);
+        this.applica({ url: "" });
+        if (chiudi) return;
+      }
       if (FUORI.ripiego || this.locale) return this.tieniQui(url, fino, subito);
       // (niente da chiudere: il documento non si apre per questo)
       if (chiudi && !this.tenuta && !FUORI.aperto) return;
@@ -167,7 +211,11 @@ class Presa {
   }
   // il ripiego: la presa qui, nel service worker
   tieniQui(url, fino, subito) {
-    if (!this.locale) this.locale = new PresaWs(this.nome, { dati: (b) => this.arriva(new Uint8Array(b)), stato: (s) => this.applica(s) });
+    if (!this.locale) {
+      // (una presa qui lasciata — il ripiego scaduto — non parla più per questa)
+      const l = new PresaWs(this.nome, { dati: (b) => { if (this.locale === l) this.arriva(new Uint8Array(b)); }, stato: (s) => { if (this.locale === l) this.applica(s); } });
+      this.locale = l;
+    }
     this.locale.tieni(url, fino, subito);
     this.applica(this.locale.stato());
   }
@@ -185,8 +233,23 @@ class Presa {
     if (fino != null && fino !== 0 && fino <= ora) fino = 0;
     // (com'era: niente da dire — una pagina del gestionale dopo l'altra non manda niente al documento)
     if (fino === 0 && !this.tenuta) return Promise.resolve();
-    if (!subito && fino !== 0 && this.url === url && this.fino === fino && !this.fermo) return Promise.resolve();
+    if (!subito && fino !== 0 && this.url === url && this.fino === fino && !this.fermo) {
+      // …se lo stato è fresco. Il documento può essere morto (Chrome l'ha chiuso) senza dirlo: uno stato
+      // vecchio, o un documento che l'ultima volta non rispondeva, glielo si richiede — e se la presa là
+      // non c'è più, la si riapre.
+      if (this.locale || FUORI.ripiego || (FUORI.aperto && fuoriOra() - this.visto < FUORI.fresco)) return Promise.resolve();
+      return this.guarda(url, fino);
+    }
     return this.tieni(url, fino, subito);
+  }
+  guarda(url, fino) {
+    return fuoriInFila(async () => {
+      const r = await fuoriPing();
+      FUORI.aperto = !!r;
+      const s = r && r.prese && r.prese[this.nome];
+      if (s) this.applica(s);
+      return !!s && s.url === url;
+    }).then((c) => (c ? undefined : this.tieni(url, fino)));
   }
   ferma() { return this.tieni("", 0); }
   battito() { /* il battito lo fa la presa (presa.js), dov'è */ }
@@ -214,7 +277,8 @@ class Presa {
 
 // Riavviato, il service worker chiede al documento (se c'è: non lo apre) com'è ogni presa.
 const fuoriCaricato = (async () => {
-  if (!FUORI.ripiego && (await chrome.storage.session.get(FUORI_RIPIEGO).catch(() => ({})))[FUORI_RIPIEGO]) FUORI.ripiego = true;
+  const rip = !FUORI.ripiego && (await chrome.storage.session.get(FUORI_RIPIEGO).catch(() => ({})))[FUORI_RIPIEGO];
+  if (rip) { FUORI.ripiego = true; FUORI.ripiegoDal = Number(rip.ts) || 1; fuoriRipiegoScaduto(); }
   if (FUORI.ripiego) return;
   const r = await fuoriPing();
   FUORI.aperto = !!r;
@@ -224,11 +288,13 @@ const fuoriCaricato = (async () => {
 // Dal documento: un messaggio che arriva su una presa, e com'è una presa (aperta, chiusa,
 // qualcuno dall'altra parte). È la sola cosa che sveglia il service worker: il battito no.
 chrome.runtime.onMessage.addListener((m, sender, reply) => {
-  if (!m || typeof m !== "object" || (m.t !== "fuoriDati" && m.t !== "fuoriStato")) return;
+  if (!m || typeof m !== "object" || (m.t !== "fuoriDati" && m.t !== "fuoriStato" && m.t !== "fuoriLibero")) return;
   if (!sender || sender.id !== chrome.runtime.id || sender.tab || !String(sender.url || "").startsWith(chrome.runtime.getURL(FUORI_URL))) return;
   reply({ ok: true });
   fuoriCaricato.then(() => {
     FUORI.aperto = true;
+    // (lo zip là è finito, o il «preso» è scaduto: chiuso, se nessuno lo usa più)
+    if (m.t === "fuoriLibero") { fuoriForseChiudi(1000); return; }
     const p = FUORI.prese.get(m.nome);
     if (m.t === "fuoriStato") {
       if (p && !p.locale) p.applica(m);

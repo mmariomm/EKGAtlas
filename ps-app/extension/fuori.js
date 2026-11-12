@@ -53,6 +53,13 @@
     return p;
   }
   const stati = () => Object.fromEntries([...prese].map(([n, p]) => [n, scatto(p)]));
+  // Chi tiene il documento oltre le prese: gli zip in corso, e chi l'ha preso per uno (fuoriPrendi). Lo
+  // sa lui, non il service worker, che può ripartire a metà zip e non saperlo più: un documento occupato
+  // non si chiude (fuoriForseChiudi). Il «preso» senza zip scade da sé (un service worker morto prima di mandarlo).
+  const PRESO_MS = 2 * 60e3;
+  let esporta = 0, presoFino = 0, tLibero = 0;
+  const occupato = () => esporta > 0 || Date.now() < presoFino;
+  const forseLibero = () => { if (!occupato()) alSw({ t: "fuoriLibero" }); };
 
   // Il registratore: i suoi file, una volta, nell'ordine della sua pagina di prima (registra-esporta.html).
   let registratore = null;
@@ -70,7 +77,14 @@
   // Solo dal service worker (e dalle pagine dell'estensione): mai da una scheda.
   chrome.runtime.onMessage.addListener((m, sender, reply) => {
     if (!m || typeof m !== "object" || typeof m.t !== "string" || !sender || sender.id !== chrome.runtime.id || sender.tab) return;
-    if (m.t === "fuoriPing") { reply({ ok: true, fuori: true, prese: stati() }); return; }
+    if (m.t === "fuoriPing") { reply({ ok: true, fuori: true, prese: stati(), occupato: occupato() }); return; }
+    if (m.t === "fuoriPrendi") {
+      presoFino = Date.now() + PRESO_MS;
+      clearTimeout(tLibero); tLibero = setTimeout(forseLibero, PRESO_MS + 500);
+      reply({ ok: true });
+      return;
+    }
+    if (m.t === "fuoriLascia") { presoFino = 0; clearTimeout(tLibero); reply({ ok: true }); return; }
     if (m.t === "fuoriTieni") {
       const nome = nomeValido(m.nome);
       if (!nome) { reply({ ok: false }); return; }
@@ -89,16 +103,20 @@
       reply({ ok });
       return;
     }
-    // (solo i test: battito e tentativi più corti)
+    // (solo i test: battito e tentativi più corti — e solo dal service worker, che lo manda solo con
+    // FUORI.prova acceso: nessuna pagina dell'estensione lo può chiedere, e così non parte mai)
     if (m.t === "fuoriRegola") {
+      if (m.prova !== true || sender.url !== chrome.runtime.getURL("bg.js")) { reply({ ok: false }); return; }
       for (const k of Object.keys(PRESA)) if (Number.isFinite(m[k]) && m[k] >= 10 && m[k] <= 600e3) PRESA[k] = m[k];
       for (const p of prese.values()) p.ribatti();
       reply({ ok: true, regole: { ...PRESA } });
       return;
     }
     if (m.t === "regFuoriEsporta") {
+      esporta++;
       caricaRegistratore().then(() => RegistraEsporta.salva(m))
-        .then((meta) => reply({ ok: true, meta }), (e) => reply({ ok: false, why: String(e && e.message || e).slice(0, 160) }));
+        .then((meta) => ({ ok: true, meta }), (e) => ({ ok: false, why: String(e && e.message || e).slice(0, 160) }))
+        .then((r) => { esporta--; reply(r); forseLibero(); });
       return true;
     }
   });

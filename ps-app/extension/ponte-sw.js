@@ -95,6 +95,7 @@ const PONTE_PERSA_MS = 6e3;                 // una scheda dei valori ancora vuot
 const PONTE_PAGINE = { PsoPazienti: "la lista dei pazienti", PsoPazientiAmbulatorio: "la lista dei pazienti", PsoPazientiTriage: "la lista del triage",
   PsoEpisodioClinicoTriage: "la pagina del triage", PsoPsoImposta: "la scelta dell'area", PsoPazientiSmart: "la lista dell'ospedale" };
 const PONTE_CARTELLA_MAX = 60e3;            // salvare la cartella: aprire, controllare, «Conferma», rileggere
+const PONTE_CARTELLA_BYTE = 250e3;          // ponte.cartella in storage.session: al più tanto (caratteri), in tutto
 const PONTE_TERAPIE = "ponte.terapie";      // storage.session: le schede aperte per la pagina Terapia (solo { ep, ts, fermo? })
 const PONTE_TERAPIA = "ponte.terapia";      // storage.session: l'ultima lettura delle terapie di ogni paziente (memoria, mai disco)
 const PONTE_TERAPIA_RQ = "ponte.terapia.rq"; // storage.session: le terapie mandate dal telefono, per numero: { fase, esito }
@@ -417,7 +418,7 @@ async function ponteControlla() {
     if (ora - v.ts > PONTE_LISTA_MAX + 5e3) await ponteListaFine(Number(id), { ok: false, testo: "la lista non è arrivata in tempo" });
   }
   if (pt.sessione && ora - pt.sessione.ultimo >= PONTE_INATTIVO) await ponteFine("inattivo");
-  if (pt.attesa && ora - pt.attesa.ts > PONTE_SALUTO_MAX) { pt.attesa = null; ponteSessioneSalva(); }
+  if (pt.attesa && ora - pt.attesa.ts > PONTE_SALUTO_MAX) { pt.attesa = null; ponteSessioneSalva().catch(() => {}); }
   // Nel ripiego (la presa nel service worker, come fino alla 3.86): il PC serve ancora? Se no, via
   // dal ponte (l'associazione resta); se sì e la presa non c'è, la si riapre. Col documento fuori
   // schermo no: la presa la chiude lui alla sua ora, e la riapre solo un cambiamento (psaCambio).
@@ -570,8 +571,9 @@ async function ponteDati(b) {
       if (e.codice === "ripetuto") return;   // decifrato, e già visto: si ignora
     }
     if (d !== undefined) {
-      // il numero d'ordine visto, annotato prima di fare: dopo un riavvio lo stesso messaggio non passa due volte
-      await ponteSessioneSalva();
+      // il numero d'ordine visto, annotato prima di fare: dopo un riavvio lo stesso messaggio non passa due volte —
+      // e se non si annota (storage.session piena), il comando non si fa
+      try { await ponteSessioneSalva(); } catch { return; }
       ponteComando(pt.sessione, d);
       return;
     }
@@ -583,7 +585,7 @@ async function ponteDati(b) {
       const a = pt.attesa, nuova = !pt.sessione;
       pt.sessione = { canale: a.canale, dal: ponteOra(), ultimo: ponteOra(), n: 0, nTel: a.nTel, nPc: a.nPc };
       pt.attesa = null; pt.fine = null;
-      await ponteSessioneSalva();
+      const annotata = await ponteSessioneSalva().then(() => true, () => false);
       // il telefono dell'associazione è questo (il primo che entra), e il QR
       // non si rivede più; il numero del suo saluto lega un eventuale «riparti»
       const primo = !pt.coppia.usata;
@@ -593,7 +595,7 @@ async function ponteDati(b) {
       ponteNota(nuova ? "iPhone collegato" : "iPhone ricollegato: sessione nuova");
       await ponteScriviStato();
       if (primo) ponteAvvia(false).catch(() => {});   // (i byte del QR, via dalla cassa: il QR non si rivede più)
-      ponteComando(pt.sessione, d);
+      if (annotata) ponteComando(pt.sessione, d);   // (come sopra: non annotato, non si fa)
       return;
     } catch { /* né l'una né l'altra */ }
   }
@@ -618,15 +620,15 @@ async function ponteInvia(s, obj) {
     f = await s.canale.cifra(obj.re != null ? { re: obj.re, ok: false, errore: "Risposta troppo grande per il telefono: guardala sul PC" }
       : { evento: "avviso", testo: "Un aggiornamento era troppo grande per il telefono" });
   }
-  ponteSessioneSalva();   // (il numero d'ordine di quello che esce: dopo un riavvio si riparte più avanti)
+  ponteSessioneSalva().catch(() => {});   // (il numero d'ordine di quello che esce: dopo un riavvio si riparte più avanti)
   return ponteManda(f);
 }
 async function ponteFine(perche) {
   const s = pt.sessione;
-  if (pt.attesa) { pt.attesa = null; if (!s) await ponteSessioneSalva(); }
+  if (pt.attesa) { pt.attesa = null; if (!s) await ponteSessioneSalva().catch(() => {}); }
   if (!s) return;
   pt.sessione = null;
-  await ponteSessioneSalva();
+  await ponteSessioneSalva().catch(() => {});
   await chrome.storage.session.remove([PONTE_CARTELLA, PONTE_TERAPIA]).catch(() => {});   // le cartelle e le terapie lette per il telefono: via con la sessione
   await ponteTerapiaBasta().catch(() => {});   // (e la scheda della Terapia tenuta per il telefono)
   pt.fine = { perche, testo: ponteFrase(perche), ts: ponteOra() };
@@ -655,7 +657,11 @@ async function ponteVia(perche, nota) {
 // stata) e da quei due numeri. Il numero d'ordine visto si annota PRIMA di fare
 // il comando; una scrittura si annota «sta andando» prima di cominciare: il
 // service worker fermato a metà, rimandata, risponde «non si sa», non la rifà.
+// Una scrittura che non riesce (storage.session piena: 1 MB su Chrome 109) lo dice a chi aspetta
+// (rifiuta): chi annota prima di fare non fa. Uguale a quella di prima non si riscrive — il numero
+// d'ordine di quello che esce si annota ogni PONTE_SEQ_SALTO / 2 (ripresa, si riparte PONTE_SEQ_SALTO avanti).
 let ponteFilaSessione = Promise.resolve();
+let ponteSessioneScritta = null;   // l'ultima scritta: { testo, seqOut } o { via: true }
 function ponteSessioneSalva() {
   const p = ponteFilaSessione.then(async () => {
     const s = pt.sessione, a = pt.attesa;
@@ -664,16 +670,29 @@ function ponteSessioneSalva() {
       pdf: s.pdf ? [...s.pdf].slice(-400) : null, zip: s.zip ? [...s.zip].slice(-200) : null, rq: s.rqSalvo || {},
     } : null;
     const att = a && a.nTel && a.nPc ? { nTel: a.nTel, nPc: a.nPc, ts: a.ts, dev: a.dev } : null;
-    if (!ses && !att) await chrome.storage.session.remove(PONTE_SESSIONE);
-    else await chrome.storage.session.set({ [PONTE_SESSIONE]: { k: pt.chiaviDi, sessione: ses, attesa: att } });
-  }).catch(() => {});
-  ponteFilaSessione = p;
+    const w = ponteSessioneScritta;
+    if (!ses && !att) {
+      if (w && w.via) return;
+      await chrome.storage.session.remove(PONTE_SESSIONE);
+      ponteSessioneScritta = { via: true };
+      return;
+    }
+    const val = { k: pt.chiaviDi, sessione: ses, attesa: att };
+    const testo = JSON.stringify({ ...val, sessione: ses && { ...ses, seqOut: 0 } });
+    const seqOut = ses ? ses.seqOut : 0;
+    if (w && w.testo === testo && seqOut >= w.seqOut && seqOut - w.seqOut < PONTE_SEQ_SALTO / 2) return;
+    ponteSessioneScritta = null;   // (a metà: la prossima riscrive comunque)
+    await chrome.storage.session.set({ [PONTE_SESSIONE]: val });
+    ponteSessioneScritta = { testo, seqOut };
+  });
+  ponteFilaSessione = p.catch(() => {});
   return p;
 }
 // Il service worker è ripartito: la sessione di prima, se c'era ed è della stessa associazione.
 async function ponteSessioneRiprendi() {
   const x = (await chrome.storage.session.get(PONTE_SESSIONE).catch(() => ({})))[PONTE_SESSIONE];
   if (!x) return false;
+  ponteSessioneScritta = null;
   if (!pt.k || x.k !== pt.chiaviDi) { await chrome.storage.session.remove(PONTE_SESSIONE).catch(() => {}); return false; }
   const canale = async (nTel, nPc) => PonteCripto.canalePc(await PonteCripto.chiaviSessione(pt.k, PonteCripto.daB64u(nTel), PonteCripto.daB64u(nPc)));
   try {
@@ -693,7 +712,7 @@ async function ponteSessioneRiprendi() {
     await chrome.storage.session.remove(PONTE_SESSIONE).catch(() => {});
     return false;
   }
-  await ponteSessioneSalva();   // (i numeri d'ordine più avanti: annotati subito)
+  await ponteSessioneSalva().catch(() => {});   // (i numeri d'ordine più avanti: annotati subito — se no, al prossimo messaggio)
   return !!pt.sessione;
 }
 // Una scrittura del telefono (rq): «sta andando» (r = null), poi la sua risposta. Poche e fresche: il
@@ -701,18 +720,25 @@ async function ponteSessioneRiprendi() {
 const PONTE_RQ_INCERTO = { ok: false, incerto: true, errore: "Il PC si è riavviato mentre lo faceva: non si sa se è fatto, guarda sul PC" };
 const PONTE_RQ_PROPRI = new Set(["terapiaAggiungi", "accetta", "areaApri"]);   // (tengono già le loro, coi passi: ponte.terapia.rq, ponte.accetta.rq, ponte.area.rq)
 const PONTE_RQ_TIENI = { n: 20, ms: 15 * 60e3, byte: 8000 };
+// Una risposta tenuta senza i suoi dati (troppo grande, o i nomi via): riuscita, non è più un «fatto»
+// che il telefono possa mostrare — è «guarda sul PC», come un dubbio; non riuscita, l'errore.
+const ponteRqCorta = (r) => (r && r.ok
+  ? { ok: false, incerto: true, errore: "Fatto sul PC, ma la risposta non si è tenuta: guarda sul PC" }
+  : { ok: false, ...(r && r.errore ? { errore: corto(r.errore, 200) } : {}), ...(r && r.incerto ? { incerto: true } : {}) });
 async function ponteRqSegna(s, rq, r) {
   if (pt.sessione !== s) return;
   const t = s.rqSalvo || (s.rqSalvo = {}), ora = ponteOra();
   let tieni = r;
   if (r) {
-    try { if (JSON.stringify(r).length > PONTE_RQ_TIENI.byte) tieni = { ok: !!r.ok, ...(r.errore ? { errore: corto(r.errore, 200) } : {}), ...(r.incerto ? { incerto: true } : {}) }; }
-    catch { tieni = { ok: !!r.ok }; }
+    try { if (JSON.stringify(r).length > PONTE_RQ_TIENI.byte) tieni = ponteRqCorta(r); }
+    catch { tieni = ponteRqCorta(r); }
   }
   t[rq] = { ts: ora, r: tieni || null };
-  for (const x of Object.keys(t)) if (ora - (t[x].ts || 0) > PONTE_RQ_TIENI.ms) delete t[x];
-  const k = Object.keys(t);
-  if (k.length > PONTE_RQ_TIENI.n) for (const x of k.sort((a, b) => t[a].ts - t[b].ts).slice(0, k.length - PONTE_RQ_TIENI.n)) delete t[x];
+  // (una che sta andando non si toglie mai per far posto: rimandata dopo un riavvio, «non si sa», mai rifatta —
+  // solo dopo un'ora, quando il telefono non la rimanda più da un pezzo)
+  for (const x of Object.keys(t)) if (ora - (t[x].ts || 0) > (t[x].r ? PONTE_RQ_TIENI.ms : 4 * PONTE_RQ_TIENI.ms)) delete t[x];
+  const finite = Object.keys(t).filter((x) => t[x].r), troppe = Object.keys(t).length - PONTE_RQ_TIENI.n;
+  if (troppe > 0) for (const x of finite.sort((a, b) => t[a].ts - t[b].ts).slice(0, troppe)) delete t[x];
   await ponteSessioneSalva();
 }
 
@@ -892,10 +918,10 @@ async function ponteComando(s, d) {
 async function ponteComandoOra(s, d) {
   if (!d.auto && !PONTE_DA_SE.has(d.cmd)) s.ultimo = ponteOra();
   s.n++;
-  ponteSessioneSalva();
+  ponteSessioneSalva().catch(() => {});
   const rispondi = (r) => ponteInvia(s, { re: d.id, ...r });
   // (il telefono che chiude per i 3 minuti e si riapre subito: il suo saluto nuovo, se è già qui, resta)
-  if (d.cmd === "esci") { await rispondi({ ok: true }); const a = pt.attesa; await ponteFine("chiusa dall'iPhone"); if (a && pt.coppia) { pt.attesa = a; ponteSessioneSalva(); } return; }
+  if (d.cmd === "esci") { await rispondi({ ok: true }); const a = pt.attesa; await ponteFine("chiusa dall'iPhone"); if (a && pt.coppia) { pt.attesa = a; ponteSessioneSalva().catch(() => {}); } return; }
   // «Scollega» sul telefono (3.87): l'associazione finisce anche qui, come con «Revoca»
   if (d.cmd === "scollega") { await rispondi({ ok: true }); await ponteVia("scollegata dall'iPhone", "L'iPhone si è scollegato: associazione chiusa (per riassociarlo serve un QR nuovo)"); return; }
   // Una scrittura porta il suo numero (rq): rimandata dal telefono dopo una
@@ -912,9 +938,16 @@ async function ponteComandoOra(s, d) {
     if (prima && (prima.r || !PONTE_RQ_PROPRI.has(d.cmd))) r = Promise.resolve(prima.r || PONTE_RQ_INCERTO);
     else {
       r = (async () => {
-        await ponteRqSegna(s, rq, null);   // «sta andando», prima di cominciare
+        // «sta andando», prima di cominciare — non annotato (storage.session piena), non si comincia:
+        // dopo un riavvio, rimandata, si rifarebbe
+        try { await ponteRqSegna(s, rq, null); }
+        catch {
+          const no = { ok: false, errore: "Il PC non riesce ad annotarlo: niente fatto" };
+          if (s.rqSalvo && s.rqSalvo[rq]) s.rqSalvo[rq].r = no;   // (com'è andata, non «sta andando»)
+          return no;
+        }
         const x = await ponteRisposta(s, d);
-        await ponteRqSegna(s, rq, x);
+        await ponteRqSegna(s, rq, x).catch(() => {});
         return x;
       })();
     }
@@ -1488,8 +1521,11 @@ const ponteCartellaMemoScrivi = (ep, c) => (ponteFilaCartella = ponteFilaCartell
   const m = await ponteCartelleMemo();
   m[ep] = { ep, letto: Number(c.letto) || ponteOra(), campi: c.campi.filter((x) => x && PONTE_CARTELLA_CAMPI[x.nome] && typeof x.v === "string")
     .map((x) => ({ nome: x.nome, v: x.v.slice(0, 20000), ro: !!x.ro })) };
-  // al massimo 40 pazienti, e niente più vecchio di un turno
-  const tieni = Object.values(m).filter((x) => ponteOra() - x.letto < PONTE_REGISTRO).sort((a, b) => b.letto - a.letto).slice(0, 40);
+  // al massimo 40 pazienti, niente più vecchio di un turno, e ben dentro storage.session (1 MB su
+  // Chrome 109, con la sessione del telefono): i più recenti finché ci stanno (l'ultimo sempre)
+  let byte = 0;
+  const tieni = Object.values(m).filter((x) => ponteOra() - x.letto < PONTE_REGISTRO).sort((a, b) => b.letto - a.letto).slice(0, 40)
+    .filter((x, i) => (byte += JSON.stringify(x).length) <= PONTE_CARTELLA_BYTE || i === 0);
   await chrome.storage.session.set({ [PONTE_CARTELLA]: Object.fromEntries(tieni.map((x) => [x.ep, x])) });
 }).catch(() => {}));
 async function ponteCartella(a) {
@@ -1693,7 +1729,8 @@ async function ponteDimentica() {
   // I passaggi d'area, ponte.area.rq, restano come sono: episodio, area, fase, mai un nome)
   await ponteCaricato;
   const t = pt.sessione && pt.sessione.rqSalvo;
-  if (t) for (const x of Object.values(t)) if (x && x.r) x.r = { ok: !!x.r.ok, ...(x.r.incerto ? { incerto: true } : {}) };
+  // (riuscita e senza più i suoi dati: «guarda sul PC», mai un «fatto» vuoto)
+  if (t) for (const x of Object.values(t)) if (x && x.r) x.r = x.r.ok ? ponteRqCorta(x.r) : { ok: false, ...(x.r.incerto ? { incerto: true } : {}) };
   await Promise.all([ponteFilaCartella, ponteFilaTerapiaMemo, ponteFilaAccettaRq, ponteScriviStato(), ponteSessioneSalva()]);
 }
 // (questa può fallire: chi annota «inviato» non deve credere di averlo fatto)
@@ -2240,6 +2277,16 @@ function ponteAreaApri(d) {
     if (prima && prima.esito) return prima.esito;   // com'è andata
     // (il service worker è ripartito dopo averlo dato alla scheda: non si sa, e non si rifà)
     if (prima && prima.fase === "inviato") return { ok: false, incerto: true, errore: "Incerto: guarda sul PC su che area è il gestionale" };
+    // Come un ordine: più di 30 secondi dopo il tocco (rimasto in una presa morta, rimandato tardi) non si
+    // fa — il medico intanto fa altro. `nato`: l'ora del tocco, sull'orologio del PC. (Annotato: rimandato, lo stesso.)
+    const eta = ponteOra() - d.nato;
+    if (!Number.isFinite(d.nato) || eta > PONTE_ORDINE_MAX || eta < -PONTE_ORDINE_MAX) {
+      const esito = { ok: false, scaduto: true, errore: "Scaduta: niente cambiato" };
+      ponteNota("iPhone · «Passa il PC all'area» arrivato tardi: scaduto, niente cambiato");
+      await ponteScriviStato();
+      await ponteAreaRqScrivi(rq, { fase: "fatto", esito }).catch(() => {});
+      return esito;
+    }
     return ponteAreaApriOra(a.ep, rq);
   })();
   pt.areaRq.set(rq, p);

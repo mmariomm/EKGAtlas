@@ -55,8 +55,9 @@ const DOPPIA2 = P("730004", "DOPPI ADA", "04/05/1980", 46, "AZZURRO", "alta");
 const NERO = P("730005", "NERO PIO", "09/10/1950", 76, "ARANCIONE", "alta");     // …la sua riga porta l'episodio di un altro
 const BLU = P("730011", "BLU MARCO", "06/07/1965", 61, "AZZURRO", "bassa");      // solo dalla smart, in un'altra area
 const GRIGI = P("730012", "GRIGI NORA", "08/09/1975", 51, "VERDE", "bassa");     // …col carrello aperto sul PC
-const TUTTI = [MEDICO, VERDE, DOPPIA, DOPPIA2, NERO, BLU, GRIGI];
-const SOLO_SMART = [VERDE, DOPPIA, NERO, BLU, GRIGI];
+const ROSA = P("730013", "ROSA LIA", "01/02/1960", 66, "VERDE", "bassa");        // …la sua riga mai nella lista della Bassa (revisione 3.87, P3-2)
+const TUTTI = [MEDICO, VERDE, DOPPIA, DOPPIA2, NERO, BLU, GRIGI, ROSA];
+const SOLO_SMART = [VERDE, DOPPIA, NERO, BLU, GRIGI, ROSA];
 const chi = (ep) => TUTTI.find((p) => p.ep === ep) || null;
 // le chiavi del PC (core.js): l'impronta della nascita e la chiave di chi si conosce solo dalla smart (FNV-1a)
 const fnv = (d) => { let h = 0x811c9dc5; for (const c of d) h = Math.imul(h ^ c.charCodeAt(0), 0x01000193) >>> 0; return h.toString(36); };
@@ -67,7 +68,7 @@ const breve = (p) => `${p.name.split(" ")[0]} ${p.name.split(" ")[1][0]}.`;
 
 // (`nascosti`: righe che la lista non mostra ancora — ma il suo conto sì: una lista monca, che aggiunge e
 // basta, come quando si carica a metà. Così ogni prova legge solo le righe che le servono.)
-const srv = { area: "alta", log: [], conferme: [], nascosti: new Set([DOPPIA.ep, DOPPIA2.ep, NERO.ep]) };
+const srv = { area: "alta", log: [], conferme: [], nascosti: new Set([DOPPIA.ep, DOPPIA2.ep, NERO.ep, ROSA.ep]) };
 const testa = () => `<table class="AFCHeaderTable" border="0" width="100%"><tbody><tr><td>
     <table width="100%"><tbody><tr><td width="15%"></td>
     <td width="70%" align="center"><font style="font-size: 130%; font-weight: bolder; ">OSPEDALE ESEMPIO</font><br><font style="font-size: 110%; font-weight: bolder; ">${AREE[srv.area].label}</font><br><b>Salve!</b></td>
@@ -131,6 +132,8 @@ await ctx.route(`${ORIGIN}/**`, async (r) => {
     const k = Object.keys(AREE).find((x) => AREE[x].id === id);
     srv.conferme.push({ id, medico: voce.medico });
     if (k) srv.area = k;
+    // (`rinvia`: con un rinvio vero, la lista al suo indirizzo — revisione 3.87, P3-2)
+    if (srv.rinvia) return r.fulfill({ status: 302, headers: { location: `${ORIGIN}${DIR}menuPso.do?MVPG=PsoPazientiAmbulatorio` } }).catch(() => {});
     return html(listaPage());   // (il gestionale rinvia alla lista dell'area nuova)
   }
   if (mvpg === "PsoPazientiAmbulatorio" || mvpg === "PsoPazienti") return html(listaPage());
@@ -245,6 +248,32 @@ try {
   await sospendi(1000);
   check(!ancora.ok && /già letta da poco/.test(ancora.testo) && liste(true).length === l2b, `richiesta subito di nuovo: la lista non si rilegge, al più una ogni 10 minuti per paziente («${ancora.testo}»)`);
 
+  // ---- (revisione 3.87, P3-1) la sessione che riparte da sé (l'estensione riavviata), sul paziente e sulla
+  // sua Cartella: il telefono la richiede da sé — non è un tocco, e il PC non apre la lista dietro.
+  // (NERO PIO, aperto qui coi 10 minuti già contati: il tocco non legge la lista; poi i 10 minuti via)
+  {
+    await sw.evaluate((ep) => pt.listaPer.set(ep, { ts: Date.now(), promessa: null }), chiaveSmart(NERO));
+    await apriSulTel(NERO);
+    await tel.locator('[data-a="scheda"][data-s="cartella"]').click();
+    await sospendi(3000);
+    await sw.evaluate(() => {
+      self.__conLista = [];
+      const prima = ponteConLista;
+      ponteConLista = (d, a, fai) => { self.__conLista.push({ cmd: d.cmd, auto: !!d.auto }); return prima(d, a, fai); };
+      pt.listaPer.clear();
+    });
+    const lr = liste(true).length;
+    await sw.evaluate(async () => { pt.sessione = null; pt.ripartito = 0; await ponteSessioneSalva(); await ponteRiparti(); });
+    const ripresa = await finche(async () => (await sw.evaluate(() => self.__conLista)).some((x) => x.cmd === "cartella"), 90000);
+    await sospendi(4000);
+    const visti = await sw.evaluate(() => self.__conLista);
+    check(ripresa && /NERO PIO/.test(await testata()), `il telefono si ricollega da sé, su NERO PIO, e ne richiede la Cartella (${JSON.stringify(visti)})`);
+    check(visti.filter((x) => x.cmd === "cartella").every((x) => x.auto) && liste(true).length === lr,
+      `…da sé (auto): nessuna lista aperta dietro sul PC (${liste(true).length - lr} liste)`);
+    await sw.evaluate(() => pt.listaPer.clear());
+    if (await tel.locator('[data-a="scheda"][data-s="esiti"]').count()) await tel.locator('[data-a="scheda"][data-s="esiti"]').click();
+  }
+
   // ---- la sua riga porta l'episodio di un altro paziente: Errore grave, niente aperto
   srv.nascosti.delete(NERO.ep);
   const l3 = liste(true).length;
@@ -303,6 +332,66 @@ try {
   await sospendi(1500);
   check(!!rq && di.every((x) => x.ok && x.dati.area === "Bassa" && x.dati.ep === BLU.ep) && srv.conferme.length === c0 && imposte().length === i0,
     `lo stesso numero rimandato (due volte insieme): «PC ora sull'area Bassa» com'era, nessun Imposta, nessun «Conferma» (${JSON.stringify(di[0])})`);
+  // (il tocco su BLU qui sopra è passato: il telefono manda l'ora del tocco — senza, il PC dice «Scaduta»)
+  check(!(await registro()).some((t) => /arrivato tardi/.test(t)), "il tocco del telefono porta la sua ora (`nato`): il PC l'ha fatto");
+
+  // ---- (revisione 3.87, P2-3) arrivato più di 30 secondi dopo il tocco: niente cambiato; rimandato, la stessa risposta
+  {
+    const c1 = srv.conferme.length, i1 = imposte().length, nv1 = navMedico, rqT = "rq-tardi-prova-01";
+    const tardi = await sw.evaluate(({ ep, rq }) => ponteAreaApri({ ep, rq, nato: Date.now() - 60e3 }), { ep: chiaveSmart(ROSA), rq: rqT });
+    const ancora = await sw.evaluate(({ ep, rq }) => ponteAreaApri({ ep, rq, nato: Date.now() }), { ep: chiaveSmart(ROSA), rq: rqT });
+    const senza = await sw.evaluate(({ ep }) => ponteAreaApri({ ep, rq: "rq-senza-ora-01" }), { ep: chiaveSmart(ROSA) });
+    await sospendi(1500);
+    const annotato = ((await sw.evaluate(() => chrome.storage.session.get("ponte.area.rq")))["ponte.area.rq"] || {})[rqT];
+    check(!!tardi && tardi.ok === false && tardi.errore === "Scaduta: niente cambiato" && !!senza && senza.errore === tardi.errore
+      && srv.conferme.length === c1 && imposte().length === i1 && navMedico === nv1,
+      `un «Passa il PC all'area» arrivato 60 secondi dopo il tocco (o senza l'ora): «${tardi && tardi.errore}», nessun Imposta, la scheda del medico ferma`);
+    check(!!ancora && ancora.errore === "Scaduta: niente cambiato" && !!annotato && annotato.esito && annotato.esito.scaduto === true,
+      `…annotato in ponte.area.rq: rimandato con lo stesso numero, la stessa risposta («${ancora && ancora.errore}»)`);
+  }
+
+  // ---- (revisione 3.87, P3-2) passato all'area ma il paziente non si apre («cambiata»): il bottone non torna,
+  // e un «Passa il PC all'area» per l'area dov'è già, o con un numero già dato a una scheda, non muove niente
+  {
+    srv.area = "alta"; srv.rinvia = true;
+    // (il medico ha anche un'altra scheda, su un suo paziente: risponde al telefono mentre la sua è sulla lista)
+    const doc2 = await ctx.newPage();
+    await doc2.goto(URL_PAZ(MEDICO));
+    await doc2.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
+    await doc.goto(URL_PAZ(MEDICO));
+    await doc.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
+    await doc.bringToFront();
+    const pagine = () => srv.log.filter((x) => x.tipo === "document").length;
+    check(await finche(async () => (await ls("area.corrente.v1"))?.k === "alta", 10000), "(il gestionale di nuovo sull'Alta, dalla pagina del medico)");
+    await tornaAllElenco();
+    await sospendi(5000);   // (l'elenco riletto: per il telefono ROSA LIA è di nuovo in un'altra area)
+    await apriSulTel(ROSA);
+    const bC = tel.locator(`[data-a="areaApri"]`);
+    check(await finche(async () => (await bC.count()) === 1, 20000), `ROSA LIA (Bassa, il gestionale sull'Alta): il bottone (${(await testoTel()).replace(/\n+/g, " / ").slice(0, 200)})`);
+    await senzaAvviso();
+    await bC.click();
+    check(!!(await aspettaTel(/PC ora sull'area Bassa, ma/, 60000)) && srv.area === "bassa", `il PC passa all'area Bassa, ma ROSA LIA non si apre: «cambiata» (${await avviso()})`);
+    await sospendi(5000);
+    check((await bC.count()) === 0, `…e il bottone non torna: per il telefono adesso è nell'area del gestionale (${(await testoTel()).replace(/\n+/g, " / ").slice(0, 160)} · PC ${(await ls("area.corrente.v1"))?.k}, ${doc.url().slice(-40)})`);
+    await finche(async () => (await ls("area.corrente.v1"))?.k === "bassa", 10000);
+    const c2 = srv.conferme.length, i2 = imposte().length, p2 = pagine();
+    const gia = await sw.evaluate(({ ep }) => ponteAreaApri({ ep, rq: "rq-gia-area-01", nato: Date.now() }), { ep: chiaveSmart(ROSA) });
+    await sospendi(2500);
+    check(!!gia && gia.ok === false && /già su quell'area/.test(gia.errore || "") && pagine() === p2 && imposte().length === i2 && srv.conferme.length === c2,
+      `un altro tocco per l'area dov'è già: «${gia && gia.errore}», nessuna scheda si muove (${pagine() - p2} pagine)`);
+    // (un numero che una scheda ha già avuto — la memoria del gestionale —: anche per un'altra area, niente)
+    // (per la scheda il gestionale è sull'Alta: ROSA LIA è in un'altra area, e il numero l'ha già avuto)
+    await doc.evaluate(() => {
+      localStorage.setItem("psassist:area.tel.rq.v1", JSON.stringify(["rq-gia-dato-01"]));
+      const o = JSON.parse(localStorage.getItem("psassist:area.corrente.v1") || "{}");
+      localStorage.setItem("psassist:area.corrente.v1", JSON.stringify({ ...o, k: "alta" }));
+    });
+    const dato = await sw.evaluate(({ ep }) => ponteAreaApri({ ep, rq: "rq-gia-dato-01", nato: Date.now() }), { ep: chiaveSmart(ROSA) });
+    await sospendi(2500);
+    check(!!dato && dato.ok === false && /Già chiesto/.test(dato.errore || "") && pagine() === p2 && imposte().length === i2 && srv.conferme.length === c2,
+      `un numero già dato a una scheda: «${dato && dato.errore}», niente navigato (${pagine() - p2} pagine)`);
+    await doc2.close();
+  }
 
   // ---- sul PC di sola lettura: rifiutato (il primo muro, nel service worker)
   const mini = await sw.evaluate(async () => {

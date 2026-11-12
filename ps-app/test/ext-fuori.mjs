@@ -276,6 +276,21 @@ sezione("lo zip del registratore, con la sessione aperta: si salva, la presa res
 }
 
 // ===========================================================================
+// (revisione 3.87, P3-4) Chrome chiude il documento (la memoria) col service worker sveglio, che non lo sa:
+// per lui la presa è tenuta. Al primo risveglio con lo stato vecchio, lo chiede al documento, e la riapre.
+sezione("il documento muore col service worker sveglio: al primo risveglio la presa torna");
+{
+  const e0 = relay.entrate().pc;
+  await sw.evaluate(() => chrome.offscreen.closeDocument());
+  check(!!(await finche(async () => relay.prese().pc === 0, 10000)), "chiuso il documento: la presa del PC cade (il service worker non lo sa)");
+  await sw.evaluate(() => { pt.presa.visto -= 2 * 60e3; });   // (lo stato del documento, saputo due minuti fa)
+  await sveglia();
+  check(!!(await finche(async () => relay.prese().pc === 1 && relay.entrate().pc === e0 + 1, 15000)), "…una pagina del gestionale lo sveglia: lo chiede al documento, e la presa si riapre");
+  const c4 = await tel.chiedi("ciao");
+  check(!!c4 && c4.ok, "la sessione col telefono risponde, sulla presa nuova");
+}
+
+// ===========================================================================
 sezione("senza schede del gestionale: la presa si chiude dopo 2 minuti, e poi nessuna presa nuova");
 {
   tel.chiudi();
@@ -324,6 +339,53 @@ sezione("senza schede del gestionale: la presa si chiude dopo 2 minuti, e poi ne
 }
 
 // ===========================================================================
+// (revisione 3.87, P2-1) Un PC senza prese — come uno non associato — salva uno zip lungo, e il service
+// worker riparte a metà: quello nuovo non sa dello zip, ma il documento sì (occupato), e non si chiude.
+sezione("uno zip in corso senza prese, e il service worker che riparte: il documento non si chiude sotto");
+{
+  await sw.evaluate(() => pt.presa.ferma());
+  await finche(async () => relay.prese().pc === 0, 10000);
+  await sw.evaluate(() => fuoriPrendi("registra"));   // come regFuori: il documento per lo zip (e non lo si lascia: lo zip «gira»)
+  const p0 = await sw.evaluate(() => fuoriPing());
+  check((await fuoriAperti()).length === 1 && !!p0 && p0.occupato === true, `il documento aperto per lo zip: occupato, e lo sa lui (${JSON.stringify(p0 && p0.occupato)})`);
+  check(await ferma(), "fermato il service worker a metà zip");
+  await sveglia();
+  await riprendiSw();
+  // (al risveglio le prese ferme dicono «chiudilo, se nessuno lo usa» — qui subito)
+  await sw.evaluate(async () => { await pt.presa.ferma(); fuoriForseChiudi(200); });
+  await sospendi(3000);
+  check((await fuoriAperti()).length === 1, "il service worker ripartito non sa dello zip, ma non chiude il documento sotto");
+  await sw.evaluate(() => fuoriLascia("registra"));
+  check(!!(await finche(async () => !(await fuoriAperti()).length, 10000)), "lasciato (lo zip finito): si chiude");
+}
+
+// ===========================================================================
+// (revisione 3.87, P3-3) Il ripiego non è per sempre: scade dopo 30 minuti, alla prossima occasione o al
+// riavvio; e passarci chiude le prese che il documento tiene ancora (mai una là e una qui).
+sezione("il ripiego scade, e passarci chiude le prese del documento");
+{
+  const d4 = await ctx.newPage();
+  await d4.goto(A.patientUrl);
+  check(!!(await finche(async () => relay.prese().pc === 1, 20000)) && (await fuoriAperti()).length === 1, "una pagina del gestionale: sul ponte, con la presa nel documento");
+  const t0 = Date.now();
+  await sw.evaluate(() => fuoriRipiega(new Error("prova")));
+  const libero = await finche(async () => { const p = await sw.evaluate(() => fuoriPing()); return !p || !Object.values(p.prese || {}).some((s) => s && s.url); }, 10000);
+  check(!!libero && !!(await finche(async () => relay.eventi().some((e) => e.ts >= t0 && e.ruolo === "pc" && e.tipo === "esce"), 10000)),
+    "passato al ripiego: la presa del documento si chiude");
+  await sw.evaluate(() => { FUORI.ripiegoDal = Date.now() - 31 * 60e3; });
+  await d4.reload();
+  check(!!(await finche(async () => (await sw.evaluate(() => FUORI.ripiego)) === false, 15000)) && !(await sw.evaluate(() => chrome.storage.session.get("fuori.ripiego")))["fuori.ripiego"],
+    "31 minuti dopo, alla prossima occasione (una pagina del gestionale che si apre): il ripiego scade");
+  check(!!(await finche(async () => relay.prese().pc === 1 && (await fuoriAperti()).length === 1, 20000)), "…e la presa torna nel documento");
+  await sw.evaluate(() => chrome.storage.session.set({ "fuori.ripiego": { ts: Date.now() - 31 * 60e3, why: "prova" } }));
+  check(await ferma(), "(fermato il service worker, col ripiego di 31 minuti fa annotato)");
+  await sveglia();
+  await riprendiSw();
+  check((await sw.evaluate(() => fuoriCaricato.then(() => FUORI.ripiego))) === false, "ripartito: il ripiego vecchio non vale più");
+  await d4.close();
+}
+
+// ===========================================================================
 sezione("il ripiego: senza documento fuori schermo, la presa nel service worker come la 3.86");
 {
   await sw.evaluate(async () => { await pt.presa.ferma(); await chrome.storage.session.set({ "fuori.ripiego": { ts: Date.now(), why: "prova" } }); });
@@ -342,6 +404,112 @@ sezione("il ripiego: senza documento fuori schermo, la presa nel service worker 
   check(!!(await finche(async () => relay.eventi().some((e) => e.ts >= t0 && e.ruolo === "pc" && e.tipo === "esce"), 10000)), "la presa muore con lui (come fino alla 3.86)");
   check(!!(await finche(async () => relay.prese().pc === 1 && relay.entrate().pc > e0, 45000)), "la sveglia della pagina lo risveglia, e la presa si riapre (come fino alla 3.86)");
   await doc3.close();
+}
+
+// ===========================================================================
+// (revisione 3.87, P2-2) storage.session che rifiuta la scrittura (1 MB su Chrome 109): chi annota prima
+// di fare non fa. Una sessione finta, legata alla stessa associazione; la scrittura vera al posto di
+// ponteRisposta, le risposte al posto di ponteInvia.
+sezione("storage.session piena: quello che non si annota non si fa — e la sessione occupa poco");
+{
+  const r = await sw.evaluate(async () => {
+    const vero = { set: chrome.storage.session.set, risposta: ponteRisposta, invia: ponteInvia, sessione: pt.sessione };
+    const setVero = vero.set.bind(chrome.storage.session);
+    const nTel = PonteCripto.casuale(16), nPc = PonteCripto.casuale(16);
+    const ch = await PonteCripto.chiaviSessione(pt.k, nTel, nPc);
+    const s = { canale: PonteCripto.canalePc(ch), dal: Date.now(), ultimo: Date.now(), n: 0, nTel: PonteCripto.b64u(nTel), nPc: PonteCripto.b64u(nPc) };
+    const telC = PonteCripto.canaleTel(ch);
+    let fatte = 0, scritture = 0, piena = false;
+    const risposte = [];
+    const out = {};
+    try {
+      pt.sessione = s;
+      await ponteSessioneSalva();
+      ponteRisposta = async () => { fatte++; return { ok: true, dati: { salvato: true } }; };
+      ponteInvia = async (_s, obj) => { risposte.push(obj); return true; };
+      chrome.storage.session.set = (o) => {
+        if ("ponte.sessione" in o) { scritture++; if (piena) return Promise.reject(new Error("QUOTA_BYTES quota exceeded")); }
+        return setVero(o);
+      };
+      // il segno «sta andando» non si annota: niente fatto, e lo si dice
+      piena = true;
+      await ponteComando(s, { id: 7, cmd: "cartellaSalva", rq: "rqpieno12345", ep: "1" });
+      out.primo = risposte.at(-1) || null;
+      out.fatte1 = fatte;
+      // il service worker riparte (la sessione di prima), e il telefono la rimanda: si fa, una volta
+      piena = false;
+      pt.sessione = null;
+      out.ripresa = await ponteSessioneRiprendi();
+      await ponteComando(pt.sessione, { id: 7, cmd: "cartellaSalva", rq: "rqpieno12345", ep: "1" });
+      out.fatte2 = fatte;
+      // il numero d'ordine visto non si annota: il comando (cifrato dal telefono) non si fa
+      piena = true;
+      await ponteDati(await telC.cifra({ id: 8, cmd: "cartellaSalva", rq: "rqpieno67890", ep: "1" }));
+      await new Promise((ok) => setTimeout(ok, 300));
+      out.fatte3 = fatte;
+      // niente di cambiato: non si riscrive
+      piena = false;
+      await ponteSessioneSalva();
+      const w0 = scritture;
+      for (let i = 0; i < 5; i++) await ponteSessioneSalva();
+      out.riscritte = scritture - w0;
+    } finally {
+      chrome.storage.session.set = vero.set; ponteRisposta = vero.risposta; ponteInvia = vero.invia;
+      pt.sessione = vero.sessione;
+      await ponteSessioneSalva().catch(() => {});
+    }
+    return out;
+  });
+  check(!!r.primo && r.primo.ok === false && /niente fatto/.test(r.primo.errore || "") && r.fatte1 === 0,
+    `il segno «sta andando» non si annota: niente fatto, e il telefono lo sa («${r.primo && (r.primo.errore || JSON.stringify(r.primo))}», fatte ${r.fatte1})`);
+  check(r.ripresa === true && r.fatte2 === 1, `ripartito il service worker, la stessa rq rimandata: fatta una volta sola (fatte ${r.fatte2})`);
+  check(r.fatte3 === 1, `il numero d'ordine visto non si annota: il comando arrivato non si fa (fatte ${r.fatte3})`);
+  check(r.riscritte === 0, `niente di cambiato: ponte.sessione non si riscrive (${r.riscritte} scritture su 5)`);
+  const c = await sw.evaluate(async () => {
+    const v = "x".repeat(20000), ora = Date.now();
+    for (let i = 0; i < 40; i++) await ponteCartellaMemoScrivi("ep" + i, { letto: ora - 40e3 + i * 1000, campi: Object.keys(PONTE_CARTELLA_CAMPI).map((nome) => ({ nome, v })) });
+    const m = (await chrome.storage.session.get("ponte.cartella"))["ponte.cartella"] || {};
+    await chrome.storage.session.remove("ponte.cartella");
+    return { n: JSON.stringify(m).length, pazienti: Object.keys(m).length, ultimo: !!m.ep39 };
+  });
+  check(c.n <= 300e3 && c.ultimo, `ponte.cartella, 40 pazienti con 5 campi lunghi: ${Math.round(c.n / 1000)} KB (${c.pazienti} pazienti, l'ultimo letto c'è), ben dentro 1 MB`);
+  // (revisione 3.87, P3-5) le 20 scritture tenute: una che sta andando non si toglie per far posto; una risposta
+  // troppo grande, tenuta senza i dati, non è un «fatto» vuoto
+  const q = await sw.evaluate(async () => {
+    const prima = pt.sessione;
+    const nTel = PonteCripto.casuale(16), nPc = PonteCripto.casuale(16);
+    const s = { canale: PonteCripto.canalePc(await PonteCripto.chiaviSessione(pt.k, nTel, nPc)), dal: Date.now(), ultimo: Date.now(), n: 0, nTel: PonteCripto.b64u(nTel), nPc: PonteCripto.b64u(nPc) };
+    pt.sessione = s;
+    try {
+      await ponteRqSegna(s, "rqinvolo00001", null);
+      for (let i = 0; i < 25; i++) await ponteRqSegna(s, "rqfatta" + String(i).padStart(5, "0"), { ok: true, dati: { n: i } });
+      const inVolo = !!s.rqSalvo.rqinvolo00001 && s.rqSalvo.rqinvolo00001.r === null;
+      await ponteRqSegna(s, "rqgrande00001", { ok: true, dati: { x: "y".repeat(20000) } });
+      return { inVolo, n: Object.keys(s.rqSalvo).length, grande: s.rqSalvo.rqgrande00001 && s.rqSalvo.rqgrande00001.r };
+    } finally {
+      pt.sessione = prima;
+      await ponteSessioneSalva().catch(() => {});
+    }
+  });
+  check(q.inVolo && q.n <= 21, `25 scritture fatte dopo una che sta andando: quella resta («sta andando»), le fatte più vecchie se ne vanno (${q.n} tenute)`);
+  check(!!q.grande && q.grande.ok === false && q.grande.incerto === true, `una risposta troppo grande, tenuta senza i dati: «${q.grande && q.grande.errore}» (incerto), non un «fatto» vuoto`);
+}
+
+// ===========================================================================
+// (revisione 3.87, P3-9) «fuoriRegola» (battito e tentativi più corti) è dei test: spento nell'estensione,
+// e nessuna pagina dell'estensione lo può chiedere al documento.
+sezione("la regola dei test (fuoriRegola): spenta, e mai da una pagina");
+{
+  await sw.evaluate(() => fuoriApri(true));
+  const daPagina = await pag.evaluate(() => chrome.runtime.sendMessage({ t: "fuoriRegola", battito: 10, prova: true }).catch((e) => String(e)));
+  check(!(daPagina && daPagina.ok), `da una pagina dell'estensione (il portale): rifiutata (${JSON.stringify(daPagina)})`);
+  const grezza = await sw.evaluate(() => fuoriChiedi({ t: "fuoriRegola", battito: 25e3 }));
+  check(!(grezza && grezza.ok), `chiesta senza il segno della prova (come la manderebbe una pagina senza scheda): rifiutata (${JSON.stringify(grezza)})`);
+  const spenta = await sw.evaluate(() => (typeof fuoriRegola === "function" ? fuoriRegola({ battito: 10 }) : "manca"));
+  check(spenta === null, `dal service worker, senza la prova accesa: non parte (${JSON.stringify(spenta)})`);
+  const accesa = await sw.evaluate(async () => { FUORI.prova = true; try { return typeof fuoriRegola === "function" ? await fuoriRegola({ battito: 25e3 }) : "manca"; } finally { FUORI.prova = false; } });
+  check(!!accesa && accesa.ok === true && accesa.regole && accesa.regole.battito === 25e3, `con la prova accesa (solo i test): il documento la applica (${JSON.stringify(accesa && accesa.regole)})`);
+  await sw.evaluate(async () => { FUORI.prova = true; await fuoriRegola({ battito: 30e3 }); FUORI.prova = false; }).catch(() => {});
 }
 
 await ctx.close();

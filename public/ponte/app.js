@@ -881,7 +881,7 @@
     render();
     caricaEsiti(ep, auto);
     if (S.scheda === "terapia" && !S.terapiaSi) S.scheda = "esiti";
-    if (S.scheda === "cartella") caricaCartella(ep);
+    if (S.scheda === "cartella") caricaCartella(ep, auto);   // (riaperto da sé: una domanda da sé, il PC non apre niente)
     if (S.scheda === "terapia" && !auto) caricaTerapie(ep);   // (riaperto da sé: niente lettura — c'è la copia, o «Tocca per leggere la terapia»)
     if (S.scheda === "richieste") caricaRistampe(ep);
     if (S.scheda === "richieste") caricaCatalogo();
@@ -2206,10 +2206,18 @@
       x.stato = ""; x.esito = { tono: e.incerto ? "warn" : "err", testo: e.message };
       if (!e.incerto) x.rq = "";   // il PC ha detto di no (niente cambiato): un tocco nuovo è una richiesta nuova
       avviso(e.message, e.incerto ? "" : "err", !!e.incerto);
-      if (e.message && /^PC ora sull'area/.test(e.message)) aggiornaLista(true);   // (l'area è cambiata comunque: l'elenco lo sa)
+      if (e.message && /^PC ora sull'area/.test(e.message)) {
+        // (l'area è cambiata comunque: l'elenco lo sa — e la smart degli esiti di prima, «un'altra area», non vale più)
+        const es = S.esiti.get(ep);
+        if (es) delete es.smart;
+        aggiornaLista(true);
+      }
     };
     try {
-      si(await chiedi("areaApri", { ep }, ATTESA_AREA, false, { rq: x.rq, tardi: (d) => { if (d.ok) si(d.dati); else no(errDa(d)); render(); } }));
+      // (come un ordine: l'ora del tocco, e oltre 30 secondi non parte più — il PC, arrivato tardi, non lo fa)
+      const quando = Date.now();
+      si(await chiedi("areaApri", { ep, nato: Math.round(quando + S.scarto) }, ATTESA_AREA, false, { rq: x.rq, scade: quando + 30e3,
+        tardi: (d) => { if (d.ok) si(d.dati); else no(errDa(d)); render(); } }));
     } catch (e) {
       no(e.inviata ? Object.assign(new Error("Incerto: il PC non ha ancora risposto — guarda sul PC su che area è"), { incerto: true }) : e);
     }
