@@ -747,7 +747,9 @@ if (prova("«Conferma di nuovo» due volte per la stessa richiesta: la seconda n
   await finche(async () => !(await ordini()).some((x) => ["coda", "avvio", "corre"].includes(x.stato)), 30000);
   // un avviso nuovo, finito, con «Conferma di nuovo», per la STESSA richiesta (una copia di quello di prima)
   const finto = { ...rec0, id: "pcriconf001", stato: "avviso", agg: Date.now(), vista: { ...rec0.vista, riconferma: true } };
-  await sw.evaluate((x) => ordLeggi().then((l) => ordScrivi([...l, x])), finto);
+  // (nella fila degli ordini, come ogni scrittura del service worker: la stampa della rifatta, ancora in corso,
+  // se no lo cancellerebbe riscrivendo l'elenco letto prima)
+  await sw.evaluate((x) => inFilaOrd(() => ordLeggi().then((l) => ordScrivi([...l, x]))), finto);
   const r2 = await sw.evaluate((id) => new Promise((res) => {
     chrome.tabs.query({}).then((ts) => { const t = ts.find((x) => /EPISODIO_ID=999002/.test(x.url || "")); ordMessaggio({ t: "ordineRiconferma", id }, { tab: t, url: t.url }, res); });
   }), finto.id);
