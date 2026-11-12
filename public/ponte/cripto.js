@@ -193,16 +193,26 @@
     const e = await subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, false, ["deriveBits"]);
     return { privata: e.privateKey, pub: new Uint8Array(await subtle.exportKey("raw", e.publicKey)) };
   }
-  async function rinnova(k, privata, pubAltro, pubTel, pubPc) {
+  // `legame` (rev-s2 P2-3): la sessione in cui si rinnova — i due numeri del saluto (nTel, nPc: 16 byte l'uno) e il
+  // numero della stanza del QR (16 byte) —, nel sale: K' è di QUESTA sessione, sotto K. Chi ha K e fa da uomo in
+  // mezzo deve stare anche in questa sessione, dalle due parti (il rischio che resta: ponte/README.md).
+  async function rinnova(k, privata, pubAltro, pubTel, pubPc, legame) {
     if (!(pubAltro && pubAltro.length === 65 && pubAltro[0] === 4)) throw new Error("chiave pubblica non valida");
+    if (!(legame instanceof Uint8Array) || legame.length !== 48) throw new Error("rinnovo senza la sua sessione");
     const altro = await subtle.importKey("raw", pubAltro, { name: "ECDH", namedCurve: "P-256" }, false, []);
     const z = new Uint8Array(await subtle.deriveBits({ name: "ECDH", public: altro }, privata, 256));
-    return chiaveDa(await hkdf(k, unisci(SALE, z, pubTel, pubPc), "rinnova", 32));
+    return chiaveDa(await hkdf(k, unisci(SALE, z, pubTel, pubPc, legame), "rinnova 2", 32));
+  }
+  // il legame di una sessione: nTel, nPc (base64url) e la stanza del QR (esadecimale)
+  function legameDi(nTel, nPc, stanza) {
+    const a = daB64u(nTel), b = daB64u(nPc);
+    if (a.length !== 16 || b.length !== 16 || !/^[0-9a-f]{32}$/.test(stanza || "")) throw new Error("sessione non valida");
+    return unisci(a, b, Uint8Array.from(stanza.match(/../g), (h) => parseInt(h, 16)));
   }
 
   globalThis.PonteCripto = {
     VERSIONE, TIPO, casuale, b64u, daB64u, chiaviCoppia, chiaviSessione,
     sigilla, apri, leggiTestata, Canale, canaleTel, canalePc, leggiFrammento, frammento, codice,
-    chiaveDa, chiaviEntra, provaEntra, coppiaEcdh, rinnova,
+    chiaveDa, chiaviEntra, provaEntra, coppiaEcdh, rinnova, legameDi,
   };
 })();

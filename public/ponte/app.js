@@ -544,6 +544,11 @@
   async function rinnova() {
     const c = S.coppia;
     if (!c || c.rinnovata || c.prossima || senzaCassa || S.rinnovaNo === c.id || !S.canale) return;
+    // (P2-3) solo da dentro la stanza vera — il ripetitore ha detto «entrato» a questa presa —, e legata a questa
+    // sessione (i due numeri del saluto) e alla stanza del QR: lo stesso legame lo fa il PC
+    if (!S.ws || S.entrato !== S.ws) return;
+    let legame;
+    try { legame = P.legameDi(S.nSessione, S.nPc, c.stanza); } catch { return; }
     const e = await P.coppiaEcdh();
     let d;
     try { d = await chiedi("rinnova", { pub: P.b64u(e.pub) }, TEMPO, true, { rq: nuovoRq() }); }
@@ -551,7 +556,7 @@
     let pubPc;
     try { pubPc = P.daB64u(d && d.pub); } catch { return; }
     if (S.coppia !== c) return;
-    c.prossima = await P.rinnova(c.k, e.privata, pubPc, e.pub, pubPc);
+    c.prossima = await P.rinnova(c.k, e.privata, pubPc, e.pub, pubPc, legame);
     await salvaChiave(c);
     await chiaviDi(c);
     // il primo saluto con la chiave nuova: il PC la fa sua, e la sessione continua su lei
@@ -566,6 +571,8 @@
         const m = JSON.parse(dati);
         if (typeof m.pari === "boolean") presenza(m.pari);
         if (typeof m.sfida === "string" && S.ws) rispondiSfida(S.ws, m.sfida, S.entra);
+        // (la stanza ha detto «entrato»: questa presa ha provato una chiave d'entrata che il PC le ha dato)
+        if (typeof m.entrato === "number" && S.ws) S.entrato = S.ws;
       } catch { /* niente */ }
       return;
     }
@@ -594,7 +601,7 @@
       else if (S.chiaviProssima && S.coppia.prossima) { delete S.coppia.prossima; await salvaChiave(S.coppia); await chiaviDi(S.coppia); }
       S.canale = P.canaleTel(await P.chiaviSessione(mio.ch.k, mio.byte, P.daB64u(m.n)));
       S.cambio = null;
-      S.nSessione = mio.n;
+      S.nSessione = mio.n; S.nPc = m.n;
       S.ultimo = Date.now();
       // l'ora del PC, a metà fra il saluto e la risposta: un orologio del telefono
       // avanti o indietro non cambia quando un ordine scade

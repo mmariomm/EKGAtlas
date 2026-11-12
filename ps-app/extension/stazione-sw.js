@@ -107,7 +107,10 @@ const staId = () => PonteCripto.b64u(PonteCripto.casuale(9));
 async function staMigra(nome, c) {
   if (!c || typeof c.k !== "string") return c;
   const { k, ...resto } = c, id = staId();
-  await cassaScrivi(nome, { id, k: await PonteCripto.chiaveDa(PonteCripto.daB64u(k)) });
+  let raw = null;
+  try { raw = PonteCripto.daB64u(k); } catch { /* sotto */ }
+  if (!raw || raw.length !== 32) throw Object.assign(new Error("chiave rovinata"), { manca: true });
+  await cassaScrivi(nome, { id, k: await PonteCripto.chiaveDa(raw) });
   // (P2-5) `k` esce da storage.local solo quando la cassa, riletta, ce l'ha davvero
   const y = await cassaLeggi(nome);
   if (!y || y.id !== id || !y.k) throw new Error("cassa: la chiave non si rilegge");

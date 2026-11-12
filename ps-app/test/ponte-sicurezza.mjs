@@ -43,10 +43,12 @@ const P = {
   chiaviEntra: async (k) => Object.fromEntries(await Promise.all(["pc", "tel", "medico", "stazione"].map(async (r) => [r, P0.b64u(await hkdf(k, SALE, "entra " + r, 32))]))),
   provaEntra: async (c, sfida) => P0.b64u(new Uint8Array(await S.sign("HMAC", await S.importKey("raw", P0.daB64u(c), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]), TE.encode("ps-ponte/entra|" + sfida)))),
   coppiaEcdh: async () => { const e = await S.generateKey({ name: "ECDH", namedCurve: "P-256" }, false, ["deriveBits"]); return { privata: e.privateKey, pub: new Uint8Array(await S.exportKey("raw", e.publicKey)) }; },
-  rinnova: async (k, priv, pubAltro, pubTel, pubPc) => {
+  // (P2-3: il legame — nTel, nPc, la stanza del QR — nel sale)
+  legame: (nTel, nPc, stanza) => new Uint8Array([...P0.daB64u(nTel), ...P0.daB64u(nPc), ...Buffer.from(stanza, "hex")]),
+  rinnova: async (k, priv, pubAltro, pubTel, pubPc, legame) => {
     const z = new Uint8Array(await S.deriveBits({ name: "ECDH", public: await S.importKey("raw", pubAltro, { name: "ECDH", namedCurve: "P-256" }, false, []) }, priv, 256));
-    const sale = new Uint8Array([...SALE, ...z, ...pubTel, ...pubPc]);
-    return hkdf(k, sale, "rinnova", 32);   // (i 32 byte: qui il telefono finto li tiene in chiaro, per provarli)
+    const sale = new Uint8Array([...SALE, ...z, ...pubTel, ...pubPc, ...legame]);
+    return hkdf(k, sale, "rinnova 2", 32);   // (i 32 byte: qui il telefono finto li tiene in chiaro, per provarli)
   },
 };
 const L = await import(join(root, "../worker/ponte-logica.js"));
@@ -300,7 +302,7 @@ async function pcVero({ locale = {}, cassa = new Map(), sessione = {} } = {}) {
 }
 // Un telefono in Node, col protocollo vero: saluto, sessione, comandi, la prova d'entrata e il rinnovo della chiave
 function telNode(stanza, k, dev) {
-  const t = { k, dev, prossima: null, risposte: [], saluti: [], canale: null, id: 0 };
+  const t = { k, dev, prossima: null, risposte: [], saluti: [], canale: null, id: 0, qrStanza: stanza };
   t.entra = async () => [(await P.chiaviEntra(t.k)).tel, ...(t.prossima ? [(await P.chiaviEntra(t.prossima)).tel] : []), ...(t.vecchia ? [t.vecchia] : [])];
   t.apri = async () => {
     t.p = presa(stanza, "tel", { prove: await t.entra() });
@@ -321,7 +323,7 @@ function telNode(stanza, k, dev) {
     await finche(() => t.saluti.some((x) => x.eco === P.b64u(n)), 1500);
     const s = t.saluti.find((x) => x.eco === P.b64u(n));
     if (s && s.n) {
-      t.canale = P.canaleTel(await P.chiaviSessione(s.k, n, P.daB64u(s.n)));
+      t.canale = P.canaleTel(await P.chiaviSessione(s.k, n, P.daB64u(s.n))); t.nTel = P.b64u(n); t.nPc = s.n;
       if (t.prossima && s.k === t.prossima) { t.vecchia = (await P.chiaviEntra(t.k)).tel; t.k = t.prossima; t.prossima = null; }
     }
     return s || null;
@@ -337,7 +339,7 @@ function telNode(stanza, k, dev) {
     const r = await t.chiedi("rinnova", { pub: P.b64u(e.pub), rq: P.b64u(P.casuale(12)), auto: true });
     if (!r || !r.ok) return r;
     const pubPc = P.daB64u(r.dati.pub);
-    t.prossima = await P.rinnova(t.k, e.privata, pubPc, e.pub, pubPc);
+    t.prossima = await P.rinnova(t.k, e.privata, pubPc, e.pub, pubPc, P.legame(t.nTel, t.nPc, t.qrStanza));
     return r;
   };
   t.chiudi = () => t.p && t.p.chiudi();
@@ -501,6 +503,42 @@ await blocco(async () => {
   await pc3.ev("stmAvvia(false)"); await pc3.ev("stzAvvia(false)");
   check(typeof pc3.locale["stazione.coppia"]?.k === "string" && typeof pc3.locale["stazione.qui"]?.k === "string",
     "P2-5. la stazione (dalle due parti) con la cassa che non risponde: niente cancellato");
+});
+sezione("il rinnovo della chiave: solo nella sessione del QR, e legato a lei (P2-3)");
+await blocco(async () => {
+  const pc = await pcVero();
+  const r = await pc.pagina({ t: "ponteAssocia" });
+  const k = P.leggiFrammento(new URL(r.qr).hash).k, stanza = (await P.chiaviCoppia(k)).stanza;
+  await finche(() => pc.ev("pt.presa.su"));
+  const A = telNode(stanza, k, P.b64u(P.casuale(16)));
+  await A.apri(); await A.saluta(); await A.chiedi("ciao");
+  // un K' fatto con un'altra sessione (chi ha K e sta in mezzo: i numeri di un'altra sessione) non è quello del PC
+  const nVero = A.nTel;
+  A.nTel = P.b64u(P.casuale(16));
+  const rx = await A.rinnova();
+  A.nTel = nVero;
+  check(rx && rx.ok && !(await A.saluta()) && !pc.locale["ponte.coppia"].rinnovata, "P2-3. K' legato alla sessione: con i numeri di un'altra sessione la chiave nuova non è quella del PC (nessun saluto)");
+  A.prossima = null;
+  await A.saluta(); await A.chiedi("ciao");
+  check((await A.rinnova())?.ok && !!(await A.saluta())?.n && !A.prossima && !!pc.locale["ponte.coppia"].rinnovata, "P2-3. …con quelli di questa sessione sì: il rinnovo, nella sessione del QR");
+  await A.chiedi("ciao");
+  const di2 = await A.rinnova();
+  check(di2 && !di2.ok && !A.prossima, "P2-3. un secondo rinnovo, fatto il primo: rifiutato («Rinnovo non previsto»)");
+  A.chiudi();
+  await pc.ev("pt.presa.ferma()");
+  // finita la finestra del QR, senza rinnovo: il rinnovo non si fa più (serve un QR nuovo)
+  const pc2 = await pcVero();
+  const r2 = await pc2.pagina({ t: "ponteAssocia" });
+  const k2 = P.leggiFrammento(new URL(r2.qr).hash).k, st2 = (await P.chiaviCoppia(k2)).stanza;
+  await finche(() => pc2.ev("pt.presa.su"));
+  const B = telNode(st2, k2, P.b64u(P.casuale(16)));
+  await B.apri(); await B.saluta(); await B.chiedi("ciao");
+  pc2.salta(7 * 60e3);
+  await B.saluta(); await B.chiedi("ciao");
+  const rb = await B.rinnova();
+  check(rb && !rb.ok && !pc2.locale["ponte.coppia"].rinnovata, "P2-3. finita la finestra del QR senza rinnovo: il PC non rinnova più (chi ha fotografato il QR non si fa una chiave sua dopo)");
+  B.chiudi();
+  await pc2.ev("pt.presa.ferma()");
 });
 sezione("il taglio (P1): le coppie di prima e le stazioni non restano fuori");
 await blocco(async () => {

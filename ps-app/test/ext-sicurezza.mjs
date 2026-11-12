@@ -38,9 +38,11 @@ const P = {
   chiaviEntra: async (k) => Object.fromEntries(await Promise.all(["pc", "tel", "medico", "stazione"].map(async (r) => [r, P0.b64u(await hkdf(k, SALE, "entra " + r, 32))]))),
   provaEntra: async (c, sfida) => P0.b64u(new Uint8Array(await S.sign("HMAC", await S.importKey("raw", P0.daB64u(c), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]), TE.encode("ps-ponte/entra|" + sfida)))),
   coppiaEcdh: async () => { const e = await S.generateKey({ name: "ECDH", namedCurve: "P-256" }, false, ["deriveBits"]); return { privata: e.privateKey, pub: new Uint8Array(await S.exportKey("raw", e.publicKey)) }; },
-  rinnova: async (k, priv, pubAltro, pubTel, pubPc) => {
+  // (P2-3: il legame — nTel, nPc, la stanza del QR — nel sale)
+  legame: (nTel, nPc, stanza) => new Uint8Array([...P0.daB64u(nTel), ...P0.daB64u(nPc), ...Buffer.from(stanza, "hex")]),
+  rinnova: async (k, priv, pubAltro, pubTel, pubPc, legame) => {
     const z = new Uint8Array(await S.deriveBits({ name: "ECDH", public: await S.importKey("raw", pubAltro, { name: "ECDH", namedCurve: "P-256" }, false, []) }, priv, 256));
-    return hkdf(k, new Uint8Array([...SALE, ...z, ...pubTel, ...pubPc]), "rinnova", 32);
+    return hkdf(k, new Uint8Array([...SALE, ...z, ...pubTel, ...pubPc, ...legame]), "rinnova 2", 32);
   },
 };
 const EXT = join(root, "extension");
@@ -181,7 +183,7 @@ function pcFinto(nome, risposte) {
         if (k === pc.prossima) { pc.k = pc.prossima; pc.prossima = null; pc.rinnovata = true; }
         pc.saluti.push(m);
         const nPc = P.casuale(16);
-        canale = P.canalePc(await P.chiaviSessione(k, P.daB64u(m.n), nPc));
+        canale = P.canalePc(await P.chiaviSessione(k, P.daB64u(m.n), nPc)); pc.nTel = m.n; pc.nPc = P.b64u(nPc);
         ws.send(await P.sigilla((await P.chiaviCoppia(k)).salutoPc, P.TIPO.SALUTO_PC, 0, { v: 1, n: P.b64u(nPc), eco: m.n, ora: Date.now() }));
         return;
       }
@@ -192,7 +194,7 @@ function pcFinto(nome, risposte) {
       let out;
       if (d.cmd === "rinnova") {
         const e = await P.coppiaEcdh();
-        pc.prossima = await P.rinnova(pc.k, e.privata, P.daB64u(d.pub), P.daB64u(d.pub), e.pub);
+        pc.prossima = await P.rinnova(pc.k, e.privata, P.daB64u(d.pub), P.daB64u(d.pub), e.pub, P.legame(pc.nTel, pc.nPc, pc.stanza));
         out = { re: d.id, ok: true, dati: { pub: P.b64u(e.pub) } };
       } else {
         const r = risposte[d.cmd];
