@@ -8,10 +8,11 @@ cifrato.
 
 ```
  iPhone (Safari)                il Worker di EKG Atlas (workers.dev)     PC dell'ospedale (Chrome)
- /ponte/  app  ── wss:443 ──►   /ponte/ws  ripetitore  ◄── wss:443 ──   estensione (service worker)
-                               (un Durable Object per stanza:            │ chrome.tabs.sendMessage
-                                passa byte cifrati, non li legge,        ▼
-                                non li tiene)                           una scheda del gestionale:
+ /ponte/  app  ── wss:443 ──►   /ponte/ws  ripetitore  ◄── wss:443 ──   estensione: la presa nel documento
+                               (un Durable Object per stanza:            │ fuori schermo, le chiavi nel
+                                passa byte cifrati, non li legge,        │ service worker
+                                non li tiene)                            ▼ chrome.tabs.sendMessage
+                                                                        una scheda del gestionale:
                                                                          il codice di sempre
 ```
 
@@ -214,7 +215,8 @@ rileggere l'elenco, gli ordini — non conta; un tocco con l'app davanti sì (an
 scorrere; uno «scroll» da solo no: lo fa anche il ridisegno, che rimette la mappa dov'era), al più uno al
 minuto: `tocco`, che sul PC sposta l'orologio dei 3 minuti e basta — il telefono in mano non si chiude, uno
 lasciato lì sì), con «Scollega» sul PC,
-con la revoca, se l'estensione o il browser si riavviano, o se **una scheda del gestionale torna
+con la revoca, se l'estensione o il browser si riavviano (il service worker che Chrome ferma e riavvia no: la
+sessione continua), o se **una scheda del gestionale torna
 alla pagina d'accesso** (senza il gestionale il ponte non fa niente). Il telefono lo dice («Sessione
 chiusa · 3 minuti senza comandi», «Il gestionale sul PC è tornato alla pagina d'accesso») e cancella
 dalla sua memoria tutto quello che sapeva dei pazienti, avvisi compresi; **Riapri** ne apre un'altra
@@ -285,7 +287,7 @@ frequenza di Cloudflare vorrebbe un dominio proprio: su `workers.dev` non c'è.)
 dell'ospedale, con l'estensione vera, sulla strada vera del ponte. Entra in una stanza di prova — un
 numero casuale, buttato alla fine — sia come PC sia come telefono, sulla presa `/ponte/ws`, e dice
 quanto ci mette ad aprirsi e quanto un messaggio a fare il giro. **Tieni aperto 15 minuti** la tiene
-aperta come la tiene il ponte (un battito ogni 20 secondi) e dice quando e perché è caduta, col
+aperta con un battito ogni 20 secondi (più spesso del ponte, che ne fa uno ogni 30) e dice quando e perché è caduta, col
 codice di chiusura. Nessun altro sito, nessun UDP. «Copia il risultato» lo mette negli appunti con un
 blocco **«Per l'IT»**, da mandare così com'è.
 
@@ -294,10 +296,14 @@ blocco **«Per l'IT»**, da mandare così com'è.
 Dal Chrome del PC esce **una** connessione (due con una [stazione di stampa](#la-stazione-di-stampa) collegata, e una dal PC della stazione, uguali): una WebSocket su HTTPS, `wss://ekg-atlas.whirly.workers.dev/ponte/ws`,
 **TCP 443**, solo in uscita, che deve passare il proxy (l'upgrade a WebSocket). È un indirizzo
 `*.workers.dev` (Cloudflare): molti filtri web lo bloccano per categoria, e va consentito questo nome. C'è solo
-**mentre il gestionale è aperto** su quel PC (e per 10 minuti dopo), o durante una sessione col telefono: a
-gestionale chiuso nessun PC tiene connessioni verso il ponte. Mentre c'è è una sola, lunga, con un battito
-ogni **20 secondi** (un piccolo «ping»): non va chiusa per inattività né per durata; caduta, si riprova
-sempre più di rado (fino a 5 minuti fra un tentativo e l'altro, senza una sessione). Nessuna porta in entrata, nessun UDP, nessun altro host. Dentro il TLS i messaggi sono cifrati
+**mentre il gestionale è aperto** su quel PC (non sulla pagina d'accesso), con un QR sullo schermo o con un
+comando del telefono che lavora, e per **2 minuti** dopo: a gestionale chiuso nessun PC tiene connessioni verso
+il ponte, né la notte né a ogni risveglio dell'estensione. Mentre c'è è **una sola sessione TLS, lunga, per
+ore**, con un battito ogni **30 secondi** (un piccolo «ping», ~60 byte): non va chiusa per inattività né per
+durata; i messaggi veri passano solo quando il telefono o la stampa si usano. Caduta, si riprova sempre più
+di rado: da 1 secondo, il doppio ogni volta, fino a 5 minuti fra un tentativo e l'altro, col caso (±50 %); il
+conto ricomincia solo dopo una connessione rimasta su 2 minuti. Rifiutata dal ripetitore (codice 4403): niente
+nuovi tentativi, e la pagina ⋯ → iPhone dice «Scollegato». Nessuna porta in entrata, nessun UDP, nessun altro host. Dentro il TLS i messaggi sono cifrati
 una seconda volta, da un capo all'altro (AES-256-GCM): si può **escludere dall'ispezione TLS** senza
 esporre niente, e né l'IT né Cloudflare possono leggerli. Il gestionale non vede niente di nuovo: le
 pagine che l'estensione apre o legge per un comando sono le stesse, con le stesse richieste, di quando
@@ -352,8 +358,14 @@ dall'altra parte?) e risponde `pong` al battito.
 nTel, scade, ora}` — `ora` è l'orologio del PC, per lo scarto —, o `{v, eco, no}` a un telefono che non è quello dell'associazione: il telefono accetta
 solo la risposta al *suo* saluto), e il primo messaggio cifrato con le chiavi nuove apre la sessione
 sul PC. Un saluto da solo non chiude la sessione che c'è: la sostituisce solo una sessione nuova che
-ha parlato. Se il PC riceve dati per una sessione che non conosce (il service worker si è riavviato e
-le chiavi di sessione, che stavano solo in memoria, non ci sono più) risponde con un saluto «riparti»
+ha parlato. Il service worker che Chrome ferma e riavvia (su Chrome 109 mezzo minuto dopo ogni risveglio)
+la ritrova: in `storage.session` (la memoria del browser, mai il disco) ci sono i due numeri del saluto, i
+numeri d'ordine visti e mandati, i referti offerti e le registrazioni elencate in quella sessione, e le
+ultime scritture (`rq`) con la loro risposta — mai le chiavi, che si rifanno da K. Il numero d'ordine di un
+messaggio si annota prima di eseguirlo, una scrittura «sta andando» prima di cominciare: rimandata dopo un
+riavvio, una scrittura fatta ha la sua risposta, una a metà «non si sa» — mai una seconda volta. Se il PC
+riceve dati per una sessione che non conosce (il browser riaperto, l'estensione aggiornata: le chiavi di
+sessione non ci sono più) risponde con un saluto «riparti»
 che porta il `nTel` dell'ultima sessione e la frase del perché: il telefono lo accetta solo se parla
 della *sua* sessione (ripetuto più tardi non chiude niente) e chiude; se il perché è il riavvio
 (`riavvio`), si ricollega da solo — nessuno l'ha chiusa —, se no offre «Riapri». La fine di una
@@ -392,13 +404,21 @@ rete non risponde in 3 secondi. Sul telefono non resta niente di più.
 **I 3 minuti** contano solo i comandi del medico: quelli che l'app manda da sé (`auto`, e `ciao`, `dispositivo`,
 `ordini`) non tengono aperta la sessione, né sul PC né sul telefono.
 
-**Dove gira.** La presa sta nel **service worker** dell'estensione (`extension/ponte-sw.js`,
+**Dove gira.** Il ponte sta nel **service worker** dell'estensione (`extension/ponte-sw.js`,
 importato da `bg.js` dentro un `try`: un errore nel ponte spegne il ponte, non gli ordini, i referti
-o le stampe): da Chrome 116 una WebSocket che parla almeno ogni 30 secondi lo tiene sveglio (qui ogni
-20), ed è la strada indicata da Chrome; un documento «offscreen» vorrebbe un permesso nuovo per la
-stessa cosa. Se Chrome lo ferma lo stesso, le schede del gestionale lo risvegliano entro 30 secondi
-(`ponteSveglia`) e la presa si riapre con la chiave rimasta in `storage.local` — la sessione no: si
-riapre dal telefono. I dati dei pazienti stanno dove stavano (il `localStorage` del gestionale,
+o le stampe), la **presa** nel **documento fuori schermo** (`extension/fuori.html`, `fuori.js`,
+`presa.js`; dal service worker `fuori-sw.js`): su Chrome 109 (i PC con Windows 7/8) niente tiene
+sveglio il service worker — le chiamate all'estensione contano dalla 110, il traffico di una WebSocket
+dalla 116 — e Chrome lo ferma mezzo minuto dopo ogni risveglio; una presa sua moriva con lui e si
+rifaceva al risveglio dopo, ogni minuto. Il documento fuori schermo c'è da Chrome 109 (permesso
+`offscreen`, già nel manifest), sopravvive ai riavvii del service worker e tiene la presa, il battito, i
+tentativi e la chiusura alla sua ora; è un tubo e basta (niente chiavi, niente in chiaro), e sveglia il
+service worker solo quando arriva un messaggio. È **uno solo** per l'estensione (una regola di Chrome):
+lo stesso fa lo zip del registratore, che non lo chiude mai sotto una presa. Quando serve lo dicono le
+pagine: una pagina del gestionale che si apre (`ponteSveglia`, una volta), una che va alla pagina
+d'accesso (`ponteLogin`), una scheda chiusa o che cambia indirizzo, un QR, un comando — mai un risveglio
+del service worker, mai una sveglia. Senza `chrome.offscreen` (o se il documento non si apre) la presa
+sta nel service worker come fino alla 3.86, e le schede del gestionale lo risvegliano ogni 30 secondi. I dati dei pazienti stanno dove stavano (il `localStorage` del gestionale,
 l'archivio dell'estensione) e il motore sta nel content script: il service worker passa ogni comando
 decifrato a **una** scheda viva del gestionale (prima quella davanti al medico; mai la scheda di un
 ordine o dei valori in sottofondo), che lo esegue col codice di sempre (`src/core.js`, sezione PONTE)
@@ -605,12 +625,15 @@ arrivato (la stazione assente, nessuna risposta al saluto o a un pezzo) → «no
 stampato; l'ultimo pezzo senza risposta → `esito` su una sessione nuova; non si sa → «forse
 stampato». La stazione non manda mai niente per prima, se non i saluti e «scollegata»: tutto il resto,
 sul PC, si scarta (`stm.ignorati`). Un service worker ripartito sulla stazione dice «riparti», e il PC
-risaluta. Le due prese ci sono solo quando servono: sul PC del medico con una scheda del gestionale
-aperta (o chiusa da meno di 10 minuti) o un foglio in viaggio — il PC la apre lui per stampare —; sulla
-stazione con il gestionale aperto, la sua pagina aperta o un foglio in arrivo. Fuori turno, a gestionale
-chiuso, niente presa: il PC del medico dice «Infermeria non risponde» e stampa da sé, o lo propone. Battito
-ogni 20 secondi; caduta, si riprova sempre più di rado (fino a 15 secondi con un foglio in viaggio, fino a 5
-minuti se no); una sveglia di Chrome ogni minuto ricontrolla se serve.
+risaluta (le sessioni della stazione restano in memoria: un foglio dopo l'altro, si rifanno quando serve).
+Le due prese stanno nel documento fuori schermo, come quella del ponte, e ci sono solo quando servono: sul
+PC del medico con una scheda del gestionale aperta (non sulla pagina d'accesso) o un foglio in viaggio — il
+PC la apre lui per stampare —; sulla stazione con il gestionale aperto, la sua pagina aperta o un foglio in
+arrivo; e per 2 minuti dopo. Fuori turno, a gestionale chiuso, niente presa: il PC del medico dice
+«Infermeria non risponde» e stampa da sé, o lo propone. Battito ogni 30 secondi; caduta, si riprova sempre
+più di rado (da 1 secondo fino a 5 minuti, col caso). Niente sveglia di Chrome ogni minuto (c'era fino alla
+3.86): a riaprirle è un cambiamento — una pagina, una scheda, un foglio —, e la pagina «Stazione di stampa»
+aperta chiede lo stato ogni minuto (e, ogni mezz'ora, prova l'aiutante di stampa).
 
 **Scollegare**: da tutte e due le parti, due tocchi. Chi scollega non usa più K da subito; l'altro lo
 sa adesso (un saluto «revoca» con K), o appena si ricollega: per dirglielo chi ha scollegato tiene K,

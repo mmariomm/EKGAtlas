@@ -18064,7 +18064,11 @@
       chrome.storage.onChanged.addListener((ch, area) => { if (area === "session" && ch.ponte) segui(ch.ponte.newValue); });
       window.addEventListener("click", confermaFerma, true);
       window.addEventListener("submit", confermaFerma, true);
-      setInterval(() => { if (PONTE_STATO && PONTE_STATO.accoppiato) ask({ t: "ponteSveglia" }); }, 30e3);
+      // La pagina che si apre lo dice una volta (e se è quella d'accesso): il PC sta sul ponte finché il
+      // gestionale è aperto, e la presa sta nel documento fuori schermo, sveglia anche mentre il service
+      // worker dorme. Ogni 30 secondi solo nel ripiego (un Chrome senza documento fuori schermo: `sveglia`).
+      ask({ t: "ponteSveglia", login: classify(document) === "login" });
+      setInterval(() => { if (PONTE_STATO && PONTE_STATO.accoppiato && PONTE_STATO.sveglia) ask({ t: "ponteSveglia" }); }, 30e3);
     } catch { /* niente estensione */ }
   }
   // La scheda aperta dietro sulla pagina di un paziente (ponteValoriSotto, in

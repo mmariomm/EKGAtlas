@@ -238,9 +238,10 @@ cosa resta. Dopo puoi cancellare la cartella dello zip. PS Assist torna al dialo
 7. **Ponte (rete), solo se si usa l'iPhone.** Consentire dal browser una WebSocket in uscita verso
    `wss://ekg-atlas.whirly.workers.dev/ponte/ws` (TCP 443), con l'upgrade WebSocket attraverso
    il proxy. È un indirizzo `*.workers.dev` (Cloudflare): molti filtri web lo bloccano per
-   categoria, va consentito questo nome. È una connessione lunga (fino a 14 ore) con un battito
-   ogni 20 secondi. Va lasciata senza un limite di durata inferiore a un'ora e, se possibile,
-   esclusa dall'ispezione TLS: il contenuto è comunque cifrato da un capo all'altro.
+   categoria, va consentito questo nome. È una connessione sola e lunga (finché il gestionale è
+   aperto, per ore; e 2 minuti dopo) con un battito ogni 30 secondi (~60 byte); a gestionale chiuso,
+   e di notte, nessuna connessione. Va lasciata senza un limite di durata inferiore a un'ora e, se
+   possibile, esclusa dall'ispezione TLS: il contenuto è comunque cifrato da un capo all'altro.
 
 ## Se non funziona: i blocchi noti
 

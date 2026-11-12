@@ -431,6 +431,7 @@ async function pcFinto({ sessione = {}, locale = {}, scheda = null, gest = null,
       get: async (id) => schede.find((t) => t.id === id) || null,
       remove: async (id) => { tolte.push(id); },
       onRemoved: { addListener: (f) => ascolta.via.push(f) },
+      onUpdated: { addListener() {} },
     },
     windows: { getLastFocused: async () => null },
   };
@@ -456,6 +457,9 @@ async function pcFinto({ sessione = {}, locale = {}, scheda = null, gest = null,
   });
   vm.runInContext('const PONTE_HOST_FISSO = "https://ponte.example.org";' + "\nDate.now = ((v) => () => v() + globalThis.__salto)(Date.now);", ctx);
   vm.runInContext(EXT("ponte-cripto.js"), ctx);
+  // (la presa: senza chrome.offscreen qui, nel ripiego — la presa sta nel service worker, la stessa di presa.js)
+  vm.runInContext(EXT("presa.js"), ctx);
+  vm.runInContext(EXT("fuori-sw.js"), ctx);
   vm.runInContext(EXT("ponte-sw.js"), ctx);
   const ev = (codice) => vm.runInContext(codice, ctx);
   await ev("ponteCaricato");
@@ -513,7 +517,7 @@ const kDalQr = (qr) => P.leggiFrammento(new URL(qr).hash).k;
 const DEV = P.b64u(P.casuale(16)), DEV2 = P.b64u(P.casuale(16));
 await blocco(async () => {
   const pc = await pcFinto({ locale: { "ponte.coppia": { k: "vecchia", scade: Date.now() + 3600e3 } } });
-  check(pc.pt().relay === "spento" && !pc.prese.length && !("ponte.coppia" in pc.locale), "senza associazione il PC non apre niente (e una chiave rovinata su disco se ne va)");
+  check(pc.ev("ponteRelay()") === "spento" && !pc.prese.length && !("ponte.coppia" in pc.locale), "senza associazione il PC non apre niente (e una chiave rovinata su disco se ne va)");
   const r1 = await pc.pagina({ t: "ponteAssocia" });
   await sospendi(30);
   const k = r1 && r1.qr ? kDalQr(r1.qr) : null;
@@ -612,17 +616,19 @@ await blocco(async () => {
 
   // il battito: senza «pong» la presa si rifà
   const prima = pc.prese.length, morta = pc.presa();
-  pc.ev("PONTE_ATTESA.pong = 40; ponteBattito()");
+  pc.ev("PRESA.pong = 40; pt.presa.locale.battito()");
   check(morta.inviati.includes("ping"), "il battito: un «ping»");
   await sospendi(120);
-  check(pc.prese.length === prima + 1 && morta.readyState === 3, "nessun «pong» entro l'attesa: la presa vecchia si chiude, se ne apre un'altra");
-  const viva = pc.presa();
+  check(morta.readyState === 3, "nessun «pong» entro l'attesa: la presa vecchia è morta, e si chiude");
+  for (let i = 0; i < 40 && pc.prese.length === prima; i++) await sospendi(50);
   await sospendi(20);
-  pc.ev("ponteBattito()");
+  check(pc.prese.length === prima + 1 && pc.presa().readyState === 1, "…e se ne apre un'altra, al primo tentativo (un secondo, col caso)");
+  const viva = pc.presa();
+  pc.ev("pt.presa.locale.battito()");
   await pc.testo("pong");
   await sospendi(80);
   check(pc.presa() === viva, "col «pong» resta quella");
-  pc.ev("PONTE_ATTESA.pong = 10e3");
+  pc.ev("PRESA.pong = 15e3");
 
   // il gestionale torna alla pagina d'accesso: via la sessione, non l'associazione
   const t4 = await telFinto(pc, k, DEV);
@@ -653,8 +659,9 @@ await blocco(async () => {
   check(!!pc.pt().sessione, "(il telefono entra: una sessione)");
   pc.salta(4 * 60e3);
   await pc.ev("ponteControlla()");
-  check(!pc.pt().sessione && pc.presa().readyState === 3 && pc.pt().relay === "riposo" && !!pc.locale["ponte.coppia"],
-    "3 minuti senza comandi, nessuna scheda del gestionale: la sessione si chiude e il PC lascia il ponte (ws.close); l'associazione resta");
+  // (niente serve più dalla fine del «ciao»: il QR è usato, nessuna scheda del gestionale — i 2 minuti sono passati)
+  check(!pc.pt().sessione && pc.presa().readyState === 3 && pc.ev("ponteRelay()") === "riposo" && !!pc.locale["ponte.coppia"],
+    "3 minuti senza comandi, nessuna scheda del gestionale: la sessione si chiude e il PC lascia il ponte (ws.close: 2 minuti dopo l'ultimo comando); l'associazione resta");
   check(/lascia il ponte/.test(pc.pt().registro.map((x) => x.testo).join("\n")), "il registro del ponte lo dice");
   // un'ora: il service worker riparte ogni 85 s (Chrome che lo ferma), senza gestionale
   let aperte = 0;
@@ -672,21 +679,24 @@ await blocco(async () => {
   check(pcG.prese.length === 1 && pcG.presa().readyState === 1, "una scheda del gestionale aperta: il PC sta sul ponte");
   await pcG.pagina({ t: "ponteSveglia" }, { url: GEST + "x", tab: { id: 7 } });
   check(pcG.prese.length === 1, "le schede che svegliano non aprono prese in più (una sola, sempre)");
-  // chiusa: resta 10 minuti, poi lascia il ponte
+  // chiusa: resta 2 minuti, poi lascia il ponte
   gest.length = 0;
-  pcG.salta(9 * 60e3);
+  pcG.chiudiScheda(7);
+  await sospendi(30);
+  pcG.salta(60e3);
   await pcG.ev("ponteControlla()");
-  check(pcG.presa().readyState === 1, "chiuso il gestionale, il PC resta sul ponte ancora per un po' (9 minuti: sì)");
-  pcG.salta(2 * 60e3);
+  check(pcG.presa().readyState === 1, "chiuso il gestionale, il PC resta sul ponte ancora per un po' (1 minuto: sì)");
+  pcG.salta(70e3);
   await pcG.ev("ponteControlla()");
-  check(pcG.presa().readyState === 3 && pcG.prese.length === 1, "…e dopo 10 minuti lo lascia, senza riprovare");
+  check(pcG.presa().readyState === 3 && pcG.prese.length === 1, "…e dopo 2 minuti lo lascia, senza riprovare");
   // il ponte giù col gestionale aperto: i tentativi si diradano fino a minuti, e una presa che cade
   // subito dopo essersi aperta non fa ripartire il conto
-  const b = await pcG.ev(`(() => { pt.tentativi = 0; const v = []; const s = setTimeout; const m = Math.random;
-    Math.random = () => 1; globalThis.setTimeout = (f, ms) => { v.push(ms); return 0; };
-    try { for (let i = 0; i < 12; i++) ponteRiprova(); } finally { globalThis.setTimeout = s; Math.random = m; pt.tentativi = 0; pt.tRiprova = 0; }
+  // (la presa: presa.js, la stessa del documento fuori schermo; il caso a metà, ±0)
+  const b = await pcG.ev(`(() => { const p = new PresaWs("prova"); p.url = "wss://x/ponte/ws?r=1"; const v = []; const s = setTimeout; const m = Math.random;
+    Math.random = () => 0.5; globalThis.setTimeout = (f, ms) => { v.push(ms); return 0; };
+    try { for (let i = 0; i < 12; i++) p.riprova(); } finally { globalThis.setTimeout = s; Math.random = m; }
     return v; })()`);
-  check(b[0] === 1000 && b[4] === 16000 && Math.max(...b) === 300000, `senza sessione i tentativi arrivano a 5 minuti (${b.map((x) => Math.round(x / 1000) + " s").join(", ")})`);
+  check(b[0] === 1000 && b[4] === 16000 && Math.max(...b) === 300000, `i tentativi arrivano a 5 minuti (${b.map((x) => Math.round(x / 1000) + " s").join(", ")})`);
 });
 await blocco(async () => {
   // «Aggiorna i valori»: la scheda annotata in storage.session; il service
