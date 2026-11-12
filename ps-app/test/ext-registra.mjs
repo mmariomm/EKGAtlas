@@ -20,6 +20,8 @@ import { rmSync, existsSync, statSync, mkdirSync, readdirSync, readFileSync, wri
 import { execFileSync } from "node:child_process";
 import https from "node:https";
 
+// (mai la rete vera: nessun proxy, ogni nome risolto in locale — il gestionale finto passa dalle route di Playwright)
+const RETE_CHIUSA = ["--proxy-server=direct://", "--host-resolver-rules=MAP * 127.0.0.1"];
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const PROFILE = join("/tmp", "psa-reg-" + process.pid);
 const OUT = join("/tmp", "psa-reg-zip-" + process.pid);
@@ -96,7 +98,7 @@ const ctx = await chromium.launchPersistentContext(PROFILE, {
   executablePath: process.env.CHROMIUM_PATH || chromiumPath(),
   viewport: { width: 1366, height: 768 },
   acceptDownloads: true,
-  args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`, ...(process.env.PSA_CHROMIUM_ARGS || "").split(/\s+/).filter(Boolean),
+  args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`, ...(process.env.PSA_CHROMIUM_ARGS || "").split(/\s+/).filter(Boolean), ...RETE_CHIUSA,
     `--host-resolver-rules=MAP smarthealth.multimedica.it 127.0.0.1:${srv.address().port}`, "--ignore-certificate-errors", "--no-proxy-server"],
 });
 await ctx.addInitScript(() => {

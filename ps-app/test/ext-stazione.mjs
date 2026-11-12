@@ -28,6 +28,8 @@ import { fileURLToPath } from "node:url";
 import { rmSync, existsSync, statSync, mkdirSync, writeFileSync, readFileSync, chmodSync } from "node:fs";
 import vm from "node:vm";
 
+// (mai la rete vera: nessun proxy, ogni nome risolto in locale — il gestionale finto passa dalle route di Playwright)
+const RETE_CHIUSA = ["--proxy-server=direct://", "--host-resolver-rules=MAP * 127.0.0.1"];
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 await import(join(root, "../public/ponte/cripto.js"));
 const P = globalThis.PonteCripto;
@@ -88,7 +90,7 @@ const A = createMock({ seedConfirmed: true });
 const FOGLIO = /RcsStampaEtichetteLISHMIMU|uploaddownloadservlet|jasperservlet/;
 const lancia = (chi) => chromium.launchPersistentContext(PROFILO[chi], {
   headless: true, executablePath: process.env.CHROMIUM_PATH || chromiumPath(), viewport: { width: 1366, height: 820 },
-  args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`, ...(process.env.PSA_CHROMIUM_ARGS || "").split(/\s+/).filter(Boolean)],
+  args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`, ...(process.env.PSA_CHROMIUM_ARGS || "").split(/\s+/).filter(Boolean), ...RETE_CHIUSA],
 });
 const ctx = await lancia("pc");
 await ctx.addInitScript(() => {
@@ -227,7 +229,7 @@ const IPHONE = {
 };
 // (gli stessi PSA_CHROMIUM_ARGS del PC, come in ext-ponte: senza --disable-dev-shm-usage il telefono si schianta aprendo i PDF)
 const telBrowser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_PATH || chromiumPath(),
-  args: ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream", `--use-file-for-fake-video-capture=${video(offerta.qr, VID)}`, ...(process.env.PSA_CHROMIUM_ARGS || "").split(/\s+/).filter(Boolean)] });
+  args: ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream", `--use-file-for-fake-video-capture=${video(offerta.qr, VID)}`, ...(process.env.PSA_CHROMIUM_ARGS || "").split(/\s+/).filter(Boolean), ...RETE_CHIUSA] });
 const telCtx = await telBrowser.newContext({ ...IPHONE, permissions: ["camera"] });
 const tel = await telCtx.newPage();
 const testoTel = (t = tel) => t.locator("#app").innerText().catch(() => "");

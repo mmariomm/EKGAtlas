@@ -24,6 +24,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { existsSync, statSync, mkdirSync, cpSync, rmSync, writeFileSync, readFileSync } from "node:fs";
 
+// (mai la rete vera: nessun proxy, ogni nome risolto in locale — il gestionale finto passa dalle route di Playwright)
+const RETE_CHIUSA = ["--proxy-server=direct://", "--host-resolver-rules=MAP * 127.0.0.1"];
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 await import(join(root, "../public/ponte/cripto.js"));
 const P = globalThis.PonteCripto;
@@ -74,7 +76,7 @@ async function apriBrowser() {
     headless: true,
     executablePath: process.env.CHROMIUM_PATH || chromiumPath(),
     viewport: { width: 1366, height: 768 },
-    args: [`--disable-extensions-except=${MINI}`, `--load-extension=${MINI}`, ...(process.env.PSA_CHROMIUM_ARGS || "").split(/\s+/).filter(Boolean)],
+    args: [`--disable-extensions-except=${MINI}`, `--load-extension=${MINI}`, ...(process.env.PSA_CHROMIUM_ARGS || "").split(/\s+/).filter(Boolean), ...RETE_CHIUSA],
   });
   await ctx.route("https://smarthealth.multimedica.it/**", async (r) => {
     const req = r.request();

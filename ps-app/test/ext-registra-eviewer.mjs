@@ -24,6 +24,8 @@ import { execFileSync } from "node:child_process";
 import https from "node:https";
 import http from "node:http";
 
+// (mai la rete vera: nessun proxy, ogni nome risolto in locale — il gestionale finto passa dalle route di Playwright)
+const RETE_CHIUSA = ["--proxy-server=direct://", "--host-resolver-rules=MAP * 127.0.0.1"];
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const EXT = join(root, "extension");
 const PROFILE = join("/tmp", "psa-regview-" + process.pid);
@@ -126,7 +128,7 @@ const ctx = await chromium.launchPersistentContext(PROFILE, {
   headless: true,
   executablePath: process.env.CHROMIUM_PATH || chromiumPath(),
   viewport: { width: 1366, height: 768 },
-  args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`, ...(process.env.PSA_CHROMIUM_ARGS || "").split(/\s+/).filter(Boolean),
+  args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`, ...(process.env.PSA_CHROMIUM_ARGS || "").split(/\s+/).filter(Boolean), ...RETE_CHIUSA,
     `--host-resolver-rules=MAP smarthealth.multimedica.it 127.0.0.1:${srvG.address().port}, MAP ${HOST} 127.0.0.1:${srvV.address().port}`, "--ignore-certificate-errors", "--no-proxy-server"],
 });
 await ctx.addInitScript(() => {
@@ -310,7 +312,7 @@ await ctx.close();
   mkdirSync(join(PROF2, "Default"), { recursive: true });
   writeFileSync(join(PROF2, "Default", "Preferences"), JSON.stringify({ extensions: { ui: { developer_mode: true } } }));
   const ctx2 = await chromium.launchPersistentContext(PROF2, { headless: true, executablePath: process.env.CHROMIUM_PATH || chromiumPath(),
-    args: [`--disable-extensions-except=${VEC}`, `--load-extension=${VEC}`, ...(process.env.PSA_CHROMIUM_ARGS || "").split(/\s+/).filter(Boolean), "--no-proxy-server"] });
+    args: [`--disable-extensions-except=${VEC}`, `--load-extension=${VEC}`, ...(process.env.PSA_CHROMIUM_ARGS || "").split(/\s+/).filter(Boolean), ...RETE_CHIUSA, "--no-proxy-server"] });
   let sw2 = ctx2.serviceWorkers()[0] || await ctx2.waitForEvent("serviceworker", { timeout: 15000 });
   const ha = (s) => s.evaluate((o) => chrome.permissions.contains({ origins: o }), [`http://${HOST}:18188/*`]);
   const prima = await ha(sw2);

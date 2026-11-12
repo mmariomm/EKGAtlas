@@ -30,6 +30,8 @@ import { rmSync, existsSync, statSync, mkdirSync } from "node:fs";
 import { paginaTerapie } from "./fixtures/terapie.mjs";
 import { avviaRelay } from "../ponte/relay-node.mjs";
 
+// (mai la rete vera: nessun proxy, ogni nome risolto in locale — il gestionale finto passa dalle route di Playwright)
+const RETE_CHIUSA = ["--proxy-server=direct://", "--host-resolver-rules=MAP * 127.0.0.1"];
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const EXT = join(root, "extension");
 const PROFILE = join("/tmp", "psa-terapia-" + process.pid);
@@ -171,7 +173,7 @@ const ctx = await chromium.launchPersistentContext(PROFILE, {
   headless: true,
   executablePath: process.env.CHROMIUM_PATH || chromiumPath(),
   viewport: { width: 1400, height: 900 },
-  args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`, ...(process.env.PSA_CHROMIUM_ARGS || "").split(/\s+/).filter(Boolean)],
+  args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`, ...(process.env.PSA_CHROMIUM_ARGS || "").split(/\s+/).filter(Boolean), ...RETE_CHIUSA],
 });
 let sw = ctx.serviceWorkers().find((w) => w.url().endsWith("bg.js"));
 if (!sw) sw = await ctx.waitForEvent("serviceworker", { timeout: 15000 });
