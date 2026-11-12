@@ -1160,5 +1160,31 @@ await blocco(async () => {
     `sul PC di sola lettura «dispositivo» risponde (kind: lettura; senza manifest, niente versione) (${JSON.stringify(d)})`);
 });
 
+// La presa del telefono: solo con l'app davanti, chiusa pulita (1000) in sottofondo con 20 s di grazia per un comando
+// che aspetta la risposta; la rincorsa da 1 s a 300 s con ±50 % di caso, da capo solo dopo 2 minuti di presa tenuta;
+// 4001 non si riprova da sé, 4403 ferma e dice «Scollegato»; il protocollo sul filo non cambia.
+await blocco(async () => {
+  const app = leggi("../public/ponte/app.js");
+  const n = (re) => Number(re.exec(app)[1]);
+  const min = n(/RIPROVA_MIN = ([\d.e]+),/), max = n(/RIPROVA_MAX = ([\d.e]+);/);
+  check(min === 1e3 && max === 300e3 && n(/SU_STABILE = ([\d.e]+);/) === 120e3 && n(/GRAZIA = ([\d.e]+);/) === 20e3,
+    "il telefono: rincorsa da 1 s a 300 s, da capo dopo 2 minuti di presa tenuta, 20 s di grazia in sottofondo");
+  // la rincorsa com'è scritta in riprova(): b = min(max, min·2^k), attesa = b·(0.5 + caso)
+  const attesa = (k, caso) => Math.round(Math.min(max, min * 2 ** k) * (0.5 + caso));
+  check(attesa(0, 0) === 500 && attesa(0, 1) === 1500 && attesa(30, 0) === 150e3 && attesa(30, 1) === 450e3,
+    "…±50 %: il primo tentativo fra 0,5 e 1,5 s, a regime fra 150 e 450 s");
+  check(/const b = Math\.min\(RIPROVA_MAX, RIPROVA_MIN \* 2 \*\* Math\.min\(S\.tentativi\+\+, 12\)\);\s*S\.tRiprova = setTimeout\(collega, Math\.round\(b \* \(0\.5 \+ Math\.random\(\)\)\)\);/.test(app),
+    "…e riprova() è proprio quella formula");
+  check(/function collega\(\) \{\s*if \([^\n]*!davantiOra\(\)\) return;/.test(app), "collega() non apre niente con l'app in sottofondo");
+  check(/S\.tStabile = setTimeout\(\(\) => \{ S\.tentativi = 0; \}, SU_STABILE\)/.test(app) && (app.match(/S\.tentativi = 0/g) || []).length === 1,
+    "i tentativi tornano a zero in un posto solo: dopo SU_STABILE di presa tenuta (non all'apertura, non al ritorno)");
+  check(/ws\.close\(1000\)/.test(/function chiudiPresa\(\) \{[\s\S]*?\n  \}/.exec(app)[0]), "in sottofondo la presa si chiude con 1000");
+  check(/addEventListener\("pageshow", davanti\)/.test(app) && /addEventListener\("pagehide", \(\) => sottofondo\(true\)\)/.test(app),
+    "si apre su visibilitychange, pageshow e online; si chiude su visibilitychange e pagehide");
+  check(/e\.code === 4001\) return altrove\(\)/.test(app) && /e\.code === 4403\) return scollegato\(\)/.test(app) && /case "scollegato":[\s\S]{0,120}"Scollegato"/.test(app),
+    "4001: nessun tentativo da sé; 4403: ci si ferma e si legge «Scollegato»");
+  check(/const BATTITO = 30e3, PONG = 15e3;/.test(app), "il battito: ogni 30 s, morta dopo 15 s senza «pong» (come nel progetto)");
+});
+
 console.log(fail ? `\nPONTE-CRIPTO: ${fail} CHECK FALLITI\n` : "\nPONTE-CRIPTO: TUTTO OK\n");
 process.exit(fail ? 1 : 0);

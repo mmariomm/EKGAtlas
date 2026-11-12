@@ -23,12 +23,14 @@
   let pdfAperto = null;              // il PDF di un referto aperto sul telefono: { url (blob:), w, t }
   const INATTIVO = 3 * 60e3;        // come sul PC: 3 minuti senza comandi del medico e la sessione è finita
   const VERDE_MAX = 2 * 60e3;        // un ordine finito bene se ne va da solo, come sulla striscia del PC
-  const BATTITO = 20e3, PONG = 10e3; // la presa parla ogni 20 secondi; senza «pong» in 10 è morta
+  const BATTITO = 30e3, PONG = 15e3; // la presa parla ogni 30 secondi; senza «pong» in 15 è morta
   // La rete del telefono (ascensore, 5G, wifi↔5G): ogni attesa conta anche i
   // byte per strada, alla velocità più bassa per cui si aspetta (~50 kbit/s).
   const RETE_MIN = 6e3;              // byte al secondo
   const perRete = (byte) => Math.ceil(byte / RETE_MIN * 1e3);
-  const RIPROVA_MAX = 15e3;          // fra un tentativo di presa e l'altro, al massimo
+  const RIPROVA_MIN = 1e3, RIPROVA_MAX = 300e3;   // fra un tentativo di presa e l'altro: da 1 secondo a 5 minuti (±50 % di caso)
+  const SU_STABILE = 120e3;          // la rincorsa riparte da 1 secondo solo dopo 2 minuti di presa tenuta
+  const GRAZIA = 20e3;               // in sottofondo la presa si chiude subito — o, con un comando che aspetta la risposta, entro 20 secondi
   const APRI_MAX = 12e3;             // una presa che non si apre in 12 secondi si rifà
   const TARDI_MAX = 10 * 60e3;       // una scrittura di cui non si sa: la si rimanda a ogni ritorno della rete, per 10 minuti
   const ATTESA_VALORI = 260e3;       // «Aggiorna i valori»: il PC, al peggio, ci mette 10 + 150 + 30 secondi (e 60 se aspetta una pagina del ⟳ del tabellone)
@@ -254,14 +256,20 @@
   }
 
   // ---------------------------------------------------------------- la presa
-  // Una presa sola alla volta. Caduta, si riprova presto e poi sempre più di
-  // rado (fino a 15 secondi, con un po' di caso: tanti telefoni non tornano
-  // tutti insieme); subito quando la rete torna o l'app torna davanti.
+  // Una presa sola alla volta, e solo con l'app davanti: si apre quando l'app
+  // torna visibile (visibilitychange, pageshow) o la rete torna (online), si
+  // chiude (codice 1000) quando va in sottofondo o la pagina se ne va (pagehide).
+  // Caduta, si riprova da 1 secondo e poi sempre più di rado (fino a 5 minuti,
+  // ±50 % di caso: tanti telefoni non tornano tutti insieme); la rincorsa
+  // riparte da capo solo dopo 2 minuti di presa tenuta. Codice 4001 (un altro
+  // dispositivo): non si riprova da sé. Codice 4403 (il ponte non vuole più
+  // questo telefono): ci si ferma, «Scollegato».
   const inLinea = () => navigator.onLine !== false;
+  const davantiOra = () => document.visibilityState === "visible";
   const pronto = () => !!S.canale && !!S.ws && S.ws.readyState === 1 && S.pari === true && inLinea();
   function collega() {
-    if (!S.chiavi || (S.ws && S.ws.readyState <= 1)) return;
-    clearTimeout(S.tRiprova);
+    if (!S.chiavi || (S.ws && S.ws.readyState <= 1) || !davantiOra()) return;   // (in sottofondo nessuna presa)
+    clearTimeout(S.tRiprova); clearInterval(S.tGrazia); S.tGrazia = 0;
     const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ponte/ws?r=${S.chiavi.stanza}&ruolo=tel`);
     ws.binaryType = "arraybuffer";
     S.ws = ws;
@@ -277,22 +285,59 @@
     ws.onclose = (e) => {
       clearTimeout(tApri);
       if (S.ws !== ws) return;
+      clearTimeout(S.tStabile);
       S.ws = null; S.pari = null; S.saluto = null;
       clearTimeout(S.tPong); S.tPong = 0;
       if (!S.chiavi) return;
       // un altro telefono (o un'altra scheda) ha preso il posto di questo: niente tiro alla fune
       if (e && e.code === 4001) return altrove();
+      // il ponte non riconosce più questo telefono: ci si ferma, finché il medico non riprova
+      if (e && e.code === 4403) return scollegato();
       if (S.fase === "collego" && S.tentativi >= 1) S.fase = "pc";   // il ponte stesso non risponde
       if (document.visibilityState === "visible") riprova();
       render();
     };
-    ws.onopen = () => { clearTimeout(tApri); if (S.ws === ws) { S.tentativi = 0; batti(); } };
+    ws.onopen = () => {
+      clearTimeout(tApri);
+      if (S.ws !== ws) return;
+      clearTimeout(S.tStabile); S.tStabile = setTimeout(() => { S.tentativi = 0; }, SU_STABILE);   // (la rincorsa riparte da 1 s solo dopo 2 minuti su)
+      batti();
+    };
   }
   function riprova() {
     clearTimeout(S.tRiprova);
-    const b = Math.min(RIPROVA_MAX, 600 * 2 ** Math.min(S.tentativi++, 6));
-    S.tRiprova = setTimeout(collega, Math.round(b / 2 + Math.random() * b / 2));
+    const b = Math.min(RIPROVA_MAX, RIPROVA_MIN * 2 ** Math.min(S.tentativi++, 12));
+    S.tRiprova = setTimeout(collega, Math.round(b * (0.5 + Math.random())));
   }
+  // In sottofondo la presa si chiude, pulita (1000): subito, o — se un comando
+  // aspetta ancora la sua risposta (un ordine, una stampa, un salvataggio, un
+  // «accetta») — appena la risposta arriva, e comunque entro 20 secondi. Quello
+  // che resta senza risposta lo rimanda `rimanda()` alla presa del ritorno, con
+  // lo stesso numero: il PC non rifà una scrittura. Niente si apre da sé sul PC.
+  const inVolo = () => { for (const a of S.attese.values()) if (a.inviata && !a.scaduta && !a.msg.auto) return true; return false; };
+  function sottofondo(subito) {
+    if (davantiOra() || !S.ws) return;
+    if (!subito && inVolo()) {
+      if (S.tGrazia) return;
+      const t0 = Date.now();
+      S.tGrazia = setInterval(() => {
+        if (davantiOra() || !S.ws) { clearInterval(S.tGrazia); S.tGrazia = 0; return; }
+        if (!inVolo() || Date.now() - t0 >= GRAZIA) { clearInterval(S.tGrazia); S.tGrazia = 0; chiudiPresa(); }
+      }, 250);
+      return;
+    }
+    chiudiPresa();
+  }
+  function chiudiPresa() {
+    const ws = S.ws;
+    clearTimeout(S.tRiprova); clearTimeout(S.tPong); S.tPong = 0; clearTimeout(S.tStabile);
+    if (!ws) return;
+    S.ws = null; S.pari = null; S.saluto = null;
+    ws.onmessage = null; ws.onclose = null;
+    try { ws.close(1000); } catch { /* già chiusa */ }
+  }
+  document.addEventListener("visibilitychange", () => { if (!davantiOra()) sottofondo(false); });
+  window.addEventListener("pagehide", () => sottofondo(true));   // (la pagina si congela: non c'è tempo per la grazia)
   // Il battito: se il «pong» non torna, la presa è morta anche se sembra
   // aperta (una rete che la lascia cadere senza dirlo): se ne apre un'altra.
   // Su una rete lenta il «pong» arriva dopo quello che è già per strada (un
@@ -307,6 +352,7 @@
   }
   function rifai() {
     const ws = S.ws;
+    if (!davantiOra()) return chiudiPresa();
     S.ws = null; S.pari = null; S.saluto = null;
     clearTimeout(S.tPong); S.tPong = 0;
     if (ws) try { ws.close(); } catch { /* già chiusa */ }
@@ -542,6 +588,16 @@
     clearTimeout(S.tRiprova);
     svuota(); zitto();
     S.fase = "altrove"; S.menu = false;
+    render();
+  }
+  // Il ponte ha chiuso con 4403: questo telefono non è (più) riconosciuto. Ci si ferma, senza tentativi.
+  function scollegato() {
+    for (const a of S.attese.values()) { clearTimeout(a.t); a.no(new Error("Sessione chiusa")); }
+    S.attese.clear();
+    S.canale = null; S.saluto = null; S.nSessione = "";
+    clearTimeout(S.tRiprova);
+    svuota(); zitto();
+    S.fase = "scollegato"; S.menu = false;
     render();
   }
   function riapri() {
@@ -1716,6 +1772,9 @@
       case "altrove":
         return piena(ICO.pc, "Aperto su un altro dispositivo", "<p>Il pannello è aperto su un altro telefono o in un'altra scheda: qui si è fermato.</p>",
           `<button class="grande" data-a="riapri">Riprendi qui</button>${scansiona(true)}`);
+      case "scollegato":
+        return piena(ICO.pc, "Scollegato", "<p>Il ponte non riconosce più questo telefono: qui ci si è fermati.</p>",
+          `<button class="grande" data-a="riapri">Riprova</button>${scansiona(true)}`);
       case "chiusa":
         // (chiusa per i 3 minuti, con l'app in sottofondo: al ritorno si riapre da sola, e
         // questa schermata non si vede nemmeno per un attimo)
@@ -2636,12 +2695,11 @@
   // Tornati sull'app (iOS chiude le prese delle pagine in sottofondo): ci si
   // ricollega subito, si prova la presa, e l'elenco si rilegge da solo.
   function davanti() {
-    if (document.visibilityState !== "visible" || !S.chiavi || S.fase === "altrove") return;
+    if (document.visibilityState !== "visible" || !S.chiavi || S.fase === "altrove" || S.fase === "scollegato") return;
     // chiusa per i 3 minuti senza comandi (adesso, o mentre l'app era in
     // sottofondo): si riapre da sola, senza passare da «Sessione chiusa»
     if (scadenze() && !(S.fase === "chiusa" && S.perche === "inattivo")) return;
     if (S.fase === "chiusa" && S.perche === "inattivo") { riapri(); return; }
-    S.tentativi = 0;
     collega();
     batti();
     if (S.canale && S.fase === "pronta") {
@@ -2650,13 +2708,12 @@
     render();
   }
   document.addEventListener("visibilitychange", davanti);
-  window.addEventListener("pageshow", (e) => { if (e.persisted) davanti(); });
+  window.addEventListener("pageshow", davanti);
   // La rete torna (fuori dall'ascensore, dal wifi al 5G): la presa di prima è
   // quasi sempre morta senza saperlo — se ne apre subito un'altra, e quello
   // che aspettava riparte. Senza rete: lo dice la testata, e si aspetta.
   window.addEventListener("online", () => {
-    if (!S.chiavi || S.fase === "altrove" || ["senza", "finita", "rifiutato", "conferma"].includes(S.fase)) return;
-    S.tentativi = 0;
+    if (!S.chiavi || S.fase === "altrove" || S.fase === "scollegato" || ["senza", "finita", "rifiutato", "conferma"].includes(S.fase)) return;
     if (S.canale && S.fase === "pronta") S.rinfresca = true;
     rifai();
     render();
