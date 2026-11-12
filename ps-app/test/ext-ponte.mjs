@@ -527,7 +527,7 @@ const sv = salvato.length === 1 ? JSON.parse(salvato[0][1]) : {};
 const pc0 = sv && Array.isArray(sv.v) && sv.v.length === 1 ? sv.v[0] : null;
 const versionePc = await sw.evaluate(() => chrome.runtime.getManifest().version);
 // (3.87: la chiave non c'è — sta in IndexedDB, non estraibile —; c'è la stanza, e quando la chiave si è rinnovata)
-check(salvato.length === 1 && salvato[0][0] === "psassist.ponte.pcs.v1" && pc0 && Object.keys(pc0).sort().join() === "dev,id,kind,nome,rinnovata,stanza,ver,visto" && !/ROSSI|BIANCHI/.test(salvato[0][1])
+check(salvato.length === 1 && salvato[0][0] === "psassist.ponte.pcs.v1" && pc0 && Object.keys(pc0).sort().join() === "dev,id,kind,nome,qrFino,rinnovata,stanza,ver,visto" && !/ROSSI|BIANCHI/.test(salvato[0][1])
   && pc0.ver === versionePc && Math.abs(Date.now() - pc0.visto) < 60e3 && !salvato[0][1].includes(P.b64u(K1)),
   `sul telefono resta solo la lista dei PC (numero del telefono, tipo e nome, la stanza; la versione di PS Assist e quando il PC si è fatto sentire): nessun paziente, nessuna scadenza, nessuna chiave (${Object.keys(pc0 || {}).sort().join()})`);
 const titoli = JSON.stringify(await tel.locator(".lbl").evaluateAll((l) => l.map((x) => x.textContent)));
@@ -2784,8 +2784,8 @@ await tel.goto(url2);   // con l'app già aperta: cambia solo il frammento
 check(/ROSSI MARIO/.test(await aspettaTel(tel, /ROSSI MARIO/, 15000)), "il QR nuovo inquadrato con l'app aperta: chiave nuova, e di nuovo l'elenco");
 // Un QR nuovo AGGIUNGE un PC alla lista e ci passa (ognuno la sua chiave: una
 // non apre gli altri; l'associazione non scade). Non toglie quelli di prima —
-// un PC completo che risponde prende il posto del completo; questi PC finti non
-// rispondono, quindi restano in lista come «da collegare».
+// un PC completo che risponde prende il posto del completo, chiedendolo prima. (rev-s2 P2-7) Questi PC finti non
+// rispondono: il telefono ci prova, ma niente si salva finché un saluto non dice dove va.
 const linkCtx = await telBrowser.newContext(IPHONE);
 const lnk = await linkCtx.newPage();
 // (3.87: un QR vale al più 6 minuti da adesso — uno più lungo «non è di un PC di PS Assist»: più sotto)
@@ -2795,18 +2795,15 @@ const KX = P.casuale(32), KY = P.casuale(32);
 await lnk.goto(finta(KX));
 await aspettaTel(lnk, /Mi collego|non risponde/, 10000);
 const cx = await chiaveTel(lnk);
-check(cx && cx.stanza === await stanzaDi(KX) && !("k" in cx) && !("scade" in cx), "un link del QR: sul telefono resta l'associazione (senza la chiave in chiaro, e senza scadenza: l'associazione non scade)");
+check(!cx && !(await listaK()).length && /Mi collego|non risponde/.test(await testoTel(lnk)), "un link del QR di un PC che non risponde: il telefono ci prova, ma su disco niente (P2-7: si salva quando il PC saluta)");
 {
   // (3.87) un link che dice di valere 100 anni non è di un PC di PS Assist (un adesivo, un link mandato): non si usa
   await lnk.goto(finta(P.casuale(32), Date.now() + 100 * 365 * 86400e3));
-  check(/QR non valido/.test(await aspettaTel(lnk, /QR non valido/, 10000)) && (await chiaveTel(lnk))?.stanza === cx.stanza, "un link con una scadenza di 100 anni: «QR non valido», e l'associazione di prima resta");
+  check(/QR non valido/.test(await aspettaTel(lnk, /QR non valido/, 10000)) && !(await listaK()).length, "un link con una scadenza di 100 anni: «QR non valido», e niente salvato");
 }
 await lnk.goto(finta(KY));
 await aspettaTel(lnk, /Mi collego|non risponde/, 10000);
-const cy = await chiaveTel(lnk);
-check(cy && cy.stanza === await stanzaDi(KY), "un QR nuovo aggiunge un PC e ci passa: il suo è l'attivo");
-const ks = await listaK();
-check(ks.length === 2 && ks.includes(await stanzaDi(KX)) && ks.includes(await stanzaDi(KY)), "…e non toglie quello di prima: la lista tiene i due PC, ognuno la sua chiave");
+check(!(await listaK()).length, "un altro QR che non risponde: nemmeno lui su disco (la lista si riempie solo di PC che hanno salutato)");
 await linkCtx.close();
 // l'associazione non scade: passate le 14 ore (e il PC controlla), la chiave c'è ancora, sul PC e sul telefono, e il telefono riapre
 const K2 = P.b64u(P.leggiFrammento(new URL(url2).hash).k);

@@ -172,7 +172,7 @@
   // da un link: la chiave (l'associazione non scade: finisce con «Scollega» qui o con la revoca sul PC),
   // fin quando il link vale per il primo scambio, e un numero nuovo per questo telefono
   // (3.87) un QR vale pochi minuti: il PC scrive l'ora di fine a 5 minuti da quando lo mostra. Uno che dice
-  // di valere più di 6 minuti da adesso non è di un PC di PS Assist (un adesivo, un link mandato): non si usa.
+  // di valere più di 11 minuti da adesso (con l'orologio del PC fino a 5 avanti) non è di un PC di PS Assist (un adesivo, un link mandato): non si usa.
   // (P3: 5 minuti del QR più fino a 5 di orologio del PC avanti, e un margine — un QR di 30 giorni resta fuori)
   const QR_MAX_AVANTI = 11 * 60e3;
   const GIRO_MS = 4000;   // (P2-1) il PC non c'è in questa stanza da tanto: si prova l'altra
@@ -523,7 +523,7 @@
     if (!pari && S.stanze && S.stanze.length > 1) {
       const ws = S.ws;
       S.tGiro = setTimeout(() => { if (S.ws === ws && S.pari !== true) { S.giro = (S.giro || 0) + 1; chiudiPresa(); collega(); } },
-        Math.min(60e3, GIRO_MS * 2 ** Math.floor((S.giro || 0) / 2)));   // (un PC spento: sempre più di rado)
+        Math.min(60e3, (S.canale ? 3 : 1) * GIRO_MS * 2 ** Math.floor((S.giro || 0) / 2)));   // (un PC spento: sempre più di rado; con una sessione aperta si aspetta di più — un PC che si rifà la presa torna in un attimo)
     }
     if (pari && !S.canale && !S.saluto && (S.fase === "collego" || S.fase === "pc")) saluta();
     else if (pari && S.canale) {
@@ -791,6 +791,9 @@
   // Il PC è di un altro telefono. La chiave del QR resta (serve a «Usa questo
   // telefono»); non si prova da sé, e dati non ce ne sono.
   function rifiuta() {
+    // (il PC del QR c'è, e ha un altro telefono: la sua chiave si tiene — serve a «Usa questo telefono», anche
+    // riaprendo l'app —; non prende il posto di nessuno, quindi non c'è niente da chiedere: P2-7)
+    if (S.coppia && S.coppia.provvisoria) { S.classifica = false; conferma(S.coppia).catch(() => {}); }
     S.canale = null; S.saluto = null; S.nSessione = "";
     S.cambio = { arma: 0, errore: "", occupato: false };
     S.fase = "rifiutato"; S.menu = false;
