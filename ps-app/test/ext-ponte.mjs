@@ -2101,7 +2101,7 @@ check(/Dimesso sul PC: niente inviato/.test(await aspettaTel(tel, /Dimesso sul P
 check(!(await notePc()).some((t) => /dimissione/.test(t)), "e la nota non arriva");
 await sw.evaluate(() => { self.__rigaPrima = null; });
 await tocca(tel, '[data-a="indietro"]');
-check(!/VERDI/.test(await aspettaTel(tel, /ROSSI MARIO/, 10000)), "e dall'elenco del telefono se ne va");
+check(await finche(async () => { const t = await testoTel(tel); return /ROSSI MARIO/.test(t) && !/VERDI/.test(t); }, 10000), "e dall'elenco del telefono se ne va");
 // un paziente senza parametri letti (o un PC più vecchio, che il campo non lo manda): niente riga, nessun errore
 await tocca(tel, '.paz[data-ep="999001"]');
 await aspettaTel(tel, /Richieste/, 10000);
