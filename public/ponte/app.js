@@ -173,6 +173,7 @@
   // (3.87) un QR vale pochi minuti: il PC scrive l'ora di fine a 5 minuti da quando lo mostra. Uno che dice
   // di valere più di 6 minuti da adesso non è di un PC di PS Assist (un adesivo, un link mandato): non si usa.
   const QR_MAX_AVANTI = 6 * 60e3;
+  const GIRO_MS = 4000;   // (P2-1) il PC non c'è in questa stanza da tanto: si prova l'altra
   function dalLink(hash) {
     const c = P.leggiFrammento(hash);
     return c ? { k: c.k, qrScade: c.scade, dev: nuovoDev(), falso: c.scade > Date.now() + QR_MAX_AVANTI } : null;
@@ -187,7 +188,7 @@
       const v = S.pcs.map((p) => ({ dev: p.dev, kind: p.kind || "", nome: p.nome || "", id: p.id, stanza: p.stanza || "",
         ...(senzaCassa && p.k instanceof Uint8Array ? { k: P.b64u(p.k) } : {}),
         ...(p.rinnovata ? { rinnovata: p.rinnovata } : {}),
-        ...(p.ver ? { ver: p.ver } : {}), ...(p.visto ? { visto: p.visto } : {}) }));   // (per ⋯ → Dispositivi: la versione, e quando si è fatto sentire)
+        ...(p.qrFino ? { qrFino: p.qrFino } : {}), ...(p.ver ? { ver: p.ver } : {}), ...(p.visto ? { visto: p.visto } : {}) }));   // (per ⋯ → Dispositivi: la versione, e quando si è fatto sentire)
       localStorage.setItem(PCS, JSON.stringify({ v, attivo: S.attivo }));
     } catch { /* solo in memoria */ }
   }
@@ -200,6 +201,7 @@
       id: typeof x.id === "string" && x.id ? x.id : nuovoId(),
       stanza: /^[0-9a-f]{32}$/.test(x.stanza || "") ? x.stanza : "",
       rinnovata: Number.isSafeInteger(x.rinnovata) && x.rinnovata > 0 ? x.rinnovata : 0,
+      qrFino: Number.isSafeInteger(x.qrFino) && x.qrFino > 0 ? x.qrFino : 0,
       ver: verOk(x.ver), visto: Number.isSafeInteger(x.visto) && x.visto > 0 ? x.visto : 0 };
     if (typeof x.k === "string") {
       const raw = P.daB64u(x.k);
@@ -352,10 +354,19 @@
     const ch = await P.chiaviCoppia(c.k);
     if (!c.stanza) c.stanza = ch.stanza;
     S.chiavi = { ...ch, stanza: c.stanza, k: c.k };
+    S.stanze = stanzeDi(c, ch.stanza);
     S.chiaviProssima = c.prossima ? { ...(await P.chiaviCoppia(c.prossima)), stanza: c.stanza, k: c.prossima } : null;
     S.entra = [(await P.chiaviEntra(c.k)).tel, S.chiaviProssima ? (await P.chiaviEntra(c.prossima)).tel : "", c.jkVecchia && c.jkVecchia.fino > Date.now() ? c.jkVecchia.tel : ""].filter(Boolean);
     S.codice = await P.codice(c.k);
   }
+  // (P2-1) Le stanze dove cercare il PC: rinnovata la chiave, finita la finestra del QR, il PC passa alla stanza che
+  // nasce dalla chiave nuova (`kStanza`); prima, e se lì non c'è, quella di prima (`c.stanza`). La prima è la più
+  // probabile; se il PC non c'è, si prova l'altra (S.giro). Trovato il PC nella stanza nuova, è lei per sempre.
+  function stanzeDi(c, kStanza) {
+    const dopo = Date.now() > (c.qrFino || 0) + 30e3;
+    return [...new Set(dopo ? [kStanza, c.stanza] : [c.stanza, kStanza])].filter((x) => /^[0-9a-f]{32}$/.test(x || ""));
+  }
+  const stanzaOra = () => (S.stanze && S.stanze.length ? S.stanze[(S.giro || 0) % S.stanze.length] : S.chiavi.stanza);
   // La sfida del ripetitore (3.87): la prova con ogni chiave d'entrata che si ha (quella di adesso, quella
   // rinnovata, quella di prima): una basta. Un ripetitore di prima non la manda, e si entra come sempre.
   async function rispondiSfida(ws, sfida, chiavi) {
@@ -381,9 +392,10 @@
   function collega() {
     if (!S.chiavi || (S.ws && S.ws.readyState <= 1) || !davantiOra()) return;   // (in sottofondo nessuna presa)
     clearTimeout(S.tRiprova); clearInterval(S.tGrazia); S.tGrazia = 0;
-    const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ponte/ws?r=${S.chiavi.stanza}&ruolo=tel`);
+    const stanza = stanzaOra();
+    const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ponte/ws?r=${stanza}&ruolo=tel`);
     ws.binaryType = "arraybuffer";
-    S.ws = ws;
+    S.ws = ws; S.wsStanza = stanza;
     // (una rete lenta o sparita può lasciarla «in apertura» per minuti)
     const tApri = setTimeout(() => { if (S.ws === ws && ws.readyState === 0) try { ws.close(); } catch { /* già chiusa */ } }, APRI_MAX);
     let fila = Promise.resolve();
@@ -479,6 +491,19 @@
   // Il ponte dice solo se dall'altra parte c'è il PC.
   function presenza(pari) {
     S.pari = pari;
+    // (P2-1) il PC c'è nella stanza della chiave nuova: da adesso è lei la stanza di questa coppia
+    if (pari && S.coppia && S.wsStanza && S.wsStanza !== S.coppia.stanza && S.stanze && S.stanze.includes(S.wsStanza)) {
+      S.coppia.stanza = S.wsStanza; S.chiavi = { ...S.chiavi, stanza: S.wsStanza }; S.stanze = [S.wsStanza]; S.giro = 0;
+      if (S.chiaviProssima) S.chiaviProssima = { ...S.chiaviProssima, stanza: S.wsStanza };
+      salvaPcs();
+    }
+    // …il PC non c'è: fra poco, l'altra stanza (se ce n'è un'altra)
+    clearTimeout(S.tGiro);
+    if (!pari && S.stanze && S.stanze.length > 1) {
+      const ws = S.ws;
+      S.tGiro = setTimeout(() => { if (S.ws === ws && S.pari !== true) { S.giro = (S.giro || 0) + 1; chiudiPresa(); collega(); } },
+        Math.min(60e3, GIRO_MS * 2 ** Math.floor((S.giro || 0) / 2)));   // (un PC spento: sempre più di rado)
+    }
     if (pari && !S.canale && !S.saluto && (S.fase === "collego" || S.fase === "pc")) saluta();
     else if (pari && S.canale) {
       rimanda();          // le domande rimaste senza risposta: di nuovo (il PC non rifà una scrittura)
@@ -1533,7 +1558,9 @@
   async function sonda(p) {
     let ch, entra;
     try {
-      ch = { ...(await P.chiaviCoppia(p.prossima || p.k)), ...(p.stanza ? { stanza: p.stanza } : {}) };
+      ch = await P.chiaviCoppia(p.prossima || p.k);
+      // (P2-1: la stanza più probabile — quella della chiave, finita la finestra del QR)
+      ch = { ...ch, stanza: stanzeDi(p, (await P.chiaviCoppia(p.k)).stanza)[0] || ch.stanza };
       entra = [(await P.chiaviEntra(p.k)).tel, p.prossima ? (await P.chiaviEntra(p.prossima)).tel : "", p.jkVecchia && p.jkVecchia.fino > Date.now() ? p.jkVecchia.tel : ""].filter(Boolean);
     } catch { return { stato: "giu" }; }
     return new Promise((fine) => {
@@ -3066,7 +3093,7 @@
       // un PC nuovo: entry provvisoria, si collega e il saluto decide dove va
       // (aggiunge un PC di sola lettura, sostituisce il PC completo — chiedendolo prima). Non tocca
       // le altre associazioni: ognuna ha la sua chiave. (La chiave, non estraibile, nella cassa.)
-      const nuova = { k: senzaCassa ? link.k : await P.chiaveDa(link.k), dev: link.dev, kind: "", nome: "", id: nuovoId(), stanza };
+      const nuova = { k: senzaCassa ? link.k : await P.chiaveDa(link.k), dev: link.dev, kind: "", nome: "", id: nuovoId(), stanza, qrFino: link.qrScade + 60e3 };
       await salvaChiave(nuova);
       S.pcs = [nuova, ...S.pcs]; S.attivo = nuova.id; S.classifica = true; salvaPcs();
       await parti(nuova);

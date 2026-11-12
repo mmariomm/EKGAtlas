@@ -316,7 +316,7 @@ async function ponteLeggiCoppia() {
     const firma = `${c.id}.${c.gen || 0}.${!!x.qr}.${!!x.qrRaw}.${!!x.prossima}.${!!x.vecchia}.${!!x.scartata}`;
     if (pt.cassaDi !== firma) {
       const ora = await ponteDa(x.k);
-      pt.k = ora.k; pt.chiavi = { ...ora.chiavi, stanza: c.stanza }; pt.entra = ora.entra;
+      pt.k = ora.k; pt.chiavi = ora.chiavi; pt.entra = ora.entra;
       pt.codice = await PonteCripto.codice(x.k);
       pt.qr = x.qr && x.qr !== x.k ? await ponteDa(x.qr) : null;
       pt.qrRaw = x.qrRaw || null;
@@ -404,9 +404,15 @@ chrome.tabs.onUpdated.addListener((id, info) => {
 // chiave d'entrata del PC (la stanza la tiene la prima volta, e la cambia se le si prova quella di prima: `p`),
 // `a` quelle del telefono — quando si sa che il telefono sa provare (una coppia nuova, o un telefono che l'ha detto),
 // la chiave di adesso e, nella finestra del QR, quella del QR (per «Usa questo telefono»).
+// (P2-1) La stanza: nella finestra del QR quella del QR (`coppia.stanza`: lì si cambia telefono, lì sta chi ha
+// solo il QR); fuori, quella della chiave di adesso (PonteCripto.chiaviCoppia(K).stanza). Finché la chiave è
+// quella del QR (o, per una coppia migrata, quella della 3.86) sono la stessa; rinnovata, la coppia passa a una
+// stanza che nasce da K' — nessuno l'ha mai vista in un indirizzo — e il PC ci registra subito la sua chiave
+// d'entrata, quando ci entra per primo. Il numero della stanza di prima, visto negli indirizzi, non porta più a niente.
+const ponteStanza = () => (ponteFinestra() || !pt.chiavi || !pt.chiavi.stanza ? pt.coppia.stanza : pt.chiavi.stanza);
 function ponteUrlPresa() {
   const u = new URL(pt.host);
-  const base = `${u.protocol === "https:" ? "wss:" : "ws:"}//${u.host}/ponte/ws?r=${pt.chiavi.stanza}&ruolo=pc`;
+  const base = `${u.protocol === "https:" ? "wss:" : "ws:"}//${u.host}/ponte/ws?r=${ponteStanza()}&ruolo=pc`;
   if (!pt.entra) return base;
   const prove = [pt.qr && pt.qr.entra.pc, pt.vecchia && pt.vecchia.entra].filter((x) => x && x !== pt.entra.pc);
   // (P2-8) le chiavi del telefono che vengono dal QR (o dal telefono sostituito nella sua finestra) valgono, per
@@ -562,7 +568,7 @@ async function ponteRinnovataOra() {
   const gen = (pt.coppia.gen || 0) + 1, ora = ponteOra();
   await ponteScriviCoppia({ ...pt.coppia, gen, rinnovata: ora, telProva: true, suQr: false, rinnovaOk: false });
   const prima = { k: pt.k, chiavi: pt.chiavi, entra: pt.entra };
-  pt.k = pt.prossima.k; pt.chiavi = { ...pt.prossima.chiavi, stanza: pt.coppia.stanza }; pt.entra = pt.prossima.entra;
+  pt.k = pt.prossima.k; pt.chiavi = pt.prossima.chiavi; pt.entra = pt.prossima.entra;
   pt.codice = await PonteCripto.codice(pt.k);
   if (qr && !pt.qr) pt.qr = prima;
   pt.prossima = null; pt.vecchia = vecchia; pt.chiaviDi = `${pt.coppia.id}.${gen}`;
@@ -587,7 +593,7 @@ async function ponteTornaAOra(quale, perche) {
   await ponteScriviCoppia({ ...pt.coppia, gen, suQr: quale === "qr" });
   const prima = { k: pt.k, chiavi: pt.chiavi, entra: pt.entra };
   pt.vecchia = vecchia;
-  pt.k = da.k; pt.chiavi = { ...da.chiavi, stanza: pt.coppia.stanza }; pt.entra = da.entra;
+  pt.k = da.k; pt.chiavi = da.chiavi; pt.entra = da.entra;
   pt.codice = await PonteCripto.codice(pt.k);
   // (il QR resta per la sua finestra, se non è lui la chiave di adesso)
   pt.qr = quale === "qr" ? null : pt.qr || (x.qr && x.qr !== nuova ? prima : null);

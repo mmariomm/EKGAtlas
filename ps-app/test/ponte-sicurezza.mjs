@@ -422,7 +422,8 @@ await blocco(async () => {
   check(!sd, "la chiave del QR e il dev di A (letti dai byte): nessuna sessione — la chiave dell'associazione non è più quella del QR");
   // A, con la chiave nuova, rientra (anche nella stanza: la sua chiave d'entrata è quella nuova)
   A.chiudi(); await sospendi(100);
-  const A2 = telNode(stanza, A.k, devA); A2.vecchia = A.vecchia;
+  // (P2-1: finita la finestra, il PC è nella stanza della chiave nuova — quella di A)
+  const A2 = telNode((await P.chiaviCoppia(A.k)).stanza, A.k, devA); A2.vecchia = A.vecchia; A2.qrStanza = stanza;
   check(await A2.apri() && !!(await A2.saluta()) && (await A2.chiedi("ciao"))?.ok, "A, con la chiave nuova, rientra e lavora");
   // il cambio turno: un altro utente nel gestionale
   await pc.pagina({ t: "ponteOperatore", nome: "BIANCHI DOTT. ANNA" }, pc.scheda);
@@ -537,6 +538,45 @@ await blocco(async () => {
   await B.saluta(); await B.chiedi("ciao");
   const rb = await B.rinnova();
   check(rb && !rb.ok && !pc2.locale["ponte.coppia"].rinnovata, "P2-3. finita la finestra del QR senza rinnovo: il PC non rinnova più (chi ha fotografato il QR non si fa una chiave sua dopo)");
+  B.chiudi();
+  await pc2.ev("pt.presa.ferma()");
+});
+sezione("rinnovata la chiave, la coppia cambia stanza (P2-1)");
+await blocco(async () => {
+  // una coppia migrata dalla 3.86 (il numero della sua stanza è negli indirizzi di mesi): rinnovata, il PC passa
+  // subito alla stanza che nasce da K' e ci registra la sua chiave; un estraneo che conosce solo il numero di prima
+  // lì non trova nessuno — e nella stanza nuova non può prenotarsi il posto (non ne sa il numero)
+  const K = P.casuale(32), dev = P.b64u(P.casuale(16)), vecchiaStanza = (await P.chiaviCoppia(K)).stanza;
+  const pc = await pcVero({ locale: { "ponte.coppia": { k: P.b64u(K), creata: Date.now() - 864e5, usata: true, dev, nTel: "" } } });
+  await pc.ev("ponteAvvia()");
+  await finche(() => pc.ev("pt.presa.su"));
+  const A = telNode(vecchiaStanza, K, dev);
+  await A.apri(); await A.saluta(); await A.chiedi("ciao");
+  // (il telefono ha detto di saper provare: il PC rientra con la sua chiave; poi il rinnovo, da una presa entrata)
+  await sospendi(300); A.chiudi(); await A.apri(); await A.saluta(); await A.chiedi("ciao");
+  check((await A.rinnova())?.ok && !!(await A.saluta())?.n && !A.prossima, "la coppia migrata si rinnova alla sua prima sessione 3.87");
+  const nuova = (await P.chiaviCoppia(A.k)).stanza;
+  check(await finche(() => pc.ev("pt.presa.su") && pc.ev("pt.presa.url").includes(`r=${nuova}&`), 4000) && nuova !== vecchiaStanza,
+    "P2-1. …e il PC passa subito alla stanza che nasce dalla chiave nuova (quella di prima, vista negli indirizzi, non porta più a lui)");
+  const x = presa(vecchiaStanza, "pc", { chiave: (await P.chiaviEntra(P.casuale(32))).pc });
+  await x.aperta; await sospendi(150);
+  A.chiudi();
+  const A2 = telNode(nuova, A.k, dev); A2.vecchia = A.vecchia;
+  check(nuova !== vecchiaStanza && await A2.apri() && !!(await A2.saluta()) && (await A2.chiedi("ciao"))?.ok, "P2-1. il telefono trova il PC nella stanza nuova, e lavora — chi sta nella stanza di prima non tocca niente");
+  x.chiudi(); A2.chiudi();
+  await pc.ev("pt.presa.ferma()");
+  // una coppia nuova: nella finestra del QR resta nella stanza del QR (il cambio di telefono si fa lì), poi passa
+  const pc2 = await pcVero();
+  const r = await pc2.pagina({ t: "ponteAssocia" });
+  const k = P.leggiFrammento(new URL(r.qr).hash).k, qrStanza = (await P.chiaviCoppia(k)).stanza;
+  await finche(() => pc2.ev("pt.presa.su"));
+  const B = telNode(qrStanza, k, P.b64u(P.casuale(16)));
+  await B.apri(); await B.saluta(); await B.chiedi("ciao"); await B.rinnova(); await B.saluta();
+  const kSt = (await P.chiaviCoppia(B.k)).stanza;
+  check(kSt !== qrStanza && pc2.ev("pt.presa.url").includes(`r=${qrStanza}&`), "P2-1. una coppia nuova, rinnovata nella finestra del QR: il PC resta nella stanza del QR finché la finestra c'è");
+  pc2.salta(7 * 60e3);
+  await pc2.ev("ponteAvvia()");
+  check(kSt !== qrStanza && await finche(() => pc2.ev("pt.presa.url").includes(`r=${kSt}&`), 3000), "P2-1. …finita la finestra, passa alla stanza della chiave nuova");
   B.chiudi();
   await pc2.ev("pt.presa.ferma()");
 });
