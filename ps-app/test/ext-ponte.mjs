@@ -1144,6 +1144,13 @@ check(rxNuovoPrima && await finche(visteRx, 8000) && !(await nuovoRx()),
   await sospendi(500);
   check(/● 2 nuovi/.test(es2) && detto && (await statoR()).valori?.nuovi === 2,
     `guardati sul telefono, ma il PC ha letto valori più nuovi intanto: «N nuovi» resta sul PC (${JSON.stringify((await statoR()).valori)})`);
+  // …e un «visto» con una tabella più vecchia di quanto il PC ha già visto non riporta indietro l'ora dei visti
+  const ev0 = Date.now();
+  await doc.evaluate((t) => { const K = "psassist:stato.v1", S = JSON.parse(localStorage.getItem(K) || "{}"); S["999001"] = { ...(S["999001"] || {}), esitiVisto: t }; localStorage.setItem(K, JSON.stringify(S)); }, ev0);
+  const qui = await sw.evaluate((u) => chrome.tabs.query({}).then((l) => (l.find((t) => t.url === u) || l.find((t) => t.active && /\/sa4pso\//.test(t.url || "")) || {}).id), doc.url());
+  const rv = await sw.evaluate(([id, f]) => chrome.tabs.sendMessage(id, { t: "ponteEsegui", cmd: "visto", args: { ep: "999001", valori: true, fino: f } }), [qui, ev0 - 10 * 60e3]);
+  const ev1 = (await statoR()).esitiVisto || 0;
+  check(rv?.ok && ev1 >= ev0, `un «visto» con la tabella di 10 minuti fa: l'ora dei visti non torna indietro (${ev1 - ev0} ms · ${JSON.stringify(rv)})`);
 }
 
 // ===========================================================================

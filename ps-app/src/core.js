@@ -17936,7 +17936,8 @@
           const sc = scegliScheda((r && r.ok && r.indice) || [], String(p.pk || "").startsWith("cf:") ? p.pk.slice(3) : "", p.name, p.ep);
           dopo = !!sc && (Number(sc.letto) || 0) > fino;
         }
-        scriviStato(p.ep, (s) => ({ ...s, ...(dopo ? {} : { valori: { nuovi: 0, fuori: 0, fuoriTot: 0 } }), esitiVisto: fino || ora, ...(fino > (s.valoriVisti || 0) ? { valoriVisti: fino } : {}) }));
+        // (l'ora dei visti non torna mai indietro: una tabella più vecchia di quanto il PC ha già visto non riaccende i «nuovi»)
+        scriviStato(p.ep, (s) => ({ ...s, ...(dopo ? {} : { valori: { nuovi: 0, fuori: 0, fuoriTot: 0 } }), esitiVisto: Math.max(s.esitiVisto || 0, fino || ora), ...(fino > (s.valoriVisti || 0) ? { valoriVisti: fino } : {}) }));
       }
       if (!PANNELLO.root.activeElement) PANNELLO.render();
       return fatto({ ok: true, registro: `visti sul telefono: ${[ids.length ? (ids.length === 1 ? "un referto" : `${ids.length} referti`) : "", a.valori ? "gli esiti" : ""].filter(Boolean).join(" e ") || "niente"} di ${p.name}` });
