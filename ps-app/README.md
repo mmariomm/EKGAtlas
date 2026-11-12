@@ -1946,8 +1946,8 @@ mai attaccati a un referto (niente li collega). Il referto in PDF resta lì acca
   → suo endpoint PDF) e a salvare i byte nella memoria dell'estensione, su questa macchina.
   Solo con l'**estensione**: il bookmarklet non può farlo. Se un referto non è
   salvabile resta senza pallino e il **motivo** compare passandoci sopra col mouse (e nel Registro).
-  Scadono in **8 ore**, massimo 25, e si azzerano alla chiusura del browser; **⋯ → Dimentica i
-  dati…**, subito.
+  Scadono in **8 ore**, massimo 200, e si azzerano al **riavvio** del browser (chiuso, restano su
+  disco fino alla prossima apertura); **⋯ → Dimentica i dati…**, subito.
 
 > **Da configurare una volta**: l'host del visualizzatore è dichiarato in
 > `extension/manifest.json` → `host_permissions` (oggi `http://10.11.0.151:9080/*`). Se nella tua
@@ -2562,8 +2562,8 @@ nella tendina del gestionale») — poi **Prepara nel gestionale** (o Ctrl+Invio
     nessuna parte: non c'è una richiesta, né una notifica fuori dal pannello. Ma valori e testi dei referti letti in un turno stanno nel
     `sessionStorage` della scheda: **Chrome lo tiene anche su disco**, nel profilo, per poter
     ripristinare le schede — muore chiudendo la scheda, non prima. I PDF salvati stanno nella
-    memoria dell'estensione (su disco), scadono dopo 8 ore, massimo 25, e si azzerano alla
-    chiusura del browser. Le **schede cliniche** (tabella multi-prelievo, testi dei referti letti)
+    memoria dell'estensione (su disco), scadono dopo 8 ore, massimo 200, e si azzerano al
+    riavvio del browser (fra la chiusura e la prossima apertura restano su disco). Le **schede cliniche** (tabella multi-prelievo, testi dei referti letti)
     stanno nella memoria dell'estensione, quindi **su disco**: un turno dura dodici ore e non si
     può perdere tutto chiudendo il browser. Scadono da sole **24 ore** dopo l'ultima lettura, al
     massimo 200 pazienti. La pagina di login cancella il resto — ma il `sessionStorage` è

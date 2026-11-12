@@ -14,7 +14,7 @@
  */
 (function (g) {
   // Il grezzo di una fonte («grezzi»: la registrazione a mano; «scorre»: gli
-  // ultimi 10 minuti), da `da` in poi, già anonimizzato e chiuso in uno zip.
+  // ultimi 3 minuti), da `da` in poi, già anonimizzato e chiuso in uno zip.
   // `nomi`: i pazienti che l'estensione conosce (registra.js), sostituiti come quelli delle pagine.
   async function esporta({ fonte = "grezzi", st, errori = [], da = 0, nomi = [], opz = {} }) {
     const pagine = [], flusso = [], note = [], schede = [], clic = [], grezzi = [], registro = [], diagnosi = [];
