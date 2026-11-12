@@ -1011,6 +1011,7 @@ await blocco(async () => {
     { cmd: "cartellaSalva", ep: "1", campi: { ANAMNESI: { prima: "a", dopo: "b" } } },
     { cmd: "terapiaAggiungi", ep: "1", voce: "x", visti: [] },
     { cmd: "accetta", ep: "1" },
+    { cmd: "areaApri", ep: "1", rq: "rq-area-prova-01" },   // (passa il gestionale a un'altra area: cambia la sessione)
     { cmd: "nota", ep: "1", testo: "x" },
     { cmd: "promemoria", ep: "1", testo: "11:30 x" },
     { cmd: "fatto", ep: "1", pid: "p1" },

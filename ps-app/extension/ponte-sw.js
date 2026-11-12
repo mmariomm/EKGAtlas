@@ -109,6 +109,11 @@ const pt = {
   terapiaRq: new Map(), // rq → la terapia dal telefono che sta andando (la stessa risposta a chi la rimanda)
   accette: new Map(),  // scheda → { ep, k, nome, area, rq, fase, risolvi }: «Accetta in ambulatorio» (la lista del triage, la freccia)
   accettaRq: new Map(), // rq → l'accettazione dal telefono che sta andando
+  liste: new Map(),    // scheda → { ep, k, nome, nato, risolvi, visto }: la lista dell'area, per chi il PC conosce solo dalla smart
+  listaPer: new Map(), // ep (la chiave della smart) → { ts, promessa }: una lettura della sua lista, in corso o fatta da poco
+  rinominati: new Map(), // ep della smart → { a, ts }: il suo episodio vero, trovato nella lista della sua area
+  areaRq: new Map(),   // rq → «Passa il PC all'area …» dal telefono che sta andando
+  areaAttese: new Map(), // rq → chi aspetta com'è finito il passaggio d'area (lo dice la scheda: ponteAreaFatto)
   inVolo: new Map(),   // "tel"+oid → l'ordine che una scheda sta ancora preparando
   fila: Promise.resolve(),
 };
@@ -308,6 +313,9 @@ async function ponteControlla() {
   }
   for (const [id, v] of Object.entries(await ponteAccetteTutte())) {
     if (ora - v.ts > PONTE_ACCETTA_MAX + 5e3) await ponteAccettaFine(Number(id), { ok: false, incerto: true, testo: "la scheda non ha finito in tempo" });
+  }
+  for (const [id, v] of Object.entries(await ponteListeTutte())) {
+    if (ora - v.ts > PONTE_LISTA_MAX + 5e3) await ponteListaFine(Number(id), { ok: false, testo: "la lista non è arrivata in tempo" });
   }
   if (pt.sessione && ora - pt.sessione.ultimo >= PONTE_INATTIVO) await ponteFine("inattivo");
   if (pt.attesa && ora - pt.attesa.ts > PONTE_SALUTO_MAX) { pt.attesa = null; ponteSessioneSalva(); }
@@ -686,7 +694,7 @@ async function ponteRisposta(s, d) {
     if (d.cmd === "tocco") return { ok: true };
     if (d.cmd === "ordini") return { ok: true, dati: await ponteOrdiniTel() };
     if (d.cmd === "dispositivo") return { ok: true, dati: await ponteDispositivo() };
-    if (d.cmd === "aggiornaValori") { const a = ponteArgomenti(d); return await ponteOffriPdf(s, await ponteAggiornaValori(a), a.ep); }
+    if (d.cmd === "aggiornaValori") { const a = ponteArgomenti(d), r = await ponteConLista(d, a, ponteAggiornaValori); return await ponteOffriPdf(s, r, ponteEpDi(r, a.ep)); }
     if (d.cmd === "ordina") {
       // Un ordine arrivato più di 30 secondi dopo il tocco (rimasto in una presa
       // morta, ritardato per strada, rimandato tardi) non si fa: il telefono l'ha
@@ -707,13 +715,14 @@ async function ponteRisposta(s, d) {
     if (d.cmd === "registrazioni") return await ponteRegistrazioni(s, d);
     if (d.cmd === "registrazione") return await ponteDaiRegistrazione(s, d);
     if (d.cmd === "registrazioneVia") return await ponteViaRegistrazione(s, d);
-    if (d.cmd === "cartella") return await ponteCartella(ponteArgomenti(d));
+    if (d.cmd === "cartella") return await ponteConLista(d, ponteArgomenti(d), ponteCartella);
     if (d.cmd === "cartellaSalva") return await ponteCartellaSalva(d);
-    if (d.cmd === "terapie") return await ponteTerapie(ponteArgomenti(d));
+    if (d.cmd === "terapie") return await ponteConLista(d, ponteArgomenti(d), ponteTerapie);
     if (d.cmd === "terapiaCerca") return await ponteTerapiaCerca(d);
     if (d.cmd === "terapiaAggiungi") return await ponteTerapiaAggiungi(d);
     if (d.cmd === "terapiaFine") return await ponteTerapiaBasta();
     if (d.cmd === "accetta") return await ponteAccetta(d);
+    if (d.cmd === "areaApri") return await ponteAreaApri(d);
     // il QR di una stazione di stampa, inquadrato dal telefono: il PC la collega (stazione-sw.js)
     if (d.cmd === "stazioneCollega" && typeof stazioneCollega === "function") {
       const r = await stazioneCollega(d);
@@ -723,10 +732,10 @@ async function ponteRisposta(s, d) {
     }
     if (["pazienti", "mappa", "eo", "triage", "esiti", "richieste", "ristampe", "nota", "promemoria", "fatto", "dfAggiungi", "dfSpunta", "dfTogli", "posto", "visto"].includes(d.cmd)) {
       const a = ponteArgomenti(d);
-      const r = await ponteSuScheda(d.cmd, a);
+      const r = d.cmd === "esiti" ? await ponteConLista(d, a, (x) => ponteSuScheda("esiti", x)) : await ponteSuScheda(d.cmd, a);
       if (r.registro) { ponteNota(r.registro); delete r.registro; await ponteScriviStato(); }
       if (d.cmd === "richieste" && r.ok && r.dati) r.dati.stampa = await ponteStampaDove();
-      return d.cmd === "esiti" ? await ponteOffriPdf(s, r, a.ep) : r;
+      return d.cmd === "esiti" ? await ponteOffriPdf(s, r, ponteEpDi(r, a.ep)) : r;
     }
     return { ok: false, errore: "Comando sconosciuto" };
   } catch (e) {
@@ -1007,6 +1016,7 @@ async function ponteSchede() {
   for (const id of Object.keys(await ponteCartelleTutte())) lavoro.add(Number(id));
   for (const id of Object.keys(await ponteTerapieTutte())) lavoro.add(Number(id));
   for (const id of Object.keys(await ponteAccetteTutte())) lavoro.add(Number(id));
+  for (const id of Object.keys(await ponteListeTutte())) lavoro.add(Number(id));
   const tutte = (await chrome.tabs.query({}).catch(() => [])).filter((t) => sulGestionale(t.url) && !t.discarded && !lavoro.has(t.id));
   const win = await chrome.windows.getLastFocused().catch(() => null);
   const peso = (t) => (t.active ? 2 : 0) + (win && t.windowId === win.id ? 1 : 0);
@@ -1201,6 +1211,10 @@ async function ponteLavoroDi(tabId) {
   if (w) return { ponteTerapia: w.fermo ? { ep: w.ep, fase: "fermo" } : ponteTerapiaLavoro(w) };
   const b = (await ponteTerapieTutte())[tabId];
   if (b) return { ponteTerapia: { ep: b.ep, fase: "perso" } };
+  // la scheda della lista dell'area: di chi (o, se il service worker ha perso il lavoro, niente)
+  const li = pt.liste.get(tabId);
+  if (li) { li.visto = true; return { ponteLista: { ep: li.ep, k: li.k, nome: li.nome, nato: li.nato } }; }
+  if ((await ponteListeTutte())[tabId]) return { ponteLista: { fase: "perso" } };
   // la scheda di «Accetta in ambulatorio»: chi, e a che punto (dopo il clic si guarda e basta)
   const x = pt.accette.get(tabId);
   if (x) { x.visto = true; return { ponteAccetta: { ep: x.ep, k: x.k, nome: x.nome, area: x.area, fase: x.fase } }; }
@@ -1210,6 +1224,7 @@ chrome.tabs.onRemoved.addListener((id) => { ponteValoriFine(id, { ok: false, tes
 chrome.tabs.onRemoved.addListener((id) => { ponteCartellaFine(id, { ok: false, incerto: pt.cartelle.get(id)?.fase === "inviato", testo: "la scheda è stata chiusa" }).catch(() => {}); });
 chrome.tabs.onRemoved.addListener((id) => { ponteTerapiaFine(id, { ok: false, incerto: pt.terapie.get(id)?.fase === "inviato", testo: "la scheda è stata chiusa" }).catch(() => {}); });
 chrome.tabs.onRemoved.addListener((id) => { ponteAccettaFine(id, { ok: false, incerto: ponteAccettaDopo(id), testo: "la scheda è stata chiusa" }).catch(() => {}); });
+chrome.tabs.onRemoved.addListener((id) => { ponteListaFine(id, { ok: false, testo: "la scheda della lista è stata chiusa" }).catch(() => {}); });
 
 // ------------------------------------------------- la cartella dal telefono
 // Leggere: l'ultima lettura della pagina del paziente — annotata a ogni sua
@@ -1787,6 +1802,257 @@ async function ponteAccettaFine(id, esito) {
   return true;
 }
 
+// ------------------------- chi il PC conosce solo dalla lista smart
+// La lista smart non porta link: di chi il PC conosce solo da lì non c'è
+// l'indirizzo della pagina, e non si costruisce. Lo dà la riga della lista
+// della sua area. Due vie, mai da sole: il tocco del medico sul telefono.
+//  - La sua area è quella in testa al gestionale adesso (`smart.qui`): una
+//    lettura (esiti, ↻ Rileggi, cartella, terapie) apre dietro la lista
+//    dell'area — il link della pagina del medico, mai costruito —, che si legge
+//    come quando la apre lui (ponteListaQui, core.js); trovata la sua riga (nome
+//    e impronta della nascita, una sola), la stessa domanda si rifà una volta
+//    col suo episodio vero, e il telefono lo segue (`rinomina`). Niente cambia
+//    nel gestionale: una pagina da leggere, come le altre di sottofondo (una
+//    alla volta, mai con un motore al lavoro o un carrello aperto, mai mentre
+//    si rilegge la smart; per paziente, al più una ogni 10 minuti).
+//  - Un'altra area (`smart.altra`): il telefono offre «Passa il PC all'area …»
+//    (ponteAreaApri, qui sotto).
+const PONTE_LISTE = "ponte.liste";            // storage.session: le schede aperte per la lista dell'area (solo { ts })
+const PONTE_LISTA_MAX = 20e3;                 // la lista, letta
+const PONTE_LISTA_RIPROVA = 8e3;              // una scheda che in tanto non ha ancora chiesto chi è: si riapre la lista, una volta (è una lettura)
+const PONTE_LISTA_OGNI = 10 * 60e3;           // per paziente, al più una lettura della sua lista ogni 10 minuti (una rifiutata prima di aprire non conta)
+const PONTE_LISTA_SMART = 10e3;               // la smart che si sta rileggendo: si aspetta un poco, poi no
+const PONTE_LISTA_GRAVE = "Errore grave: la riga della lista sul PC è di un altro paziente";
+const ponteListeTutte = async () => (await chrome.storage.session.get(PONTE_LISTE))[PONTE_LISTE] || {};
+let ponteFilaListe = Promise.resolve();
+const ponteListeCambia = (fn) => (ponteFilaListe = ponteFilaListe.then(async () => {
+  const v = await ponteListeTutte();
+  const r = fn(v);
+  await chrome.storage.session.set({ [PONTE_LISTE]: v });
+  return r;
+}).catch(() => null));
+// la lista dell'area: solo la pagina del menu, senza altro (mai un modulo, mai un parametro in più)
+const ponteUrlLista = (url) => {
+  try {
+    const u = new URL(url);
+    return sulGestionale(url) && /\/menuPso\.do$/i.test(u.pathname) && [...u.searchParams.keys()].join() === "MVPG" && u.searchParams.get("MVPG") === "PsoPazientiAmbulatorio" ? u.href : "";
+  } catch { return ""; }
+};
+// l'episodio della risposta: quello vero, se la lista l'ha dato
+const ponteEpDi = (r, ep) => (r && r.dati && r.dati.rinomina && r.dati.rinomina.da === ep ? r.dati.rinomina.a : r && r.rinomina && r.rinomina.da === ep ? r.rinomina.a : ep);
+function ponteRinominato(r, da, a) {
+  if (!r || da === a) return r;
+  if (r.ok && r.dati && typeof r.dati === "object") r.dati = { ...r.dati, rinomina: { da, a } };
+  else r.rinomina = { da, a };
+  return r;
+}
+// Una lettura del telefono (`fai`, col suo episodio) per chi forse il PC conosce solo dalla smart.
+async function ponteConLista(d, a, fai) {
+  // già trovato (un'altra domanda partita insieme, o un telefono rimasto indietro): col suo episodio
+  const gia = a.ep ? pt.rinominati.get(a.ep) : null;
+  if (gia && ponteOra() - gia.ts < PONTE_REGISTRO) return ponteRinominato(await fai({ ...a, ep: gia.a }), a.ep, gia.a);
+  const r = await fai(a);
+  const smart = r && (r.ok ? r.dati && r.dati.smart : r.smart);
+  // (solo col tocco del medico: una domanda partita da sé non apre niente)
+  if (!smart || !smart.qui || d.auto || !a.ep) return r;
+  const j = await ponteListaSotto(a.ep);
+  if (!j.ok) {
+    // com'era (la riga «apri una volta la lista …»), col perché; un'altra area: il telefono offre il passaggio
+    const s2 = { ...(j.altra ? { altra: true } : { qui: true }), perche: j.grave ? PONTE_LISTA_GRAVE : corto(j.testo || "", 120) };
+    if (r.ok && r.dati) r.dati = { ...r.dati, smart: s2 };
+    else if (r) r.smart = s2;
+    return r;
+  }
+  return ponteRinominato(await fai({ ...a, ep: j.ep }), a.ep, j.ep);
+}
+// UNA scheda alla volta, nella stessa fila delle letture dei valori (per tutto il browser);
+// lo stesso paziente chiesto due volte è una lettura sola
+function ponteListaSotto(ep) {
+  const gia = pt.listaPer.get(ep);
+  if (gia && gia.promessa) return gia.promessa;
+  if (gia && ponteOra() - gia.ts < PONTE_LISTA_OGNI) return Promise.resolve({ ok: false, testo: "la lista della sua area l'ho già letta da poco, e non c'era" });
+  const job = { ts: ponteOra(), promessa: null };
+  const parti = () => ponteListaApri(ep);
+  job.promessa = (ponteFilaSotto = ponteFilaSotto.then(parti, parti))
+    .catch((e) => ({ ok: false, testo: `la scheda della lista non si apre (${corto(e && e.message || e, 60)})` }))
+    .then((x) => { if (x && x.rifiutata && pt.listaPer.get(ep) === job) pt.listaPer.delete(ep); return x; })   // (rifiutata prima di aprire: non conta)
+    .finally(() => { job.promessa = null; });
+  pt.listaPer.set(ep, job);
+  return job.promessa;
+}
+async function ponteListaApri(ep) {
+  const no = (testo) => ({ ok: false, rifiutata: true, testo });
+  // (mai una pagina del gestionale mentre un motore inserisce esami, né con un carrello aperto: regola 19)
+  if (typeof dopoIlMotore === "function") await dopoIlMotore();
+  if (typeof motoreAlLavoro === "function" && motoreAlLavoro(await ordLeggi().catch(() => []))) return no("un ordine sta lavorando sul PC: riprova quando ha finito");
+  if (typeof carrelloAperto === "function" && await carrelloAperto()) return no("c'è un carrello aperto sul PC: riprova quando hai finito di ordinare");
+  for (const fine = ponteOra() + PONTE_LISTA_SMART; typeof sottoVive === "function" && (await sottoVive().catch(() => [])).some(([, x]) => x.cosa === "smart");) {
+    if (ponteOra() >= fine) return no("il PC sta rileggendo la lista smart: riprova fra poco");
+    await attendi(500);
+  }
+  if (pt.areaRq.size) return no("il PC sta passando a un'altra area: riprova fra poco");
+  // chi è, e il link della lista, da una scheda del medico
+  const c = await ponteSuScheda("listaChi", { ep });
+  if (!c.ok && c.smart && c.smart.altra) return { ...no("il gestionale sul PC è ora su un'altra area"), altra: true };
+  if (!c.ok) return no(c.errore || "il gestionale sul PC non risponde");
+  if (c.dati.gia) return { ok: true, ep: c.dati.ep };
+  const u = ponteUrlLista(c.dati.url), x = c.dati;
+  if (!u) return no("indirizzo della lista dell'area inatteso");
+  if (typeof x.k !== "string" || !x.k || x.k.length > 48 || typeof x.nome !== "string" || !x.nome || typeof x.nato !== "string" || !/^[0-9a-z]{1,10}$/.test(x.nato)) return no("paziente non valido");
+  const chi = { ep, k: x.k, nome: x.nome.slice(0, 60), nato: x.nato };
+  const davanti = (await ponteSchede())[0];
+  const vuota = { url: "about:blank", active: false };
+  const t = await chrome.tabs.create(davanti ? { ...vuota, windowId: davanti.windowId, index: davanti.index + 1 } : vuota)
+    .catch(() => chrome.tabs.create(vuota));
+  let risolvi;
+  const promessa = new Promise((r) => { risolvi = r; });
+  pt.liste.set(t.id, { ...chi, risolvi, visto: false });
+  await ponteListeCambia((v) => { v[t.id] = { ts: ponteOra() }; });
+  const tempo = setTimeout(() => ponteListaFine(t.id, { ok: false, testo: "la lista non è arrivata in tempo" }), PONTE_LISTA_MAX);
+  const riprova = setTimeout(() => {
+    const w = pt.liste.get(t.id);
+    if (w && !w.visto) chrome.tabs.update(t.id, { url: u }).catch(() => {});
+  }, PONTE_LISTA_RIPROVA);
+  try {
+    await chrome.tabs.update(t.id, { url: u, autoDiscardable: false });
+  } catch {
+    ponteListaFine(t.id, { ok: false, testo: "la lista dell'area sul PC non si apre" });
+  }
+  const esito = await promessa;
+  clearTimeout(tempo);
+  clearTimeout(riprova);
+  if (esito.ok) pt.rinominati.set(ep, { a: esito.ep, ts: ponteOra() });
+  if (esito.grave && typeof segnaErrore === "function") segnaErrore("lista telefono", { perche: corto(esito.grave, 60), grave: true });
+  const paz = corto(c.dati.nome, 40) || "un paziente";
+  ponteNota(esito.ok ? `Lista ${corto(esito.area, 30) || "dell'area"} letta dietro: trovato ${paz}` : `Lista dell'area per ${paz}: ${esito.grave ? PONTE_LISTA_GRAVE : corto(esito.testo, 100)}`);
+  await ponteScriviStato();
+  return esito;
+}
+async function ponteListaFine(id, esito) {
+  const w = pt.liste.get(id);
+  pt.liste.delete(id);
+  const c = await ponteListeCambia((v) => { const c = v[id]; delete v[id]; return c; });
+  if (!c && !w) return false;
+  const t = await chrome.tabs.get(id).catch(() => null);
+  if (t && !t.active) await chrome.tabs.remove(id).catch(() => {});
+  if (w) w.risolvi(esito);
+  return true;
+}
+
+// ------------------------- «Passa il PC all'area X e apri ROSSI M.» dal telefono
+// Chi il PC conosce solo dalla smart sta in un'altra area: il tocco del medico
+// sul telefono è un clic sulla sua riga della lista smart, sul PC — nella sua
+// scheda del gestionale davanti (la più recente; mai una di sottofondo):
+// PsoPsoImposta, l'area (una sola, riconosciuta dal nome), «Conferma», la
+// lista dell'area e il link della sua riga (apriArea/areaVaiQui, core.js).
+// NON è una lettura: cambia l'area della sessione del gestionale, per tutte
+// le schede. Una volta per tocco: il numero `rq` (`ponte.area.rq`, annotato
+// «inviato» prima di darlo alla scheda) — rimandato, ha la stessa risposta, e
+// dopo un riavvio a metà è «incerto», mai un secondo passaggio. Mai con un
+// ordine al lavoro o in coda, un carrello aperto, la smart che si rilegge, una
+// scheda di sottofondo del telefono al lavoro, un passaggio d'area già in
+// corso (quello del medico o di un ordine).
+const PONTE_AREA_RQ = "ponte.area.rq";        // storage.session: i passaggi d'area dal telefono, per numero: { fase, esito }
+const PONTE_AREA_MAX = 60e3;                  // Imposta, «Conferma» (al più due), la lista, la riga: la scheda ha 45 secondi (AREA_VAI_MS)
+const ponteAreaRqTutti = async () => (await chrome.storage.session.get(PONTE_AREA_RQ))[PONTE_AREA_RQ] || {};
+let ponteFilaAreaRq = Promise.resolve();
+function ponteAreaRqScrivi(rq, x) {
+  const p = ponteFilaAreaRq.then(async () => {
+    const m = await ponteAreaRqTutti();
+    m[rq] = { ...(m[rq] || {}), ...x, ts: ponteOra() };
+    const tieni = Object.entries(m).filter(([, y]) => ponteOra() - y.ts < PONTE_REGISTRO).sort((a, b) => b[1].ts - a[1].ts).slice(0, 60);
+    await chrome.storage.session.set({ [PONTE_AREA_RQ]: Object.fromEntries(tieni) });
+  });
+  ponteFilaAreaRq = p.catch(() => {});
+  return p;
+}
+function ponteAreaApri(d) {
+  const a = ponteArgomenti(d), rq = typeof d.rq === "string" && /^[\w-]{8,40}$/.test(d.rq) ? d.rq : "";
+  if (!rq || !a.ep) return Promise.resolve({ ok: false, errore: "Richiesta non valida: niente cambiato" });
+  // lo stesso numero che sta andando: la sua risposta
+  if (pt.areaRq.has(rq)) return pt.areaRq.get(rq);
+  const p = (async () => {
+    const prima = (await ponteAreaRqTutti())[rq];
+    if (prima && prima.esito) return prima.esito;   // com'è andata
+    // (il service worker è ripartito dopo averlo dato alla scheda: non si sa, e non si rifà)
+    if (prima && prima.fase === "inviato") return { ok: false, incerto: true, errore: "Incerto: guarda sul PC su che area è il gestionale" };
+    return ponteAreaApriOra(a.ep, rq);
+  })();
+  pt.areaRq.set(rq, p);
+  p.finally(() => pt.areaRq.delete(rq)).catch(() => {});
+  return p;
+}
+// Dopo il clic sulla sua riga, la scheda del medico va sulla pagina del paziente: si risponde al
+// telefono quando lei c'è e risponde (al più 10 secondi) — così le domande che il telefono fa
+// subito dopo (l'elenco, gli esiti) non trovano una pagina a metà.
+async function ponteAreaAtterrato(id, ep) {
+  for (const fine = ponteOra() + 10e3; id != null && ponteOra() < fine; await attendi(300)) {
+    const t = await chrome.tabs.get(id).catch(() => null);
+    if (!t) return;
+    let su = false;
+    try { su = t.status === "complete" && new URL(t.url || "").searchParams.get("EPISODIO_ID") === ep; } catch { /* non ancora */ }
+    if (!su) continue;
+    const r = await Promise.race([chrome.tabs.sendMessage(id, { t: "ponteEsegui", cmd: "eo", args: {} }).catch(() => null), attendi(2000, null)]);
+    if (r && r.ok) return;
+  }
+}
+async function ponteAreaApriOra(ep, rq) {
+  let nota = "";
+  const fatto = async (esito) => {
+    ponteNota(`iPhone · «Passa il PC all'area»${nota ? ` per ${nota}` : ""}: ${esito.ok ? (esito.dati.gia ? "già con la sua pagina, niente cambiato" : `gestionale ora sull'area ${esito.dati.area}`) : esito.errore}`);
+    await ponteScriviStato();
+    await ponteAreaRqScrivi(rq, { fase: "fatto", esito }).catch(() => {});   // (chi lo rimanda ha la stessa risposta)
+    return esito;
+  };
+  const no = (errore, extra = {}) => fatto({ ok: false, errore, ...extra });
+  const l = await ordLeggi().catch(() => []);
+  if ((typeof motoreAlLavoro === "function" && motoreAlLavoro(l)) || l.some((x) => x && x.stato === "coda")) return no("Un ordine sta lavorando sul PC: riprova quando ha finito — niente cambiato");
+  if (typeof carrelloAperto === "function" && await carrelloAperto()) return no("C'è un carrello aperto sul PC: riprova quando hai finito di ordinare — niente cambiato");
+  if (typeof sottoVive === "function" && (await sottoVive().catch(() => [])).some(([, x]) => x.cosa === "smart")) return no("Il PC sta rileggendo la lista smart: riprova fra poco — niente cambiato");
+  if (pt.valori.size || pt.cartelle.size || pt.accette.size || pt.liste.size || [...pt.terapie.values()].some((w) => !w.fermo)) {
+    return no("Il PC sta leggendo dietro per il telefono: riprova fra poco — niente cambiato");
+  }
+  // annotato PRIMA di darlo alla scheda: rimandato dopo un riavvio, non si rifà
+  try { await ponteAreaRqScrivi(rq, { fase: "inviato" }); } catch { return { ok: false, errore: "Il PC non riesce ad annotarlo: niente cambiato" }; }
+  let arriva;
+  const arrivo = new Promise((r) => { arriva = r; });
+  pt.areaAttese.set(rq, arriva);
+  try {
+    // la scheda del medico davanti (la più recente); una che non può (la pagina d'accesso, senza pannello) passa alla prossima
+    let r = null;
+    const perche = new Set();
+    for (const t of await ponteSchede()) {
+      r = await Promise.race([chrome.tabs.sendMessage(t.id, { t: "ponteEsegui", cmd: "areaApri", args: { ep, rq } }).catch(() => null), attendi(10e3, { no: "tempo" })]);
+      if (r && !r.no) break;
+      perche.add(r ? r.no : "assente");
+      r = null;
+      if (perche.has("tempo")) break;   // (una scheda che tace può averlo fatto: non lo si dà a un'altra)
+    }
+    if (!r) {
+      if (perche.has("tempo")) return fatto({ ok: false, incerto: true, errore: "Il gestionale sul PC tarda: guarda su che area è prima di riprovare" });
+      if (perche.has("login")) return no("Gestionale da riaprire: sul PC la sessione è scaduta", { sessione: true });
+      return no(perche.size ? "Sul PC apri la lista del pronto soccorso o un paziente, nel gestionale — niente cambiato" : "Apri il gestionale sul PC", perche.size ? {} : { senzaGestionale: true });
+    }
+    nota = corto(r.dati && r.dati.nome, 40);
+    if (r.registro) delete r.registro;
+    if (!r.ok) return no(r.errore || "Non cambiato");
+    if (r.dati.gia) return fatto({ ok: true, dati: { ep: String(r.dati.ep || ep), gia: true } });
+    const area = corto(r.dati.area, 40);
+    ponteNota(`iPhone · passo il gestionale all'area ${area}${nota ? ` per aprire ${nota}` : ""}`);
+    await ponteScriviStato();
+    const e = await Promise.race([arrivo, attendi(PONTE_AREA_MAX, null)]);
+    if (!e) return fatto({ ok: false, incerto: true, errore: `Non so se il PC è passato all'area ${area}: guardalo sul PC` });
+    if (e.ok && /^[\w.-]{1,40}$/.test(String(e.ep || ""))) {
+      await ponteAreaAtterrato(e.tab, e.ep);
+      return fatto({ ok: true, dati: { ep: e.ep, da: ep, area: corto(e.area, 40) || area } });
+    }
+    if (e.cambiata) return fatto({ ok: false, cambiata: true, errore: `PC ora sull'area ${area}, ma ${corto(e.testo, 120) || "il paziente non si apre"}` });
+    return no(`Non cambiato: ${corto(e.testo, 120) || "il gestionale non è passato all'area"}`);
+  } finally {
+    pt.areaAttese.delete(rq);
+  }
+}
+
 // ------------------------------------------- gli ordini partiti dal telefono
 // L'ordine fa il giro di sempre (scheda di sottofondo, controlli, conferma,
 // etichette): qui lo si guarda passare in `ordini` e si racconta al telefono
@@ -2037,6 +2303,25 @@ function ponteDaPagina(msg, sender, reply) {
       const esito = { ok, testo: corto(msg.testo, 160), incerto: !!msg.incerto || (dopo && !ok), area: corto(msg.area, 40) };
       if (typeof msg.grave === "string" && msg.grave) esito.grave = corto(msg.grave, 40);
       return { ok: !!w && await ponteAccettaFine(id, esito) };
+    });
+  }
+  // la scheda della lista dell'area ha letto: la sua riga (l'episodio), o perché no
+  if (msg.t === "ponteListaFatto" && gestionale) {
+    return fai(async () => {
+      const id = sender.tab.id, w = pt.liste.get(id), ep = typeof msg.ep === "string" && /^[\w.-]{1,40}$/.test(msg.ep) ? msg.ep : "";
+      const esito = msg.ok && ep ? { ok: true, ep, area: corto(msg.area, 40) } : { ok: false, testo: corto(msg.testo, 160), ...(msg.altra ? { altra: true } : {}),
+        ...(typeof msg.grave === "string" && msg.grave ? { grave: corto(msg.grave, 40) } : {}) };
+      return { ok: !!w && await ponteListaFine(id, esito) };
+    });
+  }
+  // il passaggio d'area chiesto dal telefono è finito (areaVaiQui, in una scheda del medico): com'è andata
+  if (msg.t === "ponteAreaFatto" && gestionale) {
+    return fai(async () => {
+      const arriva = typeof msg.rq === "string" ? pt.areaAttese.get(msg.rq) : null;
+      if (!arriva) return { ok: false };
+      pt.areaAttese.delete(msg.rq);
+      arriva({ ok: !!msg.ok, ep: typeof msg.ep === "string" ? msg.ep : "", area: corto(msg.area, 40), testo: corto(msg.testo, 160), cambiata: !!msg.cambiata, tab: sender.tab.id });
+      return { ok: true };
     });
   }
   // La scheda dei valori non è sulla pagina del paziente. Spesso il gestionale

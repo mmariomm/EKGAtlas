@@ -937,12 +937,16 @@ const esitiDi = async (ep, re = /./) => {
   check(/Hb/.test(pronta) && !/Leggo i valori nuovi/.test(pronta) && await finche(async () => await dietroSu("999001") === 0, 20000),
     `…e la tabella arriva da sola, la scheda dietro si chiude: zero tocchi (${(pronta.match(/Letti[^\n]*/) || ["niente"])[0]})`);
   check(await vistoR() === vistoR0, "leggere da soli non è «aperto adesso» dal medico");
-  // VERDI, che il PC conosce solo dalla lista smart (senza l'indirizzo della sua pagina): una riga, che dice cosa fare
+  // VERDI, che il PC conosce solo dalla lista smart (senza l'indirizzo della sua pagina), in un'altra area (la
+  // Bassa; il gestionale non è lì): una riga, e il bottone che passa il PC alla sua area (test/ext-area-tel.mjs)
   const v = await esitiDi("999003", /solo dalla lista smart/);
-  check(/Il PC lo conosce solo dalla lista smart: apri una volta la lista «Bassa» nel gestionale\./.test(v) && await tel.locator('[data-a="valori"]').count() === 0 && !/Mai aperto/.test(v),
-    `noto solo dalla lista smart: una riga sola, cosa fare — «apri una volta la lista «Bassa» nel gestionale», senza ↻ Rileggi (${v.replace(/\n+/g, " / ").slice(0, 160)})`);
+  const passa = () => tel.locator('[data-a="areaApri"]').innerText().catch(() => "");
+  check(/Il PC lo conosce solo dalla lista smart, e il gestionale sul PC è su un'altra area\./.test(v) && await passa() === "Passa il PC all'area Bassa e apri VERDI L."
+    && await tel.locator('[data-a="valori"]').count() === 0 && !/Mai aperto/.test(v),
+    `noto solo dalla lista smart, in un'altra area: una riga e «${await passa()}», senza ↻ Rileggi (${v.replace(/\n+/g, " / ").slice(0, 160)})`);
   await tocca(tel, '[data-a="scheda"][data-s="richieste"]');
-  check(/Il PC lo conosce solo dalla lista smart: per ordinare, apri una volta la lista «Bassa» nel gestionale\./.test(await testoTel(tel)), "…e per ordinare, la stessa riga");
+  check(/Il PC lo conosce solo dalla lista smart, e il gestionale sul PC è su un'altra area\./.test(await testoTel(tel)) && await passa() === "Passa il PC all'area Bassa e apri VERDI L.",
+    "…e per ordinare, lo stesso bottone");
   // e il PC, a ogni comando che gli serve la sua pagina, dice la stessa cosa con le stesse parole
   const parole = await sw.evaluate(async () => {
     const out = {};
