@@ -2870,7 +2870,13 @@
     else if (a === "dimentica") {
       if (b.dataset.sicuro !== "1") { b.dataset.sicuro = "1"; b.textContent = "Scollego? Servirà un QR nuovo"; return; }
       // (3.87) anche sul PC l'associazione finisce («scollega»); un PC di prima non lo conosce: «esci», come sempre
-      if (S.canale) { chiedi("scollega", {}, TEMPO, true).catch(() => {}); chiedi("esci").catch(() => {}); }
+      // (si aspetta che partano — al più 2 secondi —: chiusa la presa subito, non arriverebbero)
+      if (S.canale) {
+        b.disabled = true;
+        const via = [chiedi("scollega", {}, 2000, true).catch(() => {}), chiedi("esci", {}, 2000).catch(() => {})];
+        Promise.race([Promise.all(via), pausa(2000)]).then(() => dimentica("senza"));
+        return;
+      }
       dimentica("senza");
     }
     else if (a === "sostituisci") sostituisci(true);
