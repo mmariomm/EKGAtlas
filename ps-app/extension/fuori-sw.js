@@ -104,6 +104,8 @@ function fuoriForseChiudi(ms = 10e3) {
       if (FUORI.motivi.size || [...FUORI.prese.values()].some((p) => p.tenuta && !p.locale)) return;
       const r = await fuoriPing();
       if (!r) { FUORI.aperto = false; return; }
+      // (uno zip in corso là, anche se questo service worker non lo sa: è ripartito a metà)
+      if (r.occupato) return;
       // (lo stato vero è il suo: una presa tenuta là non si chiude da qui)
       if (Object.values(r.prese || {}).some((s) => s && s.url)) return;
       await chrome.offscreen.closeDocument().catch(() => {});
@@ -112,8 +114,18 @@ function fuoriForseChiudi(ms = 10e3) {
   }, ms);
 }
 // Il registratore (registra.js): il documento per uno zip, e poi lo lascia.
-const fuoriPrendi = async (motivo) => { FUORI.motivi.add(motivo); return fuoriApri(true); };
-const fuoriLascia = (motivo) => { FUORI.motivi.delete(motivo); fuoriForseChiudi(1000); };
+// (Lo sa anche il documento: un service worker che riparte a metà zip non lo chiude sotto.)
+const fuoriPrendi = async (motivo) => {
+  FUORI.motivi.add(motivo);
+  const ok = await fuoriApri(true);
+  if (ok) await fuoriChiedi({ t: "fuoriPrendi", motivo });
+  return ok;
+};
+const fuoriLascia = (motivo) => {
+  FUORI.motivi.delete(motivo);
+  if (!FUORI.motivi.size) fuoriChiedi({ t: "fuoriLascia" });
+  fuoriForseChiudi(1000);
+};
 
 // ------------------------------------------------------------------ una presa
 class Presa {
@@ -224,11 +236,13 @@ const fuoriCaricato = (async () => {
 // Dal documento: un messaggio che arriva su una presa, e com'è una presa (aperta, chiusa,
 // qualcuno dall'altra parte). È la sola cosa che sveglia il service worker: il battito no.
 chrome.runtime.onMessage.addListener((m, sender, reply) => {
-  if (!m || typeof m !== "object" || (m.t !== "fuoriDati" && m.t !== "fuoriStato")) return;
+  if (!m || typeof m !== "object" || (m.t !== "fuoriDati" && m.t !== "fuoriStato" && m.t !== "fuoriLibero")) return;
   if (!sender || sender.id !== chrome.runtime.id || sender.tab || !String(sender.url || "").startsWith(chrome.runtime.getURL(FUORI_URL))) return;
   reply({ ok: true });
   fuoriCaricato.then(() => {
     FUORI.aperto = true;
+    // (lo zip là è finito, o il «preso» è scaduto: chiuso, se nessuno lo usa più)
+    if (m.t === "fuoriLibero") { fuoriForseChiudi(1000); return; }
     const p = FUORI.prese.get(m.nome);
     if (m.t === "fuoriStato") {
       if (p && !p.locale) p.applica(m);

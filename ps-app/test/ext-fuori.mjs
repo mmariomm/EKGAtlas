@@ -324,6 +324,27 @@ sezione("senza schede del gestionale: la presa si chiude dopo 2 minuti, e poi ne
 }
 
 // ===========================================================================
+// (revisione 3.87, P2-1) Un PC senza prese — come uno non associato — salva uno zip lungo, e il service
+// worker riparte a metà: quello nuovo non sa dello zip, ma il documento sì (occupato), e non si chiude.
+sezione("uno zip in corso senza prese, e il service worker che riparte: il documento non si chiude sotto");
+{
+  await sw.evaluate(() => pt.presa.ferma());
+  await finche(async () => relay.prese().pc === 0, 10000);
+  await sw.evaluate(() => fuoriPrendi("registra"));   // come regFuori: il documento per lo zip (e non lo si lascia: lo zip «gira»)
+  const p0 = await sw.evaluate(() => fuoriPing());
+  check((await fuoriAperti()).length === 1 && !!p0 && p0.occupato === true, `il documento aperto per lo zip: occupato, e lo sa lui (${JSON.stringify(p0 && p0.occupato)})`);
+  check(await ferma(), "fermato il service worker a metà zip");
+  await sveglia();
+  await riprendiSw();
+  // (al risveglio le prese ferme dicono «chiudilo, se nessuno lo usa» — qui subito)
+  await sw.evaluate(async () => { await pt.presa.ferma(); fuoriForseChiudi(200); });
+  await sospendi(3000);
+  check((await fuoriAperti()).length === 1, "il service worker ripartito non sa dello zip, ma non chiude il documento sotto");
+  await sw.evaluate(() => fuoriLascia("registra"));
+  check(!!(await finche(async () => !(await fuoriAperti()).length, 10000)), "lasciato (lo zip finito): si chiude");
+}
+
+// ===========================================================================
 sezione("il ripiego: senza documento fuori schermo, la presa nel service worker come la 3.86");
 {
   await sw.evaluate(async () => { await pt.presa.ferma(); await chrome.storage.session.set({ "fuori.ripiego": { ts: Date.now(), why: "prova" } }); });
