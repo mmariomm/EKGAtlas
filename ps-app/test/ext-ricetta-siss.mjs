@@ -19,6 +19,8 @@ import { rmSync, existsSync, statSync, mkdirSync, readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import https from "node:https";
 
+// (mai la rete vera: nessun proxy, ogni nome risolto in locale — il gestionale finto passa dalle route di Playwright)
+const RETE_CHIUSA = ["--proxy-server=direct://", "--host-resolver-rules=MAP * 127.0.0.1"];
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const EXT = join(root, "extension");
 const PROFILE = join("/tmp", "psa-ricetta-" + process.pid);
@@ -259,7 +261,7 @@ const ctx = await chromium.launchPersistentContext(PROFILE, {
   headless: true,
   executablePath: process.env.CHROMIUM_PATH || chromiumPath(),
   viewport: { width: 1366, height: 800 },
-  args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`, ...(process.env.PSA_CHROMIUM_ARGS || "").split(/\s+/).filter(Boolean),
+  args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`, ...(process.env.PSA_CHROMIUM_ARGS || "").split(/\s+/).filter(Boolean), ...RETE_CHIUSA,
     `--host-resolver-rules=MAP ${MENU} 127.0.0.1:${porta}, MAP ${PR} 127.0.0.1:${porta}`, "--ignore-certificate-errors", "--no-proxy-server"],
 });
 await ctx.route("https://smarthealth.multimedica.it/**", async (r) => {

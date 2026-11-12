@@ -20,6 +20,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { rmSync, existsSync, statSync, mkdirSync } from "node:fs";
 
+// (mai la rete vera: nessun proxy, ogni nome risolto in locale — il gestionale finto passa dalle route di Playwright)
+const RETE_CHIUSA = ["--proxy-server=direct://", "--host-resolver-rules=MAP * 127.0.0.1"];
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const EXT = join(root, "extension");
 const PROFILE = join("/tmp", "psa-ord-" + process.pid);
@@ -69,7 +71,7 @@ const ctx = await chromium.launchPersistentContext(PROFILE, {
   headless: true,
   executablePath: process.env.CHROMIUM_PATH || chromiumPath(),
   viewport: { width: 1366, height: 768 },
-  args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`, ...(process.env.PSA_CHROMIUM_ARGS || "").split(/\s+/).filter(Boolean)],
+  args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`, ...(process.env.PSA_CHROMIUM_ARGS || "").split(/\s+/).filter(Boolean), ...RETE_CHIUSA],
 });
 // aperto, il pannello è una finestra all'85%: qui parte come colonna a destra
 await ctx.addInitScript(() => {

@@ -14,6 +14,8 @@ import { readFileSync, mkdirSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+// (mai la rete vera: nessun proxy, ogni nome risolto in locale — il gestionale finto passa dalle route di Playwright)
+const RETE_CHIUSA = ["--proxy-server=direct://", "--host-resolver-rules=MAP * 127.0.0.1"];
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const CONTENT = process.env.PSA_CONTENT || join(root, "extension/content.js");   // (PSA_CONTENT: un'altra build, per provare il prima)
 readFileSync(CONTENT);
@@ -421,7 +423,7 @@ await blocco(async () => {
   const exe = process.env.CHROMIUM_PATH || ["/opt/pw-browsers/chromium-1194/chrome-linux/chrome", "/opt/pw-browsers/chromium"].find((p) => { try { return readFileSync(p) && true; } catch { return false; } });
   const ctx = await chromium.launchPersistentContext(PROFILO, {
     headless: true, ...(exe ? { executablePath: exe } : {}),
-    args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`, ...(process.env.PSA_CHROMIUM_ARGS || "").split(/\s+/).filter(Boolean)],
+    args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`, ...(process.env.PSA_CHROMIUM_ARGS || "").split(/\s+/).filter(Boolean), ...RETE_CHIUSA],
   });
   ctx.setDefaultTimeout(10000);
   try {
