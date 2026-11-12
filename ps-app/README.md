@@ -1141,10 +1141,15 @@ puliscono finiti gli 8 secondi, o subito se cambi pagina). Via **tutto** quello 
 nelle stanze, stato degli esami, «Da fare», note e segni, valori, referti salvati e il loro testo, schede
 cliniche, ordini finiti, richieste da confermare, quesiti, la memoria di ogni scheda aperta, gli
 ordini che ricorda il Ponte, le letture di cartella e terapie che il Ponte tiene per l'iPhone e le
-sue note coi nomi, la registrazione non salvata e gli ultimi minuti di quella automatica (gli zip salvati,
-anonimizzati, restano). **Restano**: stampanti e
+sue note coi nomi, la registrazione non salvata e gli ultimi minuti di quella automatica, **gli zip
+salvati** (anonimizzati, ma di questo turno), del registro degli errori le voci che portano un paziente
+(un episodio, una richiesta, un referto, il testo di una pagina) e, dai numeri delle accettazioni mandate
+dal telefono, il nome. **Restano**: stampanti e
 stampa automatica, indirizzo del portale, associazione con l'iPhone, fogli di dimissione ed EO,
-le stanze, le opzioni delle aree, la finestra. Non c'è mentre questa scheda manda un giro (un
+le stanze, le opzioni delle aree, la finestra; le altre voci del registro degli errori (stampe, Ponte,
+registratore, eccezioni); i **numeri** delle terapie e delle accettazioni mandate dal telefono (episodio,
+fase, esito — per una terapia la riga del farmaco), perché un rinvio dello stesso numero non rifaccia
+mai il clic; la cache del browser (Chrome: la svuota lui, o le sue impostazioni) e gli zip già scaricati. Non c'è mentre questa scheda manda un giro (un
 ordine in coda o delle etichette che aspettano non lo tolgono).
 
 **Il nome viene dal riquadro del paziente**, quello colorato in testa alla scheda (episodio, nome,
@@ -2022,7 +2027,8 @@ bottone lo dice, e la copia anche — rileggila prima di mandarla.
   **mai nomi, codici fiscali, date di nascita, testo libero**; nello zip passa dall'anonimizzazione
   e dal controllo come il resto. Nello zip a mano vanno quelle dall'ultima registrazione a mano
   salvata (restano sul PC: si sposta solo il segno); in quello automatico, quelle dei suoi minuti.
-  «Dimentica i dati…» non lo cancella. Sugli errori d'ordine
+  «Dimentica i dati…» ne toglie le voci che portano un paziente (un episodio, una richiesta, un
+  referto, il testo di una pagina: gli ordini, la ricetta SISS, di chi è un PDF); le altre restano. Sugli errori d'ordine
   più difficili («… non risulta nel carrello», «Conferma non verificata», e il «Riprova i mancanti»
   con com'è finito) la voce porta la **traccia** del giro, quella che il motore ha già sotto gli
   occhi (nessuna richiesta in più): l'ordine, ogni esame col suo codice e la sua risorsa, ogni

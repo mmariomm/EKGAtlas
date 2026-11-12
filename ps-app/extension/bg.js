@@ -120,8 +120,12 @@ const b64 = (buf) => {
 // dati}: pagina è solo l'MVPG; dati solo numeri, codici, impronte, messaggi
 // del nostro codice — mai nomi, codici fiscali, date di nascita, testo libero
 // (chi chiama passa solo quelli, e qui si ripulisce lo stesso). «Registra» lo
-// mette nello zip (errori.json); «Dimentica i dati…» non lo tocca.
+// mette nello zip (errori.json); «Dimentica i dati…» toglie le voci che portano
+// un paziente (errorePaziente: i suoi numeri, o il testo di una pagina).
 const ERRORI = "errori.v1", ERRORI_MAX = 500;
+const ERRORE_PAZIENTE = /^(?:episodio|ep|richiesta|referto|paziente|nome|cf)$/i;
+const errorePaziente = (x) => !x || typeof x !== "object" || ["ricetta", "identita", "terapia", "referto", "ponte valori"].includes(x.tipo)
+  || Object.entries(x.dati && typeof x.dati === "object" ? x.dati : {}).some(([k, v]) => ERRORE_PAZIENTE.test(k) && v != null && v !== "");
 let codaErrori = Promise.resolve();
 const pulito = (v, d = 0) => {
   if (v == null || typeof v === "number" || typeof v === "boolean") return v;
@@ -1032,6 +1036,15 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
       // ponte tiene in memoria per il telefono (cartella, terapie, le sue note)
       if (typeof regCancella === "function") await regCancella().catch(() => {});
       if (typeof ponteDimentica === "function") await ponteDimentica().catch(() => {});
+      // e gli zip salvati (anonimizzati, ma di questo turno), e del registro degli
+      // errori le voci che portano un paziente — un episodio, una richiesta, un
+      // referto, il testo di una pagina (la ricetta del SISS, la Terapia, di chi
+      // è un PDF): restano quelle del programma (stampe, ponte, registratore, eccezioni)
+      if (typeof regZipTutti === "function") { await regZipTutti().catch(() => {}); if (typeof regAvvisaElenco === "function") await regAvvisaElenco().catch(() => {}); }
+      await (codaErrori = codaErrori.then(async () => {
+        const l = (await chrome.storage.local.get(ERRORI))[ERRORI];
+        if (Array.isArray(l)) await chrome.storage.local.set({ [ERRORI]: l.filter((x) => !errorePaziente(x)) });
+      }).catch(() => {}));
       reply({ ok: true });
     })().catch(() => reply({ ok: false }));
     return true;

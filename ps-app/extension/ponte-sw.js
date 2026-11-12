@@ -1303,8 +1303,19 @@ const ponteTerapiaMemoScrivi = (ep, l) => (ponteFilaTerapiaMemo = ponteFilaTerap
 async function ponteDimentica() {
   ponteFilaCartella = ponteFilaCartella.then(() => chrome.storage.session.remove(PONTE_CARTELLA)).catch(() => {});
   ponteFilaTerapiaMemo = ponteFilaTerapiaMemo.then(() => chrome.storage.session.remove(PONTE_TERAPIA)).catch(() => {});
+  // I numeri delle terapie e delle accettazioni mandate dal telefono RESTANO: un
+  // rinvio dello stesso numero ha la stessa risposta e non rifà il clic. Tengono
+  // l'episodio, la fase («inviato» prima del clic) e l'esito; quello di
+  // un'accettazione riuscita porta anche il nome: quello va via (nella stessa fila
+  // di chi scrive, così nessuna fase si perde).
+  ponteFilaAccettaRq = ponteFilaAccettaRq.then(async () => {
+    const m = await ponteAccettaRqTutti();
+    let tolti = 0;
+    for (const x of Object.values(m)) if (x && x.esito && x.esito.dati && "nome" in x.esito.dati) { const { nome, ...resto } = x.esito.dati; x.esito = { ...x.esito, dati: resto }; tolti++; }
+    if (tolti) await chrome.storage.session.set({ [PONTE_ACCETTA_RQ]: m });
+  }).catch(() => {});
   pt.registro = [];
-  await Promise.all([ponteFilaCartella, ponteFilaTerapiaMemo, ponteScriviStato()]);
+  await Promise.all([ponteFilaCartella, ponteFilaTerapiaMemo, ponteFilaAccettaRq, ponteScriviStato()]);
 }
 // (questa può fallire: chi annota «inviato» non deve credere di averlo fatto)
 let ponteFilaTerapiaRq = Promise.resolve();
