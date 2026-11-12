@@ -135,11 +135,14 @@ let stmLavori = 0;
 const stmOccupato = () => stmLavori > 0 || !!stmSalutoInCorso || stm.attese.size > 0;
 const staGestionale = async () => (typeof psaGestionale === "function" ? psaGestionale().catch(() => true) : true);
 const stmUrl = () => staUrl(stm.host, stm.chiavi.stanza, "medico");
-async function stmAssicura(subito = false) {
+// (una alla volta: una decisione vecchia non arriva dopo una nuova)
+const staInFila = (fila, fn) => { const p = fila.p.then(fn); fila.p = p.catch(() => {}); return p; };
+const stmFilaServe = { p: Promise.resolve() };
+const stmAssicura = (subito = false) => staInFila(stmFilaServe, async () => {
   if (!stm.coppia || !stm.host || !stm.chiavi) return stm.presa.ferma();
   const fine = await staGestionale() ? Infinity : stmOccupato() ? staOra() + STA_LAVORO_MAX : 0;
   await stm.presa.servi(stmUrl(), fine, subito);
-}
+});
 function stmNota(testo) {
   stm.registro.push({ ts: staOra(), testo: corto(testo, 160) });
   if (stm.registro.length > 30) stm.registro.splice(0, stm.registro.length - 30);
@@ -435,11 +438,12 @@ async function stzPagina() {
   return staOra() - stzUso.pagina < 10 * 60e3;
 }
 const stzLavora = () => stz.inCorso.size > 0 || stz.stampa.size > 0;
-async function stzAssicura(subito = false) {
+const stzFilaServe = { p: Promise.resolve() };
+const stzAssicura = (subito = false) => staInFila(stzFilaServe, async () => {
   if (!stz.qui || !stz.host || !stz.chiavi) return stz.presa.ferma();
   const fine = await stzPagina() || await staGestionale() ? Infinity : stzLavora() ? staOra() + STA_LAVORO_MAX : 0;
   await stz.presa.servi(staUrl(stz.host, stz.chiavi.stanza, "stazione"), fine, subito);
-}
+});
 const stzAttiva = () => !!stz.qui && !stz.qui.revoca;
 const stzNome = async () => corto(String((await chrome.storage.local.get(STA.nome))[STA.nome] || "").trim(), 40) || STA_NOME;
 const stzStampanti = async () => (await chrome.storage.local.get("stampa")).stampa || {};

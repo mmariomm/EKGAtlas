@@ -224,11 +224,13 @@ async function ponteSegnaAccesso(id, si) {
   await chrome.storage.session.set({ [PONTE_ACCESSO]: [...s].slice(-50) }).catch(() => {});
 }
 // Una scheda del gestionale aperta (non scartata da Chrome per la memoria) e
-// non sulla pagina d'accesso. (Anche per la stazione di stampa: stazione-sw.js)
+// non sulla pagina d'accesso — quella che lo dice (ponteLogin), o che ce l'ha
+// nell'indirizzo. (Anche per la stazione di stampa: stazione-sw.js)
+const ponteAccessoUrl = (u) => { try { return /login/i.test(new URL(u).pathname); } catch { return false; } };
 async function psaGestionale() {
   const accesso = await ponteSchedeAccesso();
   const schede = await chrome.tabs.query({}).catch(() => []);
-  return schede.some((t) => sulGestionale(t.url) && !t.discarded && !accesso.has(t.id));
+  return schede.some((t) => sulGestionale(t.url) && !t.discarded && !accesso.has(t.id) && !ponteAccessoUrl(t.url));
 }
 // Fino a quando il PC serve sul ponte di sicuro: Infinity (il gestionale aperto), l'ora in cui
 // finisce un QR, la pagina del ponte, un comando; 0 niente (Presa.servi, fuori-sw.js).
@@ -241,9 +243,15 @@ async function ponteServeFino() {
   return fine;
 }
 // Sul ponte se serve, via se no (due minuti dopo). `subito`: un gesto (un QR nuovo) non aspetta il prossimo tentativo.
-async function ponteAssicura(subito = false) {
-  if (!pt.host || !pt.coppia || !pt.chiavi) return pt.presa.ferma();
-  await pt.presa.servi(ponteUrlPresa(), await ponteServeFino(), subito);
+// (Una alla volta: una decisione vecchia — la scheda ancora aperta — non arriva dopo una nuova.)
+let ponteFilaServe = Promise.resolve();
+function ponteAssicura(subito = false) {
+  const p = ponteFilaServe.then(async () => {
+    if (!pt.host || !pt.coppia || !pt.chiavi) return pt.presa.ferma();
+    await pt.presa.servi(ponteUrlPresa(), await ponteServeFino(), subito);
+  });
+  ponteFilaServe = p.catch(() => {});
+  return p;
 }
 // Qualcosa è cambiato nelle schede (una chiusa, un indirizzo nuovo, una scartata):
 // il PC serve ancora sul ponte? E la stazione di stampa (stazione-sw.js)?
