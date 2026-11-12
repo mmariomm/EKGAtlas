@@ -66,6 +66,8 @@ stesso paziente, nella stessa scheda), quindi in pratica non te ne accorgi.
   **testo non salvato** in una scheda del gestionale (una cartella, una dimissione riscritta, la
   terapia a metà, il pannello). Nel dubbio (una scheda non risponde) aspetta. Un ordine premuto
   mentre l'aiutante scambia la cartella non parte: **«Non partita»**, si rifà dopo la ricarica;
+  intanto non partono nemmeno «Conferma di nuovo», una stampa o un PDF dal telefono, e un giro
+  nella scheda aspetta;
 - **subito prima dello scambio** rilegge `VERSION.txt`: se lì c'è ormai un'altra versione (quella di
   prima ritirata, una correzione) non scambia, butta lo zip e scarica quella al giro dopo;
 - **se va storto** (lo zip sbagliato, l'aiutante che dice di no o non risponde) quella versione
@@ -776,8 +778,9 @@ lette stanno in `sessionStorage` (`smart.giro.v1`) e muoiono con lei.
    Conferma vera **una volta**, coi controlli di sempre, poi la stessa prova. Una sola per
    richiesta: se il gestionale non prende nemmeno quella, «Non partita · apri il carrello», e lì
    decidi tu. E mai sopra la tua: ogni Conferma premuta — dal pannello, dal motore o a mano sul
-   bottone del gestionale, in qualunque scheda, anche prima che la pagina sia pronta — si annota
-   prima che il clic parta; se dopo quella ignorata ne hai premuta un'altra (sul carrello, mentre
+   bottone del gestionale, in qualunque scheda, anche prima che la pagina sia pronta (e lì, su
+   una richiesta di PS Assist, la stampa si arma come sempre) — si annota prima che il clic
+   parta; se dopo quella ignorata ne hai premuta un'altra (sul carrello, mentre
    il gestionale ci pensa), «Conferma di nuovo» non preme niente e se ne va: «Da controllare»; e
    se la tua l'ha già confermata, non ne stampa le etichette (le stampa la scheda dove l'hai
    premuta): «Confermata», e la Ristampa. Una Conferma tornata **coi suoi tempi** non si giudica dal carrello (com'è il
@@ -865,11 +868,12 @@ lette stanno in `sessionStorage` (`smart.giro.v1`) e muoiono con lei.
    «Svuota il carrello», senza rimettere niente, e la richiesta si dimentica; un carrello letto
    già vuoto si dimentica e basta. Solo se la pagina ha la Conferma.
    **Una Conferma dal pannello, una volta per pagina** (questa e «Conferma per …» della
-   ricevuta): premuta, il bottone dice «Confermo…», spento, finché la pagina non se ne va — la
-   Conferma vera ci mette 3–14 s, e un secondo tocco ne manderebbe un'altra. E non preme se
-   un'altra Conferma per la stessa richiesta è partita nell'ultimo minuto (da un'altra scheda,
-   `conferme.v1`) e la richiesta non ha ancora la sua prova: «Una Conferma è già partita: guarda
-   le sue richieste».
+   ricevuta): premuta — qui o a mano, sulla Conferma del gestionale in quella pagina —, il
+   bottone dice «Confermo…», spento, finché la pagina non se ne va — la Conferma vera ci mette
+   3–14 s, e un secondo tocco ne manderebbe un'altra. E non preme se un'altra Conferma per la
+   stessa richiesta è partita nell'ultimo minuto (da un'altra scheda, `conferme.v1`), il
+   carrello non l'ha smentita («Non partita») e la richiesta non ha ancora la sua prova: «Una
+   Conferma è già partita: guarda le sue richieste».
    **Mentre scrivi, la pagina non cambia da sola.** Ogni salto di pagina deciso dal pannello
    (errore → carrello, revisione → carrello, conferma sospesa) prima guarda: se hai il cursore
    in un campo del gestionale, hai cambiato un campo, o hai premuto un tasto negli ultimi 15
@@ -1537,7 +1541,7 @@ che non può leggere niente: cifrato da un capo all'altro, nessun dato su nessun
   Scollega»** (la spia è ferma), e ogni comando va nel **Registro**. Dopo **3 minuti senza comandi** del medico la
   sessione si chiude da sola — un tocco col telefono in mano (anche per scorrere) conta come un comando (al più
   uno al minuto, `tocco`): mentre leggi non si chiude —; tornando sull'app si riapre da sola, sul paziente e sulla scheda dov'eri
-  (in memoria, mai su disco, dopo che il PC ha risposto). Riaperto da sé sulla Terapia non la legge (si leggerebbe aprendo una scheda sul PC senza un tocco): «Tocca per leggere la terapia». Così anche se l'estensione sul PC si riavvia: il
+  (in memoria, mai su disco, dopo che il PC ha risposto). Riaperto da sé sulla Terapia non la legge (si leggerebbe aprendo una scheda sul PC senza un tocco): «Tocca per leggere la terapia»; né la rilegge tornando sull'app, finché non è stata letta. Così anche se l'estensione sul PC si riavvia: il
   telefono si ricollega da solo, senza «Sessione chiusa».
 - **Registrazioni** (⋯ sul telefono): gli zip salvati sul PC (⋯ → Registrazioni), con quando, quanto, a mano o
   automatica e perché, il controllo — niente pazienti. **Scarica** lo porta sul telefono a pezzi, cifrato come

@@ -940,7 +940,8 @@
     aggiornaLista(true, true);
     if (S.vista.nome === "paziente") caricaEsiti(S.vista.ep, true);
     if (S.vista.nome === "paziente" && S.scheda === "cartella" && !S.occupato.has("csalva" + S.vista.ep)) caricaCartella(S.vista.ep, true);
-    if (S.vista.nome === "paziente" && S.scheda === "terapia" && !S.tf) caricaTerapie(S.vista.ep, true);
+    // (la Terapia solo se già letta: senza, il PC aprirebbe la sua pagina senza un tocco — «Tocca per leggere la terapia»)
+    if (S.vista.nome === "paziente" && S.scheda === "terapia" && !S.tf && S.terapie.get(S.vista.ep)) caricaTerapie(S.vista.ep, true);
     if (S.vista.nome === "registrazioni") caricaZip(true);
   }
   // «↻ Rileggi» (modo ""), o la lettura partita da sé (leggiDaSolo: «auto», «apri»). Quella da sé non

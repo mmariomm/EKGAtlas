@@ -234,10 +234,18 @@ const COMUNICAZIONI = [
   ["RX TORACE", "SI SEGNALA PNX APICALE DESTRO.", "DR. ROSSI PRESENTE ALL'ESAME"],
   ["RX TORACE", "SI SEGNALA PNX.", "Dott. Bianchi", "MEDICO DI PS PRESENTE"],
   ["RX TORACE", "Frattura composta.", "Prof. Bianchi Riferisce Dolore"],
+  // un verbo del referto (consiglia, richiede, rivede, attende, telefona…) o un infinito: è referto
+  ...["DOTT. ROSSI CONSIGLIA TC", "DOTT. ROSSI RICHIEDE TC", "DR. BIANCHI RIVEDE CONTROLLO", "DOTT. ROSSI ATTENDE TC", "MEDICO: ESEGUIRE TC", "DR. ROSSI TELEFONA",
+    "Dott. Rossi Consiglia Ecografia", "DOTT. BIANCHI SEGNALA", "DR. ROSSI VALUTA DOMANI"].map((u) => ["RX TORACE", "Addensamento basale destro.", u]),
 ];
 for (const r of COMUNICAZIONI) {
   const x = await prova((q) => refertoScrittoRx(q, { nome: "VERDI LUCA" }).righe, r);
   check(JSON.stringify(x) === JSON.stringify(r), `«${r[r.length - 1]}» dopo il referto: resta (got: ${JSON.stringify(x)})`);
+}
+// …mentre la firma, con dopo solo un nome, se ne va ancora
+for (const f of ["Dott. Bianchi", "DR. ROSSI", "Dott.ssa Anna Maria De Luca", "Il Medico ROSSI MARIO", "Prof. Bianchi", "Dott. Mario Verdi Rossi"]) {
+  const x = await prova((q) => refertoScrittoRx(q, { nome: "VERDI LUCA" }).righe, ["RX TORACE", "Addensamento basale destro.", f]);
+  check(JSON.stringify(x) === JSON.stringify(["RX TORACE", "Addensamento basale destro."]), `«${f}» in fondo: firma, via (got: ${JSON.stringify(x)})`);
 }
 const tutta =await prova((r) => refertoScrittoRx(r, { nome: "ROSSI MARIO" }).righe, ["Paziente: ROSSI MARIO", "Nato il 01/01/1980"]);
 check(tutta.length === 2, "se tutto sembrasse cornice, non si mostra niente di meno: resta com'era");

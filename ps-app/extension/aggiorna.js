@@ -324,9 +324,10 @@ chrome.runtime.onInstalled.addListener((d) => {
 // --------------------------------------------- da sé, senza mani
 // Niente tocco del medico, in nessuna build: all'avvio del browser e a ogni
 // giro della sveglia (un quarto d'ora). GitHub al più ogni sei ore (aggControlla);
-// una versione nota e non applicata (il PC era occupato) si riprova a ogni giro
-// senza rete (lo zip è nella Cache Storage) e senza l'aiutante finché non è il
-// momento; andata male, aspetta sei ore. `aggiorna()` tiene OGNI controllo
+// una versione nota e non applicata (il PC occupato, o il gestionale aperto) si
+// riprova a ogni giro: con lo zip già nella Cache Storage, niente rete e niente
+// aiutante finché non è il momento (senza zip, prima di scaricarlo, l'aiutante
+// dice se la cartella ha già la nuova); andata male, aspetta sei ore. `aggiorna()` tiene OGNI controllo
 // (occupato, versione == VERSION.txt, stessa chiave, cartella installata,
 // aiutante confermato, host fisso) e l'ultimo dentro la fila degli ordini,
 // subito prima dello scambio. Dopo lo scambio la ricarica; nelle schede già

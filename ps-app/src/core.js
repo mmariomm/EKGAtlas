@@ -9334,9 +9334,11 @@
     // Una Conferma per questa richiesta premuta nell'ultimo minuto, da
     // qualunque scheda (conferme.v1), e ancora senza prova (fra quelle da
     // confermare): forse in volo, e il carrello qui non lo dice ancora. I due
-    // bottoni non premono: lo dicono, finché la pagina non se ne va.
+    // bottoni non premono: lo dicono, finché la pagina non se ne va. Una
+    // Conferma che il carrello ha già smentito («smentita»: non presa) non è in volo.
     confermaGiaPartita(rid) {
-      if (!confermaDopo(rid, "premuta", Date.now() - 60e3) || !daConfermare().some((x) => x.rid === String(rid))) return false;
+      const smentita = Number((conferme().find((x) => x.rid === String(rid)) || {}).smentita) || 0;
+      if (!confermaDopo(rid, "premuta", Math.max(Date.now() - 60e3, smentita)) || !daConfermare().some((x) => x.rid === String(rid))) return false;
       confermaPannello = "Una Conferma è già partita: guarda le sue richieste";
       this._daconf = null;
       this.log(`${now()}  Conferma dal pannello non premuta: un'altra per la richiesta ${rid} è partita nell'ultimo minuto`);
@@ -15343,7 +15345,8 @@
   // una Conferma premuta dopo quella che il gestionale non aveva preso
   // (confermaDopo). E quando una scheda prende le etichette di una richiesta
   // confermata (maybeAutoPrint), «stampata»: chi la trova confermata altrove
-  // sa se sono già uscite. Solo numeri, per 12 ore.
+  // sa se sono già uscite. «smentita»: il carrello ha provato che l'ultima
+  // non è stata presa (lavoroSenzaSeguito) — non è in volo. Solo numeri, per 12 ore.
   const CONFERME = "conferme.v1", CONFERME_TTL = 12 * 3600e3;
   const conferme = () => { const l = store.get(CONFERME, []); return (Array.isArray(l) ? l : []).filter((x) => x && x.rid && Date.now() - (x.ts || 0) < CONFERME_TTL); };
   function segnaConferma(rid, cosa) {
@@ -16257,13 +16260,16 @@
     // il nome dopo un titolo di firma («Dott.», «Il Medico»): al più quattro parole, ognuna con
     // l'iniziale maiuscola e nessuna che non sia un nome — mai le parole di una comunicazione
     // («DOTT. ROSSI INFORMATO TELEFONICAMENTE», «MEDICO DI GUARDIA CONSULTATO», «DR. ROSSI PRESENTE
-    // ALL'ESAME» sono referto): un participio, un aggettivo o un verbo (…ato, …ente, …isce, …ano), una
-    // preposizione, GUARDIA, PS, REPARTO. Nel dubbio la riga resta: al più si vede una firma.
+    // ALL'ESAME» sono referto): un participio, un aggettivo o un verbo (…ato, …ente, …isce, …ano), un
+    // infinito (…are, …ere, …ire: «MEDICO: ESEGUIRE TC»), i verbi dei referti («DOTT. ROSSI CONSIGLIA
+    // TC», «DR. ROSSI TELEFONA»), una preposizione, GUARDIA, PS, REPARTO. Nel dubbio la riga resta: al
+    // più si vede una firma.
     const nomeDi = (t) => {
       const w = String(t).replace(/[.,]/g, " ").split(/\s+/).filter(Boolean);
       return w.length >= 1 && w.length <= 4 && w.every((x) => /^[A-ZÀ-Ü][A-Za-zÀ-ÿ-]*$/.test(x))
-        && !w.some((x) => /^(?:informat|avvisat|avvertit|contattat|comunicat|chiamat|allertat|sentit|curant)|mente$|(?:at|it|ut)[oaie]$|[ae]nte$|isce$|ano$|ono$/i.test(x)
-          || /^(?:di|del|dell[aoe]|dei|degli|da|dal|dall[aoe]|dai|dagli|al|all[aoe]|ai|agli|in|nel|nell[aoe]|nei|negli|per|con|su|sul|sull[aoe]|tra|fra|a|e|ed|guardia|ps|reparto)$/i.test(x));
+        && !w.some((x) => /^(?:informat|avvisat|avvertit|contattat|comunicat|chiamat|allertat|sentit|curant)|mente$|(?:at|it|ut)[oaie]$|[ae]nte$|isce$|ano$|ono$|(?:are|ere|ire)$/i.test(x)
+          || /^(?:di|del|dell[aoe]|dei|degli|da|dal|dall[aoe]|dai|dagli|al|all[aoe]|ai|agli|in|nel|nell[aoe]|nei|negli|per|con|su|sul|sull[aoe]|tra|fra|a|e|ed|guardia|ps|reparto)$/i.test(x)
+          || /^(?:consiglia|richiede|rivede|attende|esegue|indica|segnala|telefona|valuta|propone)$/i.test(x));
     };
     const norm = (t) => String(t || "").toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^A-Z0-9 ]+/g, " ").trim().replace(/\s+/g, " ");
     const mie = norm(paz && paz.nome).split(" ").filter((x) => x.length >= 2);
@@ -16934,26 +16940,42 @@
   // Prima del gancio (bootGestionale, dopo la risposta del service worker:
   // fino a 3 s) la Conferma del gestionale premuta a mano si annota lo stesso,
   // prima che il clic parta: dall'avvio, un ascolto su tutto il documento.
+  // Come col gancio: i bottoni del pannello si spengono, e la stampa si arma.
   function confermaPresto(e) {
     const b = e.isTrusted && e.target && e.target.closest ? e.target.closest('input[type="submit"]') : null;
     if (!b || (b.name !== "Update" && b.name !== "Update1")) return;
     const m = examModel(document, location.href);
-    if (m.form && m.richiestaId && b.form === m.form) segnaConferma(m.richiestaId, "premuta");
+    if (!m.form || !m.richiestaId || b.form !== m.form) return;
+    segnaConferma(m.richiestaId, "premuta");
+    confermaAMano();
+    confermaNostra(m.richiestaId, findEpisodeId(document, location.href));
+  }
+  // La Conferma del gestionale premuta da lui (un clic vero): da qui contano i
+  // suoi tocchi (PREMUTO) — quella del motore no —, e i bottoni del pannello su
+  // questa pagina non premono più: la Conferma vera torna in 3–14 s, e intanto
+  // la pagina col bottone è ancora lì (confermaPannello).
+  function confermaAMano() {
+    tabStore.set(PREMUTO, Date.now());
+    confermaPannello = "Confermo…";
+    PANNELLO?.render();
+  }
+  // La Conferma di una richiesta di PS Assist: lascia il giro, e la stampa si arma.
+  function confermaNostra(rid, episodeId) {
+    if (!richiestaNostra(rid)) return;
+    const q = tabStore.get("queue.v1", null);
+    if (q && q.items) { // this richiesta is done: drop it from the walk
+      const left = q.items.filter((it) => it.rid !== rid);
+      tabStore.set("queue.v1", left.length ? { ...q, items: left, ts: Date.now() } : null);
+    }
+    segnoStampa(episodeId, rid, tabStore.get("receipt.v1", null));
   }
   function armPrintOnConfirm(model, episodeId) {
     if (!model.form || !model.richiestaId) return;
     const arm = (e) => {
       // (ogni Conferma su questo carrello, di chiunque: prima che il clic parta — conferme.v1)
       segnaConferma(model.richiestaId, "premuta");
-      // (la Conferma del gestionale premuta da lui: da qui contano i suoi tocchi — quella del motore no)
-      if (e && e.isTrusted) tabStore.set(PREMUTO, Date.now());
-      if (!richiestaNostra(model.richiestaId)) return;
-      const q = tabStore.get("queue.v1", null);
-      if (q && q.items) { // this richiesta is done: drop it from the walk
-        const left = q.items.filter((it) => it.rid !== model.richiestaId);
-        tabStore.set("queue.v1", left.length ? { ...q, items: left, ts: Date.now() } : null);
-      }
-      segnoStampa(episodeId, model.richiestaId, tabStore.get("receipt.v1", null));
+      if (e && e.isTrusted) confermaAMano();
+      confermaNostra(model.richiestaId, episodeId);
     };
     for (const name of ["Update", "Update1"]) {
       const b = model.form.elements.namedItem(name);
@@ -17165,6 +17187,8 @@
           return fine({ tag: "Da controllare", testo: GUARDA, tono: "warn", quesito: "premuta intanto un'altra Conferma, da un'altra scheda" },
             { tag: "Da controllare", testo: RIFARLA, tono: "warn" }, RIFARLA_PERCHE);
         }
+        // (non è in volo: la Conferma del medico sul carrello non la aspetta — confermaGiaPartita)
+        segnaConferma(rid, "smentita");
         const rifatta = !!(L.piano && L.piano.startPage === "riconferma");
         // (`premuta`: quale Conferma il carrello ha smentito — «Conferma di nuovo» non parte se ce n'è una dopo)
         return fine({ tag: "Non partita", testo: rifatta ? "apri il carrello" : "Conferma di nuovo", tono: "err",
@@ -17827,7 +17851,7 @@
       jobs: jobs.map(({ name, printer, url, breve }) => ({ name, printer, url, ...(breve ? { breve } : {}) })) };
     let r = { ok: false };
     for (let k = 0; k < 3 && !r.ok && !r.no; k++) r = await ask({ t: "ordineFogli", job });
-    if (r.no) return { ok: false, errore: "Ristampa non partita: la stampa automatica non è impostata sul PC" };
+    if (r.no) return { ok: false, errore: r.aggiorna ? "Ristampa non partita: PS Assist si sta aggiornando, riprova fra un minuto" : "Ristampa non partita: la stampa automatica non è impostata sul PC" };
     if (!r.ok) return { ok: false, incerto: true, errore: "Non so se la stampa è partita: guarda la stampante prima di rifarla" };
     return { ok: true, dati: { ordini: [{ id: r.id || a.id, ep: p.ep, paziente: p.name, n: jobs.length }] }, registro: "ristampa di una richiesta di " + p.name };
   }
@@ -17912,7 +17936,8 @@
           const sc = scegliScheda((r && r.ok && r.indice) || [], String(p.pk || "").startsWith("cf:") ? p.pk.slice(3) : "", p.name, p.ep);
           dopo = !!sc && (Number(sc.letto) || 0) > fino;
         }
-        scriviStato(p.ep, (s) => ({ ...s, ...(dopo ? {} : { valori: { nuovi: 0, fuori: 0, fuoriTot: 0 } }), esitiVisto: fino || ora, ...(fino > (s.valoriVisti || 0) ? { valoriVisti: fino } : {}) }));
+        // (l'ora dei visti non torna mai indietro: una tabella più vecchia di quanto il PC ha già visto non riaccende i «nuovi»)
+        scriviStato(p.ep, (s) => ({ ...s, ...(dopo ? {} : { valori: { nuovi: 0, fuori: 0, fuoriTot: 0 } }), esitiVisto: Math.max(s.esitiVisto || 0, fino || ora), ...(fino > (s.valoriVisti || 0) ? { valoriVisti: fino } : {}) }));
       }
       if (!PANNELLO.root.activeElement) PANNELLO.render();
       return fatto({ ok: true, registro: `visti sul telefono: ${[ids.length ? (ids.length === 1 ? "un referto" : `${ids.length} referti`) : "", a.valori ? "gli esiti" : ""].filter(Boolean).join(" e ") || "niente"} di ${p.name}` });

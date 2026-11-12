@@ -1079,6 +1079,64 @@ if (prova("la Conferma premuta a mano prima che la pagina sia pronta: annotata l
   const cf = JSON.parse((await doc.evaluate(() => localStorage.getItem("psassist:conferme.v1")).catch(() => null)) || "[]").find((x) => x.rid === rid);
   check(prima && conferme(A).length === 1, `premuta a mano a pagina non ancora pronta (nessun pannello): una Conferma (got ${prima} · ${conferme(A).length})`);
   check(!!cf && cf.premuta >= t0 - 50, `annotata prima che il clic parta (got ${JSON.stringify(cf)})`);
+  // la richiesta è di PS Assist: la stampa si arma come col gancio — le etichette escono, una volta
+  const re = new RegExp("RcsStampaEtichetteLISHMIMU\\.do\\?RICHIESTA_ID=" + rid);
+  await finche(() => chiesti(A, re) > 0, 20000);
+  await sospendi(4000);
+  check(chiesti(A, re) === 1, `e le sue etichette escono, una volta (got ${chiesti(A, re)})`);
+}
+
+// La Conferma del gestionale premuta a mano chiude anche i bottoni del pannello su quella pagina: la
+// Conferma vera torna in 3–14 s, e il medico che non vede niente tocca «Conferma per …». Una Conferma
+// sola, anche con la richiesta tolta dalle «da confermare» (lì il minuto di conferme.v1 non vale).
+for (const togli of [false, true]) {
+  if (!prova(`a mano sulla Conferma del gestionale e poi «Conferma per …» mentre la prima è in volo: una Conferma sola${togli ? " (richiesta non fra le da confermare)" : ""}`)) continue;
+  const { rid } = await soloCarrello();
+  check(conferme(A).length === 0, "solo carrello: niente confermato da solo");
+  if (togli) await doc.evaluate(() => localStorage.removeItem("psassist:daConfermare.v1"));
+  sess.confermaLenta = 6000;
+  // 1,5 s dopo il clic vero sulla Conferma della pagina, «Conferma per …» del pannello
+  await doc.evaluate(() => setTimeout(() => {
+    const r = document.getElementById("psassist-host")?.shadowRoot;
+    if (!r?.querySelector("#confirmnow")) (r?.querySelector(".pill.run") || r?.querySelector("#expand"))?.click();
+    setTimeout(() => r?.querySelector("#confirmnow")?.click(), 400);
+  }, 1500));
+  await doc.click('input[type="submit"][name="Update"], input[type="submit"][name="Update1"]', { noWaitAfter: true });
+  await sospendi(10000);
+  check(conferme(A).length === 1 && conferme(A)[0].params.RICHIESTA_ID === rid, `una Conferma sola (got ${conferme(A).length})`);
+  sess.confermaLenta = 0;
+}
+
+// Una Conferma che il carrello ha smentito («Non partita»: provata non presa) non è in volo: non
+// ferma quella del medico. La rifatta non presa, il carrello aperto: «Conferma per …» preme subito,
+// senza aspettare il minuto di conferme.v1.
+if (prova("la rifatta non presa, poi «Conferma per …» sul carrello: parte, la Conferma smentita non la ferma")) {
+  await daCapo();
+  A = createMock({ dopoConferma: 300 });
+  Object.assign(sess, { corrente: null, log: [], ora: 0, forzaOra: null, area: null });
+  await suPagina(doc, A.patientUrl);
+  await nienteSmart(doc);
+  await senzaConferme(doc);
+  sess.dopoConferma = (mock, p) => { if (mock === A) mock.state.richieste[p.get("RICHIESTA_ID")].confirmed = false; };
+  const nasce = nuovaPagina();
+  await ordina(doc, ["TROPONINA"]);
+  await nasce;
+  await suPagina(doc, B.patientUrl);
+  await striscia(doc, /ROSSI MARIO.*Non partita.*Conferma di nuovo/, 40000).catch(() => "");
+  await $panel(doc, AZIONE).click();
+  await finche(() => conferme(A).length > 1, 30000);
+  const vista = await striscia(doc, /ROSSI MARIO.*Non partita.*apri il carrello/, 30000).catch(() => "");
+  sess.dopoConferma = null;   // adesso il gestionale la prende
+  await $panel(doc, AZIONE).click();   // «apri il carrello»
+  await doc.waitForURL(/RcsRichiestaPrestazioniRicercaErogatore/, { timeout: 15000 });
+  await doc.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
+  let c = await doc.waitForSelector("#psassist-host #confirmnow", { timeout: 4000 }).then(() => true, () => false);
+  if (!c) { await $panel(doc, ".pill.run").click().catch(() => {}); c = await doc.waitForSelector("#psassist-host #confirmnow", { timeout: 8000 }).then(() => true, () => false); }
+  if (c) await $panel(doc, "#confirmnow").click();
+  await finche(() => conferme(A).length > 2, 15000);
+  const rid = Object.keys(A.state.richieste)[0];
+  check(!!vista && c && conferme(A).length === 3 && conferme(A).every((q) => q.params.RICHIESTA_ID === rid),
+    `«Conferma per …» come dice la striscia: la Conferma parte (got «${vista}» · ${conferme(A).length} conferme)`);
 }
 
 if (prova("i fogli letti dopo un ordine scadono: all'avvio di una pagina se ne vanno, anche se nessuno scrive più")) {
