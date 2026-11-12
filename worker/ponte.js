@@ -24,7 +24,20 @@ export class PonteStanza extends DurableObject {
   constructor(ctx, env) {
     super(ctx, env);
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair(PING, PONG));
+    // Le chiavi d'entrata della stanza (ponte-logica.js): nel suo SQLite, con l'API sincrona (una lettura a
+    // ogni entrata, una scrittura quando una chiave si registra o cambia). I conti al minuto in memoria: chi
+    // li fa salire tiene sveglio il Durable Object, e uno che si riaddormenta riparte da zero.
+    const kv = ctx.storage && ctx.storage.kv && typeof ctx.storage.kv.get === "function" ? ctx.storage.kv : null;
+    const mem = new Map();
+    this.conti = new Map();
     this.stanza = new Stanza({
+      archivio: {
+        leggi: (k) => (kv ? kv.get(k) : mem.get(k)) ?? null,
+        scrivi: (k, v) => (kv ? kv.put(k, v) : mem.set(k, v)),
+      },
+      conti: this.conti,
+      // (le entrate senza prova del passaggio: quante e di che ruolo, mai la stanza — Workers Logs)
+      nota: (x) => { try { console.log(JSON.stringify(x)); } catch { /* niente */ } },
       tutte: () => ctx.getWebSockets(),
       aperta: (w) => w.readyState === APERTA,
       invia: (w, d) => { try { w.send(d); } catch { /* chiusa intanto */ } },

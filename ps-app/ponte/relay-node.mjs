@@ -36,8 +36,15 @@ export async function avviaRelay({ porta = 0, osserva = null } = {}) {
   // ripetitore ritira o chiude, con il codice — per stanza (le prime 6 cifre) e ruolo.
   const eventi = [];
   const nota = (nome, ruolo, tipo, codice) => { eventi.push({ ts: Date.now(), stanza: nome.slice(0, 6), ruolo, tipo, codice }); if (eventi.length > 5000) eventi.splice(0, 1000); };
-  const vive = (nome) => [...(stanze.get(nome) || [])].filter((w) => w.readyState === w.OPEN && !stati.get(w)?.via);
+  const vive = (nome) => [...(stanze.get(nome) || [])].filter((w) => w.readyState === w.OPEN && !stati.get(w)?.via && !stati.get(w)?.attende);
+  // quello che ogni stanza tiene (le chiavi d'entrata, come lo SQLite del Durable Object) e i suoi conti al
+  // minuto (come la sua memoria): per stanza, finché il ripetitore gira
+  const archivi = new Map(), conti = new Map();
+  const di = (m, nome) => { if (!m.has(nome)) m.set(nome, new Map()); return m.get(nome); };
   const logica = (nome) => new Stanza({
+    archivio: { leggi: (k) => di(archivi, nome).get(k) ?? null, scrivi: (k, v) => di(archivi, nome).set(k, structuredClone(v)) },
+    conti: di(conti, nome),
+    nota: (x) => nota(nome, x.ruolo, x.ponte),
     tutte: () => [...(stanze.get(nome) || [])],
     aperta: (w) => w.readyState === w.OPEN,
     invia: (w, d) => { if (mute.has(w)) return; try { w.send(d, { binary: typeof d !== "string" }); } catch { /* chiusa intanto */ } },

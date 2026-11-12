@@ -26,12 +26,34 @@
  *   - `fino`: l'ora oltre la quale non serve più, e si chiude da sé (null:
  *     finché qualcuno non dice altro). La decide il service worker (quando
  *     serve: ponte-sw.js, stazione-sw.js); qui si rispetta anche se lui dorme.
+ *   - l'entrata (3.87): il ripetitore manda una sfida, e la presa risponde con
+ *     la prova della chiave d'entrata (HMAC-SHA256). Le chiavi d'entrata
+ *     arrivano dal service worker nel frammento dell'indirizzo
+ *     (`#p=<chiavi per la prova>&c=<la propria>&a=<quelle dell'altro ruolo>`),
+ *     che resta qui: alla rete va l'indirizzo senza frammento, e nessun
+ *     segreto viaggia mai nell'indirizzo.
  */
 (function (g) {
   "use strict";
   // (i test possono accorciarli: fuori.js, «fuoriRegola»)
   const PRESA = { battito: 30e3, pong: 15e3, primo: 1e3, max: 300e3, tenuta: 120e3 };
   const ora = () => Date.now();
+  // l'indirizzo per la rete (senza frammento) e le chiavi d'entrata del frammento
+  const B64U = /^[A-Za-z0-9_-]{43}$/;
+  function entrata(url) {
+    const i = url.indexOf("#");
+    if (i < 0) return { rete: url, prova: [], chiave: "", altro: [] };
+    const q = new URLSearchParams(url.slice(i + 1));
+    const lista = (x) => String(q.get(x) || "").split(",").filter((c) => B64U.test(c)).slice(0, 4);
+    const c = String(q.get("c") || "");
+    return { rete: url.slice(0, i), prova: lista("p"), chiave: B64U.test(c) ? c : "", altro: lista("a") };
+  }
+  const b64u = (b) => { let s = ""; for (const x of b) s += String.fromCharCode(x); return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""); };
+  const daB64u = (t) => Uint8Array.from(atob(t.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((t.length + 3) % 4)), (c) => c.charCodeAt(0));
+  async function prova(chiave, sfida) {
+    const k = await g.crypto.subtle.importKey("raw", daB64u(chiave), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+    return b64u(new Uint8Array(await g.crypto.subtle.sign("HMAC", k, new TextEncoder().encode("ps-ponte/entra|" + sfida))));
+  }
   const TETTO = 2 ** 31 - 1;   // (setTimeout non va oltre)
 
   class PresaWs {
@@ -90,7 +112,8 @@
       clearTimeout(this.tRiprova); this.tRiprova = 0; this.prossimo = 0;
       this.chiudiPresa();
       let ws;
-      try { ws = new WebSocket(this.url); } catch { this.riprova(); this.dici(); return; }
+      const e = entrata(this.url);
+      try { ws = new WebSocket(e.rete); } catch { this.riprova(); this.dici(); return; }
       ws.binaryType = "arraybuffer";
       this.ws = ws; this.entrate++;
       ws.onopen = () => { if (this.ws !== ws) return; this.su = true; this.aperta = ora(); this.codice = 0; this.dici(); };
@@ -101,6 +124,13 @@
           let m = null;
           try { m = JSON.parse(ev.data); } catch { return; }
           if (m && typeof m.pari === "boolean" && m.pari !== this.pari) { this.pari = m.pari; this.dici(); }
+          // la sfida dell'entrata: la prova con ogni chiave che si ha, e (il PC) le chiavi da tenere
+          if (m && typeof m.sfida === "string" && /^[A-Za-z0-9_-]{8,64}$/.test(m.sfida) && (e.prova.length || e.chiave)) {
+            Promise.all([...new Set([e.chiave, ...e.prova].filter(Boolean))].map((c) => prova(c, m.sfida))).then((l) => {
+              if (this.ws !== ws || ws.readyState !== 1) return;
+              ws.send(JSON.stringify({ prova: l, ...(e.chiave ? { chiave: e.chiave } : {}), ...(e.altro.length ? { altro: e.altro } : {}) }));
+            }).catch(() => {});
+          }
           return;
         }
         try { this.eventi.dati && this.eventi.dati(ev.data); } catch { /* chi ascolta non c'è più */ }
