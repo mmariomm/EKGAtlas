@@ -345,6 +345,32 @@ sezione("uno zip in corso senza prese, e il service worker che riparte: il docum
 }
 
 // ===========================================================================
+// (revisione 3.87, P3-3) Il ripiego non è per sempre: scade dopo 30 minuti, alla prossima occasione o al
+// riavvio; e passarci chiude le prese che il documento tiene ancora (mai una là e una qui).
+sezione("il ripiego scade, e passarci chiude le prese del documento");
+{
+  const d4 = await ctx.newPage();
+  await d4.goto(A.patientUrl);
+  check(!!(await finche(async () => relay.prese().pc === 1, 20000)) && (await fuoriAperti()).length === 1, "una pagina del gestionale: sul ponte, con la presa nel documento");
+  const t0 = Date.now();
+  await sw.evaluate(() => fuoriRipiega(new Error("prova")));
+  const libero = await finche(async () => { const p = await sw.evaluate(() => fuoriPing()); return !p || !Object.values(p.prese || {}).some((s) => s && s.url); }, 10000);
+  check(!!libero && !!(await finche(async () => relay.eventi().some((e) => e.ts >= t0 && e.ruolo === "pc" && e.tipo === "esce"), 10000)),
+    "passato al ripiego: la presa del documento si chiude");
+  await sw.evaluate(() => { FUORI.ripiegoDal = Date.now() - 31 * 60e3; });
+  await d4.reload();
+  check(!!(await finche(async () => (await sw.evaluate(() => FUORI.ripiego)) === false, 15000)) && !(await sw.evaluate(() => chrome.storage.session.get("fuori.ripiego")))["fuori.ripiego"],
+    "31 minuti dopo, alla prossima occasione (una pagina del gestionale che si apre): il ripiego scade");
+  check(!!(await finche(async () => relay.prese().pc === 1 && (await fuoriAperti()).length === 1, 20000)), "…e la presa torna nel documento");
+  await sw.evaluate(() => chrome.storage.session.set({ "fuori.ripiego": { ts: Date.now() - 31 * 60e3, why: "prova" } }));
+  check(await ferma(), "(fermato il service worker, col ripiego di 31 minuti fa annotato)");
+  await sveglia();
+  await riprendiSw();
+  check((await sw.evaluate(() => fuoriCaricato.then(() => FUORI.ripiego))) === false, "ripartito: il ripiego vecchio non vale più");
+  await d4.close();
+}
+
+// ===========================================================================
 sezione("il ripiego: senza documento fuori schermo, la presa nel service worker come la 3.86");
 {
   await sw.evaluate(async () => { await pt.presa.ferma(); await chrome.storage.session.set({ "fuori.ripiego": { ts: Date.now(), why: "prova" } }); });
