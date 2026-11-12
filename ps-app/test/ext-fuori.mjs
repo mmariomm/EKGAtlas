@@ -276,6 +276,21 @@ sezione("lo zip del registratore, con la sessione aperta: si salva, la presa res
 }
 
 // ===========================================================================
+// (revisione 3.87, P3-4) Chrome chiude il documento (la memoria) col service worker sveglio, che non lo sa:
+// per lui la presa è tenuta. Al primo risveglio con lo stato vecchio, lo chiede al documento, e la riapre.
+sezione("il documento muore col service worker sveglio: al primo risveglio la presa torna");
+{
+  const e0 = relay.entrate().pc;
+  await sw.evaluate(() => chrome.offscreen.closeDocument());
+  check(!!(await finche(async () => relay.prese().pc === 0, 10000)), "chiuso il documento: la presa del PC cade (il service worker non lo sa)");
+  await sw.evaluate(() => { pt.presa.visto -= 2 * 60e3; });   // (lo stato del documento, saputo due minuti fa)
+  await sveglia();
+  check(!!(await finche(async () => relay.prese().pc === 1 && relay.entrate().pc === e0 + 1, 15000)), "…una pagina del gestionale lo sveglia: lo chiede al documento, e la presa si riapre");
+  const c4 = await tel.chiedi("ciao");
+  check(!!c4 && c4.ok, "la sessione col telefono risponde, sulla presa nuova");
+}
+
+// ===========================================================================
 sezione("senza schede del gestionale: la presa si chiude dopo 2 minuti, e poi nessuna presa nuova");
 {
   tel.chiudi();

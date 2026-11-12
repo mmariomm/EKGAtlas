@@ -37,6 +37,7 @@ const FUORI = {
   ripiego: !(chrome.offscreen && chrome.offscreen.createDocument),
   ripiegoDal: 0,           // da quando (0: per sempre — senza chrome.offscreen)
   aperto: false,           // l'ultima volta che si è guardato, c'era (e rispondeva)
+  fresco: 60e3,            // lo stato di una presa, dal documento: più vecchio di così, «servi» glielo richiede
   motivi: new Set(),       // chi tiene il documento oltre le prese: «registra» (uno zip in corso)
   prese: new Map(),        // nome → Presa
   fila: Promise.resolve(), // il documento (aprirlo, chiuderlo) e le richieste alle prese: una cosa alla volta
@@ -149,7 +150,7 @@ class Presa {
   // ascolta: { dati(Uint8Array), pari(bool), stato() }
   constructor(nome, ascolta = {}) {
     Object.assign(this, { nome, ascolta, url: "", su: false, pari: false, fino: 0, fermo: 0, codice: 0, collego: false, prossimo: 0,
-      vita: "", ver: 0, persi: 0, locale: null, filaM: Promise.resolve() });
+      vita: "", ver: 0, visto: 0, persi: 0, locale: null, filaM: Promise.resolve() });
     FUORI.prese.set(nome, this);
   }
   get tenuta() { return !!this.url; }
@@ -159,6 +160,7 @@ class Presa {
   // lo stato vero, dal documento (o dalla presa qui, nel ripiego)
   applica(s) {
     if (!s) return;
+    this.visto = fuoriOra();   // (l'ultima volta che si è saputo com'è)
     // (uno stato più vecchio di quello che si sa, arrivato dopo per l'altra strada — la risposta a «tieni» e i
     // messaggi del documento non si aspettano —: si ignora; un documento nuovo ricomincia a contare)
     if (s.vita && Number.isSafeInteger(s.ver)) {
@@ -227,8 +229,23 @@ class Presa {
     if (fino != null && fino !== 0 && fino <= ora) fino = 0;
     // (com'era: niente da dire — una pagina del gestionale dopo l'altra non manda niente al documento)
     if (fino === 0 && !this.tenuta) return Promise.resolve();
-    if (!subito && fino !== 0 && this.url === url && this.fino === fino && !this.fermo) return Promise.resolve();
+    if (!subito && fino !== 0 && this.url === url && this.fino === fino && !this.fermo) {
+      // …se lo stato è fresco. Il documento può essere morto (Chrome l'ha chiuso) senza dirlo: uno stato
+      // vecchio, o un documento che l'ultima volta non rispondeva, glielo si richiede — e se la presa là
+      // non c'è più, la si riapre.
+      if (this.locale || FUORI.ripiego || (FUORI.aperto && fuoriOra() - this.visto < FUORI.fresco)) return Promise.resolve();
+      return this.guarda(url, fino);
+    }
     return this.tieni(url, fino, subito);
+  }
+  guarda(url, fino) {
+    return fuoriInFila(async () => {
+      const r = await fuoriPing();
+      FUORI.aperto = !!r;
+      const s = r && r.prese && r.prese[this.nome];
+      if (s) this.applica(s);
+      return !!s && s.url === url;
+    }).then((c) => (c ? undefined : this.tieni(url, fino)));
   }
   ferma() { return this.tieni("", 0); }
   battito() { /* il battito lo fa la presa (presa.js), dov'è */ }
