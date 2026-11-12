@@ -27,13 +27,17 @@ export class PonteStanza extends DurableObject {
     // Le chiavi d'entrata della stanza (ponte-logica.js): nel suo SQLite, con l'API sincrona (una lettura a
     // ogni entrata, una scrittura quando una chiave si registra o cambia). I conti al minuto in memoria: chi
     // li fa salire tiene sveglio il Durable Object, e uno che si riaddormenta riparte da zero.
+    // Senza SQLite (una classe non migrata a new_sqlite_classes, un runtime vecchio): MAI una memoria al suo
+    // posto — al risveglio sarebbe vuota, e la prima presa si registrerebbe la stanza. La stanza è `guasto`:
+    // chi entra esce con 1011, e i log lo gridano (P2-9).
     const kv = ctx.storage && ctx.storage.kv && typeof ctx.storage.kv.get === "function" ? ctx.storage.kv : null;
-    const mem = new Map();
+    if (!kv) console.error(JSON.stringify({ ponte: "ARCHIVIO NON DISPONIBILE (ctx.storage.kv): la stanza rifiuta tutti" }));
     this.conti = new Map();
     this.stanza = new Stanza({
       archivio: {
-        leggi: (k) => (kv ? kv.get(k) : mem.get(k)) ?? null,
-        scrivi: (k, v) => (kv ? kv.put(k, v) : mem.set(k, v)),
+        guasto: !kv,
+        leggi: (k) => (kv ? kv.get(k) ?? null : null),
+        scrivi: (k, v) => { if (!kv) throw new Error("archivio"); kv.put(k, v); },
       },
       conti: this.conti,
       // (le entrate senza prova del passaggio: quante e di che ruolo, mai la stanza — Workers Logs)

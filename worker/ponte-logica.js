@@ -54,6 +54,10 @@ export const PONTE = {
   // stanza nuova.
   senzaProva: true,
   provaMs: 10e3,              // una presa che deve provare e non lo fa in tanto: fuori (4403)
+  // Le prese che non hanno ancora provato, per ruolo, tutte insieme: oltre, la più vecchia esce. Non
+  // consumano le entrate al minuto (quelle si contano solo a chi è entrato davvero): chi sa solo il numero
+  // della stanza non chiude fuori chi ha la chiave.
+  inAttesaMax: 4,
 };
 export const PING = "ping";
 export const PONG = "pong";
@@ -152,6 +156,13 @@ const uguali = (a, b) => {
 };
 const chiaveValida = (c) => { const k = daB64u(c); return !!k && k.length === 32; };
 const chiaviValide = (l, max) => (Array.isArray(l) ? l : [l]).filter(chiaveValida).slice(0, max);
+// Una chiave d'entrata con la sua scadenza (P2-8: quelle del QR valgono solo la sua finestra, e la stanza
+// lo sa da sé, senza aspettare il PC): «chiave» o { c, fino }. Nella stanza si tengono così.
+const conScadenza = (l, max) => (Array.isArray(l) ? l : [l]).map((x) => (typeof x === "string" ? { c: x }
+  : x && typeof x === "object" ? { c: x.c, ...(Number.isSafeInteger(x.fino) && x.fino > 0 ? { fino: x.fino } : {}) } : null))
+  .filter((x) => x && typeof x.c === "string" && chiaveValida(x.c)).slice(0, max);
+// lo SQLite del Durable Object che non c'è o non risponde: la stanza si chiude (P2-9), mai una memoria al suo posto
+class Guasto extends Error {}
 const sfidaNuova = () => b64u(globalThis.crypto.getRandomValues(new Uint8Array(16)));
 
 /*
@@ -199,13 +210,31 @@ export class Stanza {
   // tace da troppo (nemmeno il battito)
   muta(p, st, ora) { return ora - Math.max(st.ultimo || 0, this.io.battito(p) || 0) > PONTE.inattivoMs; }
   // le chiavi d'entrata di un ruolo, in questa stanza ([] = nessuna: entra chiunque, nel passaggio)
-  chiavi(ruolo) {
+  // (scadute non contano: P2-8). L'archivio guasto o che non risponde: Guasto — chi entra esce (1011), mai
+  // «nessuna chiave», che nel passaggio vorrebbe dire «entra chiunque, e il primo si registra».
+  chiavi(ruolo, ora = Date.now()) {
     const a = this.io.archivio;
     if (!a) return [];
-    try { return chiaviValide(a.leggi("entra:" + ruolo) || [], 4); } catch { return []; }
+    if (a.guasto) throw new Guasto("archivio");
+    let v;
+    try { v = a.leggi("entra:" + ruolo); } catch { throw new Guasto("archivio"); }
+    return conScadenza(v || [], 4).filter((x) => !x.fino || x.fino > ora).map((x) => x.c);
   }
+  // true se scritta (e riletta uguale)
   scriviChiavi(ruolo, l) {
-    try { this.io.archivio?.scrivi("entra:" + ruolo, l); } catch { /* resta com'era */ }
+    const a = this.io.archivio;
+    if (!a || a.guasto) return false;
+    try {
+      const v = conScadenza(l, 4);
+      a.scrivi("entra:" + ruolo, v);
+      return JSON.stringify(conScadenza(a.leggi("entra:" + ruolo) || [], 4)) === JSON.stringify(v);
+    } catch { return false; }
+  }
+  // l'archivio non c'è: la presa esce con 1011, e i log lo gridano
+  guasto(presa, ruolo, ora) {
+    this.io.nota?.({ ponte: "ARCHIVIO NON DISPONIBILE: la stanza non accetta nessuno", ruolo });
+    try { this.io.scrivi(presa, { ruolo, ...nuovoConto(ora), via: 1011, chiusa: true }); } catch { /* chiusa */ }
+    this.io.chiudi(presa, 1011, "archivio");
   }
   // un conto al minuto della stanza (non della presa): true se si è oltre
   oltre(nome, n, max, ora) {
@@ -217,31 +246,46 @@ export class Stanza {
     c.set(nome, x);
     return x.n > max;
   }
+  // Troppe entrate in un minuto, per questo ruolo: fuori subito (chi rifà la presa a raffica). Si contano solo
+  // le entrate vere — dopo la prova, o senza prova nel passaggio — così chi sa solo il numero della stanza non
+  // consuma il conto di chi ha la chiave (P2-2). true se fuori.
+  troppe(presa, st, ora) {
+    if (!this.oltre("entrate:" + st.ruolo, 1, PONTE.entrateAlMinuto, ora)) return false;
+    this.chiudi(presa, st, 1013, "troppe entrate", false, ora);
+    return true;
+  }
   entra(presa, ruolo, ora) {
-    // troppe entrate in un minuto, per questo ruolo: fuori subito (chi rifà la presa a raffica)
-    if (this.oltre("entrate:" + ruolo, 1, PONTE.entrateAlMinuto, ora)) {
-      this.io.scrivi(presa, { ruolo, ...nuovoConto(ora), via: 1013, chiusa: true });
-      this.io.chiudi(presa, 1013, "troppe entrate");
-      return;
-    }
-    this.pulisci(presa, ora);
+    this.pulisci(presa, ruolo, ora);
     const sfida = sfidaNuova();
-    // un ruolo con la sua chiave (o, dopo il taglio, qualunque ruolo): entra solo con la prova
-    if (this.io.archivio && (this.chiavi(ruolo).length || !PONTE.senzaProva)) {
+    let note;
+    try { note = this.chiavi(ruolo, ora); } catch { this.guasto(presa, ruolo, ora); return; }
+    // Un ruolo con la sua chiave (o, dopo il taglio, qualunque ruolo): entra solo con la prova. Dopo il taglio la
+    // sfida lo dice (`obbligo`): il PC (o il PC del medico) dà allora alla stanza anche le chiavi dell'altro ruolo.
+    if (this.io.archivio && (note.length || !PONTE.senzaProva)) {
       this.io.scrivi(presa, { ruolo, ...nuovoConto(ora), sfida, attende: true });
-      this.io.invia(presa, JSON.stringify({ sfida }));
+      this.io.invia(presa, JSON.stringify({ sfida, ...(PONTE.senzaProva ? {} : { obbligo: 1 }) }));
       return;
     }
-    this.io.scrivi(presa, { ruolo, ...nuovoConto(ora), sfida });
+    const st = { ruolo, ...nuovoConto(ora), sfida };
+    this.io.scrivi(presa, st);
+    if (this.troppe(presa, st, ora)) return;
     this.ammetti(presa, ruolo, ora);
     if (this.io.archivio) this.io.invia(presa, JSON.stringify({ sfida }));
   }
-  // le prese che dovevano provare e non l'hanno fatto in tempo: fuori, con 4403
-  pulisci(escluso, ora) {
+  // Le prese che dovevano provare e non l'hanno fatto in tempo: fuori, con 4403 (non quelle che aspettano che il
+  // PC dia la loro chiave: `aspetta`). E di `ruolo` al più PONTE.inAttesaMax ancora da provare, con quella che
+  // entra: oltre, le più vecchie escono (4403).
+  pulisci(escluso, ruolo, ora) {
+    const attese = [];
     for (const p of this.io.tutte()) {
       const st = p !== escluso && this.io.leggi(p);
-      if (st && st.attende && !st.via && ora - (st.inizio || 0) > PONTE.provaMs) this.chiudi(p, st, 4403, "prova mancante", false, ora);
+      if (!st || !st.attende || st.via) continue;
+      if (!st.aspetta && ora - (st.inizio || 0) > PONTE.provaMs) { this.chiudi(p, st, 4403, "prova mancante", false, ora); continue; }
+      if (st.ruolo === ruolo) attese.push([p, st]);
     }
+    attese.sort((a, b) => (a[1].inizio || 0) - (b[1].inizio || 0));
+    const via = attese.length - (PONTE.inAttesaMax - 1);
+    for (const [p, st] of attese.slice(0, Math.max(0, via))) this.chiudi(p, st, 4403, "troppe in attesa", false, ora);
   }
   // Entrata davvero: prende il posto di quelle di prima del suo ruolo, e chi c'è lo sa.
   ammetti(presa, ruolo, ora) {
@@ -282,7 +326,8 @@ export class Stanza {
   // quella di prima) e `altro` (le chiavi d'entrata dell'altro ruolo, che il PC conosce).
   prova(presa, st, m, ora) {
     const prove = (Array.isArray(m.prova) ? m.prova : [m.prova]).filter((x) => typeof x === "string").slice(0, 4);
-    const note = this.chiavi(st.ruolo);
+    let note;
+    try { note = this.chiavi(st.ruolo, ora); } catch { this.guasto(presa, st.ruolo, ora); return; }
     // (la propria chiave la registra solo il PC — o il PC del medico —: quella del telefono, o della
     // stazione, gliela dà lui, così chi sa solo il numero della stanza non può prenotarsi il posto)
     const nuova = CAPO.has(st.ruolo) && chiaveValida(m.chiave) ? m.chiave : "";
@@ -291,20 +336,42 @@ export class Stanza {
     let i = -1;
     for (let j = 0; j < prove.length && i < 0; j++) if (contro.some((c) => uguali(prove[j], provaDi(c, st.sfida)))) i = j;
     if (i < 0) {
+      // (P1) dopo il taglio, il telefono o la stazione di una stanza dove il PC non ha ancora dato la loro
+      // chiave: non esce — aspetta (senza ricevere niente, senza scadenza) che il PC la dia, e allora ha
+      // una sfida nuova (risfida). Quante ne aspettano: al più PONTE.inAttesaMax (pulisci).
+      if (st.attende && !note.length && !CAPO.has(st.ruolo)) { this.io.scrivi(presa, { ...st, sfida: "", aspetta: true }); return; }
       if (st.attende) this.chiudi(presa, st, 4403, "prova sbagliata", false, ora);
       // (entrata senza prova nel passaggio, e la prova non torna: resta com'era — nessuno le ha ancora dato la chiave)
       return;
     }
     // la sfida vale una volta sola
-    const dopo = { ...st, sfida: "", provata: true, attende: false };
+    const dopo = { ...st, sfida: "", provata: true, attende: false, aspetta: false };
     this.io.scrivi(presa, dopo);
-    if (nuova && !(note.length === 1 && note[0] === nuova)) this.scriviChiavi(st.ruolo, [nuova]);
-    if (CAPO.has(st.ruolo) && m.altro != null) {
-      const l = chiaviValide(m.altro, 3);
-      if (l.length) this.scriviChiavi(altroRuolo(st.ruolo), l);
+    // (la prima chiave della stanza che non si riesce a scrivere: non si entra — 1011, il PC riprova)
+    let registrata = null;
+    if (nuova && !(note.length === 1 && note[0] === nuova)) {
+      registrata = this.scriviChiavi(st.ruolo, [nuova]);
+      if (!registrata && !note.length) { this.chiudi(presa, dopo, 1011, "archivio", false, ora); return; }
     }
-    this.io.invia(presa, JSON.stringify({ entrato: i }));
+    if (st.attende && this.troppe(presa, dopo, ora)) return;
+    if (CAPO.has(st.ruolo) && m.altro != null) {
+      const l = conScadenza(m.altro, 3);
+      if (l.length && this.scriviChiavi(altroRuolo(st.ruolo), l)) this.risfida(altroRuolo(st.ruolo), ora);
+    }
+    // `registrata`: la chiave nuova che il PC ha portato è scritta (P3: solo allora butta quella di prima)
+    this.io.invia(presa, JSON.stringify({ entrato: i, ...(registrata === null ? {} : { registrata }) }));
     if (st.attende) this.ammetti(presa, st.ruolo, ora);
+  }
+  // Il PC ha appena dato alla stanza le chiavi di quel ruolo: chi aspettava (o doveva ancora provare) ha una
+  // sfida nuova, e il tempo per provare riparte.
+  risfida(ruolo, ora) {
+    for (const p of this.io.tutte()) {
+      const st = this.io.leggi(p);
+      if (!st || st.via || !st.attende || st.ruolo !== ruolo || !this.io.aperta(p)) continue;
+      const sfida = sfidaNuova();
+      this.io.scrivi(p, { ...st, sfida, aspetta: false, inizio: ora });
+      this.io.invia(p, JSON.stringify({ sfida }));
+    }
   }
   messaggio(presa, dati, ora) {
     const st = this.io.leggi(presa);
@@ -325,7 +392,7 @@ export class Stanza {
     }
     // deve ancora provare: qualunque altra cosa la chiude (un client che non sa provare: 4403, «scollegato»)
     if (st.attende) {
-      if (ora - (st.inizio || 0) > PONTE.provaMs || typeof dati !== "string") this.chiudi(presa, st, 4403, "prova mancante", false, ora);
+      if ((!st.aspetta && ora - (st.inizio || 0) > PONTE.provaMs) || typeof dati !== "string") this.chiudi(presa, st, 4403, "prova mancante", false, ora);
       return;
     }
     const c = contaFrame(st, byteDi(dati), ora);

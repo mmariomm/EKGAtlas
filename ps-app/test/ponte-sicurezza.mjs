@@ -176,6 +176,88 @@ await blocco(async () => {
   pc.chiudi(); tel.chiudi();
 });
 
+// ============================================== la stanza da sola (la revisione: stanza-probe)
+sezione("la stanza da sola: il taglio, le attese, le scadenze, l'archivio");
+// una Stanza con un io finto (come il Durable Object, senza rete): prese a mano, il tempo a mano
+function stanzaFinta({ guasto = false, rotto = false } = {}) {
+  const arch = new Map(), socks = [];
+  const io = {
+    archivio: { guasto, leggi: (k) => { if (rotto) throw new Error("io"); return arch.get(k) ?? null; }, scrivi: (k, v) => { if (rotto) throw new Error("io"); arch.set(k, structuredClone(v)); } },
+    conti: new Map(), nota: () => {},
+    tutte: () => socks, aperta: (w) => !w.chiusa, invia: (w, d) => w.rx.push(d),
+    chiudi: (w, c) => { w.chiusa = c; }, leggi: (w) => w.st, scrivi: (w, s) => { w.st = s; }, battito: () => 0,
+  };
+  const s = new L.Stanza(io);
+  const msg = (w) => w.rx.filter((x) => typeof x === "string").map((x) => { try { return JSON.parse(x); } catch { return {}; } });
+  const sfida = (w) => [...msg(w)].reverse().find((m) => typeof m.sfida === "string")?.sfida;
+  const entra = (ruolo, t = Date.now()) => { const w = { rx: [], st: null, chiusa: 0 }; socks.push(w); s.entra(w, ruolo, t); return w; };
+  const prova = (w, chiavi, extra = {}, t = Date.now()) => s.messaggio(w, JSON.stringify({ prova: chiavi.map((c) => L.provaDi(c, sfida(w))), ...extra }), t);
+  return { s, arch, entra, prova, msg, sfida, socks };
+}
+const chiaveB = () => P.b64u(P.casuale(32));
+const taglio = (fn) => { const prima = L.PONTE.senzaProva; L.PONTE.senzaProva = false; try { fn(); } finally { L.PONTE.senzaProva = prima; } };
+{
+  // P1: dopo il taglio, la stazione (o il telefono) di una stanza dove il medico (il PC) non ha ancora dato la
+  // sua chiave non esce con 4403: aspetta, e quando il medico la dà ha una sfida nuova ed entra
+  taglio(() => {
+    const { entra, prova, msg } = stanzaFinta();
+    const sta = chiaveB(), med = chiaveB();
+    const st = entra("stazione"); prova(st, [sta]);
+    check(st.chiusa === 0 && st.st.aspetta === true, "P1. dopo il taglio, la stazione in una stanza senza la sua chiave non esce (4403): aspetta");
+    check(msg(st)[0].obbligo === 1, "P1. …e la sfida dice che la prova ormai è obbligo (il PC sa che deve dare le chiavi dell'altro ruolo)");
+    const m = entra("medico"); prova(m, [med], { chiave: med, altro: [sta] });
+    check(m.chiusa === 0 && msg(st).filter((x) => x.sfida).length === 2, "P1. il medico entra e dà la chiave della stazione: la stazione che aspettava ha una sfida nuova");
+    prova(st, [sta]);
+    check(st.chiusa === 0 && st.st.provata && msg(st).some((x) => x.entrato === 0) && msg(st).some((x) => x.pari === true), "P1. …e con quella entra: si vedono");
+    // chi aspetta da più di provaMs non esce (non è colpa sua), chi deve provare sì
+    const t = Date.now(), { entra: e2, prova: p2 } = stanzaFinta();
+    const tel = e2("tel", t); p2(tel, [chiaveB()], {}, t);
+    const x = e2("pc", t);
+    e2("pc", t + L.PONTE.provaMs + 1);
+    check(tel.chiusa === 0 && x.chiusa === 4403, "P1. dopo provaMs: chi aspetta la sua chiave resta, chi doveva provare e non l'ha fatto esce (4403)");
+  });
+}
+{
+  // P2-2: chi sa solo il numero della stanza non consuma le entrate al minuto di chi ha la chiave
+  const { entra, prova } = stanzaFinta();
+  const k = chiaveB(), t = Date.now();
+  prova(entra("pc", t), [k], { chiave: k }, t);
+  const finte = [];
+  for (let i = 0; i < (L.PONTE.entrateAlMinuto || 60) + 10; i++) finte.push(entra("pc", t));
+  const vero = entra("pc", t); prova(vero, [k], {}, t);
+  check(vero.chiusa === 0 && vero.st.provata, `P2-2. ${finte.length} entrate senza prova in un minuto: il PC vero entra lo stesso (le entrate si contano dopo la prova)`);
+  check(finte.filter((w) => !w.chiusa).length <= (L.PONTE.inAttesaMax || 4), "P2-2. …e chi deve ancora provare, per ruolo, è al più PONTE.inAttesaMax (le più vecchie escono)");
+}
+{
+  // P2-8: le chiavi d'entrata del telefono che il PC dà con una scadenza (quelle del QR) scadono da sole, nella stanza
+  const { entra, prova, msg } = stanzaFinta();
+  const k = chiaveB(), tq = chiaveB(), t = Date.now();
+  prova(entra("pc", t), [k], { chiave: k, altro: [{ c: tq, fino: t + 60e3 }] }, t);
+  const prima = entra("tel", t); prova(prima, [tq], {}, t);
+  const dopo = entra("tel", t + 61e3); prova(dopo, [tq], {}, t + 61e3);
+  check(prima.st.provata && !dopo.st.provata && !msg(dopo).some((m) => "entrato" in m), "P2-8. la chiave del QR entra nella sua finestra; dopo la scadenza (scritta nella stanza) non entra più — anche se il PC è spento");
+}
+{
+  // P2-9: senza archivio (o con l'archivio che non risponde) la stanza non accetta nessuno — mai «nessuna chiave»
+  const g = stanzaFinta({ guasto: true }), k = chiaveB();
+  const w = g.entra("pc"); g.prova(w, [k], { chiave: k });
+  check(w.chiusa === 1011 && !g.arch.size, "P2-9. l'archivio non c'è (Durable Object senza SQLite): 1011, nessuna chiave registrata in memoria");
+  const r = stanzaFinta({ rotto: true });
+  const w2 = r.entra("tel");
+  check(w2.chiusa === 1011, "P2-9. l'archivio che non risponde: chi entra esce (1011), non «entra chiunque»");
+  const src = leggiSe("../worker/ponte.js");
+  check(!/mem\.(set|get)/.test(src) && /guasto/.test(src), "P2-9. worker/ponte.js: niente Map in memoria al posto dello SQLite");
+}
+{
+  // P3: il PC che cambia la sua chiave d'entrata sa se la stanza l'ha scritta (e solo allora butta quella di prima)
+  const { entra, prova, msg } = stanzaFinta();
+  const k = chiaveB(), k2 = chiaveB();
+  const a = entra("pc"); prova(a, [k], { chiave: k });
+  const b = entra("pc"); prova(b, [k], { chiave: k2 });
+  check(msg(a).some((m) => m.entrato === 0 && m.registrata === true) && msg(b).some((m) => m.entrato === 0 && m.registrata === true),
+    "P3. la risposta dice «registrata»: il PC tiene la chiave di prima finché la stanza non conferma la nuova");
+}
+
 // ============================================================= il service worker vero del PC
 const EXT = (f) => leggiSe("extension/" + f);
 const GEST = "https://smarthealth.multimedica.it/sa4pso/";
