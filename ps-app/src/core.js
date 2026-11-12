@@ -9334,9 +9334,11 @@
     // Una Conferma per questa richiesta premuta nell'ultimo minuto, da
     // qualunque scheda (conferme.v1), e ancora senza prova (fra quelle da
     // confermare): forse in volo, e il carrello qui non lo dice ancora. I due
-    // bottoni non premono: lo dicono, finché la pagina non se ne va.
+    // bottoni non premono: lo dicono, finché la pagina non se ne va. Una
+    // Conferma che il carrello ha già smentito («smentita»: non presa) non è in volo.
     confermaGiaPartita(rid) {
-      if (!confermaDopo(rid, "premuta", Date.now() - 60e3) || !daConfermare().some((x) => x.rid === String(rid))) return false;
+      const smentita = Number((conferme().find((x) => x.rid === String(rid)) || {}).smentita) || 0;
+      if (!confermaDopo(rid, "premuta", Math.max(Date.now() - 60e3, smentita)) || !daConfermare().some((x) => x.rid === String(rid))) return false;
       confermaPannello = "Una Conferma è già partita: guarda le sue richieste";
       this._daconf = null;
       this.log(`${now()}  Conferma dal pannello non premuta: un'altra per la richiesta ${rid} è partita nell'ultimo minuto`);
@@ -15343,7 +15345,8 @@
   // una Conferma premuta dopo quella che il gestionale non aveva preso
   // (confermaDopo). E quando una scheda prende le etichette di una richiesta
   // confermata (maybeAutoPrint), «stampata»: chi la trova confermata altrove
-  // sa se sono già uscite. Solo numeri, per 12 ore.
+  // sa se sono già uscite. «smentita»: il carrello ha provato che l'ultima
+  // non è stata presa (lavoroSenzaSeguito) — non è in volo. Solo numeri, per 12 ore.
   const CONFERME = "conferme.v1", CONFERME_TTL = 12 * 3600e3;
   const conferme = () => { const l = store.get(CONFERME, []); return (Array.isArray(l) ? l : []).filter((x) => x && x.rid && Date.now() - (x.ts || 0) < CONFERME_TTL); };
   function segnaConferma(rid, cosa) {
@@ -17165,6 +17168,8 @@
           return fine({ tag: "Da controllare", testo: GUARDA, tono: "warn", quesito: "premuta intanto un'altra Conferma, da un'altra scheda" },
             { tag: "Da controllare", testo: RIFARLA, tono: "warn" }, RIFARLA_PERCHE);
         }
+        // (non è in volo: la Conferma del medico sul carrello non la aspetta — confermaGiaPartita)
+        segnaConferma(rid, "smentita");
         const rifatta = !!(L.piano && L.piano.startPage === "riconferma");
         // (`premuta`: quale Conferma il carrello ha smentito — «Conferma di nuovo» non parte se ce n'è una dopo)
         return fine({ tag: "Non partita", testo: rifatta ? "apri il carrello" : "Conferma di nuovo", tono: "err",
