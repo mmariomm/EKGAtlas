@@ -201,7 +201,8 @@ async function suPagina(p, url) {
   // (la pagina che si ricarica da sola — salvata dal telefono — può interrompere questo goto: finita la sua, si rifà)
   for (let i = 0; ; i++) {
     try { await p.goto(url); break; } catch (e) {
-      if (i >= 2 || !/interrupted by another navigation/.test(String(e && e.message))) throw e;
+      if (i >= 5 || !/interrupted by another navigation/.test(String(e && e.message))) throw e;
+      await sospendi(1500);
       await p.waitForLoadState("load").catch(() => {});
     }
   }
