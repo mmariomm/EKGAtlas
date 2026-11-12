@@ -622,7 +622,7 @@ async function ponteRisposta(s, d) {
     }
     return { ok: false, errore: "Comando sconosciuto" };
   } catch (e) {
-    if (typeof segnaErrore === "function") segnaErrore("ponte", { comando: String(d && d.c || "").slice(0, 30), messaggio: corto(e && e.message || e, 120) });
+    if (typeof segnaErrore === "function") segnaErrore("ponte", { comando: String(d && d.cmd || "").slice(0, 30), messaggio: corto(e && e.message || e, 120) });
     return { ok: false, errore: "Errore sul PC: " + corto(e && e.message || e, 80) };
   }
 }

@@ -115,6 +115,26 @@ check(await finche(async () => {
   const p = await doc.evaluate(() => JSON.parse(localStorage.getItem("psassist:patients.v1") || "[]"));
   return Array.isArray(p) && p.some((x) => x.ep === String(A.state.episodeId));
 }, 8000), "le letture per il telefono si fanno lo stesso: il paziente aperto entra in patients.v1");
+// il terzo muro, nel service worker degli ordini: un ordine nuovo, la sua scheda che parte, «Conferma di
+// nuovo» — rifiutati anche se arrivassero da una scheda del gestionale; una domanda sugli ordini (le stampe) no
+const muro = await sw.evaluate(async () => {
+  const chiedi = (m) => new Promise((res) => { if (ordMessaggio(m, { tab: { id: 424242 }, url: "https://smarthealth.multimedica.it/sa4pso/restrict/x.do" }, res) !== true) res(null); });
+  return { nuovo: await chiedi({ t: "ordineNuovo", job: { id: "muro1" } }), parto: await chiedi({ t: "ordineParto", id: "muro1" }),
+    riconferma: await chiedi({ t: "ordineRiconferma", id: "muro1" }), controlla: await chiedi({ t: "ordineControlla" }), giornale: (await ordLeggi()).some((x) => x.id === "muro1") };
+});
+check(["nuovo", "parto", "riconferma"].every((k) => muro[k] && muro[k].ok === false && muro[k].solaLettura && /sola lettura/.test(muro[k].why)) && muro.controlla && !muro.controlla.solaLettura && !muro.giornale,
+  `nel service worker, ordine nuovo, partenza e «Conferma di nuovo» rifiutati («Questo PC è in sola lettura»); le domande sugli ordini no (${JSON.stringify(muro).slice(0, 160)})`);
+// chi può chiedere i comandi del service worker (referti, schede, portale, «Dimentica»): il pannello nella
+// cornice in alto del gestionale o del portale, le pagine dell'estensione — non il registratore nel SISS,
+// nell'eViewer o in un riquadro (null: forse il portale aggiunto dal medico, che si guarda in storage)
+const mitt = await sw.evaluate(() => {
+  const s = (url, frameId = 0, tab = { id: 7 }) => ({ id: chrome.runtime.id, url, frameId, tab });
+  return [bgMittente(s("https://smarthealth.multimedica.it/sa4pso/x.do")), bgMittente(s("http://10.11.0.151/clin-port/x.jsp")), bgMittente(s(chrome.runtime.getURL("tabellone.html"), 0, undefined)),
+    bgMittente(s("https://smarthealth.multimedica.it/sa4pso/x.do", 3)), bgMittente(s("https://dcss.cgi.crs.lombardia.it/menusiss/")), bgMittente(s("chrome://settings/")),
+    bgDaEstensione(s("https://smarthealth.multimedica.it/x")), bgDaEstensione(s(chrome.runtime.getURL("portale.html")))];
+});
+check(JSON.stringify(mitt) === JSON.stringify([true, true, true, false, null, false, false, true]),
+  `i comandi del service worker: dal pannello in alto e dall'estensione sì, da un riquadro no, dal SISS solo se fosse il portale aggiunto; il portale si aggiunge solo dall'estensione (${JSON.stringify(mitt)})`);
 
 // ---- il telefono associato al PC mini -------------------------------------
 sezione("il telefono associato a un PC di sola lettura");

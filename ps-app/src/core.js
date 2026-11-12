@@ -1274,7 +1274,8 @@
   let harvestSeq = 0;
   function harvestInlinePdf(url, { html, baseUrl, signal, timeoutMs = 6000 } = {}) {
     return new Promise((resolve, reject) => {
-      const cb = `__psaH${++harvestSeq}`;
+      // (il segno dei messaggi della replica: a caso, non un contatore che uno script della pagina indovina)
+      const cb = `__psaH${++harvestSeq}_${[...crypto.getRandomValues(new Uint8Array(12))].map((b) => b.toString(16).padStart(2, "0")).join("")}`;
       const iframe = document.createElement("iframe");
       iframe.setAttribute("sandbox", "allow-scripts allow-same-origin"); // no top-nav: framebusters are inert
       iframe.style.cssText = "position:fixed;width:2px;height:2px;left:-9999px;top:-9999px;visibility:hidden";
@@ -1294,7 +1295,7 @@
       const tt = setTimeout(() => finish(reject, new ViewerError(url)), timeoutMs);
       const onMsg = (e) => {
         const d = e.data;
-        if (!d || d.__psassist !== cb) return;
+        if (!d || d.__psassist !== cb || e.source !== iframe.contentWindow) return;   // (solo dalla replica, col suo segno)
         if (isPdfBlob(d.blob)) return finish(resolve, { blob: d.blob, url });
         if (typeof d.nav === "string" && d.nav) {
           let u;
