@@ -20,30 +20,34 @@
  * il primo scambio solo pochi minuti, e solo finché nessun telefono è entrato; il primo che entra è
  * quello dell'associazione, e un altro telefono con lo stesso QR non entra.
  *
- * Perché la presa sta nel service worker: da Chrome 116 una WebSocket che
- * manda o riceve almeno ogni 30 secondi lo tiene sveglio (qui un battito ogni
- * 20, e se il «pong» non torna entro 10 secondi la presa si rifà), ed è la
- * strada indicata da Chrome. Se il service worker si ferma lo stesso, la
- * sessione muore con le sue chiavi — che stanno solo in memoria — e il
- * telefono ne apre una nuova: lo sveglia la prima pagina del gestionale che
- * chiede (ponteSveglia).
+ * La presa sta nel documento fuori schermo (fuori.html, fuori-sw.js), non nel
+ * service worker: su Chrome 109 lui si ferma mezzo minuto dopo ogni risveglio,
+ * e una presa sua moriva con lui e si rifaceva al risveglio dopo, ogni minuto.
+ * Là resta aperta finché serve, col suo battito (un «ping» ogni 30 secondi, a
+ * cui il ripetitore risponde da sé), e sveglia il service worker solo quando
+ * arriva un messaggio. La sessione col telefono sopravvive al riavvio del
+ * service worker: i due numeri del saluto e i conti dei numeri d'ordine stanno
+ * in storage.session (mai le chiavi: si rifanno da K), e il telefono continua
+ * sulla stessa sessione, senza un saluto nuovo e senza perdere una risposta.
  *
  * La presa c'è solo quando il PC può servire: una scheda del gestionale aperta
- * (o chiusa da meno di 10 minuti), una sessione col telefono, un QR appena
- * mostrato, la pagina del ponte aperta. Se no si chiude e l'associazione resta:
- * per il telefono il PC «non c'è». Un PC lasciato acceso, a gestionale chiuso,
- * non apre connessioni — né tutta la notte, né a ogni risveglio del service
- * worker. Caduta, la presa si riprova sempre più di rado: fino a 15 secondi
- * durante una sessione, fino a 5 minuti se no.
+ * (non sulla pagina d'accesso), un QR sullo schermo (o la pagina del ponte
+ * aperta), un comando del telefono che lavora. Due minuti dopo che niente di
+ * questo è vero si chiude, e l'associazione resta: per il telefono il PC «non
+ * c'è». Lo si guarda quando una pagina del gestionale si apre, quando va alla
+ * pagina d'accesso, quando una scheda si chiude o cambia indirizzo — mai
+ * perché il service worker si sveglia, mai a una sveglia. Un PC lasciato
+ * acceso, a gestionale chiuso, non apre connessioni. Caduta, la presa si
+ * riprova sempre più di rado: da 1 secondo fino a 5 minuti (presa.js).
  *
  * La sessione finisce dopo 3 minuti senza comandi del medico, con «Scollega»
  * sul PC, con la revoca, col riavvio
- * dell'estensione, o quando una scheda del gestionale torna alla pagina
+ * dell'estensione o del browser, o quando una scheda del gestionale torna alla pagina
  * d'accesso (l'associazione no: rientrati nel gestionale, il telefono riapre).
  * Mentre è aperta, ogni scheda del gestionale lo dice nell'intestazione del
  * pannello: «iPhone collegato · Scollega».
  */
-/* global PonteCripto, PONTE_HOST_FISSO, ordLeggi, sulGestionale, leggibileOrd, corto, KEY, REF_TTL, stampaScelte, stampaDalTel, stampaTelVista, regElenco, regPezzo, regZipVia, stazioneCollega */
+/* global PonteCripto, PONTE_HOST_FISSO, ordLeggi, sulGestionale, leggibileOrd, corto, KEY, REF_TTL, stampaScelte, stampaDalTel, stampaTelVista, regElenco, regPezzo, regZipVia, stazioneCollega, Presa, fuoriRipiego, staCambio */
 
 const PONTE_HOST_PROVA = "ponte.host";      // storage.local: solo per le prove, e solo verso questo PC
 const PONTE_COPPIA = "ponte.coppia";        // storage.local: { k, creata, usata, dev, nTel, cambiata?, cambi? }
@@ -55,7 +59,11 @@ const PONTE_CARTELLA = "ponte.cartella";    // storage.session: l'ultima lettura
 const PONTE_REGISTRO = 14 * 3600e3;         // quanto restano gli appunti e il registro dei referti (NON la durata dell'associazione: quella non scade)
 const PONTE_INATTIVO = 3 * 60e3;            // senza comandi del medico, la sessione si chiude (il telefono si ricollega in un attimo)
 const PONTE_ORDINE_MAX = 30e3;              // un ordine vale 30 secondi dal tocco sul telefono: arrivato dopo, non si fa
-const PONTE_BATTITO = 20e3;                 // la presa parla almeno ogni 20 secondi
+const PONTE_BATTITO = 20e3;                 // le scadenze si guardano ogni 20 secondi, finché il service worker è sveglio
+const PONTE_SESSIONE = "ponte.sessione";    // storage.session: la sessione col telefono (e il saluto che aspetta), per riprenderla quando il service worker riparte — i due numeri del saluto e i conti, mai le chiavi
+const PONTE_ACCESSO = "ponte.accesso";      // storage.session: le schede del gestionale ferme sulla pagina d'accesso (i numeri delle schede)
+const PONTE_LAVORO_MAX = 5 * 60e3;          // un comando del telefono che lavora tiene il PC sul ponte al più tanto (poi decide la scheda del gestionale)
+const PONTE_SEQ_SALTO = 1000;               // ripresa la sessione, i numeri d'ordine verso il telefono ripartono un po' più avanti (uno mandato e non annotato non si ripete)
 const PONTE_QR_MAX = 2 * 60e3;              // il QR si rivede solo per poco
 const PONTE_QR_PRIMO = 5 * 60e3;            // e il suo link vale per il primo scambio solo per poco (e una volta sola)
 const PONTE_SALUTO_MAX = 2 * 60e3;          // un saluto senza seguito si dimentica
@@ -89,9 +97,11 @@ const ponteFrase = (perche) => PONTE_PERCHE[perche] || corto(perche, 80) || "Ses
 
 const pt = {
   host: "", coppia: null, k: null, chiavi: null, codice: "", chiaviDi: "",
-  ws: null, wsUrl: "", relay: "spento", pari: false, tentativi: 0, tRiprova: 0, tPong: 0, aperta: 0,
-  attesa: null,        // { canale, ts, dev, nTel }: un saluto ricevuto, la sessione nuova che aspetta il primo messaggio
-  sessione: null,      // { canale, dal, ultimo, n }
+  presa: null,         // la presa verso il ripetitore (fuori-sw.js: nel documento fuori schermo)
+  lavori: 0,           // i comandi del telefono che stanno lavorando (tengono il PC sul ponte)
+  scollegato: 0,       // quando il ripetitore ha detto di no a questo PC (4403)
+  attesa: null,        // { canale, ts, dev, nTel, nPc }: un saluto ricevuto, la sessione nuova che aspetta il primo messaggio
+  sessione: null,      // { canale, dal, ultimo, n, nTel, nPc, rqSalvo? }
   ripartito: 0, rifiuto: 0, fine: null, registro: [],
   valori: new Map(),   // scheda → { ep, risolvi, promessa }: chi aspetta «Aggiorna i valori», qui
   cartelle: new Map(), // scheda → { ep, fase, campi, risolvi }: una cartella da salvare (i testi solo qui, in memoria)
@@ -115,10 +125,22 @@ function ponteNota(testo) {
 function pontePubblico() {
   const s = pt.sessione;
   return {
-    host: pt.host, accoppiato: !!pt.coppia, qrFino: pt.coppia && !pt.coppia.usata ? pt.coppia.creata + PONTE_QR_MAX : 0, relay: pt.relay, telefono: pt.pari,
+    host: pt.host, accoppiato: !!pt.coppia, qrFino: pt.coppia && !pt.coppia.usata ? pt.coppia.creata + PONTE_QR_MAX : 0, relay: ponteRelay(), telefono: !!pt.presa?.pari,
     sessione: s ? { dal: s.dal, ultimo: s.ultimo, n: s.n } : null, fine: pt.fine, registro: pt.registro.slice(-60),
     cambiato: (pt.coppia && pt.coppia.cambiata) || 0,   // quando un altro iPhone ha preso il posto del primo
+    // (nel ripiego, senza documento fuori schermo, le schede del gestionale svegliano il service worker ogni 30 secondi, come fino alla 3.86)
+    sveglia: !!pt.coppia && fuoriRipiego(),
   };
+}
+// a che punto è la presa, per le pagine: spento (niente da fare), riposo (associato, ma fuori dal ponte
+// perché non serve), collego, su, giu (caduta: si riprova), scollegato (il ripetitore ha detto di no)
+function ponteRelay() {
+  const p = pt.presa;
+  if (!pt.host || !pt.coppia || !p) return "spento";
+  if (p.fermo === 4403) return "scollegato";
+  if (p.su) return "su";
+  if (p.collego) return "collego";
+  return p.tenuta ? "giu" : "riposo";
 }
 // (solo quando cambia: le schede lo ascoltano)
 let ponteScritto = "";
@@ -148,9 +170,12 @@ const ponteQr = () => (pt.host && pt.coppia && !pt.coppia.usata && ponteOra() - 
 // ---------------------------------------------------------------- la presa
 // Una alla volta: le schede che svegliano, un QR nuovo e un nuovo tentativo
 // possono chiederlo insieme, e una chiave vecchia non deve arrivare per ultima.
+// `serve`: è cambiato qualcosa (una pagina, una scheda, un QR, un gesto) — il PC
+// sta sul ponte se serve. Senza (il service worker che riparte) si rilegge la
+// chiave e basta: la presa, se c'è, è nel documento fuori schermo, e resta com'è.
 let ponteFilaAvvio = Promise.resolve();
-const ponteAvvia = () => (ponteFilaAvvio = ponteFilaAvvio.then(ponteAvviaOra, ponteAvviaOra));
-async function ponteAvviaOra() {
+const ponteAvvia = (serve = true) => (ponteFilaAvvio = ponteFilaAvvio.then(() => ponteAvviaOra(serve), () => ponteAvviaOra(serve)));
+async function ponteAvviaOra(serve = true) {
   pt.host = await ponteIndirizzo();
   let c = (await chrome.storage.local.get(PONTE_COPPIA))[PONTE_COPPIA] || null;
   if (c && pt.chiaviDi !== c.k) {
@@ -166,116 +191,97 @@ async function ponteAvviaOra() {
   }
   if (!c) { pt.coppia = null; pt.k = null; pt.chiavi = null; pt.codice = ""; pt.chiaviDi = ""; }
   else pt.coppia = c;
-  if (!pt.host || !pt.coppia) ponteStacca();
-  else if (!(await ponteUtile())) { if (pt.ws) ponteNota("Nessuna scheda del gestionale da 10 minuti: il PC lascia il ponte (l'iPhone resta associato)"); ponteStacca(true); }
-  // (un nuovo tentativo già in programma: si aspetta lui — le schede che svegliano non fanno ressa)
-  else if (!pt.tRiprova || pt.ws) ponteConnetti();
+  if (!pt.host || !pt.coppia) await pt.presa.ferma();
+  // (nel ripiego la presa sta qui, ed è morta col service worker di prima: si riapre, se serve)
+  else if (serve || fuoriRipiego()) await ponteAssicura();
   await ponteScriviStato();
 }
 
 // ------------------------------------------------------------ quando serve
 // Il PC sta sul ponte solo quando può servire: una scheda del gestionale
-// aperta (o chiusa da meno di 10 minuti), una sessione col telefono, un QR
-// appena mostrato, la pagina del ponte aperta. Se no chiude la presa e tiene
-// l'associazione: per il telefono il PC «non c'è», ed è vero — senza il
-// gestionale non può fare niente. Un PC lasciato acceso non tiene connessioni
-// aperte tutta la notte, e non le riapre a ogni risveglio del service worker.
-const PONTE_USO_MS = 10 * 60e3;
-const PONTE_USO = "uso.gestionale";          // storage.session: l'ultima volta che c'era una scheda del gestionale
-const ponteUso = { gestionale: 0, letto: false, scritto: 0, pagina: 0 };
-function ponteVistoGestionale(ora = ponteOra()) {
-  ponteUso.gestionale = Math.max(ponteUso.gestionale, ora);
-  if (ora - ponteUso.scritto >= 60e3) { ponteUso.scritto = ora; chrome.storage.session.set({ [PONTE_USO]: ora }).catch(() => {}); }
-}
-// (anche per la stazione di stampa: stazione-sw.js)
-async function psaGestionale() {
-  const ora = ponteOra();
-  if (!ponteUso.letto) {
-    ponteUso.letto = true;
-    ponteUso.gestionale = Math.max(ponteUso.gestionale, Number((await chrome.storage.session.get(PONTE_USO).catch(() => ({})))[PONTE_USO]) || 0);
+// aperta e non sulla pagina d'accesso, un QR sullo schermo (o la pagina del
+// ponte aperta), un comando del telefono che lavora. Due minuti dopo che niente
+// di questo è vero la presa si chiude (la chiude il documento fuori schermo,
+// anche se il service worker dorme) e l'associazione resta: per il telefono il
+// PC «non c'è», ed è vero — senza il gestionale non può fare niente. Lo si
+// guarda quando qualcosa cambia (psaCambio, ponteSveglia, ponteLogin, un QR, un
+// comando), mai perché il service worker si sveglia e mai a una sveglia.
+const ponteUso = { pagina: 0 };
+// le schede ferme sulla pagina d'accesso (lo dicono loro: ponteSveglia, ponteLogin)
+const ponteAcc = { letto: null, schede: new Set() };
+function ponteSchedeAccesso() {
+  if (!ponteAcc.letto) {
+    ponteAcc.letto = chrome.storage.session.get(PONTE_ACCESSO)
+      .then((o) => { for (const id of Array.isArray(o[PONTE_ACCESSO]) ? o[PONTE_ACCESSO] : []) ponteAcc.schede.add(id); }).catch(() => {});
   }
+  return ponteAcc.letto.then(() => ponteAcc.schede);
+}
+async function ponteSegnaAccesso(id, si) {
+  if (!Number.isInteger(id)) return;
+  const s = await ponteSchedeAccesso();
+  if (si === s.has(id)) return;
+  if (si) s.add(id); else s.delete(id);
+  await chrome.storage.session.set({ [PONTE_ACCESSO]: [...s].slice(-50) }).catch(() => {});
+}
+// Una scheda del gestionale aperta (non scartata da Chrome per la memoria) e
+// non sulla pagina d'accesso. (Anche per la stazione di stampa: stazione-sw.js)
+async function psaGestionale() {
+  const accesso = await ponteSchedeAccesso();
   const schede = await chrome.tabs.query({}).catch(() => []);
-  if (schede.some((t) => sulGestionale(t.url) && !t.discarded)) ponteVistoGestionale(ora);
-  return ora - ponteUso.gestionale < PONTE_USO_MS;
+  return schede.some((t) => sulGestionale(t.url) && !t.discarded && !accesso.has(t.id));
 }
-const ponteAttivo = () => !!(pt.sessione || pt.attesa || (pt.coppia && !pt.coppia.usata && ponteOra() - pt.coppia.creata < PONTE_QR_PRIMO + 60e3));
-async function ponteUtile() {
-  return ponteAttivo() || ponteOra() - ponteUso.pagina < 60e3 || psaGestionale();
+// Fino a quando il PC serve sul ponte di sicuro: Infinity (il gestionale aperto), l'ora in cui
+// finisce un QR, la pagina del ponte, un comando; 0 niente (Presa.servi, fuori-sw.js).
+async function ponteServeFino() {
+  if (await psaGestionale()) return Infinity;
+  const ora = ponteOra();
+  let fine = pt.lavori > 0 ? ora + PONTE_LAVORO_MAX : 0;
+  if (pt.coppia && !pt.coppia.usata) fine = Math.max(fine, pt.coppia.creata + PONTE_QR_PRIMO + 60e3);   // (il QR, e il suo link)
+  if (ponteUso.pagina) fine = Math.max(fine, ponteUso.pagina + 60e3);   // (la pagina chiede lo stato ogni 15 secondi)
+  return fine;
 }
+// Sul ponte se serve, via se no (due minuti dopo). `subito`: un gesto (un QR nuovo) non aspetta il prossimo tentativo.
+async function ponteAssicura(subito = false) {
+  if (!pt.host || !pt.coppia || !pt.chiavi) return pt.presa.ferma();
+  await pt.presa.servi(ponteUrlPresa(), await ponteServeFino(), subito);
+}
+// Qualcosa è cambiato nelle schede (una chiusa, un indirizzo nuovo, una scartata):
+// il PC serve ancora sul ponte? E la stazione di stampa (stazione-sw.js)?
+function psaCambio() {
+  ponteCaricato.then(() => (pt.coppia ? ponteAssicura() : null)).catch(() => {});
+  if (typeof staCambio === "function") staCambio();
+}
+chrome.tabs.onRemoved.addListener((id) => { ponteSegnaAccesso(id, false).catch(() => {}); psaCambio(); });
+chrome.tabs.onUpdated.addListener((id, info) => {
+  if (info.url === undefined && info.discarded === undefined) return;
+  if (info.url !== undefined && !sulGestionale(info.url)) ponteSegnaAccesso(id, false).catch(() => {});
+  psaCambio();
+});
 function ponteUrlPresa() {
   const u = new URL(pt.host);
   return `${u.protocol === "https:" ? "wss:" : "ws:"}//${u.host}/ponte/ws?r=${pt.chiavi.stanza}&ruolo=pc`;
 }
-function ponteConnetti() {
-  const url = ponteUrlPresa();
-  if (pt.ws && pt.wsUrl === url && pt.ws.readyState <= 1) return;
-  // (la presa di prima si chiude PRIMA di aprirne un'altra: mai due)
-  ponteStacca();
-  clearTimeout(pt.tRiprova); pt.tRiprova = 0;
-  let ws;
-  try { ws = new WebSocket(url); } catch { pt.relay = "giu"; ponteRiprova(); return; }
-  ws.binaryType = "arraybuffer";
-  pt.ws = ws; pt.wsUrl = url; pt.relay = "collego"; pt.aperta = 0;
-  ws.onopen = () => { if (pt.ws !== ws) return; pt.relay = "su"; pt.aperta = ponteOra(); ponteScriviStato(); };
-  ws.onmessage = (ev) => {
-    if (pt.ws !== ws) return;
-    if (ev.data === "pong") { clearTimeout(pt.tPong); pt.tPong = 0; return; }
-    pt.fila = pt.fila.then(() => ponteRicevi(ev.data)).catch(() => {});
-  };
-  ws.onclose = (ev) => {
-    if (pt.ws !== ws) return;
-    pt.ws = null; pt.relay = "giu"; pt.pari = false;
-    clearTimeout(pt.tPong); pt.tPong = 0;
-    // (i tentativi ricominciano da capo solo dopo una presa che ha tenuto: una che cade
-    // ogni minuto non fa ripartire il conto da 1 secondo)
-    if (pt.aperta && ponteOra() - pt.aperta >= PONTE_TENUTA) pt.tentativi = 0;
+// La presa: nel documento fuori schermo (fuori-sw.js), che la tiene, la batte, la riprova e la
+// chiude alla sua ora. Quello che arriva sveglia il service worker, e passa di qui.
+let ponteTenuta = false;
+pt.presa = new Presa("pc", {
+  dati: (b) => { pt.fila = pt.fila.then(() => ponteCaricato).then(() => ponteRicevi(b)).catch(() => {}); },
+  pari: () => { ponteScriviStato(); },
+  stato: () => {
+    // (chiusa alla sua ora: niente serviva più da due minuti)
+    if (ponteTenuta && !pt.presa.tenuta && pt.host && pt.coppia) ponteNota("Niente gestionale aperto da 2 minuti: il PC lascia il ponte (l'iPhone resta associato)");
+    ponteTenuta = pt.presa.tenuta;
+    // 4403: il ripetitore non vuole questo PC — fermo, «Scollegato», finché non si associa di nuovo
+    if (pt.presa.fermo === 4403 && !pt.scollegato) {
+      pt.scollegato = ponteOra();
+      ponteNota("Scollegato: il ponte ha rifiutato questo PC. Associa di nuovo l'iPhone (Nuovo QR), o chiedi all'IT");
+    } else if (pt.presa.fermo !== 4403) pt.scollegato = 0;
     ponteScriviStato();
-    // (un'altra presa del PC ha preso il posto di questa: non si fa a gara ogni secondo)
-    ponteRiprova(ev && ev.code === 4001);
-  };
-}
-function ponteStacca(riposo = false) {
-  const ws = pt.ws;
-  pt.ws = null; pt.wsUrl = ""; pt.pari = false;
-  clearTimeout(pt.tPong); pt.tPong = 0;
-  pt.relay = !pt.host || !pt.coppia ? "spento" : riposo ? "riposo" : "giu";
-  if (riposo) { clearTimeout(pt.tRiprova); pt.tRiprova = 0; }
-  if (ws) try { ws.close(1000, "fine"); } catch { /* già chiusa */ }
-}
-// Presto la prima volta, poi sempre più di rado: fino a 15 secondi mentre
-// c'è una sessione col telefono (o un QR da inquadrare), fino a 5 minuti se
-// no — un PC con il gestionale aperto e il ponte giù non bussa ogni 15
-// secondi tutto il giorno. Col caso dentro: un ripetitore che torna non si
-// vede arrivare tutti insieme. Quando il PC non serve, non riprova affatto.
-const PONTE_TENUTA = 2 * 60e3;
-function ponteRiprova(altrove = false) {
-  clearTimeout(pt.tRiprova); pt.tRiprova = 0;
-  if (!pt.host || !pt.coppia) return;
-  const max = Math.max(ponteAttivo() ? 15e3 : 5 * 60e3, altrove ? 30e3 : 0);
-  const b = Math.min(max, (altrove ? 30e3 : 1e3) * 2 ** Math.min(pt.tentativi++, 9));
-  pt.tRiprova = setTimeout(() => { pt.tRiprova = 0; ponteAvvia().catch(() => {}); }, Math.round(b / 2 + Math.random() * b / 2));
-}
-function ponteManda(frame) {
-  if (pt.ws && pt.ws.readyState === 1) { pt.ws.send(frame); return true; }
-  return false;
-}
-// Il battito tiene sveglia la presa (e il service worker). Se il «pong» non
-// torna, la presa è morta anche se sembra aperta (un proxy che la lascia
-// cadere senza dirlo): se ne apre un'altra subito. Intanto, i conti.
-function ponteBattito() {
-  const ws = pt.ws;
-  if (ws && ws.readyState === 1 && !pt.tPong) {
-    ws.send("ping");
-    pt.tPong = setTimeout(() => {
-      pt.tPong = 0;
-      if (pt.ws !== ws) return;
-      ponteStacca();
-      ponteConnetti();
-    }, PONTE_ATTESA.pong);
-  }
-  ponteControlla().catch(() => {});
-}
-setInterval(ponteBattito, PONTE_BATTITO);
+  },
+});
+const ponteManda = (frame) => pt.presa.manda(frame);
+// Le scadenze, finché il service worker è sveglio (quando dorme ci pensa il primo messaggio).
+setInterval(() => { ponteControlla().catch(() => {}); }, PONTE_BATTITO);
 
 // Scadenze: la sessione dopo 3 minuti senza comandi, l'associazione alla sua
 // ora, un saluto rimasto a metà, una scheda dei valori che non ha finito.
@@ -296,26 +302,19 @@ async function ponteControlla() {
     if (ora - v.ts > PONTE_ACCETTA_MAX + 5e3) await ponteAccettaFine(Number(id), { ok: false, incerto: true, testo: "la scheda non ha finito in tempo" });
   }
   if (pt.sessione && ora - pt.sessione.ultimo >= PONTE_INATTIVO) await ponteFine("inattivo");
-  if (pt.attesa && ora - pt.attesa.ts > PONTE_SALUTO_MAX) pt.attesa = null;
-  // Il PC serve ancora? Se no, via dal ponte (l'associazione resta); se sì e la presa non c'è
-  // (né un tentativo in programma), la si riapre.
-  if (pt.host && pt.coppia) {
-    const serve = await ponteUtile();
-    if (serve ? !pt.ws && !pt.tRiprova : !!pt.ws) await ponteAvvia();
-  }
+  if (pt.attesa && ora - pt.attesa.ts > PONTE_SALUTO_MAX) { pt.attesa = null; ponteSessioneSalva(); }
+  // Nel ripiego (la presa nel service worker, come fino alla 3.86): il PC serve ancora? Se no, via
+  // dal ponte (l'associazione resta); se sì e la presa non c'è, la si riapre. Col documento fuori
+  // schermo no: la presa la chiude lui alla sua ora, e la riapre solo un cambiamento (psaCambio).
+  if (fuoriRipiego() && pt.host && pt.coppia) await ponteAssicura();
 }
 
 // ------------------------------------------------------- i messaggi in arrivo
 // Quello che non si apre con le nostre chiavi si ignora e basta: senza le
 // chiavi nessuno può far chiudere una sessione, né far scartare un messaggio buono.
+// (chi c'è dall'altra parte lo dice la presa: pt.presa.pari)
 async function ponteRicevi(dati) {
-  if (typeof dati === "string") {
-    let m = null;
-    try { m = JSON.parse(dati); } catch { return; }
-    if (m && typeof m.pari === "boolean" && m.pari !== pt.pari) { pt.pari = m.pari; await ponteScriviStato(); }
-    return;
-  }
-  if (!pt.chiavi) return;
+  if (typeof dati === "string" || !pt.chiavi) return;
   const b = new Uint8Array(dati);
   const h = PonteCripto.leggiTestata(b);
   if (h && h.tipo === PonteCripto.TIPO.SALUTO_TEL) return ponteSaluto(b);
@@ -350,7 +349,8 @@ async function ponteSaluto(b) {
   }
   if (m.sonda === true) return ponteSonda(m);   // ⋯ → Dispositivi sul telefono: chi è questo PC, e nessuna sessione
   const nPc = PonteCripto.casuale(16);
-  pt.attesa = { canale: PonteCripto.canalePc(await PonteCripto.chiaviSessione(pt.k, nTel, nPc)), ts: ponteOra(), dev: m.dev, nTel: m.n };
+  pt.attesa = { canale: PonteCripto.canalePc(await PonteCripto.chiaviSessione(pt.k, nTel, nPc)), ts: ponteOra(), dev: m.dev, nTel: m.n, nPc: PonteCripto.b64u(nPc) };
+  await ponteSessioneSalva();   // (prima di rispondere: se il service worker si ferma qui, il primo messaggio la trova lo stesso)
   // (con l'ora del PC: il telefono ne tiene lo scarto, e un ordine porta l'ora del tocco sull'orologio del PC)
   ponteManda(await PonteCripto.sigilla(pt.chiavi.salutoPc, PonteCripto.TIPO.SALUTO_PC, 0,
     { v: 1, n: PonteCripto.b64u(nPc), eco: m.n, ora: ponteOra() }));
@@ -376,11 +376,16 @@ async function ponteCambio(m) {
 }
 async function ponteDati(b) {
   if (pt.sessione) {
-    try {
-      ponteComando(pt.sessione, await pt.sessione.canale.decifra(b));
-      return;
-    } catch (e) {
+    let d;
+    try { d = await pt.sessione.canale.decifra(b); }
+    catch (e) {
       if (e.codice === "ripetuto") return;   // decifrato, e già visto: si ignora
+    }
+    if (d !== undefined) {
+      // il numero d'ordine visto, annotato prima di fare: dopo un riavvio lo stesso messaggio non passa due volte
+      await ponteSessioneSalva();
+      ponteComando(pt.sessione, d);
+      return;
     }
   }
   if (pt.attesa) {
@@ -388,8 +393,9 @@ async function ponteDati(b) {
       const d = await pt.attesa.canale.decifra(b);
       // il primo messaggio della sessione nuova: adesso è lei
       const a = pt.attesa, nuova = !pt.sessione;
-      pt.sessione = { canale: a.canale, dal: ponteOra(), ultimo: ponteOra(), n: 0 };
+      pt.sessione = { canale: a.canale, dal: ponteOra(), ultimo: ponteOra(), n: 0, nTel: a.nTel, nPc: a.nPc };
       pt.attesa = null; pt.fine = null;
+      await ponteSessioneSalva();
       // il telefono dell'associazione è questo (il primo che entra), e il QR
       // non si rivede più; il numero del suo saluto lega un eventuale «riparti»
       await ponteScriviCoppia({ ...pt.coppia, dev: pt.coppia.dev || a.dev, usata: true, nTel: a.nTel });
@@ -420,13 +426,15 @@ async function ponteInvia(s, obj) {
     f = await s.canale.cifra(obj.re != null ? { re: obj.re, ok: false, errore: "Risposta troppo grande per il telefono: guardala sul PC" }
       : { evento: "avviso", testo: "Un aggiornamento era troppo grande per il telefono" });
   }
+  ponteSessioneSalva();   // (il numero d'ordine di quello che esce: dopo un riavvio si riparte più avanti)
   return ponteManda(f);
 }
 async function ponteFine(perche) {
   const s = pt.sessione;
-  pt.attesa = null;
+  if (pt.attesa) { pt.attesa = null; if (!s) await ponteSessioneSalva(); }
   if (!s) return;
   pt.sessione = null;
+  await ponteSessioneSalva();
   await chrome.storage.session.remove([PONTE_CARTELLA, PONTE_TERAPIA]).catch(() => {});   // le cartelle e le terapie lette per il telefono: via con la sessione
   await ponteTerapiaBasta().catch(() => {});   // (e la scheda della Terapia tenuta per il telefono)
   pt.fine = { perche, testo: ponteFrase(perche), ts: ponteOra() };
@@ -440,6 +448,79 @@ async function ponteVia(perche, nota) {
   await chrome.storage.local.remove(PONTE_COPPIA);
   ponteNota(nota);
   await ponteAvvia();
+}
+
+// ------------------------------------------- la sessione, oltre il service worker
+// Su Chrome 109 il service worker si ferma mezzo minuto dopo ogni risveglio; la
+// presa no (sta nel documento fuori schermo), e il telefono continua a parlare
+// sulla stessa sessione. Perché il service worker che riparte la ritrovi, in
+// storage.session (la memoria del browser: muore con lui, mai su disco) ci sono
+// i due numeri del saluto, i numeri d'ordine visti e mandati, quello che il
+// telefono può chiedere in questa sessione (i referti offerti, le
+// registrazioni elencate) e le scritture fatte (`rq`, con la risposta: rimandate,
+// non si rifanno). Le chiavi no: si rifanno da K (storage.local, dove è sempre
+// stata) e da quei due numeri. Il numero d'ordine visto si annota PRIMA di fare
+// il comando; una scrittura si annota «sta andando» prima di cominciare: il
+// service worker fermato a metà, rimandata, risponde «non si sa», non la rifà.
+let ponteFilaSessione = Promise.resolve();
+function ponteSessioneSalva() {
+  const p = ponteFilaSessione.then(async () => {
+    const s = pt.sessione, a = pt.attesa;
+    const ses = s && s.nTel && s.nPc && s.canale ? {
+      nTel: s.nTel, nPc: s.nPc, dal: s.dal, ultimo: s.ultimo, n: s.n, seqIn: s.canale.seqIn, seqOut: s.canale.seqOut,
+      pdf: s.pdf ? [...s.pdf].slice(-400) : null, zip: s.zip ? [...s.zip].slice(-200) : null, rq: s.rqSalvo || {},
+    } : null;
+    const att = a && a.nTel && a.nPc ? { nTel: a.nTel, nPc: a.nPc, ts: a.ts, dev: a.dev } : null;
+    if (!ses && !att) await chrome.storage.session.remove(PONTE_SESSIONE);
+    else await chrome.storage.session.set({ [PONTE_SESSIONE]: { k: pt.chiaviDi, sessione: ses, attesa: att } });
+  }).catch(() => {});
+  ponteFilaSessione = p;
+  return p;
+}
+// Il service worker è ripartito: la sessione di prima, se c'era ed è della stessa associazione.
+async function ponteSessioneRiprendi() {
+  const x = (await chrome.storage.session.get(PONTE_SESSIONE).catch(() => ({})))[PONTE_SESSIONE];
+  if (!x) return false;
+  if (!pt.k || x.k !== pt.chiaviDi) { await chrome.storage.session.remove(PONTE_SESSIONE).catch(() => {}); return false; }
+  const canale = async (nTel, nPc) => PonteCripto.canalePc(await PonteCripto.chiaviSessione(pt.k, PonteCripto.daB64u(nTel), PonteCripto.daB64u(nPc)));
+  try {
+    const s = x.sessione;
+    if (s && Number.isSafeInteger(s.seqIn) && Number.isSafeInteger(s.seqOut)) {
+      const c = await canale(s.nTel, s.nPc);
+      c.seqIn = s.seqIn;
+      c.seqOut = s.seqOut + PONTE_SEQ_SALTO;
+      const rq = s.rq && typeof s.rq === "object" ? s.rq : {};
+      pt.sessione = { canale: c, dal: s.dal, ultimo: s.ultimo, n: s.n || 0, nTel: s.nTel, nPc: s.nPc, rqSalvo: rq,
+        ...(Array.isArray(s.pdf) ? { pdf: new Set(s.pdf) } : {}), ...(Array.isArray(s.zip) ? { zip: new Set(s.zip) } : {}) };
+    }
+    const a = x.attesa;
+    if (a && ponteOra() - a.ts <= PONTE_SALUTO_MAX) pt.attesa = { canale: await canale(a.nTel, a.nPc), ts: a.ts, dev: a.dev, nTel: a.nTel, nPc: a.nPc };
+  } catch {
+    pt.sessione = null; pt.attesa = null;
+    await chrome.storage.session.remove(PONTE_SESSIONE).catch(() => {});
+    return false;
+  }
+  await ponteSessioneSalva();   // (i numeri d'ordine più avanti: annotati subito)
+  return !!pt.sessione;
+}
+// Una scrittura del telefono (rq): «sta andando» (r = null), poi la sua risposta. Poche e fresche: il
+// telefono rimanda una scrittura senza risposta al più per 10 minuti, e storage.session è piccola (1 MB su Chrome 109).
+const PONTE_RQ_INCERTO = { ok: false, incerto: true, errore: "Il PC si è riavviato mentre lo faceva: non si sa se è fatto, guarda sul PC" };
+const PONTE_RQ_PROPRI = new Set(["terapiaAggiungi", "accetta"]);   // (tengono già le loro, coi passi: ponte.terapia.rq, ponte.accetta.rq)
+const PONTE_RQ_TIENI = { n: 20, ms: 15 * 60e3, byte: 8000 };
+async function ponteRqSegna(s, rq, r) {
+  if (pt.sessione !== s) return;
+  const t = s.rqSalvo || (s.rqSalvo = {}), ora = ponteOra();
+  let tieni = r;
+  if (r) {
+    try { if (JSON.stringify(r).length > PONTE_RQ_TIENI.byte) tieni = { ok: !!r.ok, ...(r.errore ? { errore: corto(r.errore, 200) } : {}), ...(r.incerto ? { incerto: true } : {}) }; }
+    catch { tieni = { ok: !!r.ok }; }
+  }
+  t[rq] = { ts: ora, r: tieni || null };
+  for (const x of Object.keys(t)) if (ora - (t[x].ts || 0) > PONTE_RQ_TIENI.ms) delete t[x];
+  const k = Object.keys(t);
+  if (k.length > PONTE_RQ_TIENI.n) for (const x of k.sort((a, b) => t[a].ts - t[b].ts).slice(0, k.length - PONTE_RQ_TIENI.n)) delete t[x];
+  await ponteSessioneSalva();
 }
 
 // --------------------------------------------------------------- i comandi
@@ -543,23 +624,42 @@ async function ponteDispositivo() {
 async function ponteSonda(m) {
   ponteManda(await PonteCripto.sigilla(pt.chiavi.salutoPc, PonteCripto.TIPO.SALUTO_PC, 0, { v: 1, eco: m.n, sonda: await ponteDispositivo() }));
 }
-const PONTE_RQ_MAX = 40;   // le scritture ricordate per sessione (in memoria, solo qui)
+const PONTE_RQ_MAX = 40;   // le scritture ricordate per sessione (in memoria; le ultime anche in storage.session: ponteRqSegna)
+// Un comando che lavora tiene il PC sul ponte (ponteServeFino): finito l'ultimo, i due minuti cominciano da lì.
 async function ponteComando(s, d) {
   if (!d || typeof d !== "object" || !Number.isSafeInteger(d.id) || typeof d.cmd !== "string") return;
+  pt.lavori++;
+  if (pt.lavori === 1) ponteAssicura().catch(() => {});
+  try { return await ponteComandoOra(s, d); }
+  finally { if (--pt.lavori === 0) ponteAssicura().catch(() => {}); }
+}
+async function ponteComandoOra(s, d) {
   if (!d.auto && !PONTE_DA_SE.has(d.cmd)) s.ultimo = ponteOra();
   s.n++;
+  ponteSessioneSalva();
   const rispondi = (r) => ponteInvia(s, { re: d.id, ...r });
   // (il telefono che chiude per i 3 minuti e si riapre subito: il suo saluto nuovo, se è già qui, resta)
-  if (d.cmd === "esci") { await rispondi({ ok: true }); const a = pt.attesa; await ponteFine("chiusa dall'iPhone"); if (a && pt.coppia) pt.attesa = a; return; }
+  if (d.cmd === "esci") { await rispondi({ ok: true }); const a = pt.attesa; await ponteFine("chiusa dall'iPhone"); if (a && pt.coppia) { pt.attesa = a; ponteSessioneSalva(); } return; }
   // Una scrittura porta il suo numero (rq): rimandata dal telefono dopo una
   // presa caduta, non si rifà — si risponde com'è andata, o, se sta ancora
-  // andando, quando finisce. Le letture si rifanno e basta.
+  // andando, quando finisce. Le letture si rifanno e basta. Anche dopo un
+  // riavvio del service worker (ponteRqSegna): fatta, la sua risposta; a metà,
+  // «non si sa» — mai una seconda volta.
   const rq = typeof d.rq === "string" && /^[\w-]{8,40}$/.test(d.rq) ? d.rq : "";
   if (!rq) return rispondi(await ponteRisposta(s, d));
   s.rq = s.rq || new Map();
   let r = s.rq.get(rq);
   if (!r) {
-    r = ponteRisposta(s, d);
+    const prima = s.rqSalvo && s.rqSalvo[rq];
+    if (prima && (prima.r || !PONTE_RQ_PROPRI.has(d.cmd))) r = Promise.resolve(prima.r || PONTE_RQ_INCERTO);
+    else {
+      r = (async () => {
+        await ponteRqSegna(s, rq, null);   // «sta andando», prima di cominciare
+        const x = await ponteRisposta(s, d);
+        await ponteRqSegna(s, rq, x);
+        return x;
+      })();
+    }
     s.rq.set(rq, r);
     if (s.rq.size > PONTE_RQ_MAX) s.rq.delete(s.rq.keys().next().value);
   }
@@ -1767,14 +1867,30 @@ function ponteDaPagina(msg, sender, reply) {
     ponteCaricato.then(fn).then(reply, (e) => reply({ ok: false, why: corto(e && e.message || e, 80) }));
     return true;
   };
-  // (una scheda del gestionale che parla: il PC serve — quando serve)
-  if (gestionale) ponteVistoGestionale();
-  if (msg.t === "ponteSveglia" && (estensione || gestionale)) return fai(async () => { await ponteAvvia(); return { ok: true }; });
+  // Una pagina del gestionale si è aperta (una volta, al suo caricamento: `login`, se è la pagina
+  // d'accesso): il PC sta sul ponte finché serve. Nel ripiego anche ogni 30 secondi, come fino alla 3.86.
+  if (msg.t === "ponteSveglia" && (estensione || gestionale)) {
+    return fai(async () => {
+      if (gestionale && typeof msg.login === "boolean") await ponteSegnaAccesso(sender.tab.id, msg.login);
+      await ponteAvvia();
+      if (typeof staCambio === "function") staCambio();
+      return { ok: true };
+    });
+  }
   if (msg.t === "ponteScollega" && (estensione || gestionale)) return fai(async () => { await ponteFine("scollegata dal PC"); return { ok: true }; });
   // Una scheda del gestionale è sulla pagina d'accesso: senza il gestionale
   // il ponte non fa niente, e la sessione si chiude. L'associazione resta:
-  // rientrati nel gestionale, il telefono riapre con un tocco, senza QR.
-  if (msg.t === "ponteLogin" && gestionale) return fai(async () => { await ponteFine("login"); return { ok: true }; });
+  // rientrati nel gestionale, il telefono riapre con un tocco, senza QR. (E
+  // quella scheda non tiene più il PC sul ponte: se è l'ultima, due minuti.)
+  if (msg.t === "ponteLogin" && gestionale) {
+    return fai(async () => {
+      await ponteSegnaAccesso(sender.tab.id, true);
+      await ponteFine("login");
+      await ponteAssicura();
+      if (typeof staCambio === "function") staCambio();
+      return { ok: true };
+    });
+  }
   // Chi è loggato nel gestionale su questo PC, letto dalla pagina dal content
   // script: solo il nome, per il «Sola lettura · gestionale di …» (il 👁️ e il ⋯) del
   // telefono. Informazione, mai un blocco: non lega niente e non apre sessioni.
@@ -1967,7 +2083,7 @@ function ponteDaPagina(msg, sender, reply) {
   if (msg.t === "ponteStato") {
     return fai(async () => {
       ponteUso.pagina = ponteOra();
-      if (pt.coppia && !pt.ws && !pt.tRiprova) await ponteAvvia();
+      if (pt.coppia) await ponteAssicura();
       return { ok: true, stato: pontePubblico(), qr: ponteQr(), codice: pt.codice };
     });
   }
@@ -1979,8 +2095,9 @@ function ponteDaPagina(msg, sender, reply) {
       const ora = ponteOra();
       await ponteScriviCoppia({ k: PonteCripto.b64u(k), creata: ora, usata: false, dev: "", nTel: "" });
       ponteNota(`Nuovo QR: vale per il primo scambio fino alle ${hhmmPonte(ora + PONTE_QR_PRIMO)}`);
-      clearTimeout(pt.tRiprova); pt.tRiprova = 0; pt.tentativi = 0;   // (un QR nuovo: sul ponte adesso)
-      await ponteAvvia();
+      await ponteAvvia(false);
+      await ponteAssicura(true);   // (un QR nuovo: sul ponte adesso, senza aspettare un tentativo in programma)
+      await ponteScriviStato();
       return { ok: true, qr: ponteQr(), codice: pt.codice, stato: pontePubblico() };
     });
   }
@@ -1993,16 +2110,27 @@ function ponteDaPagina(msg, sender, reply) {
   reply({ ok: false, why: "richiesta sconosciuta" });
 }
 chrome.runtime.onMessage.addListener(ponteDaPagina);
-chrome.runtime.onStartup?.addListener(() => { ponteAvvia().catch(() => {}); });
+// Installata o aggiornata (aggiorna.js la ricarica anche col gestionale aperto): il PC torna sul ponte se
+// serve, una volta — le schede aperte hanno il pannello di prima, e il telefono deve poter sentire «ricarica la pagina».
+chrome.runtime.onInstalled?.addListener(() => { ponteCaricato.then(() => ponteAvvia()).catch(() => {}); });
 
-// All'avvio del service worker: una sessione di prima non c'è più (le sue
-// chiavi stavano in memoria). Lo si dice, e la presa si riapre.
+// All'avvio del service worker: la chiave, il registro, e la sessione col
+// telefono, se c'era (ponteSessioneRiprendi): la presa sta nel documento fuori
+// schermo e non si è mai chiusa, e il telefono continua a parlare. Se non si
+// ritrova (il browser riaperto, un'altra associazione), lo si dice. La presa non
+// si apre per questo (ponteAvvia(false)): la apre solo quello che la fa servire.
 const ponteCaricato = (async () => {
+  await fuoriCaricato;
   const s = (await chrome.storage.session.get(PONTE_STATO))[PONTE_STATO];
   pt.registro = Array.isArray(s && s.registro) ? s.registro : [];
-  if (s && s.sessione) {
+  if (s && s.fine) pt.fine = s.fine;
+  await ponteAvvia(false);
+  const ripresa = await ponteSessioneRiprendi();
+  if (s && s.sessione && !ripresa) {
     pt.fine = { perche: "riavvio", testo: ponteFrase("riavvio"), ts: ponteOra() };
     ponteNota(`Sessione con l'iPhone chiusa — ${pt.fine.testo}`);
   }
-  await ponteAvvia();
+  // (ripresa, ma passati i 3 minuti mentre dormiva: chiusa adesso, come avrebbe fatto il battito)
+  if (pt.sessione && ponteOra() - pt.sessione.ultimo >= PONTE_INATTIVO) await ponteFine("inattivo");
+  await ponteScriviStato();
 })().catch(() => {});

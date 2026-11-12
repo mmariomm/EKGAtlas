@@ -32,7 +32,8 @@ function disegnaQr(url) {
 function righeStato(s, codice, qr) {
   const fine = s.fine ? `Ultima sessione chiusa alle ${hhmm(s.fine.ts)} — ${s.fine.testo || s.fine.perche}.` : "";
   const ponte = { su: s.telefono ? "Collegato al ponte · il pannello è aperto sull'iPhone." : "Collegato al ponte: aspetta l'iPhone.",
-    collego: "Mi collego al ponte…", giu: "Il ponte non risponde: riprovo da solo. Se dura, «Prova la rete».", spento: "" }[s.relay] || "";
+    collego: "Mi collego al ponte…", giu: "Il ponte non risponde: riprovo da solo. Se dura, «Prova la rete».", spento: "",
+    scollegato: "Scollegato: il ponte ha rifiutato questo PC. «Nuovo QR» lo associa di nuovo; se torna, chiedi all'IT." }[s.relay] || "";
   if (!s.host) {
     return { cls: "warn", testa: "Ponte da configurare", righe: [
       "In questa versione di PS Assist manca l'indirizzo del ponte: si scrive una volta in ponte/host.txt, prima di preparare lo zip (ponte/README.md)."] };

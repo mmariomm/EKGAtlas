@@ -2543,22 +2543,40 @@ const cdp = await ctx.newCDPSession(pag);
 const versioni = [];
 cdp.on("ServiceWorker.workerVersionUpdated", (e) => versioni.push(...e.versions));
 await cdp.send("ServiceWorker.enable");
-await finche(async () => versioni.some((v) => v.scriptURL.endsWith("bg.js") && v.runningStatus === "running"), 5000);
-const fermato = Date.now();
-const errStop = await cdp.send("ServiceWorker.stopWorker", { versionId: versioni.find((v) => v.scriptURL.endsWith("bg.js")).versionId }).then(() => "", (e) => e.message);
-await pag.close();
-check(!errStop && await finche(async () => relay.prese().pc === 0, 10000), `fermato il service worker, la sua presa sul ponte cade${errStop ? ` (${errStop})` : ""}`);
-check(await finche(async () => relay.prese().pc === 1, 45000), "le schede del gestionale lo svegliano, e si ricollega da solo al ponte (la chiave è rimasta)");
+const fermaSw = async () => {
+  await finche(async () => versioni.some((v) => v.scriptURL.endsWith("bg.js") && v.runningStatus === "running"), 5000);
+  const n0 = versioni.length;
+  const err = await cdp.send("ServiceWorker.stopWorker", { versionId: versioni.filter((v) => v.scriptURL.endsWith("bg.js")).at(-1).versionId }).then(() => "", (e) => e.message);
+  await finche(async () => versioni.slice(n0).some((v) => v.scriptURL.endsWith("bg.js") && v.runningStatus === "stopped"), 5000);
+  return err;
+};
+const presePc0 = relay.entrate().pc, saluti0 = await sessioniNuove(), dalS0 = (await statoPonte())?.sessione?.dal;
+const errStop = await fermaSw();
+await sospendi(1500);
+// La presa sta nel documento fuori schermo (fuori.html): il service worker fermato non la porta via.
+check(!errStop && relay.prese().pc === 1 && relay.entrate().pc === presePc0, `fermato il service worker, la presa sul ponte resta: sta nel documento fuori schermo${errStop ? ` (${errStop})` : ""}`);
+// …e la sessione col telefono resta: il telefono chiede, il messaggio sveglia il service worker, che la ritrova
+await rileggiTel(tel);
+check(await finche(async () => !!(await swDi(ctx).then((w) => w.evaluate(() => !self.__vecchio)).catch(() => false)), 20000), "(il primo messaggio del telefono sveglia un service worker nuovo)");
 sw = await swDi(ctx).catch(() => sw);
-// (il telefono si ricollega subito: una sessione, se c'è già, è una nuova)
-check(!(await sw.evaluate(() => self.__vecchio).catch(() => true)) && !((await statoPonte())?.sessione?.dal < fermato),
-  "è un service worker nuovo: la sessione di prima non c'è più, le sue chiavi stavano in memoria");
-// il telefono era su BIANCHI, scheda Cartella: se ne accorge appena il PC torna sul ponte, e si ricollega da solo lì —
-// «Sessione chiusa» non si vede nemmeno per un attimo (nessuno l'ha chiusa)
-check(await finche(async () => !!(await statoPonte())?.sessione && await tel.locator('.seg [data-s="cartella"].on').count() === 1 && /BIANCHI ANNA/.test(await tel.locator(".top").innerText().catch(() => "")), 20000)
-  && !(await tel.evaluate(() => window.__chiusa)) && await sw.evaluate(() => !self.__vecchio),
-  "l'estensione sul PC riavviata: il telefono si ricollega da solo, sullo stesso paziente e sulla stessa scheda, senza «Sessione chiusa»");
+await tocca(tel, '[data-a="scheda"][data-s="richieste"]');
+await aspettaTel(tel, /Richieste/, 10000);
+await tocca(tel, '[data-a="scheda"][data-s="cartella"]');
+await sospendi(2000);
+check(!(await tel.evaluate(() => window.__chiusa)) && (await statoPonte())?.sessione?.dal === dalS0 && await sessioniNuove() === saluti0 && relay.entrate().pc === presePc0
+  && await tel.locator('.seg [data-s="cartella"].on').count() === 1 && /BIANCHI ANNA/.test(await tel.locator(".top").innerText().catch(() => "")),
+  "il service worker ripartito ritrova la sessione: il telefono continua sulla stessa (nessun saluto nuovo, nessuna presa nuova), sullo stesso paziente e sulla stessa scheda, senza «Sessione chiusa»");
 await shot(tel, "tel-7-riavvio-ricollegato");
+// La sessione che non si ritrova (qui tolta di mano; per davvero: il browser riaperto, un'altra associazione):
+// il telefono lo sa al primo messaggio («riparti») e se ne apre una nuova da solo, senza «Sessione chiusa»
+await sw.evaluate(() => { self.__vecchio = true; return chrome.storage.session.remove("ponte.sessione"); });
+const fermato = Date.now();
+await fermaSw();
+await rileggiTel(tel);
+sw = await swDi(ctx).catch(() => sw);
+check(await finche(async () => (await statoPonte())?.sessione?.dal > fermato, 30000) && !(await tel.evaluate(() => window.__chiusa)),
+  "una sessione che il service worker non ritrova: il telefono, al primo messaggio, se ne apre un'altra da solo — niente «Sessione chiusa»");
+await pag.close();
 {
   await sospendi(4000);
   const dopo = APERTE.slice(aperteRiavvio).filter((x) => /EPISODIO_ID=999002/.test(x.url));
