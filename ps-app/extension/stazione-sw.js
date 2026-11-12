@@ -108,13 +108,23 @@ async function staMigra(nome, c) {
   if (!c || typeof c.k !== "string") return c;
   const { k, ...resto } = c, id = staId();
   await cassaScrivi(nome, { id, k: await PonteCripto.chiaveDa(PonteCripto.daB64u(k)) });
+  // (P2-5) `k` esce da storage.local solo quando la cassa, riletta, ce l'ha davvero
+  const y = await cassaLeggi(nome);
+  if (!y || y.id !== id || !y.k) throw new Error("cassa: la chiave non si rilegge");
   const nuova = { ...resto, id };
   await chrome.storage.local.set({ [nome]: nuova });
   return nuova;
 }
+// La chiave della coppia dalla cassa. (P2-5) La cassa che non risponde: un errore (si riprova, niente si
+// cancella); letta, e la chiave non c'è o non è di questa coppia: `manca` — solo allora la coppia se ne va.
 async function staChiave(nome, c) {
   const x = c ? await cassaLeggi(nome) : null;
-  return x && x.id === c.id && x.k ? x.k : null;
+  if (x && x.id === c.id && x.k) return x.k;
+  throw Object.assign(new Error("coppia senza chiave"), { manca: true });
+}
+const staRiprova = {};
+function staNonRisponde(nome, rifai) {
+  if (!staRiprova[nome]) staRiprova[nome] = setTimeout(() => { staRiprova[nome] = 0; rifai(false).catch(() => {}); }, 5e3);
 }
 // L'offerta, come la porta il QR: «<chiave pubblica>.<s>.<scadenza>» (e il nome a parte)
 function staOffertaDa(testo) {
@@ -195,7 +205,8 @@ let stmFilaAvvio = Promise.resolve();
 const stmAvvia = (serve = true) => (stmFilaAvvio = stmFilaAvvio.then(() => stmAvviaOra(serve), () => stmAvviaOra(serve)));
 async function stmAvviaOra(serve = true) {
   stm.host = await ponteIndirizzo().catch(() => "");
-  let c = (await chrome.storage.local.get(STA.coppia))[STA.coppia] || null;
+  let c;
+  try { c = (await chrome.storage.local.get(STA.coppia))[STA.coppia] || null; } catch { staNonRisponde("stm", stmAvvia); return; }
   if (c && c.revoca && staOra() - c.revoca > STA_REVOCA_MAX) { await chrome.storage.local.remove(STA.coppia); await cassaTogli(STA.coppia).catch(() => {}); c = null; }
   if (c && (stm.chiaviDi !== c.id || typeof c.k === "string")) {
     try {
@@ -207,7 +218,11 @@ async function stmAvviaOra(serve = true) {
       stm.entra = await PonteCripto.chiaviEntra(k);
       stm.chiaviDi = c.id;
       stmFineSessione();
-    } catch { await chrome.storage.local.remove(STA.coppia); await cassaTogli(STA.coppia).catch(() => {}); c = null; }
+    } catch (e) {
+      if (!(e && e.manca)) { staNonRisponde("stm", stmAvvia); return; }   // (P2-5: com'era, e si riprova)
+      await chrome.storage.local.remove(STA.coppia).catch(() => {});
+      c = null;
+    }
   }
   stm.coppia = c;
   if (!c) { stm.k = null; stm.chiavi = null; stm.chiaviDi = ""; stm.entra = null; stmFineSessione(); }
@@ -545,7 +560,8 @@ let stzFilaAvvio = Promise.resolve();
 const stzAvvia = (serve = true) => (stzFilaAvvio = stzFilaAvvio.then(() => stzAvviaOra(serve), () => stzAvviaOra(serve)));
 async function stzAvviaOra(serve = true) {
   stz.host = await ponteIndirizzo().catch(() => "");
-  let q = (await chrome.storage.local.get(STA.qui))[STA.qui] || null;
+  let q;
+  try { q = (await chrome.storage.local.get(STA.qui))[STA.qui] || null; } catch { staNonRisponde("stz", stzAvvia); return; }
   const via = async () => { await chrome.storage.local.remove(STA.qui); await cassaTogli(STA.qui).catch(() => {}); };
   if (q && q.revoca && staOra() - q.revoca > STA_REVOCA_MAX) { await via(); q = null; }
   // collegata ma mai confermata (il PC non ha salutato), e l'offerta è finita: non vale
@@ -560,7 +576,11 @@ async function stzAvviaOra(serve = true) {
       stz.entra = await PonteCripto.chiaviEntra(k);
       stz.chiaviDi = q.id;
       stz.sessione = null; stz.attesa = null;
-    } catch { await via(); q = null; }
+    } catch (e) {
+      if (!(e && e.manca)) { staNonRisponde("stz", stzAvvia); return; }   // (P2-5: com'era, e si riprova)
+      await chrome.storage.local.remove(STA.qui).catch(() => {});
+      q = null;
+    }
   }
   stz.qui = q;
   if (!q) { stz.k = null; stz.chiavi = null; stz.chiaviDi = ""; stz.entra = null; stz.sessione = null; stz.attesa = null; }

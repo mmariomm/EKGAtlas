@@ -468,6 +468,40 @@ await blocco(async () => {
   vecchio.chiudi();
   await pc.ev("pt.presa.ferma()");
 });
+sezione("la cassa che non risponde non cancella niente (P2-5)");
+// una cassa che si può guastare: `rotta.guasta` — ogni lettura e scrittura fallisce (un IndexedDB che non risponde)
+const cassaRotta = () => {
+  const m = new Map();
+  const no = () => { if (r.guasta) throw new Error("IndexedDB non risponde"); };
+  const r = { guasta: false, soloLettura: false, m, get: (k) => { no(); if (r.soloLettura) throw new Error("lettura"); return m.get(k); },
+    set: (k, v) => { no(); m.set(k, v); return r; }, delete: (k) => { no(); return m.delete(k); }, has: (k) => m.has(k) };
+  return r;
+};
+await blocco(async () => {
+  const rotta = cassaRotta();
+  const pc = await pcVero({ cassa: rotta });
+  await pc.pagina({ t: "ponteAssocia" });
+  await pc.ev("pt.presa.ferma()");
+  rotta.guasta = true;
+  pc.ev("pt.cassaDi = ''");
+  await pc.ev("ponteAvvia(false)");
+  check(!!pc.locale["ponte.coppia"] && rotta.m.has("ponte") && !!pc.ev("pt.coppia"), "P2-5. il PC: la cassa che non risponde all'avvio — la coppia resta (su disco, nella cassa, in memoria)");
+  rotta.guasta = false;
+  await pc.ev("ponteAvvia(false)");
+  check(!!pc.ev("pt.k") && !!pc.locale["ponte.coppia"], "P2-5. …e quando risponde di nuovo, tutto come prima");
+  // la coppia della 3.86: `k` esce da storage.local solo se la cassa, riletta, ce l'ha
+  const r2 = cassaRotta(); r2.soloLettura = true;
+  const K = P.casuale(32);
+  const pc2 = await pcVero({ cassa: r2, locale: { "ponte.coppia": { k: P.b64u(K), creata: Date.now() - 864e5, usata: true, dev: P.b64u(P.casuale(16)), nTel: "" } } });
+  check(typeof pc2.locale["ponte.coppia"]?.k === "string", "P2-5. la coppia della 3.86 con la cassa che non si rilegge: la chiave resta su storage.local (si riprova), la coppia non se ne va");
+  // la stazione (il PC del medico) e la stazione stessa: lo stesso
+  const r3 = cassaRotta(); r3.soloLettura = true;
+  const pc3 = await pcVero({ cassa: r3, locale: { "stazione.coppia": { k: P.b64u(P.casuale(32)), nome: "Infermeria", creata: Date.now() - 864e5 },
+    "stazione.qui": { k: P.b64u(P.casuale(32)), conferma: Date.now() - 864e5, creata: Date.now() - 864e5 } } });
+  await pc3.ev("stmAvvia(false)"); await pc3.ev("stzAvvia(false)");
+  check(typeof pc3.locale["stazione.coppia"]?.k === "string" && typeof pc3.locale["stazione.qui"]?.k === "string",
+    "P2-5. la stazione (dalle due parti) con la cassa che non risponde: niente cancellato");
+});
 sezione("il taglio (P1): le coppie di prima e le stazioni non restano fuori");
 await blocco(async () => {
   // una coppia della 3.86 migrata, il cui telefono non ha ancora detto di saper provare (telProva no), dopo il taglio:

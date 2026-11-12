@@ -229,7 +229,10 @@ async function ponteMigra(c) {
   const id = ponteNuovoId(), K = await PonteCripto.chiaveDa(raw), stanza = (await PonteCripto.chiaviCoppia(raw)).stanza;
   const quiQr = !c.usata && ponteOra() - (c.creata || 0) < PONTE_QR_PRIMO + 60e3;
   await cassaScrivi(PONTE_CASSA, { id, k: K, ...(quiQr ? { qr: K, ...(ponteOra() - (c.creata || 0) < PONTE_QR_MAX ? { qrRaw: raw } : {}) } : {}) });
-  const nuova = { ...resto, id, gen: 0, stanza };
+  // (P2-5) `k` esce da storage.local solo quando la cassa, riletta, ce l'ha davvero
+  const y = await cassaLeggi(PONTE_CASSA);
+  if (!y || y.id !== id || !y.k) throw new Error("cassa: la chiave non si rilegge");
+  const nuova = { ...resto, id, gen: 0, stanza, migrata: true };
   await chrome.storage.local.set({ [PONTE_COPPIA]: nuova });
   return nuova;
 }
@@ -265,13 +268,29 @@ async function ponteAvviaOra(serve = true) {
   await ponteScriviStato();
 }
 // La coppia da disco e le sue chiavi dalla cassa, in `pt` (se sono cambiate). Ritorna la coppia, o null.
+// (P2-5) Si cancella solo se la cassa, letta davvero, dice che la chiave non c'è (o non è di questa coppia):
+// un disco o un IndexedDB che non risponde lascia tutto com'è — in memoria com'era — e si riprova fra poco.
+let ponteRiprovaCassa = 0;
+function ponteNonRisponde() {
+  if (!ponteRiprovaCassa) ponteRiprovaCassa = setTimeout(() => { ponteRiprovaCassa = 0; ponteAvvia(false).catch(() => {}); }, 5e3);
+  return pt.coppia && pt.k ? pt.coppia : null;
+}
 async function ponteLeggiCoppia() {
-  let c = (await chrome.storage.local.get(PONTE_COPPIA))[PONTE_COPPIA] || null;
+  let c;
+  try { c = (await chrome.storage.local.get(PONTE_COPPIA))[PONTE_COPPIA] || null; } catch { return ponteNonRisponde(); }
   if (!c) return null;
+  let x;
+  try { c = await ponteMigra(c); x = await cassaLeggi(PONTE_CASSA); } catch { return ponteNonRisponde(); }
+  // (una chiave rovinata — né una CryptoKey né 32 byte — non tiene fermo il ponte per sempre: serve un QR nuovo)
+  const chiaveOk = (k) => !!k && (typeof k.algorithm === "object" || (typeof k.length === "number" && k.length === 32));
+  if (!x || x.id !== c.id || !chiaveOk(x.k) || !/^[0-9a-f]{32}$/.test(c.stanza || "")) {
+    // (letta, e la chiave non c'è: la coppia non può più servire — serve un QR nuovo)
+    await chrome.storage.local.remove(PONTE_COPPIA).catch(() => {});
+    if (x && x.id !== c.id) return null;   // (la cassa è di un'altra coppia: resta sua)
+    await cassaTogli(PONTE_CASSA).catch(() => {});
+    return null;
+  }
   try {
-    c = await ponteMigra(c);
-    const x = await cassaLeggi(PONTE_CASSA);
-    if (!x || x.id !== c.id || !x.k || !/^[0-9a-f]{32}$/.test(c.stanza || "")) throw new Error("coppia senza chiave");
     // la finestra del QR è finita: la sua chiave non vale più (e i suoi byte nemmeno per disegnarlo)
     const fuori = ponteOra() - (c.creata || 0) >= PONTE_QR_PRIMO + 60e3;
     // (la chiave d'entrata di prima, `vecchia`, resta finché la stanza non dice di tenere quella nuova:
@@ -299,10 +318,8 @@ async function ponteLeggiCoppia() {
       pt.chiaviDi = `${c.id}.${c.gen || 0}`;
       pt.cassaDi = firma;
     }
-  } catch {   // una chiave rovinata (o che manca) non tiene fermo il ponte per sempre: serve un QR nuovo
-    await chrome.storage.local.remove(PONTE_COPPIA).catch(() => {});
-    await cassaTogli(PONTE_CASSA).catch(() => {});
-    return null;
+  } catch {   // (la cassa che non si scrive, una derivazione che non riesce: niente si cancella — si riprova)
+    return ponteNonRisponde();
   }
   return c;
 }
