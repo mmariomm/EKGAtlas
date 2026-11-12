@@ -332,7 +332,32 @@ segreto dell'ECDH (HKDF, «rinnova») nasce `K'`, che il QR non contiene. Il pri
 diventare LA chiave, sui due lati; `K` resta solo per la **finestra del QR** (5 minuti + 1 dal QR) e
 poi se ne va. Una foto del QR, o `K` copiata dopo, non aprono più niente. Le associazioni di prima
 (con `K` in `storage.local` o in `localStorage`) si spostano nelle casse al primo avvio e si
-rinnovano alla prima sessione, da sole. La stanza resta quella del QR (sta nella coppia).
+rinnovano alla prima sessione, da sole.
+
+Il rinnovo è **legato alla sessione** in cui si chiede: nel sale dell'HKDF ci sono anche i due numeri
+del saluto (`nTel`, `nPc`) e il numero della stanza del QR (`PonteCripto.legameDi`; info «rinnova 2»).
+Il PC lo fa **solo** nella sessione che segue il QR (nella sua finestra, `coppia.rinnovaOk`) o, per
+una coppia migrata dalla 3.86, finché non si è rinnovata; fatto, non si rifà. Il telefono lo chiede
+solo da una presa a cui la stanza ha detto «entrato» (ha provato una chiave d'entrata che il PC le ha
+dato). Chiesto il rinnovo, il telefono saluta solo con `K'`: una risposta con `K` non la fa buttare
+(si resta chiusi verso `K'`), e se `K'` non si salva nella cassa il rinnovo non si fa.
+
+**Rinnovata, la coppia cambia stanza** (rev-s2 P2-1). Nella finestra del QR il PC sta nella stanza del
+QR (lì si cambia telefono); fuori, in quella che nasce dalla chiave di adesso
+(`chiaviCoppia(K).stanza`). Finché la chiave è quella del QR — o, per una coppia migrata, quella della
+3.86 — sono la stessa; rinnovata, il PC passa (una coppia migrata subito, una nuova a fine finestra)
+a una stanza che nessuno ha mai visto in un indirizzo, e ci entra per primo: la sua chiave d'entrata e
+quella del telefono le registra lui. Il numero di prima, visto negli indirizzi di mesi, non porta più
+a nessuno. Il telefono cerca il PC nella stanza più probabile e, se non c'è, nell'altra (sempre più di
+rado); trovato nella stanza nuova, resta lì.
+
+*Una via più forte, per dopo.* Si potrebbe far nascere la stanza dalla chiave d'entrata del PC
+(`stanza = SHA-256("ps-ponte/stanza|" + chiave del PC)`, 16 byte) e far controllare al ripetitore,
+alla prima registrazione, che la chiave portata dia proprio quel numero: registrarsi per primi
+vorrebbe dire conoscere `K`, per ogni stanza. Non l'abbiamo fatto adesso perché cambia il numero della
+stanza dei QR nuovi (un'app del telefono 3.86 ancora in cache non troverebbe il PC) e, finché le
+stanze della 3.86 ci sono, il ripetitore dovrebbe accettare ancora le altre. Dopo il taglio, quando
+tutte le coppie sono passate a una stanza nuova, è un cambio piccolo (ripetitore e `cripto.js`).
 
 **L'entrata nella stanza (3.87).** Il ripetitore manda a chi entra una sfida; il client risponde con
 HMAC-SHA256 della sfida con la sua **chiave d'entrata** (da `K`, per ruolo: `chiaviEntra`), che non
@@ -341,6 +366,48 @@ dà quella del telefono (dal saluto in cui il telefono dice `entra: 1`, o subito
 cambia, provando con quelle di prima, quando la chiave si rinnova. Chi sa solo il numero della stanza
 non entra, non butta fuori nessuno, non allaga. I client della 3.86 (senza prova) entrano come prima
 finché il loro ruolo non ha una chiave (il passaggio, `PONTE.senzaProva`, e il log lo conta).
+
+Le regole della stanza (`worker/ponte-logica.js`, rev-s2):
+
+- **La propria chiave la registra solo il capo** (il PC, il PC del medico); quelle del telefono e
+  della stazione gliele dà lui (`altro`). Dopo il taglio la sfida dice `obbligo: 1`, e la presa del
+  capo dà alla stanza anche le chiavi che ha nel frammento come `q=` (quelle dell'altro ruolo, quando
+  non sa ancora se l'altro sa provare). Un telefono o una stazione che entra quando la sua chiave non
+  c'è ancora **aspetta** (niente 4403, niente scadenza, al più quattro per ruolo): quando il capo la dà,
+  ha una sfida nuova.
+- **Le entrate al minuto si contano dopo la prova** (o, nel passaggio, all'entrata senza prova): chi sa
+  solo il numero della stanza non consuma il conto di chi ha la chiave. Quelle che devono ancora
+  provare sono al più quattro per ruolo; oltre, esce la più vecchia.
+- **Le chiavi che vengono dal QR scadono da sole**: il PC le dà come `chiave~ms` (la fine della
+  finestra) e la stanza tiene la scadenza con loro; finita la finestra non contano — anche col PC
+  spento. Un ruolo con chiavi solo scadute deve provare lo stesso.
+- **Senza archivio la stanza è chiusa**: un Durable Object senza SQLite, o un archivio che non risponde,
+  chiude chi entra con 1011 e lo grida nei log; mai una memoria al suo posto (che, al risveglio vuota,
+  lascerebbe registrare il primo che passa).
+- La risposta `{entrato, registrata}` dice al PC se la stanza ha scritto la sua chiave nuova: solo
+  allora butta quella di prima (`vecchia`, mai a un'ora).
+
+### Il taglio (`PONTE.senzaProva = false`): la lista
+
+Il taglio chiude la stanza a chi non prova. Si fa **dopo** che tutte le coppie sono passate alla 3.87,
+in quest'ordine:
+
+1. **Estensione e app del telefono 3.87 su tutti i PC e i telefoni.** L'app del telefono si aggiorna
+   da sé alla prima apertura con rete; l'estensione con il suo canale. Il log del Worker non deve più
+   contare righe `entrata senza prova` per qualche giorno di turni normali (Workers Logs: `ponte`).
+2. **Ogni PC associato è entrato almeno una volta con la 3.87** (la sua chiave d'entrata è nella
+   stanza) e ogni telefono ha salutato con la 3.87 (la stanza ha la sua chiave). Una coppia migrata che
+   ha fatto la sua prima sessione 3.87 si è anche rinnovata ed è passata alla stanza nuova.
+3. **Le stazioni di stampa**: ognuna ha salutato il PC del medico con la 3.87 (`staProva`). Una
+   stazione che non l'ha fatto, dopo il taglio, aspetta che il medico entri (il PC le dà la chiave con
+   `q=`): non resta fuori, ma conviene vederla funzionare prima.
+4. **Il Durable Object ha l'SQLite** (`new_sqlite_classes` in `wrangler.toml`, controllato da
+   `ponte-cripto`): senza, dopo questa versione, la stanza è chiusa per tutti (1011).
+5. Allora `PONTE.senzaProva = false` in `worker/ponte-logica.js`, il test `ponte-sicurezza` aggiornato
+   («il taglio non è ancora arrivato»), e il deploy del Worker. Un telefono o una stazione di una
+   coppia che non era mai passata (punto 2) aspetta: quando entra il suo PC, entra anche lui.
+6. Dopo il taglio: un PC che riceve 4403 («Scollegato») non ha più la sua chiave nella stanza — serve
+   un QR nuovo. La via più forte della stanza che nasce dalla chiave (sopra) si può fare adesso.
 
 **«Usa questo telefono».** Il telefono rifiutato tiene la chiave del QR e può rimandare il saluto con
 un campo in più, `cambio: true` (stesso messaggio cifrato di ogni saluto, con `salutoTel`: senza la
@@ -718,7 +785,8 @@ suo aiutante non l'ha stampato (e il suo file temporaneo, come per ogni foglio).
 - **Il QR sullo schermo** vale quanto la chiave, ma per poco e per uno: si rivede solo nei primi due
   minuti, si toglie da solo appena l'iPhone entra, dopo il primo telefono non apre a nessun altro, e
   finita la sua finestra non apre più niente (la chiave si è rinnovata). Nel dubbio, Revoca. Sul
-  telefono, un QR che dice di valere più di 6 minuti non si usa («QR non valido»: un adesivo, un link
+  telefono, un QR che dice di valere più di 11 minuti (i 5 del QR, fino a 5 di orologio del PC avanti,
+  e un margine) non si usa («QR non valido»: un adesivo, un link
   mandato), e uno nuovo che sostituirebbe un PC che c'è chiede prima, col codice da guardare sul PC. Nel pannello (⋯ → iPhone) il QR sta nella pagina dell'estensione, in una
   cornice: la pagina del gestionale vede la cornice ma non ci legge dentro (un'altra origine); si apre
   solo dalle origini del gestionale (`web_accessible_resources`, solo `ponte.html`) e da un indirizzo
@@ -738,6 +806,23 @@ suo aiutante non l'ha stampato (e il suo file temporaneo, come per ogni foglio).
   quel giorno (dal PC o dal telefono) potrebbe decifrarlo. K vive finché non la si revoca; uno scambio
   ECDH per sessione lo eviterebbe, al prezzo di altro codice.
 - **Per scelta del medico non c'è Face ID dentro l'app**: possedere la chiave basta.
+- **Chi ha fotografato il QR e sta in mezzo nella prima sessione** (rev-s2 P2-3, il rischio che resta):
+  il rinnovo è un ECDH dentro una sessione cifrata con chiavi da `K`. Chi ha `K` (la foto del QR) *e*
+  sta in mezzo fra telefono e PC *durante quella sessione* — sul ripetitore, o fra il ripetitore e uno
+  dei due — può fare un ECDH con ciascuno e tenersi le due `K'`. Il legame alla sessione (i suoi due
+  numeri e la stanza del QR) e il rinnovo solo nella sessione del QR stringono questo a pochi minuti e
+  a chi è già in mezzo in quel momento; non lo tolgono: i numeri della sessione non sono segreti per
+  chi ha `K`. Lo toglierebbe un confronto a vista fra i due schermi dopo il rinnovo (un codice di `K'`),
+  che oggi non c'è. Il QR mostrato solo per due minuti e tolto appena l'iPhone entra resta la difesa.
+- **Il ripetitore conosce le chiavi d'entrata** (le HMAC le verifica lui): chi controlla il Worker può
+  entrare nelle stanze — ma solo entrare: i dati sono cifrati con chiavi che il ripetitore non vede.
+- **«Riconferma l'iPhone»** la può toccare chiunque sia davanti al PC sbloccato, anche l'utente dopo:
+  è un'informazione per il medico, non un controllo d'identità.
+- **Un'app del telefono 3.86 ancora in cache** che inquadra un QR della 3.87 entra (nel passaggio) ma
+  non rinnova la chiave né sa provare: finita la finestra la chiave d'entrata del QR scade nella
+  stanza, e quel telefono non entra più (4403, «Scollegato»). Serve un QR nuovo con l'app aggiornata.
+- **WebCrypto**: una CryptoKey HKDF non estraibile serve comunque a ricavare bit (`deriveBits`): uno
+  script che girasse nell'origine potrebbe usarla finché è lì — non copiarla.
 - **Più PC, chiavi separate.** Ogni PC associato (il completo e ogni porta di sola lettura) ha la
   **sua** chiave e la sua stanza: una non apre gli altri, e il telefono parla con uno alla volta.
   Compromettere un PC — o la sua chiave sul telefono — espone *quel* PC, non gli altri. Scansionare un
