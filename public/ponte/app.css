@@ -530,3 +530,5 @@ main { padding: 12px var(--dx) calc(112px + env(safe-area-inset-bottom)) var(--s
 .rist.apri { flex-wrap: wrap; }
 .rist .quali { flex: 1 1 100%; display: flex; gap: 6px; }
 .rist .quali .btnmini { flex: 1; min-height: 44px; }
+/* (3.87) in sottofondo l'app è coperta: l'istantanea di iOS (il selettore delle app) non mostra pazienti */
+.coperto #app, .coperto #pdfin { visibility: hidden !important; }

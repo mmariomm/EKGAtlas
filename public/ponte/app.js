@@ -115,6 +115,9 @@
     acc: new Map(),      // «Accetta in ambulatorio»: chiave della riga del Triage (o episodio) → { rq, stato, esito }
     areaTel: new Map(),  // «Passa il PC all'area …»: episodio (la chiave della smart) → { rq, stato, esito }
     accArma: null,       // …dopo il primo tocco: { id, ts }
+    // (3.87) la chiave rinnovata che aspetta il primo saluto, le chiavi d'entrata per la stanza, un QR nuovo che
+    // sostituirebbe un PC che c'è (si chiede prima), il PC in pausa (un altro utente nel gestionale), la rinnova in corso
+    chiaviProssima: null, entra: [], sostituisci: null, pausa: "", rinnovo: null, rinnovaNo: "",
   };
   const MODO = "psassist.ponte.modo";
   try { const m = localStorage.getItem(MODO); if (m === "mappa" || m === "dafare") S.modo = m; } catch { /* solo in memoria */ }
@@ -133,50 +136,113 @@
   }
 
   // ---------------------------------------------------- la chiave del QR
-  const stessa = (a, b) => P.b64u(a) === P.b64u(b);
+  // (3.87) Le chiavi stanno in IndexedDB, come CryptoKey NON ESTRAIBILI: si usano, i loro byte non escono
+  // più — nemmeno per uno script che girasse su questo sito. In localStorage resta solo quello che non è
+  // segreto (il tipo, il nome, il numero della stanza…). Senza IndexedDB (raro: una navigazione privata
+  // vecchia) si resta come prima, la chiave in localStorage.
+  const CASSA_DB = "psassist-ponte", CASSA_TAB = "chiavi";
+  let cassaDb = null;
+  const cassa = () => cassaDb || (cassaDb = new Promise((ok, no) => {
+    if (!window.indexedDB) { no(new Error("senza IndexedDB")); return; }
+    const r = indexedDB.open(CASSA_DB, 1);
+    r.onupgradeneeded = () => { if (!r.result.objectStoreNames.contains(CASSA_TAB)) r.result.createObjectStore(CASSA_TAB); };
+    r.onsuccess = () => ok(r.result);
+    r.onerror = () => no(r.error);
+  }).catch((e) => { cassaDb = null; throw e; }));
+  const cassaFai = async (modo, fn) => {
+    const db = await cassa();
+    return new Promise((ok, no) => {
+      const t = db.transaction(CASSA_TAB, modo), r = fn(t.objectStore(CASSA_TAB));
+      t.oncomplete = () => ok(r ? r.result : undefined);
+      t.onerror = () => no(t.error); t.onabort = () => no(t.error || new Error("annullata"));
+    });
+  };
+  const cassaLeggi = (id) => cassaFai("readonly", (s) => s.get(id)).then((v) => v || null);
+  const cassaScrivi = (id, v) => cassaFai("readwrite", (s) => { s.put(v, id); return null; });
+  const cassaTogli = (id) => cassaFai("readwrite", (s) => { s.delete(id); return null; }).catch(() => {});
+  let senzaCassa = false;   // IndexedDB non c'è: la chiave resta in localStorage, come fino alla 3.86
+  // quello che di una coppia va nella cassa: la chiave di adesso, quella rinnovata che aspetta il primo
+  // saluto (`prossima`), e la chiave d'entrata di prima, per la stanza che non sa ancora quella nuova
+  const perCassa = (p) => ({ k: p.k, ...(p.prossima ? { prossima: p.prossima } : {}), ...(p.jkVecchia ? { jkVecchia: p.jkVecchia } : {}) });
+  const salvaChiave = (p) => (senzaCassa ? Promise.resolve() : cassaScrivi(p.id, perCassa(p)).catch(() => {}));
   const nuovoDev = () => P.b64u(P.casuale(16));
   // Il PC attivo è di sola lettura? (la build mini: si vede ma non si scrive)
   const solaLettura = () => !!(S.coppia && S.coppia.kind === "lettura");
   // da un link: la chiave (l'associazione non scade: finisce con «Scollega» qui o con la revoca sul PC),
   // fin quando il link vale per il primo scambio, e un numero nuovo per questo telefono
+  // (3.87) un QR vale pochi minuti: il PC scrive l'ora di fine a 5 minuti da quando lo mostra. Uno che dice
+  // di valere più di 6 minuti da adesso non è di un PC di PS Assist (un adesivo, un link mandato): non si usa.
+  const QR_MAX_AVANTI = 6 * 60e3;
   function dalLink(hash) {
     const c = P.leggiFrammento(hash);
-    return c ? { k: c.k, qrScade: c.scade, dev: nuovoDev() } : null;
+    return c ? { k: c.k, qrScade: c.scade, dev: nuovoDev(), falso: c.scade > Date.now() + QR_MAX_AVANTI } : null;
   }
   const nuovoId = () => P.b64u(P.casuale(8));
-  // La lista delle associazioni. In memoria `k` è Uint8Array; su disco è
-  // base64url, con il tipo e il nome brevi che il PC ha detto al saluto, e l'id
-  // dell'ultimo attivo. Ogni PC ha la SUA chiave: una non apre gli altri.
+  // La lista delle associazioni. In memoria `k` è la CryptoKey (dalla cassa); su
+  // disco solo il tipo e il nome brevi che il PC ha detto al saluto, il numero
+  // della stanza (non cambia quando la chiave si rinnova), quando la chiave si è
+  // rinnovata, e l'id dell'ultimo attivo. Ogni PC ha la SUA chiave: una non apre gli altri.
   function salvaPcs() {
     try {
-      const v = S.pcs.map((p) => ({ k: P.b64u(p.k), dev: p.dev, kind: p.kind || "", nome: p.nome || "", id: p.id,
+      const v = S.pcs.map((p) => ({ dev: p.dev, kind: p.kind || "", nome: p.nome || "", id: p.id, stanza: p.stanza || "",
+        ...(senzaCassa && p.k instanceof Uint8Array ? { k: P.b64u(p.k) } : {}),
+        ...(p.rinnovata ? { rinnovata: p.rinnovata } : {}),
         ...(p.ver ? { ver: p.ver } : {}), ...(p.visto ? { visto: p.visto } : {}) }));   // (per ⋯ → Dispositivi: la versione, e quando si è fatto sentire)
       localStorage.setItem(PCS, JSON.stringify({ v, attivo: S.attivo }));
     } catch { /* solo in memoria */ }
   }
-  function leggiPcs() {
+  // Una coppia letta da disco: la sua chiave dalla cassa — o, se è della 3.86 (la chiave in localStorage),
+  // nella cassa adesso, non estraibile, e via da localStorage (salvaPcs, dopo).
+  async function conChiave(x) {
+    const p = { dev: /^[\w-]{16,32}$/.test(x.dev || "") ? x.dev : nuovoDev(),
+      kind: x.kind === "lettura" || x.kind === "completo" ? x.kind : "",
+      nome: typeof x.nome === "string" ? x.nome.slice(0, 40) : "",
+      id: typeof x.id === "string" && x.id ? x.id : nuovoId(),
+      stanza: /^[0-9a-f]{32}$/.test(x.stanza || "") ? x.stanza : "",
+      rinnovata: Number.isSafeInteger(x.rinnovata) && x.rinnovata > 0 ? x.rinnovata : 0,
+      ver: verOk(x.ver), visto: Number.isSafeInteger(x.visto) && x.visto > 0 ? x.visto : 0 };
+    if (typeof x.k === "string") {
+      const raw = P.daB64u(x.k);
+      if (raw.length !== 32) return null;
+      p.stanza = (await P.chiaviCoppia(raw)).stanza;
+      if (senzaCassa) { p.k = raw; return p; }
+      p.k = await P.chiaveDa(raw);
+      await cassaScrivi(p.id, perCassa(p));
+      return p;
+    }
+    if (senzaCassa || !p.stanza) return null;
+    const c = await cassaLeggi(p.id).catch(() => null);
+    if (!c || !c.k) return null;
+    p.k = c.k;
+    if (c.prossima) p.prossima = c.prossima;
+    if (c.jkVecchia && c.jkVecchia.fino > Date.now()) p.jkVecchia = c.jkVecchia;
+    return p;
+  }
+  async function leggiPcs() {
     let out = { v: [], attivo: "" };
+    try { await cassa(); } catch { senzaCassa = true; }
     try {
       const o = JSON.parse(localStorage.getItem(PCS) || "null");
       if (o && Array.isArray(o.v)) {
-        out.v = o.v.map((x) => {
-          try {
-            const k = P.daB64u(x.k);
-            if (k.length !== 32) return null;
-            return { k, dev: /^[\w-]{16,32}$/.test(x.dev || "") ? x.dev : nuovoDev(),
-              kind: x.kind === "lettura" || x.kind === "completo" ? x.kind : "",
-              nome: typeof x.nome === "string" ? x.nome.slice(0, 40) : "",
-              id: typeof x.id === "string" && x.id ? x.id : nuovoId(),
-              ver: verOk(x.ver), visto: Number.isSafeInteger(x.visto) && x.visto > 0 ? x.visto : 0 };
-          } catch { return null; }
-        }).filter(Boolean);
+        const l = [];
+        for (const x of o.v) { try { const p = x && await conChiave(x); if (p) l.push(p); } catch { /* questa no */ } }
+        out.v = l;
         out.attivo = typeof o.attivo === "string" ? o.attivo : "";
+        // (le chiavi della 3.86 sono nella cassa: su disco non restano)
+        if (!senzaCassa && o.v.some((x) => x && typeof x.k === "string")) { S.pcs = l; S.attivo = out.attivo; salvaPcs(); }
       }
     } catch { /* niente */ }
     // migrazione dalla vecchia chiave singola (un solo PC)
     if (!out.v.length) {
       const vecchia = salvataLegacy();
-      if (vecchia) { const id = nuovoId(); out.v = [{ ...vecchia, kind: "", nome: "", id }]; out.attivo = id; }
+      if (vecchia) {
+        const p = await conChiave({ k: P.b64u(vecchia.k), dev: vecchia.dev, id: nuovoId() }).catch(() => null);
+        if (p) {
+          out.v = [p]; out.attivo = p.id;
+          // (la chiave è nella cassa: la vecchia riga con la chiave in chiaro se ne va)
+          if (!senzaCassa) { S.pcs = [p]; S.attivo = p.id; salvaPcs(); try { localStorage.removeItem(CHIAVE); } catch { /* niente */ } }
+        }
+      }
     }
     return out;
   }
@@ -205,13 +271,35 @@
       S.classifica = false;
       const tolti = kind === "completo"
         ? altri.filter((p) => p.kind !== "lettura")                                             // un solo PC completo: il nuovo prende il posto (anche una riga migrata o non ancora classificata)
-        : altri.filter((p) => p.kind === "lettura" && (stessa(p.k, S.coppia.k) || (p.nome && p.nome === nome)));  // lo stesso PC di sola lettura
-      S.pcs = [S.coppia, ...altri.filter((p) => !tolti.includes(p))];
+        : altri.filter((p) => p.kind === "lettura" && ((p.stanza && p.stanza === S.coppia.stanza) || (p.nome && p.nome === nome)));  // lo stesso PC di sola lettura
+      // (3.87) un QR nuovo che prende il posto di un PC che c'è: prima si chiede (un QR falso, un adesivo, non sostituisce in silenzio)
+      if (tolti.length) { S.sostituisci = { tolti, nuovo: S.coppia }; return false; }
+      S.pcs = [S.coppia, ...altri];
     } else {
       S.pcs = S.pcs.map((p) => (p.id === S.coppia.id ? S.coppia : p));
     }
     S.attivo = S.coppia.id;
     salvaPcs();
+    return true;
+  }
+  // «Sostituisci»: il PC nuovo prende il posto di quelli di prima (le loro chiavi via da qui)
+  function sostituisci(si) {
+    const x = S.sostituisci;
+    if (!x) return;
+    S.sostituisci = null;
+    if (!si) {
+      // tenuto quello di prima: il PC nuovo se ne va (la sua chiave con lui), e si torna a quello
+      S.pcs = S.pcs.filter((p) => p.id !== x.nuovo.id);
+      cassaTogli(x.nuovo.id);
+      salvaPcs();
+      S.coppia = null;
+      return attivaPc(x.tolti[0].id);
+    }
+    S.pcs = [x.nuovo, ...S.pcs.filter((p) => p.id !== x.nuovo.id && !x.tolti.includes(p))];
+    for (const p of x.tolti) cassaTogli(p.id);
+    S.attivo = x.nuovo.id;
+    salvaPcs();
+    dopoCiao(true);
   }
   // Passa a un altro PC della lista (dal menu): chiude la presa di adesso e si
   // collega a quello. Si ricorda l'ultimo attivo.
@@ -229,14 +317,17 @@
   function dimenticaPcId(id) {
     if (!S.coppia || id === S.coppia.id) return dimentica("senza");
     S.pcs = S.pcs.filter((p) => p.id !== id);
+    cassaTogli(id);
     salvaPcs(); render();
   }
   function dimentica(fase) {
     // via l'associazione ATTIVA; se ne restano altre, si passa alla prima
     if (S.coppia) {
+      cassaTogli(S.coppia.id);
       const resto = S.pcs.filter((p) => p.id !== S.coppia.id);
       if (resto.length) { S.pcs = resto; S.attivo = resto[0].id; salvaPcs(); return attivaPc(resto[0].id); }
     }
+    for (const p of S.pcs) cassaTogli(p.id);
     S.pcs = []; S.attivo = "";
     try { localStorage.removeItem(PCS); localStorage.removeItem(CHIAVE); } catch { /* niente */ }
     S.coppia = null; S.chiavi = null; S.canale = null; S.saluto = null; S.nSessione = "";
@@ -247,14 +338,32 @@
     S.fase = fase; S.menu = false; render();
   }
   async function parti(c) {
-    S.coppia = c; S.nuova = null;
+    S.coppia = c; S.nuova = null; S.sostituisci = null;
     if (c.id) S.attivo = c.id;
     if (c.id && !S.pcs.some((p) => p.id === c.id)) S.pcs = [c, ...S.pcs];
-    S.chiavi = await P.chiaviCoppia(c.k);
-    S.codice = await P.codice(c.k);
+    await chiaviDi(c);
     S.fase = "collego";
     render();
     collega();
+  }
+  // Le chiavi della coppia attiva: quella di adesso e, se c'è, quella rinnovata che aspetta il primo saluto;
+  // la stanza è sempre la stessa (quella del QR), e si entra con la prova (le chiavi d'entrata del telefono).
+  async function chiaviDi(c) {
+    const ch = await P.chiaviCoppia(c.k);
+    if (!c.stanza) c.stanza = ch.stanza;
+    S.chiavi = { ...ch, stanza: c.stanza, k: c.k };
+    S.chiaviProssima = c.prossima ? { ...(await P.chiaviCoppia(c.prossima)), stanza: c.stanza, k: c.prossima } : null;
+    S.entra = [(await P.chiaviEntra(c.k)).tel, S.chiaviProssima ? (await P.chiaviEntra(c.prossima)).tel : "", c.jkVecchia && c.jkVecchia.fino > Date.now() ? c.jkVecchia.tel : ""].filter(Boolean);
+    S.codice = await P.codice(c.k);
+  }
+  // La sfida del ripetitore (3.87): la prova con ogni chiave d'entrata che si ha (quella di adesso, quella
+  // rinnovata, quella di prima): una basta. Un ripetitore di prima non la manda, e si entra come sempre.
+  async function rispondiSfida(ws, sfida, chiavi) {
+    if (typeof sfida !== "string" || !/^[A-Za-z0-9_-]{8,64}$/.test(sfida) || !chiavi.length) return;
+    try {
+      const prova = await Promise.all(chiavi.map((c) => P.provaEntra(c, sfida)));
+      if (ws.readyState === 1) ws.send(JSON.stringify({ prova }));
+    } catch { /* senza prova: il ripetitore deciderà */ }
   }
 
   // ---------------------------------------------------------------- la presa
@@ -339,6 +448,12 @@
     try { ws.close(1000); } catch { /* già chiusa */ }
   }
   document.addEventListener("visibilitychange", () => { if (!davantiOra()) sottofondo(false); });
+  // (3.87) In sottofondo l'app si copre: l'istantanea che iOS tiene per il selettore delle app non mostra
+  // pazienti. Tornata davanti, si scopre (i dati sono quelli di prima, in memoria, finché la sessione c'è).
+  const copri = () => document.documentElement.classList.toggle("coperto", document.visibilityState === "hidden");
+  document.addEventListener("visibilitychange", copri);
+  window.addEventListener("pagehide", () => document.documentElement.classList.add("coperto"));
+  window.addEventListener("pageshow", copri);
   window.addEventListener("pagehide", () => sottofondo(true));   // (la pagina si congela: non c'è tempo per la grazia)
   // Il battito: se il «pong» non torna, la presa è morta anche se sembra
   // aperta (una rete che la lascia cadere senza dirlo): se ne apre un'altra.
@@ -373,52 +488,125 @@
     if (!pari && !S.canale && S.fase === "collego") S.fase = "pc";
     render();
   }
-  async function saluta() {
+  // (3.87) Con la chiave rinnovata, se c'è (il primo saluto con lei la fa diventare LA chiave, qui e sul PC);
+  // se il PC non risponde a quella, il tentativo dopo usa quella di prima. `entra`: questo telefono sa
+  // provare l'entrata nella stanza — il PC darà al ripetitore anche la sua chiave d'entrata.
+  let salutiSenza = 0;
+  async function saluta(rinnovo = false) {
     const n = P.casuale(16);
-    const mio = { n: P.b64u(n), byte: n, t0: Date.now() };
+    const ch = S.chiaviProssima && (rinnovo || salutiSenza % 2 === 0) ? S.chiaviProssima : S.chiavi;
+    const mio = { n: P.b64u(n), byte: n, t0: Date.now(), ch, rinnovo };
     S.saluto = mio;
-    manda(await P.sigilla(S.chiavi.salutoTel, P.TIPO.SALUTO_TEL, 0, { v: 1, n: mio.n, dev: S.coppia.dev }));
+    manda(await P.sigilla(ch.salutoTel, P.TIPO.SALUTO_TEL, 0, { v: 1, n: mio.n, dev: S.coppia.dev, entra: 1 }));
     setTimeout(() => {
       if (S.saluto !== mio) return;
       S.saluto = null;
+      salutiSenza++;
+      if (rinnovo) { if (S.rinnovo) S.rinnovo.fatto(false); return; }
       if (S.fase === "collego") { S.fase = "pc"; render(); }
       if (S.pari && S.fase === "pc") saluta();
     }, 8000);
+  }
+  // Il saluto è tornato con la chiave rinnovata: da adesso è lei (quella di prima resta solo come chiave
+  // d'entrata, per un giorno: la stanza la cambia quando il PC rientra)
+  async function rinnovata() {
+    const c = S.coppia;
+    if (!c || !c.prossima) return;
+    const prima = (await P.chiaviEntra(c.k)).tel;
+    c.k = c.prossima; delete c.prossima;
+    c.jkVecchia = { tel: prima, fino: Date.now() + 24 * 3600e3 };
+    c.rinnovata = Date.now();
+    await salvaChiave(c);
+    salvaPcs();
+    await chiaviDi(c);
+  }
+  // Dopo il «ciao»: il PC in pausa (un altro utente nel gestionale) si ferma qui; se no la chiave si rinnova
+  // (una volta per associazione, anche per quelle di prima della 3.87: in silenzio), poi l'elenco.
+  async function dopoCiao(nuova, d = S.ultimoCiao) {
+    S.ultimoCiao = d || null;
+    if (d && typeof d.pausa === "string" && d.pausa) {
+      S.pausa = d.pausa.slice(0, 120);
+      S.fase = "pausa"; render();
+      return;
+    }
+    S.pausa = "";
+    // (il codice del QR, quello sotto il QR del PC: la chiave rinnovata ne ha un altro)
+    const codice = S.codice;
+    await rinnova().catch(() => {});
+    if (!S.canale) return;
+    S.fase = "pronta"; render();
+    // il codice dell'associazione si guarda solo adesso, accanto a quello sotto il QR del PC: poi non serve
+    carica().then(() => { if (nuova && S.fase === "pronta") avviso(`Associato · codice ${codice}`); });
+  }
+  // (3.87) La chiave nuova: un ECDH dentro questa sessione cifrata (il QR non ha queste chiavi pubbliche), e
+  // da lì e da K la chiave che prende il posto di K, qui e sul PC. Un PC di prima non conosce `rinnova`:
+  // si resta con K, e si riprova alla prossima sessione.
+  async function rinnova() {
+    const c = S.coppia;
+    if (!c || c.rinnovata || c.prossima || senzaCassa || S.rinnovaNo === c.id || !S.canale) return;
+    const e = await P.coppiaEcdh();
+    let d;
+    try { d = await chiedi("rinnova", { pub: P.b64u(e.pub) }, TEMPO, true, { rq: nuovoRq() }); }
+    catch (err) { if (!err.offline && !err.tempo) S.rinnovaNo = c.id; return; }
+    let pubPc;
+    try { pubPc = P.daB64u(d && d.pub); } catch { return; }
+    if (S.coppia !== c) return;
+    c.prossima = await P.rinnova(c.k, e.privata, pubPc, e.pub, pubPc);
+    await salvaChiave(c);
+    await chiaviDi(c);
+    // il primo saluto con la chiave nuova: il PC la fa sua, e la sessione continua su lei
+    await new Promise((fatto) => { S.rinnovo = { fatto }; saluta(true); setTimeout(() => fatto(false), 9000); });
+    S.rinnovo = null;
   }
   const manda = (f) => { if (S.ws && S.ws.readyState === 1) { S.ws.send(f); return true; } return false; };
   // Quello che non si apre con le nostre chiavi si ignora e basta.
   async function ricevi(dati) {
     if (typeof dati === "string") {
-      try { const m = JSON.parse(dati); if (typeof m.pari === "boolean") presenza(m.pari); } catch { /* niente */ }
+      try {
+        const m = JSON.parse(dati);
+        if (typeof m.pari === "boolean") presenza(m.pari);
+        if (typeof m.sfida === "string" && S.ws) rispondiSfida(S.ws, m.sfida, S.entra);
+      } catch { /* niente */ }
       return;
     }
     const b = new Uint8Array(dati);
     const h = P.leggiTestata(b);
     if (!h) return;
     if (h.tipo === P.TIPO.SALUTO_PC) {
-      let m;
-      try { m = (await P.apri(S.chiavi.salutoPc, b, P.TIPO.SALUTO_PC)).dati; } catch { return; }
+      // (con le chiavi del saluto che aspetta; un «riparti» con quelle di adesso o con quelle rinnovate)
+      let m = null, ch = null;
+      for (const x of [S.saluto && S.saluto.ch, S.chiavi, S.chiaviProssima]) {
+        if (!x || m) continue;
+        try { m = (await P.apri(x.salutoPc, b, P.TIPO.SALUTO_PC)).dati; ch = x; } catch { /* un'altra */ }
+      }
+      if (!m) return;
       // il PC non conosce la nostra sessione (si è riavviato, o l'ha chiusa):
       // vale solo se parla di QUESTA sessione — ripetuto più tardi non chiude niente
       if (m.riparti) { if (S.canale && m.eco === S.nSessione) chiusa(m.perche || "riavvio", m.testo); return; }
-      if (!S.saluto || m.eco !== S.saluto.n) return;   // un saluto vecchio, o non nostro
+      if (!S.saluto || m.eco !== S.saluto.n || ch !== S.saluto.ch) return;   // un saluto vecchio, o non nostro
       const mio = S.saluto;
       S.saluto = null;
-      if (m.no) return mio.cambio ? cambioNo() : rifiuta();   // il PC è di un altro telefono
-      S.canale = P.canaleTel(await P.chiaviSessione(S.coppia.k, mio.byte, P.daB64u(m.n)));
+      salutiSenza = 0;
+      if (m.no) { if (mio.rinnovo && S.rinnovo) S.rinnovo.fatto(false); return mio.cambio ? cambioNo() : rifiuta(); }   // il PC è di un altro telefono
+      // il PC ha risposto alla chiave rinnovata: da adesso è lei
+      if (mio.ch === S.chiaviProssima) await rinnovata();
+      // (la chiave rinnovata non c'è più sul PC — una revoca, un QR nuovo —: risponde a quella di prima, e la nuova si rifà)
+      else if (S.chiaviProssima && S.coppia.prossima) { delete S.coppia.prossima; await salvaChiave(S.coppia); await chiaviDi(S.coppia); }
+      S.canale = P.canaleTel(await P.chiaviSessione(mio.ch.k, mio.byte, P.daB64u(m.n)));
       S.cambio = null;
       S.nSessione = mio.n;
       S.ultimo = Date.now();
       // l'ora del PC, a metà fra il saluto e la risposta: un orologio del telefono
       // avanti o indietro non cambia quando un ordine scade
       if (Number.isFinite(m.ora)) S.scarto = Math.round(m.ora - (mio.t0 + Date.now()) / 2);
+      if (mio.rinnovo) { if (S.rinnovo) S.rinnovo.fatto(true); return; }   // (la sessione nuova, con la chiave nuova: si continua da dov'eri)
       // (senza aspettare qui: la risposta passa da questa stessa fila)
       chiedi("ciao", {}, TEMPO, true).then((d) => {
         const nuova = S.classifica;   // un QR appena inquadrato
-        classificaCiao(d);   // il PC ha detto chi è: tipo, nome, operatore (per il menu e la testata)
-        S.fase = "pronta"; render();
-        // il codice dell'associazione si guarda solo adesso, accanto a quello sotto il QR del PC: poi non serve
-        carica().then(() => { if (nuova && S.fase === "pronta") avviso(`Associato · codice ${S.codice}`); });
+        // il PC ha detto chi è: tipo, nome, operatore (per il menu e la testata); un QR nuovo che prenderebbe il
+        // posto di un PC che c'è: prima si chiede (S.sostituisci)
+        if (!classificaCiao(d)) { S.fase = "sostituisci"; render(); return; }
+        dopoCiao(nuova, d);
       }, (e) => avviso(e.message, "err"));
       return;
     }
@@ -565,9 +753,9 @@
     if (!S.ws || S.ws.readyState !== 1) { c.errore = "Non collegato: riprova"; collega(); render(); return; }
     c.occupato = true; c.errore = ""; render();
     const n = P.casuale(16);
-    const mio = { n: P.b64u(n), byte: n, cambio: true, t0: Date.now() };
+    const mio = { n: P.b64u(n), byte: n, cambio: true, t0: Date.now(), ch: S.chiavi };
     S.saluto = mio;
-    manda(await P.sigilla(S.chiavi.salutoTel, P.TIPO.SALUTO_TEL, 0, { v: 1, n: mio.n, dev: S.coppia.dev, cambio: true }));
+    manda(await P.sigilla(S.chiavi.salutoTel, P.TIPO.SALUTO_TEL, 0, { v: 1, n: mio.n, dev: S.coppia.dev, cambio: true, entra: 1 }));
     setTimeout(() => {
       if (S.cambio !== c || !c.occupato) return;
       if (S.saluto === mio) S.saluto = null;
@@ -1056,6 +1244,8 @@
     if (!pdfAperto) return;
     clearInterval(pdfAperto.t);
     try { URL.revokeObjectURL(pdfAperto.url); } catch { /* già via */ }
+    // (3.87) e la sua finestra: finita la sessione, il referto non resta sullo schermo
+    try { if (pdfAperto.w && !pdfAperto.w.closed) pdfAperto.w.close(); } catch { /* già chiusa */ }
     pdfAperto = null;
   }
   async function apriPdf(ep, id, misura) {
@@ -1334,8 +1524,11 @@
   // appena lo si sa, o dopo 6 secondi. (Un PC più vecchio risponde alla sonda come
   // a un saluto qualunque: c'è, e nient'altro; senza seguito, la sua attesa scade da sola.)
   async function sonda(p) {
-    let ch;
-    try { ch = await P.chiaviCoppia(p.k); } catch { return { stato: "giu" }; }
+    let ch, entra;
+    try {
+      ch = { ...(await P.chiaviCoppia(p.prossima || p.k)), ...(p.stanza ? { stanza: p.stanza } : {}) };
+      entra = [(await P.chiaviEntra(p.k)).tel, p.prossima ? (await P.chiaviEntra(p.prossima)).tel : "", p.jkVecchia && p.jkVecchia.fino > Date.now() ? p.jkVecchia.tel : ""].filter(Boolean);
+    } catch { return { stato: "giu" }; }
     return new Promise((fine) => {
       let ws = null, n = "", finito = false;
       const chiudi = (r) => {
@@ -1354,11 +1547,12 @@
         if (typeof e.data === "string") {
           let m = null;
           try { m = JSON.parse(e.data); } catch { return; }
+          if (m && typeof m.sfida === "string") { rispondiSfida(ws, m.sfida, entra); return; }
           if (!m || typeof m.pari !== "boolean") return;
           if (!m.pari) { chiudi({ stato: "giu" }); return; }
           if (n) return;
           n = P.b64u(P.casuale(16));
-          try { ws.send(await P.sigilla(ch.salutoTel, P.TIPO.SALUTO_TEL, 0, { v: 1, n, dev: p.dev, sonda: true })); } catch { chiudi({ stato: "muto" }); }
+          try { ws.send(await P.sigilla(ch.salutoTel, P.TIPO.SALUTO_TEL, 0, { v: 1, n, dev: p.dev, sonda: true, entra: 1 })); } catch { chiudi({ stato: "muto" }); }
           return;
         }
         const b = new Uint8Array(e.data), h = P.leggiTestata(b);
@@ -1765,7 +1959,22 @@
     switch (S.fase) {
       case "senza":
         return piena(ICO.croce, "PS Assist sull'iPhone", PASSI, scansiona());
+      case "sostituisci": {
+        // (3.87) un QR nuovo prenderebbe il posto di un PC che c'è: lo si dice, col codice da guardare sul PC
+        const x = S.sostituisci, prima = x && x.tolti[0];
+        return piena(ICO.pc, `Sostituisco «${(prima && prima.nome) || "il PC di prima"}»?`,
+          `<p>Questo QR è di un altro PC${x && x.nuovo.nome ? ` («${esc(x.nuovo.nome)}»)` : ""}. Controlla che sul PC, accanto al QR, ci sia il codice <b>${esc(S.codice)}</b>.</p>
+           <p>Se il QR non l'hai visto sullo schermo di un PC (un adesivo, un link mandato), non sostituire.</p>`,
+          `<button class="grande" data-a="sostituisci">Sostituisci</button><button class="grande quiet" data-a="tieni">No, tieni «${esc((prima && prima.nome) || "il PC di prima")}»</button>`, true);
+      }
+      case "pausa":
+        return piena(ICO.lucchetto, "Il PC è in pausa", `<p>${esc(S.pausa || "Sul PC è entrato un altro utente: riconferma sul PC")}.</p>
+          <p>Sul PC: <b>⋯ → iPhone → Riconferma l'iPhone</b> (o un QR nuovo).</p>`, `<button class="grande" data-a="riapri">Riprova</button>`, true);
       case "finita": {
+        if (S.perche === "falso") {
+          return piena(ICO.lucchetto, "QR non valido", "<p>Questo QR non è di un PC di PS Assist: un QR del PC vale pochi minuti. Le associazioni di prima restano.</p>"
+            + "<p>Per associare un PC: sul PC <b>⋯ → iPhone → Associa l'iPhone</b>.</p>", (S.pcs.length ? `<button class="grande" data-a="riavvia">Torna al PC</button>` : "") + scansiona(true), true);
+        }
         const sc = S.perche === "scaduta";
         return piena(ICO.lucchetto, sc ? "QR scaduto" : "Associazione chiusa",
           `<p>${esc(sc ? "Questo QR non vale più: dura pochi minuti." : `${S.testoFine}.`)}</p>
@@ -2660,9 +2869,13 @@
     else if (a === "aggiornaLista") aggiornaLista(false, true);
     else if (a === "dimentica") {
       if (b.dataset.sicuro !== "1") { b.dataset.sicuro = "1"; b.textContent = "Scollego? Servirà un QR nuovo"; return; }
-      if (S.canale) chiedi("esci").catch(() => {});
+      // (3.87) anche sul PC l'associazione finisce («scollega»); un PC di prima non lo conosce: «esci», come sempre
+      if (S.canale) { chiedi("scollega", {}, TEMPO, true).catch(() => {}); chiedi("esci").catch(() => {}); }
       dimentica("senza");
     }
+    else if (a === "sostituisci") sostituisci(true);
+    else if (a === "tieni") sostituisci(false);
+    else if (a === "riavvia") location.reload();
     else if (a === "vit") { S.vitAperti = S.vitAperti === ep ? "" : ep; render(); }
     else if (a === "scheda") {
       S.scheda = b.dataset.s; S.arma = null; render();
@@ -2819,17 +3032,21 @@
     // il frammento non resta nella barra degli indirizzi né nella cronologia
     if (location.hash) history.replaceState(null, "", location.pathname + location.search);
     if (sta) setTimeout(() => offertaStazione(sta), 0);
-    const { v, attivo } = leggiPcs();
+    const { v, attivo } = await leggiPcs();
     S.pcs = v; S.attivo = attivo;
     if (link && link.qrScade <= Date.now()) { S.scaduta = link.qrScade; S.perche = "scaduta"; S.fase = "finita"; render(); return; }
+    // (3.87) un QR che vale troppo a lungo non è di un PC di PS Assist: niente, e le associazioni restano
+    if (link && link.falso) { S.perche = "falso"; S.fase = "finita"; S.testoFine = ""; render(); return; }
     if (link) {
       // lo STESSO QR già in lista: lo stesso PC, ci si ricollega (stesso dev)
-      const gia = S.pcs.find((p) => stessa(p.k, link.k));
+      const stanza = (await P.chiaviCoppia(link.k)).stanza;
+      const gia = S.pcs.find((p) => p.stanza === stanza);
       if (gia) { S.attivo = gia.id; salvaPcs(); await parti(gia); return; }
       // un PC nuovo: entry provvisoria, si collega e il saluto decide dove va
-      // (aggiunge un PC di sola lettura, sostituisce il PC completo). Non tocca
-      // le altre associazioni: ognuna ha la sua chiave.
-      const nuova = { k: link.k, dev: link.dev, kind: "", nome: "", id: nuovoId() };
+      // (aggiunge un PC di sola lettura, sostituisce il PC completo — chiedendolo prima). Non tocca
+      // le altre associazioni: ognuna ha la sua chiave. (La chiave, non estraibile, nella cassa.)
+      const nuova = { k: senzaCassa ? link.k : await P.chiaveDa(link.k), dev: link.dev, kind: "", nome: "", id: nuovoId(), stanza };
+      await salvaChiave(nuova);
       S.pcs = [nuova, ...S.pcs]; S.attivo = nuova.id; S.classifica = true; salvaPcs();
       await parti(nuova);
       return;
