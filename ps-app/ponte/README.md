@@ -412,7 +412,7 @@ ordine o un promemoria non passa poi alla scheda dopo (sarebbero due). Mai un si
 (`modo`: «auto», «apri» — partito da sé dopo un `leggi`), `visto(ep, ids?, valori?, fino?)` (referti
 aperti ed esiti guardati sul telefono: solo la memoria dell'estensione, anche sul PC di sola lettura), `richieste` (il catalogo, con `ultimi`: per paziente ed esame quello che il PC scrive accanto al nome — ore tornate, in attesa da quando, rosso da quando; con una stazione di stampa collegata, `stampa: {stazione, dove}`), `ordina(ep, oid, esami, quesito, mio, nato, dest?)`, `nota(ep,
 testo)`, `promemoria(ep, testo)`, `fatto(ep, id)`, `cartella(ep, rileggi?)`, `cartellaSalva(ep, campi: {NOME:
-{prima, dopo}})`, `terapie(ep, rileggi?)`, `terapiaCerca(ep, q)`, `terapiaAggiungi(ep, rq, voce, visti)`, `terapiaFine` (il foglio «＋ Farmaco» chiuso), `accetta(k | ep, rq)`, `ristampe(ep)` (per richiesta anche `et` e `fo`: quante etichette e quanti fogli), `ristampa(ep, rid, oid, dest?, quali?)` (`quali`: `etichette` | `foglio` | `tutto`), `pdf(ep, ref, i)`, `stampa(rid, i, n, size, b)`, `stampaReferto(ep, ref, rid, dest?)`, `stazioneCollega(sta, nome)`,
+{prima, dopo}})`, `terapie(ep, rileggi?)`, `terapiaCerca(ep, q)`, `terapiaAggiungi(ep, rq, voce, visti)`, `terapiaFine` (il foglio «＋ Farmaco» chiuso), `accetta(k | ep, rq)`, `areaApri(ep, rq)`, `ristampe(ep)` (per richiesta anche `et` e `fo`: quante etichette e quanti fogli), `ristampa(ep, rid, oid, dest?, quali?)` (`quali`: `etichette` | `foglio` | `tutto`), `pdf(ep, ref, i)`, `stampa(rid, i, n, size, b)`, `stampaReferto(ep, ref, rid, dest?)`, `stazioneCollega(sta, nome)`,
 più `ciao`/`esci`/`tocco`/`ordini` per la sessione e lo stato degli ordini, e `dispositivo` (⋯ → Dispositivi: `{kind, nome,
 versione, stazione: {nome, presente, ultimo: {esito, fa}} | null}` — `presente` è la stazione nella sua stanza adesso,
 `ultimo` l'ultimo foglio finito mandato lì, dal giornale delle stampe, `fa` i millisecondi da allora —; una lettura, anche
@@ -508,6 +508,19 @@ quel paziente aperte sul PC si ricaricano da sole, o — con un testo scritto l�
 telefono · Ricarica» e fermano il loro «Conferma», come dopo la cartella. Lo stesso `rq` non si
 rifà mai. Nel registro del ponte il nome e com'è andata, come per la Terapia; nel registro degli
 errori («accetta telefono») solo il perché.
+
+**Chi il PC conosce solo dalla lista smart.** In `pazienti`, ed `esiti` quando dice `mai`, porta
+`smart`: `{qui: true}` se la sua area è quella in testa al gestionale, `{altra: true}` se è un'altra,
+`{}` se non si sa (con `perche` quando una lettura non è riuscita). Con `qui`, una lettura chiesta col
+tocco (`esiti`, `aggiornaValori`, `cartella`, `terapie`; mai una `auto`) apre dietro la lista
+dell'area (`ponte.liste`, nella fila delle letture dei valori; `listaChi` chiede a una scheda del
+medico chi è e il link della lista), e trovata la sua riga si rifà una volta col suo episodio vero: la
+risposta porta `rinomina: {da, a}` (in `dati`), e il telefono passa riga, vista e copie al numero
+nuovo. Con `altra`, il telefono offre `areaApri(ep, rq)` — non è una lettura (cambia l'area della
+sessione): annotato «inviato» in `ponte.area.rq` prima di darlo alla scheda del medico davanti, che
+fa il giro di un clic sulla lista smart e dice com'è finita (`ponteAreaFatto`); risponde `{ep, da,
+area}` (l'episodio vero), `gia` se la sua pagina c'era già, o il perché (`cambiata`: passato
+all'area, ma il paziente non si apre). Lo stesso `rq` non si rifà mai; la build mini lo rifiuta.
 
 **Un PDF da stampare.** `stampa` è `pdf` al contrario: il telefono manda il file a pezzi (~390 KB,
 una risposta per pezzo) con un numero suo, `rid`. Il primo pezzo dice già di no se il file non comincia

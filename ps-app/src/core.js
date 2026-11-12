@@ -83,6 +83,7 @@
     "pazienti", "mappa", "eo", "triage", "esiti", "aggiornaValori",
     "richieste", "cartella", "terapie", "ristampe", "ristampa",
     "visto",   // (visto sul telefono: solo la memoria dell'estensione, niente nel gestionale)
+    "listaChi",   // (chi il PC conosce solo dalla smart: chi è e il link della lista della sua area — una lettura, dietro)
   ]);
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -2969,12 +2970,13 @@
   // Aprire la lista di un'area: se è già quella del medico, la lista; se no
   // PsoPsoImposta, dove la tendina e «Conferma» le fa la pagina dopo
   // (areaVaiQui) — proprio come il medico a mano. `chi`: una riga da aprire,
-  // arrivati (nome e impronta della nascita).
-  function apriArea(k, chi, dove = (u) => nav(u)) {
+  // arrivati (nome e impronta della nascita). `tel`: il numero del tocco sul
+  // telefono che l'ha chiesto (ponteAreaApri) — com'è finita si dice a lui.
+  function apriArea(k, chi, dove = (u) => nav(u), tel = "") {
     if (!k) return false;
     if (TABELLONE) { tabelloneChiede({ cosa: "area", k }); return true; }   // la apre una scheda del gestionale
     const ora = store.get(AREA_ORA, null);
-    store.set(AREA_VAI, { k, ...(chi ? { chi } : {}), ts: Date.now() });
+    store.set(AREA_VAI, { k, ...(chi ? { chi } : {}), ...(tel ? { tel } : {}), ts: Date.now() });
     return dove(urlMenu(ora && ora.k === k ? "PsoPazientiAmbulatorio" : "PsoPsoImposta"));
   }
   // Il passaggio d'area, pagina dopo pagina. In PsoPsoImposta: l'opzione
@@ -2987,13 +2989,26 @@
     if (!sel || !btn || mvpgDi(doc, url) !== "PsoPsoImposta") return null;
     return { sel, btn, opz: [...sel.options].filter((o) => o.value && chiaveArea(o.textContent) === k) };
   }
+  // Il passaggio chiesto da un tocco sul telefono (`tel`, il suo numero): com'è
+  // finito si dice al service worker, che lo dice al telefono (ponteAreaApri).
+  // `cambiata`: il gestionale è passato all'area, ma il paziente non si apre.
+  const areaVaiDetto = (vai, esito) => (vai && vai.tel && hasExt()
+    ? Promise.race([ask({ t: "ponteAreaFatto", rq: vai.tel, ...esito }).catch(() => null), sleep(1500)]) : Promise.resolve(null));
+  const areaVaiNome = (k) => titoloArea(k, (store.get(AREE_OPZ, {}) || {})[k]?.label || areeLeggi().viste[k]?.label);
   function areaVaiQui(doc, url) {
     const vai = store.get(AREA_VAI, null);
-    if (!vai || !vai.k || Date.now() - (vai.ts || 0) > AREA_VAI_MS) { if (vai) store.del(AREA_VAI); return false; }
+    if (!vai || !vai.k || Date.now() - (vai.ts || 0) > AREA_VAI_MS) {
+      if (vai) { store.del(AREA_VAI); areaVaiDetto(vai, { ok: false, testo: "il passaggio d'area non è finito in tempo" }); }
+      return false;
+    }
     const im = impostaQui(doc, url, vai.k);
     if (im) {
       const { sel, btn, opz } = im;
-      if (opz.length !== 1) { store.del(AREA_VAI); return false; }
+      if (opz.length !== 1) {
+        store.del(AREA_VAI);
+        areaVaiDetto(vai, { ok: false, testo: opz.length ? `in Imposta ci sono ${opz.length} aree «${areaVaiNome(vai.k)}»: non scelgo` : `in Imposta il gestionale non offre l'area ${areaVaiNome(vai.k)}` });
+        return false;
+      }
       if (vai.premuto) {
         // Già premuto, e siamo ancora qui. Se la tendina dice già l'area, il
         // passaggio c'è stato: la sua lista. Se no il «Conferma» si è perso
@@ -3004,7 +3019,11 @@
           nav(urlMenu("PsoPazientiAmbulatorio"));
           return true;
         }
-        if (vai.ripremuto) { store.del(AREA_VAI); return false; }   // due volte, e niente: non si insiste
+        if (vai.ripremuto) {   // due volte, e niente: non si insiste
+          store.del(AREA_VAI);
+          areaVaiDetto(vai, { ok: false, testo: `il gestionale non è passato all'area ${areaVaiNome(vai.k)}: «Conferma» premuto due volte` });
+          return false;
+        }
       }
       if (!store.set(AREA_VAI, { ...vai, premuto: Date.now(), ...(vai.premuto ? { ripremuto: 1 } : {}) })) return false;
       sel.value = opz[0].value;
@@ -3018,15 +3037,28 @@
     // nostra navigazione (refreshOnFocus del gestionale), o l'invio si è perso.
     // Si riprende da PsoPsoImposta, una volta sola.
     if (testa && testa.k !== vai.k && !vai.ripreso) {
-      if (!store.set(AREA_VAI, { k: vai.k, ...(vai.chi ? { chi: vai.chi } : {}), ts: Date.now(), ripreso: 1 })) return false;
+      if (!store.set(AREA_VAI, { k: vai.k, ...(vai.chi ? { chi: vai.chi } : {}), ...(vai.tel ? { tel: vai.tel } : {}), ts: Date.now(), ripreso: 1 })) return false;
       nav(urlMenu("PsoPsoImposta"));
       return true;
     }
     store.del(AREA_VAI);
-    if (!testa || testa.k !== vai.k || !vai.chi) return false;
+    const nome = areaVaiNome(vai.k);
+    if (!testa || testa.k !== vai.k || !vai.chi) {
+      areaVaiDetto(vai, { ok: false, testo: testa ? `il gestionale non è passato all'area ${nome}: è ancora su ${titoloArea(testa.k, testa.label)}` : "la lista non dice su che area è il gestionale" });
+      return false;
+    }
     const trovate = righeLista(doc, url).filter((r) => normNome(r.name) === vai.chi.nome && improntaNascita(r.nato) === vai.chi.nato);
-    if (trovate.length !== 1) return false;
-    trovate[0].a.click();   // il suo link, nella pagina
+    if (trovate.length !== 1) {
+      // passato all'area, ma il paziente non si apre: la lista resta davanti, e il pannello lo dice
+      if (vai.tel) tabStore.set(AVVISO, { ts: Date.now(), testo: `Dall'iPhone: il gestionale è passato all'area ${nome}. ${trovate.length ? "Due righe uguali nella lista: scegli tu." : "Il paziente non è nella lista."}` });
+      areaVaiDetto(vai, { ok: false, cambiata: true, testo: trovate.length ? "due righe uguali nella sua lista: aprilo sul PC" : "non è nella lista dell'area, sul PC" });
+      return false;
+    }
+    const r = trovate[0];
+    if (!vai.tel) { r.a.click(); return true; }   // il suo link, nella pagina
+    // dal telefono: la pagina dove si atterra dice che l'area è cambiata, e il telefono lo sa prima del clic
+    tabStore.set(AVVISO, { ts: Date.now(), testo: `Dall'iPhone: il gestionale è passato all'area ${nome}.` });
+    areaVaiDetto(vai, { ok: true, ep: r.ep, area: nome }).then(() => r.a.click());
     return true;
   }
   // Lo stesso passaggio, nella scheda di un ordine in sottofondo che ha
@@ -17388,6 +17420,7 @@
   let PONTE_CARTELLA = null; // questa scheda l'ha aperta il ponte per salvare la cartella: { ep, fase, campi }
   let PONTE_TERAPIA = null;  // …o per la pagina Terapia: { ep, nome, fase, cosa, q | voce, visti, prima }
   let PONTE_ACCETTA = null;  // …o per «Accetta in ambulatorio»: { ep?, k?, nome, area, fase }
+  let PONTE_LISTA = null;    // …o per la lista dell'area di chi il PC conosce solo dalla smart: { ep, k, nome, nato }
   let PONTE_AGG = "";        // l'episodio di questa pagina che il telefono ha appena salvato: il suo «Conferma» è fermo («Ricarica»)
   const ICO_TEL = ICO.tel;   // (sulla griglia delle altre: 16 px, tratto 1.6)
   const PONTE_CSS = `
@@ -17417,6 +17450,14 @@
     const k = areeLeggi().membri[p?.ep]?.k;
     return `Il PC conosce ${p?.name || "questo paziente"} solo dalla lista smart: apri una volta la lista ${k ? `«${titoloArea(k, areeLeggi().viste[k]?.label)}»` : "della sua area"} nel gestionale`;
   };
+  // …e per il telefono, dov'è: la sua area è quella in testa al gestionale adesso (`qui`: il service
+  // worker ne legge la lista dietro, col suo link — ponteListaSotto), un'altra (`altra`: il telefono
+  // offre «Passa il PC all'area …», ponteAreaApri), o non si sa (niente: mai un'area indovinata).
+  const ponteSmart = (p) => {
+    const k = areeLeggi().membri[p?.ep]?.k, ora = store.get(AREA_ORA, null);
+    return !k ? {} : ora && ora.k === k ? { qui: true } : { altra: true };
+  };
+  const nonQui = (p) => ({ ok: false, errore: senzaPagina(p), smart: ponteSmart(p) });
   // l'indirizzo della sua pagina, come il gestionale l'ha dato: solo da leggere, e di quell'episodio
   const ponteUrlPaziente = (p) => (p && leggibilePagina(p.url) && param(p.url, "EPISODIO_ID") === p.ep
     && /\/menuPsoEpisodio\.do$/i.test(new URL(p.url).pathname) ? p.url : "");
@@ -17450,6 +17491,7 @@
       prom: promDi(i.p.ep, m.prom).map((x) => ({ id: x.id, t: x.t, testo: x.testo })),
       df: dfDi(i.p.ep, m.df).map((x) => ({ id: x.id, testo: x.testo, t: x.t, fatto: x.fatto })),
       ordina: !!ponteUrlPaziente(i.p) && !i.prec,
+      ...(!i.prec && !ponteUrlPaziente(i.p) ? { smart: ponteSmart(i.p) } : {}),   // (noto solo dalla lista smart: dov'è, per il telefono)
       ...(!i.prec && ponteInTriage(i.p) ? { accetta: true } : {}),
       stato: i.prec ? null : ponteStato(i.p.ep, m.df),
       allergie: i.prec ? null : ponteAllergie(i.p.ep),
@@ -17763,7 +17805,7 @@
     // `nuovo`: il pallino del tabellone — qualcosa è tornato da quando qualcuno ha guardato i suoi Esiti)
     const nuoviVal = tabella ? Number(statoDi(p.ep)?.valori?.nuovi) || 0 : 0;
     return { ok: true, dati: { ep: p.ep, paziente: p.name, tabella, letto: tabella ? Number(st.letto) || 0 : 0, referti: lista, nota, ...(nuoviVal ? { valoriNuovi: nuoviVal } : {}),
-      ...(url ? {} : { mai: true }), ...(pagina ? { lab: pagina.lab } : {}), ...(leggi ? { leggi } : {}), ...(leggi && motoreOvunque() ? { dopoOrdine: true } : {}),
+      ...(url ? {} : { mai: true, smart: ponteSmart(p) }), ...(pagina ? { lab: pagina.lab } : {}), ...(leggi ? { leggi } : {}), ...(leggi && motoreOvunque() ? { dopoOrdine: true } : {}),
       ...(statoEsami(statoDi(p.ep))?.nuovo ? { nuovo: true } : {}), ...(riga ? { riga } : {}) }, registro: `esiti di ${p.name}` };
   }
   // L'ordine: lo stesso giro di «Conferma e stampa», dato alla scheda di
@@ -17773,7 +17815,7 @@
   // lo dà il service worker: chiesto due volte, l'ordine è uno.
   async function ponteOrdina(p, a) {
     const url = ponteUrlPaziente(p);
-    if (!url) return { ok: false, errore: senzaPagina(p) };
+    if (!url) return nonQui(p);
     const quesito = String(a.quesito || "").replace(/\s+/g, " ").trim();
     if (!quesito) return { ok: false, errore: "Scrivi il quesito diagnostico" };
     const cat = fullCatalog();
@@ -17863,7 +17905,7 @@
   // service worker prova la prossima).
   async function ponteEsegui(m) {
     if (classify(document) === "login") return { no: "login" };
-    if (LAVORO || PONTE_VALORI || PONTE_CARTELLA || PONTE_TERAPIA || PONTE_ACCETTA) return { no: "lavoro" };
+    if (LAVORO || PONTE_VALORI || PONTE_CARTELLA || PONTE_TERAPIA || PONTE_ACCETTA || PONTE_LISTA) return { no: "lavoro" };
     if (!PANNELLO) return { no: "pannello" };
     const a = m.args || {}, cmd = m.cmd;
     // Secondo muro della build mini (il primo è nel service worker): qui, nella
@@ -17900,6 +17942,10 @@
     if (!p) return { ok: false, errore: "Questo paziente non è più nell'elenco del PC" };
     // dimesso sul PC (archiviato): dal telefono non si tocca più
     if (p.arch) return { ok: false, errore: "Dimesso sul PC: niente inviato", dimesso: true };
+    // noto solo dalla lista smart: chi è e il link della lista della sua area, per la scheda dietro (una lettura);
+    // e «Passa il PC all'area …», il gesto del medico dal telefono (qui, nella sua scheda davanti)
+    if (cmd === "listaChi") return ponteListaChi(p);
+    if (cmd === "areaApri") return fatto(ponteAreaApri(p, a));
     // un episodio precedente si legge, ma non si ordina e non si promemora
     if (["ordina", "promemoria", "cartellaSalva", "terapiaAggiungi"].includes(cmd) && PANNELLO.pazModello().info.get(p.ep)?.prec) {
       return { ok: false, errore: `Episodio precedente: ${{ ordina: "per ordinare", cartellaSalva: "per scrivere in cartella", terapiaAggiungi: "per prescrivere" }[cmd] || "per un Da fare con l'ora"} apri quello di oggi` };
@@ -17908,7 +17954,7 @@
     // per leggere, i preferiti); il resto lo fa la scheda di sottofondo
     if (cmd === "terapie" || cmd === "terapiaCerca" || cmd === "terapiaAggiungi") {
       const url = ponteUrlPaziente(p);
-      if (!url) return { ok: false, errore: senzaPagina(p) };
+      if (!url) return nonQui(p);
       const pref = cmd === "terapie" ? { pref: terapiaPreferiti().slice(0, 30).map(({ n, ts, ...v }) => v) } : {};
       return fatto({ ok: true, dati: { url, paziente: p.name, ...pref }, ...(cmd === "terapiaAggiungi" ? {} : { registro: `${cmd === "terapie" ? "terapie" : "tendina dei farmaci"} di ${p.name}` }) });
     }
@@ -17917,7 +17963,7 @@
     // lo fa la scheda di sottofondo, col «Conferma» della pagina
     if (cmd === "cartellaSalva") {
       const url = ponteUrlPaziente(p);
-      if (!url) return { ok: false, errore: senzaPagina(p) };
+      if (!url) return nonQui(p);
       const nomi = (Array.isArray(a.nomi) ? a.nomi : []).map(cartellaNome).join(", ");
       return fatto({ ok: true, dati: { url, paziente: p.name }, registro: `cartella di ${p.name}: salvo ${nomi}` });
     }
@@ -17948,7 +17994,7 @@
     }
     if (cmd === "aggiornaValori") {
       const url = ponteUrlPaziente(p);
-      if (!url) return { ok: false, errore: senzaPagina(p) };
+      if (!url) return nonQui(p);
       return fatto({ ok: true, dati: { url, paziente: p.name }, registro: `aggiorna i valori di ${p.name}` });
     }
     // La nota del telefono è la prima voce aperta senza ora di «Da fare»:
@@ -18169,7 +18215,7 @@
     const m = a.memo;
     if (!a.rileggi && m && m.ep === p.ep && Array.isArray(m.campi)) return { ok: true, dati: { ...m, allergie: ponteAllergie(p.ep) }, registro: `cartella di ${p.name}` };
     const url = ponteUrlPaziente(p);
-    if (!url) return { ok: false, errore: senzaPagina(p) };
+    if (!url) return nonQui(p);
     const { doc, url: fin } = await fetchDoc(url, {});
     if (classify(doc) === "login") return { ok: false, errore: "Gestionale da riaprire: sul PC la sessione è scaduta", sessione: true };
     if (findEpisodeId(doc, fin) !== p.ep) return { ok: false, errore: "La pagina del paziente sul PC è di un altro episodio: non mostro niente" };
@@ -18373,6 +18419,77 @@
     if (!via || !via.ok) return;
     try { imparaTerapia([rigaTerapia(form, nuove[0].n)]); } catch { /* memoria piena: nessun preferito */ }
     btn.click();   // il «Conferma» della pagina: TERAPIA_SERIALIZED lo compone lei, il modulo lo manda il browser
+  }
+
+  // ---- Chi il PC conosce solo dalla lista smart, aperto dal telefono ----
+  // La sua pagina il PC non ce l'ha (la smart non porta link, e un indirizzo
+  // non si costruisce): la dà la riga della lista della sua area. Se è l'area
+  // in testa al gestionale adesso, la lista si legge dietro (ponteListaQui,
+  // una lettura come quella del medico che la apre: leggiAreaPagina, e
+  // fondiSmart gli dà il suo episodio). Qui, nella scheda del medico, solo chi
+  // è e il link della lista: quello della pagina, o la stessa pagina del menu.
+  function ponteListaChi(p) {
+    if (ponteUrlPaziente(p)) return { ok: true, dati: { ep: p.ep, gia: true } };
+    const k = areeLeggi().membri[p.ep]?.k, ora = store.get(AREA_ORA, null);
+    if (!k || !ora || ora.k !== k || !p.nato) return nonQui(p);
+    return { ok: true, dati: { ep: p.ep, k, nome: normNome(p.name), nato: p.nato, url: urlMenu("PsoPazientiAmbulatorio") } };
+  }
+  // «Passa il PC all'area X e apri ROSSI M.»: il tocco del medico sul telefono è
+  // un clic sulla riga della lista smart (smartApri), in questa scheda — la sua,
+  // davanti: PsoPsoImposta, la tendina sull'area (una sola, riconosciuta dal
+  // nome), «Conferma», la lista dell'area e il link della sua riga
+  // (apriArea/areaVaiQui). Cambia l'area della sessione del gestionale, per
+  // tutte le schede: lo dicono il Registro, la pagina dove si atterra e il
+  // telefono. Mai con un ordine al lavoro, mai sopra un passaggio d'area, mai su
+  // una pagina dove il medico ha scritto qualcosa e non l'ha salvato.
+  function ponteAreaApri(p, a) {
+    if (ponteUrlPaziente(p)) return { ok: true, dati: { ep: p.ep, gia: true, nome: p.name } };   // la sua pagina c'è già: niente da passare
+    const k = areeLeggi().membri[p.ep]?.k, nome = k ? areaVaiNome(k) : "";
+    if (!k) return { ok: false, errore: "Il PC non sa in che area è: aprilo sul PC, dalla lista smart" };
+    const chi = p.nato ? { nome: normNome(p.name), nato: p.nato } : null;
+    if (!chi || tuttiPazienti().filter((x) => normNome(x.name) === chi.nome && x.nato === chi.nato).length !== 1) {
+      return { ok: false, errore: "Sul PC non so riconoscerlo da solo: aprilo sul PC, dalla lista smart" };
+    }
+    const opz = store.get(AREE_OPZ, null);
+    if (opz && Object.keys(opz).length && !opz[k]) return { ok: false, errore: `In Imposta il gestionale non offre l'area ${nome}: niente cambiato` };
+    const vai = store.get(AREA_VAI, null);
+    if (vai && Date.now() - (vai.ts || 0) <= AREA_VAI_MS) return { ok: false, errore: "Sul PC il gestionale sta già cambiando area: riprova fra poco" };
+    if (motoreOvunque()) return { ok: false, errore: "Un ordine sta lavorando sul PC: riprova quando ha finito — niente cambiato" };
+    if (paginaToccata()) return { ok: false, errore: "Sul PC, nella pagina del gestionale, c'è qualcosa di scritto e non salvato: niente cambiato" };
+    const rq = typeof a.rq === "string" && /^[\w-]{8,40}$/.test(a.rq) ? a.rq : "";
+    if (!rq) return { ok: false, errore: "Richiesta non valida: niente cambiato" };
+    // (la risposta parte prima della pagina nuova)
+    apriArea(k, chi, (u) => { setTimeout(() => nav(u), 150); return true; }, rq);
+    return { ok: true, dati: { ep: p.ep, k, area: nome, nome: p.name }, registro: `passo il gestionale all'area ${nome} e apro ${p.name}` };
+  }
+
+  // La scheda dietro della lista dell'area (ponteListaSotto): sulla lista, la
+  // sua area dev'essere quella del paziente — se no ci si ferma, niente
+  // cambiato —; poi la lista si legge come quando la apre il medico
+  // (leggiAreaPagina: chi c'è entra, col link della sua riga; fondiSmart passa
+  // a lui posto, «Da fare» e area). La riga: nome e impronta della nascita,
+  // una sola; e il paziente che ora porta quell'episodio dev'essere lui, col
+  // link della sua riga — se no «Errore grave», e niente si riprova.
+  async function ponteListaQui() {
+    const c = PONTE_LISTA;
+    const fine = (esito) => ask({ t: "ponteListaFatto", ...esito });
+    if (!c || c.fase === "perso" || !c.ep || !c.k || !c.nome || !c.nato) return fine({ ok: false, testo: "la scheda non sa più che cosa fare" });
+    const nome = areaVaiNome(c.k);
+    if (!eListaArea(document, location.href)) {
+      // (una pagina di passaggio — PsoPazienti, che rimanda alla lista —: si aspetta la lista; il service worker ha il suo tempo)
+      if (mvpgDi(document, location.href) === "PsoPazienti") return;
+      return fine({ ok: false, testo: "il gestionale non ha aperto la lista dell'area" });
+    }
+    const testa = areaInTesta(document);
+    leggiAreaPagina(document, location.href);   // come il medico che la apre: anche se è un'altra area, è quella che il gestionale mostra
+    if (!testa) return fine({ ok: false, testo: "la lista non dice su che area è il gestionale" });
+    if (testa.k !== c.k) return fine({ ok: false, altra: true, testo: `il gestionale sul PC è sull'area ${titoloArea(testa.k, testa.label)}, non ${nome}` });
+    const sue = righeLista(document, location.href).filter((r) => normNome(r.name) === c.nome && improntaNascita(r.nato) === c.nato);
+    if (!sue.length) return fine({ ok: false, testo: `non è nella lista dell'area ${nome}, sul PC` });
+    if (sue.length > 1) return fine({ ok: false, testo: `due righe uguali nella lista dell'area ${nome}: aprilo sul PC` });
+    const r = sue[0], q = pontePaziente(r.ep);
+    if (!q || normNome(q.name) !== c.nome || (q.nato && q.nato !== c.nato) || param(q.url || "", "EPISODIO_ID") !== r.ep) return fine({ ok: false, grave: "nome o episodio diverso" });
+    return fine({ ok: true, ep: r.ep, area: nome });
   }
 
   // ---- «Accetta in ambulatorio» dal telefono: la freccia della riga nella lista del triage ----
@@ -18844,6 +18961,7 @@
     PONTE_CARTELLA = chi && chi.ponteCartella ? chi.ponteCartella : null;
     PONTE_TERAPIA = chi && chi.ponteTerapia ? chi.ponteTerapia : null;
     PONTE_ACCETTA = chi && chi.ponteAccetta ? chi.ponteAccetta : null;
+    PONTE_LISTA = chi && chi.ponteLista ? chi.ponteLista : null;
     ponteAscolta();
     scadenzaQuesiti();
     const pageType = classify(document);
@@ -18871,6 +18989,7 @@
       if (PONTE_CARTELLA) ask({ t: "ponteCartellaFatto", ok: false, incerto: PONTE_CARTELLA.fase === "inviato", testo: "il gestionale chiede di rifare l'accesso" });
       if (PONTE_TERAPIA) ask({ t: "ponteTerapiaFatto", ok: false, incerto: PONTE_TERAPIA.fase === "inviato", testo: "il gestionale chiede di rifare l'accesso" });
       if (PONTE_ACCETTA) ask({ t: "ponteAccettaFatto", ok: false, incerto: PONTE_ACCETTA.fase !== "lista", testo: "il gestionale chiede di rifare l'accesso" });
+      if (PONTE_LISTA) ask({ t: "ponteListaFatto", ok: false, testo: "il gestionale chiede di rifare l'accesso" });
       // e la sessione del ponte verso l'iPhone si chiude (l'associazione resta: rientrati, il telefono riapre)
       if (hasExt()) ask({ t: "ponteLogin" });
       forgetAll();
@@ -18897,6 +19016,8 @@
     if (PONTE_TERAPIA) { ponteTerapiaQui().catch(() => ask({ t: "ponteTerapiaFatto", ok: false, incerto: PONTE_TERAPIA.fase === "inviato", testo: "errore nella scheda" })); return; }
     // …e quella di «Accetta in ambulatorio» (dopo il clic, un errore resta un dubbio)
     if (PONTE_ACCETTA) { ponteAccettaQui().catch(() => ask({ t: "ponteAccettaFatto", ok: false, incerto: PONTE_ACCETTA.fase !== "lista", testo: "errore nella scheda" })); return; }
+    // …e quella della lista dell'area, per chi il PC conosce solo dalla smart (una lettura)
+    if (PONTE_LISTA) { ponteListaQui().catch(() => ask({ t: "ponteListaFatto", ok: false, testo: "errore nella scheda" })); return; }
     // la scheda di un ordine che passa il gestionale all'area del paziente: le
     // pagine di mezzo (PsoPsoImposta, la lista dove atterra) fanno quello e basta
     if (lavoroAreaQui(document, location.href)) return;

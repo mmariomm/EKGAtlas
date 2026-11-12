@@ -36,6 +36,7 @@
   const ATTESA_TERAPIE = 110e3;      // leggere la Terapia, o cercare nella sua tendina: una scheda del PC, al peggio 10 + 90 secondi
   const ATTESA_TERAPIA = 130e3;      // aggiungere un farmaco: 10 + 3 + 90 secondi (e la rete); oltre, «incerto» finché il PC non risponde
   const ATTESA_ACCETTA = 90e3;       // «Accetta in ambulatorio»: 10 + 60 secondi (e la rete); oltre, «incerto» finché il PC non risponde
+  const ATTESA_AREA = 90e3;          // «Passa il PC all'area …»: 10 + 60 secondi (e la rete); oltre, «incerto» finché il PC non risponde
   // la cartella del paziente, coi nomi del modulo del gestionale
   const CARTELLA = [["ANAMNESI", "Anamnesi"], ["MALATTIE_PREGRESSE", "Anamnesi remota"], ["FARMACI_ASSUNTI", "Farmaci"], ["ALLERGIE", "Allergie"], ["ESAME_OBIETTIVO", "Esame obiettivo"]];
   const uguale = (a, b) => String(a ?? "").replace(/\s+/g, " ").trim() === String(b ?? "").replace(/\s+/g, " ").trim();
@@ -110,6 +111,7 @@
     terapie: new Map(),  // ep → le terapie lette sul PC: { ep, letto, righe: [{ prog, descr, qta, um, via, dil, … }], opz: { um, via, dil }, pref }
     tf: null,            // «＋ Farmaco», il foglio: { ep, passo: "scegli" | "dose", q, voci, qVoci, cerca, errVoci, v, altro, rq, stato, esito }
     acc: new Map(),      // «Accetta in ambulatorio»: chiave della riga del Triage (o episodio) → { rq, stato, esito }
+    areaTel: new Map(),  // «Passa il PC all'area …»: episodio (la chiave della smart) → { rq, stato, esito }
     accArma: null,       // …dopo il primo tocco: { id, ts }
   };
   const MODO = "psassist.ponte.modo";
@@ -120,7 +122,7 @@
     S.sel.clear(); S.bloccati.clear(); S.aperti.clear(); S.occupato.clear(); S.inviati.clear(); S.promTesto = ""; S.arma = null;
     S.dfFoglio = false; S.precAperti = false; S.riprendi = null;
     S.stampa = null; S.cartelle.clear(); S.cbozze.clear(); S.cstato.clear(); S.coda.clear();
-    S.terapiaSi = null; S.terapie.clear(); S.tf = null; S.acc.clear(); S.accArma = null;
+    S.terapiaSi = null; S.terapie.clear(); S.tf = null; S.acc.clear(); S.accArma = null; S.areaTel.clear();
     S.zip = null; S.zipErr = ""; S.zipArma = null; S.zipStato.clear();
     for (const f of S.zipFile.values()) try { URL.revokeObjectURL(f.url); } catch { /* già via */ }
     S.zipFile.clear();
@@ -394,7 +396,7 @@
     if (d.evento === "stampa" && d.stampa && typeof d.stampa === "object") { if (S.catalogo) { S.catalogo = { ...S.catalogo, stampa: d.stampa }; render(); } return; }
     if (d.evento === "avviso") avviso(d.testo);
   }
-  const errDa = (d) => Object.assign(new Error(d.errore || "Non riuscito sul PC"), { dati: d.dati, incerto: !!d.incerto, dimesso: !!d.dimesso, scaduta: !!d.scaduto,
+  const errDa = (d) => Object.assign(new Error(d.errore || "Non riuscito sul PC"), { dati: d.dati, incerto: !!d.incerto, dimesso: !!d.dimesso, scaduta: !!d.scaduto, smart: d.smart || null,
     ricarica: Array.isArray(d.cambiati) || Array.isArray(d.chiusi) ? [...(d.cambiati || []), ...(d.chiusi || [])] : null });
   // Un comando al PC. `auto`: lo manda l'app da sé (non il medico), e non
   // tiene aperta la sessione — né qui né sul PC. `tempo`: quanto può volerci,
@@ -411,7 +413,8 @@
   // i comandi che SCRIVONO nel gestionale: su un PC di sola lettura non partono
   // nemmeno dal telefono (il PC li rifiuterebbe comunque: «Questo PC è in sola
   // lettura»). «stampa»/«ristampa» no: stampano, non scrivono.
-  const SCRITTURE_TEL = new Set(["ordina", "cartellaSalva", "terapiaAggiungi", "accetta", "registrazioneVia", "dfAggiungi", "dfSpunta", "dfTogli", "posto", "stazioneCollega"]);
+  // («areaApri» cambia l'area della sessione del gestionale: anche lei)
+  const SCRITTURE_TEL = new Set(["ordina", "cartellaSalva", "terapiaAggiungi", "accetta", "areaApri", "registrazioneVia", "dfAggiungi", "dfSpunta", "dfTogli", "posto", "stazioneCollega"]);
   function chiedi(cmd, args = {}, tempo = TEMPO, auto = false, o = {}) {
     return new Promise((si, no) => {
       if (solaLettura() && SCRITTURE_TEL.has(cmd)) { no(Object.assign(new Error("Sola lettura: su questo PC non si scrive"), { solaLettura: true })); return; }
@@ -652,7 +655,7 @@
     if (S.occupato.has("cartella" + ep)) return;
     caricaEo();
     S.occupato.add("cartella" + ep); render();
-    try { cartellaDalPc(ep, await chiedi("cartella", rileggi ? { ep, rileggi: true } : { ep }, 40e3, auto)); } catch (e) { if (!auto) errore(e); }
+    try { const c = await chiedi("cartella", rileggi ? { ep, rileggi: true } : { ep }, 40e3, auto); cartellaDalPc(nuovoEp(ep, c), c); } catch (e) { if (!auto && !(e.smart && e.smart.altra)) errore(e); }
     S.occupato.delete("cartella" + ep); render();
   }
   // Gli EO salvati sul PC, a ogni apertura della cartella (i suoi cambiano sul PC): un PC più vecchio non conosce il
@@ -744,7 +747,7 @@
   async function caricaTerapie(ep, auto = false, rileggi = false) {
     if (S.occupato.has("terapie" + ep)) return;
     S.occupato.add("terapie" + ep); render();
-    try { terapieDalPc(ep, await chiedi("terapie", rileggi ? { ep, rileggi: true } : { ep }, ATTESA_TERAPIE, auto)); } catch (e) { if (!auto) errore(e); }
+    try { const l = await chiedi("terapie", rileggi ? { ep, rileggi: true } : { ep }, ATTESA_TERAPIE, auto); terapieDalPc(nuovoEp(ep, l), l); } catch (e) { if (!auto && !(e.smart && e.smart.altra)) errore(e); }
     S.occupato.delete("terapie" + ep); render();
   }
   // (una lettura senza i preferiti — quella che torna da un'aggiunta — tiene quelli di prima)
@@ -824,10 +827,24 @@
   async function caricaEsiti(ep, auto = false) {
     if (S.occupato.has("esiti" + ep)) return;
     S.occupato.add("esiti" + ep); render();
-    try { esitiArrivati(ep, await chiedi("esiti", { ep }, 40e3, auto)); } catch (e) { if (!auto) errore(e); }
+    let qui = ep;
+    try { const e = await chiedi("esiti", { ep }, 40e3, auto); qui = nuovoEp(ep, e); esitiArrivati(qui, e); } catch (e) { if (!auto) errore(e); }
     S.occupato.delete("esiti" + ep); render();
-    leggiDaSolo(ep, auto);
+    leggiDaSolo(qui, auto);
   }
+  // Chi il PC conosceva solo dalla lista smart, trovato nella lista della sua area (o aperto passando il PC
+  // alla sua area): il PC lo chiama ora col suo episodio vero (`rinomina`, `da` → `a`). La sua riga, la vista
+  // aperta e quello che si sa di lui passano al numero nuovo; l'elenco si rilegge da sé.
+  function rinomina(da, a) {
+    if (!da || !a || da === a || !/^[\w.-]{1,40}$/.test(a)) return da;
+    const p = paziente(da);
+    if (p && !paziente(a)) p.ep = a;
+    else if (p) S.pazienti = S.pazienti.filter((x) => x !== p);
+    if (S.vista.ep === da) S.vista = { ...S.vista, ep: a };
+    for (const m of [S.esiti, S.cartelle, S.terapie, S.ristampe, S.areaTel]) if (m.has(da)) { if (!m.has(a)) m.set(a, m.get(da)); m.delete(da); }
+    return a;
+  }
+  const nuovoEp = (ep, d) => (d && d.rinomina && d.rinomina.da === ep && typeof d.rinomina.a === "string" ? rinomina(ep, d.rinomina.a) : ep);
   // Gli esiti arrivati dal PC: con la riga del paziente (le allergie e lo stato, dopo una lettura sono nuovi)
   function esitiArrivati(ep, e) {
     S.esiti.set(ep, e);
@@ -955,7 +972,8 @@
     if (S.occupato.has("valori" + ep)) return;
     S.occupato.add("valori" + ep); S.legge.set(ep, { modo, dal: Date.now() }); S.nonLetti.delete(ep); render();
     try {
-      esitiArrivati(ep, await chiedi("aggiornaValori", modo ? { ep, modo } : { ep }, ATTESA_VALORI, !!modo));
+      const e = await chiedi("aggiornaValori", modo ? { ep, modo } : { ep }, ATTESA_VALORI, !!modo);
+      esitiArrivati(nuovoEp(ep, e), e);
     } catch (e) { if (!modo) errore(e); else { if (!e.offline) S.nonLetti.set(ep, e.message); S.daSolo.delete(ep); } }   // (rifiutata o caduta: i 10 minuti non valgono, al prossimo tocco riprova)
     S.occupato.delete("valori" + ep); S.legge.delete(ep); render();
   }
@@ -1902,6 +1920,32 @@
     }
     render();
   }
+  // «Passa il PC all'area X e apri ROSSI M.»: un tocco, un numero (rq) — rimandato (la rete), il PC risponde
+  // com'è andata e non lo rifà. Poi il telefono dice «PC ora sull'area X» e lo apre col suo episodio vero.
+  async function areaApri(ep) {
+    const p = paziente(ep), x = S.areaTel.get(ep) || { rq: "" };
+    if (!p || x.stato || (x.esito && x.esito.tono === "warn")) return;
+    if (!x.rq) x.rq = nuovoRq();
+    x.stato = "invio"; x.esito = null; S.areaTel.set(ep, x); render();
+    const si = (d) => {
+      x.stato = ""; x.rq = ""; S.areaTel.delete(ep);
+      avviso(d && d.gia ? `Il PC ha già la sua pagina: ${p.nome}` : `PC ora sull'area ${(d && d.area) || p.area} · ${p.breve || p.nome}`);
+      const a = d && typeof d.ep === "string" && d.ep ? rinomina(ep, d.ep) : ep;
+      aggiornaLista(true).then(() => { if (S.vista.nome === "paziente" && S.vista.ep === a && paziente(a)) apriPaziente(a); });
+    };
+    const no = (e) => {
+      x.stato = ""; x.esito = { tono: e.incerto ? "warn" : "err", testo: e.message };
+      if (!e.incerto) x.rq = "";   // il PC ha detto di no (niente cambiato): un tocco nuovo è una richiesta nuova
+      avviso(e.message, e.incerto ? "" : "err", !!e.incerto);
+      if (e.message && /^PC ora sull'area/.test(e.message)) aggiornaLista(true);   // (l'area è cambiata comunque: l'elenco lo sa)
+    };
+    try {
+      si(await chiedi("areaApri", { ep }, ATTESA_AREA, false, { rq: x.rq, tardi: (d) => { if (d.ok) si(d.dati); else no(errDa(d)); render(); } }));
+    } catch (e) {
+      no(e.inviata ? Object.assign(new Error("Incerto: il PC non ha ancora risposto — guarda sul PC su che area è"), { incerto: true }) : e);
+    }
+    render();
+  }
   // ------------------------------------------------------------ la mappa
   // Sola lettura: la stanza com'è sul PC (letti, sedie, aree), con chi sta dove.
   // La griglia è in celle; ogni misura è un multiplo della cella --u, che sta
@@ -2026,14 +2070,30 @@
     return `<div class="tabw"><table class="val"><thead>${testa}</thead><tbody>${corpo}</tbody></table></div>`;
   }
   // Il PC conosce il paziente solo dalla lista smart: della sua pagina non ha ancora l'indirizzo (lo dà la
-  // riga della lista della sua area, mai costruito; e l'area la cambia il medico, sul PC). Una riga: cosa fare.
+  // riga della lista della sua area, mai costruito). Nell'area su cui è il gestionale il PC la legge da sé,
+  // dietro, al tocco; se no una riga: cosa fare.
   const soloSmart = (p, per = "") => `Il PC lo conosce solo dalla lista smart: ${per}apri una volta la lista ${p.area ? `«${p.area}»` : "della sua area"} nel gestionale.`;
+  // (dov'è, per il PC: `qui` l'area del gestionale, `altra` un'altra, niente se non si sa; `perche`: la lettura non riuscita)
+  const smartDi = (p) => { const e = S.esiti.get(p.ep); return (e && e.mai && e.smart) || p.smart || null; };
+  // Un'altra area: un bottone, «Passa il PC all'area Bassa e apri ROSSI M.» — un tocco è il clic sulla
+  // sua riga della lista smart, sul PC (ponteAreaApri): il PC passa a quell'area e lo apre dalla sua lista.
+  // Cambia l'area del gestionale sul PC (è una scrittura: non sul PC di sola lettura). Incerto: niente bottone.
+  function soloSmartHtml(p, per = "") {
+    const s = smartDi(p) || {}, x = S.areaTel.get(p.ep);
+    const perche = s.perche ? `<br><small>${esc(s.perche)}</small>` : "";
+    if (!s.altra || !p.area || solaLettura()) return `<div class="vuoto stretto">${esc(soloSmart(p, per))}${perche}</div>`;
+    const incerto = x && x.esito && x.esito.tono === "warn";
+    const t = x && x.stato ? `Passo il PC all'area ${p.area}…` : `Passa il PC all'area ${p.area} e apri ${p.breve || p.nome}`;
+    return `<div class="smartarea"><p>Il PC lo conosce solo dalla lista smart, e il gestionale sul PC è su un'altra area.${perche}</p>${
+      incerto ? "" : `<button type="button" class="btnmini pri" data-a="areaApri" data-ep="${esc(p.ep)}" ${x && x.stato ? "disabled" : ""}>${esc(t)}</button>`}${
+      x && x.esito ? `<span class="accesito ${x.esito.tono}">${esc(x.esito.testo)}</span>` : ""}</div>`;
+  }
   function vistaEsiti(p) {
     const e = S.esiti.get(p.ep);
     const carica = S.occupato.has("esiti" + p.ep), legge = S.occupato.has("valori" + p.ep), lg = S.legge.get(p.ep);
     if (!e) return carica ? `<div class="carica"><div class="giro"></div></div>` : `<div class="vuoto">Esiti non caricati.</div>`;
     // senza la sua pagina sul PC: niente di salvato, e niente da leggere — una riga, che dice cosa fare
-    if (e.mai && !e.tabella) return `<div class="vuoto stretto">${esc(soloSmart(p))}</div>`;
+    if (e.mai && !e.tabella) return soloSmartHtml(p);
     // quando li ha letti il PC: dopo un'ora, in ambra
     const letti = e.tabella && e.letto ? `<small class="letti${Date.now() - e.letto > 60 * 60e3 ? " amb" : ""}">Letti sul PC ${alle(e.letto)}</small>` : "";
     // (come sul PC: quanti valori sono nuovi dall'ultima volta che il medico li ha guardati)
@@ -2083,7 +2143,7 @@
     const c = S.catalogo;
     if (!c) return `<div class="carica"><div class="giro"></div></div>`;
     if (p.prec) return `<div class="vuoto">Episodio precedente: per ordinare apri quello di oggi.</div>`;
-    if (!p.ordina) return `<div class="vuoto">${esc(soloSmart(p, "per ordinare, "))}</div>`;
+    if (!p.ordina) return soloSmartHtml(p, "per ordinare, ");
     const s = selDi(p.ep);
     // sul telefono solo i quesiti che sono un pacchetto di esami, coi nomi corti (in una riga)
     const BREVE = { "dolore toracico": "Dol th", "dolore addominale": "Dol add" };
@@ -2236,7 +2296,7 @@
   function vistaCartella(p) {
     const c = S.cartelle.get(p.ep);
     const legge = S.occupato.has("cartella" + p.ep), salva = S.occupato.has("csalva" + p.ep);
-    if (!c) return legge ? `<div class="carica"><div class="giro"></div></div>` : `<div class="vuoto">Cartella non letta.</div>`;
+    if (!c) return legge ? `<div class="carica"><div class="giro"></div></div>` : (smartDi(p) || {}).altra ? soloSmartHtml(p) : `<div class="vuoto">Cartella non letta.</div>`;
     const b = S.cbozze.get(p.ep) || new Map();
     const letto = c.letto ? `<small class="letti${Date.now() - c.letto > 60 * 60e3 ? " amb" : ""}">Letto sul PC ${alle(c.letto)}</small>` : "";
     const campi = CARTELLA.map(([nome, etichetta]) => {
@@ -2262,7 +2322,8 @@
   // ciascuna (il TERAPIA_PROG cresce; senza, l'ordine della pagina). Si legge e basta: si aggiunge con «＋ Farmaco».
   function vistaTerapia(p) {
     const l = S.terapie.get(p.ep), legge = S.occupato.has("terapie" + p.ep);
-    if (!l) return legge ? `<div class="carica"><div class="giro"></div></div>` : `<div class="vuoto"><button class="agg" data-a="trileggi">Tocca per leggere la terapia</button></div>`;
+    if (!l) return legge ? `<div class="carica"><div class="giro"></div></div>` : (smartDi(p) || {}).altra ? soloSmartHtml(p)
+      : `<div class="vuoto"><button class="agg" data-a="trileggi">Tocca per leggere la terapia</button></div>`;
     const letto = `<small class="letti${Date.now() - l.letto > 60 * 60e3 ? " amb" : ""}">Letto sul PC ${alle(l.letto)}</small>`;
     const righe = l.righe.map((r, i) => ({ r, i })).sort((a, b) => (Number(b.r.prog) || 0) - (Number(a.r.prog) || 0) || b.i - a.i).map(({ r }) =>
       `<div class="ter"><span class="tt"><b>${esc(r.descr)}</b>${doseTer(r) ? ` <span>${esc(doseTer(r))}</span>` : ""}</span>${r.ora ? `<span class="to">${esc(r.ora)}</span>` : ""}</div>`).join("");
@@ -2343,7 +2404,7 @@
   // le azioni che senza il PC non vanno
   // (l'ordine no: senza collegamento va in coda)
   const SERVE_PC = new Set(["valori", "pdf", "aggiornaLista", "stampaPdf", "stampaRef", "ordQui", "dfck", "dftogli", "csalva", "cricarica", "crileggi", "registrazioni", "zipLista", "zipScarica", "zipVia",
-    "trileggi", "tconferma", "accetta"]);
+    "trileggi", "tconferma", "accetta", "areaApri"]);
   function render() {
     if (premuto || trascino) { rinviato = true; return; }
     // il cursore resta dov'era: un ridisegno non deve rubare il campo a chi scrive
@@ -2532,6 +2593,7 @@
     else if (a === "precapri") { S.precAperti = !S.precAperti; render(); }
     else if (a === "avvisoAz") { const az = S.avviso && S.avviso.azione; zitto(); render(); if (az) az.fai(); }
     else if (a === "accetta") accetta(b.dataset.id);
+    else if (a === "areaApri") areaApri(b.dataset.ep);
     else if (a === "modo") { S.modo = b.dataset.m === "mappa" ? "mappa" : b.dataset.m === "dafare" ? "dafare" : "lista"; try { localStorage.setItem(MODO, S.modo); } catch { /* solo in memoria */ } render(); }
     else if (a === "mappasel") { S.mappaSel = b.dataset.k; render(); }
     else if (a === "indietro") { S.vista = { nome: "lista", ep: "" }; S.arma = null; render(); aggiornaLista(); }

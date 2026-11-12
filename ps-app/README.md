@@ -1423,9 +1423,20 @@ lo stato, le allergie, poi i valori e i referti (`aggiornaValori` con `modo: "ap
 intanto dice **«Apro sul PC… · 14:32»** («dopo l'ordine» se un ordine sta mandando esami: si aspetta
 lui), e poi mostra gli esiti, con la riga del paziente rifatta. Un paziente alla volta (una scheda
 dietro alla volta, per tutto il browser). Senza il tocco non si apre niente. Chi il PC conosce **solo
-dalla lista smart** non ha ancora un indirizzo della sua pagina (la smart non ne porta, e l'area la
-cambia il medico, sul PC): il telefono lo dice, una riga — «Il PC lo conosce solo dalla lista smart:
-apri una volta la lista «Bassa» nel gestionale» —, e dopo quella lista si apre da qui.
+dalla lista smart** non ha ancora un indirizzo della sua pagina (la smart non ne porta, e un indirizzo
+non si costruisce): lo dà la riga della lista della sua area. **Nell'area su cui è il gestionale**, il
+tocco (gli Esiti, ↻ Rileggi, la Cartella, la Terapia) apre dietro la lista dell'area — il link della
+pagina, mai costruito — e la legge come quando la apre il medico; la sua riga (nome e nascita, una
+sola) gli dà l'episodio e il link, e il telefono lo apre come gli altri. Niente cambia nel gestionale:
+la scheda del medico non si muove, l'area resta quella. Come ogni lettura dietro: una alla volta, mai
+con un ordine al lavoro o un carrello aperto, mai mentre si rilegge la smart, al più una ogni 10 minuti
+per paziente. Due righe uguali, o nessuna: la riga di sempre — «… apri una volta la lista «Alta
+intensità» nel gestionale» — col perché; la riga di un altro nome: «Errore grave», niente aperto.
+**In un'altra area**, al posto di quella riga c'è **«Passa il PC all'area Bassa e apri ROSSI M.»**: un
+tocco, e il PC fa quello che fa un clic sulla sua riga della lista smart, nella scheda del gestionale
+davanti al medico — Imposta, l'area, «Conferma», la lista, il link della sua riga. Cambia l'area del
+gestionale per tutte le schede: il telefono dice «PC ora sull'area Bassa», la pagina dove il PC
+atterra lo dice nel pannello, il registro del ponte pure. Regole: [Perché è robusto](#perché-è-robusto-regole-di-sicurezza-nel-codice), 23.
 
 **Gli esiti si leggono da soli.** Aprendo gli Esiti, il PC rilegge la pagina del paziente (come
 sempre) e guarda quello che guarda la sua apertura: la **firma del laboratorio** della pagina non è
@@ -2712,6 +2723,20 @@ nella tendina del gestionale») — poi **Prepara nel gestionale** (o Ctrl+Invio
     «Incerto: controlla sul PC», e lo stesso numero rimandato ha la stessa risposta, mai un secondo
     clic. Prima del clic soltanto, una scheda che il browser lascia scarica si riapre sulla lista,
     una volta (è una lettura). Prova: `test/ext-accetta.mjs`.
+23. **«Passa il PC all'area …» dal telefono: il clic del medico sulla lista smart, una volta.** L'area è
+    della sessione del gestionale: cambiarla cambia quello che vedono tutte le schede (e una pagina di
+    un paziente di un'altra area arriva senza le Richieste). Per questo non la cambia mai una lettura
+    — quella dietro della lista dell'area (`ponteListaQui`) legge solo l'area che il gestionale ha già,
+    e si ferma se la testata dice un'altra —, ma solo il tocco del medico sul bottone del telefono, e
+    solo nella sua scheda del gestionale davanti (mai una di sottofondo): lo stesso giro di un clic
+    sulla riga della lista smart (`apriArea`/`areaVaiQui`: un'opzione sola, riconosciuta dal nome; al
+    più due «Conferma»; 45 secondi). Mai con un ordine al lavoro o in coda, un carrello aperto, la smart
+    che si rilegge, una lettura dietro del telefono, un passaggio d'area già in corso, o qualcosa di
+    scritto e non salvato nella pagina; mai sul PC di sola lettura. Un tocco, un numero (`rq`,
+    `ponte.area.rq`), annotato «inviato» **prima** di darlo alla scheda: rimandato ha la stessa
+    risposta, dopo un riavvio a metà è «incerto», mai un secondo passaggio. Il passaggio lo dicono il
+    telefono, il pannello dove si atterra e il registro del ponte; indietro non si torna da soli.
+    Prova: `test/ext-area-tel.mjs`.
 
 > **Postazione condivisa**: `localStorage` e la memoria dell'estensione sono legati al **profilo
 > Chrome**, non al login dell'ospedale. Usa l'estensione in un profilo tuo. Se il profilo è
@@ -2828,6 +2853,7 @@ npm test           # 108 scenari e2e + le prove con l'estensione vera (ordine in
                    # + il Ponte: 120 controlli senza browser (cifratura, ripetitore, Worker) e 166 dal vivo (test/ext-ponte.mjs)
                    # + la stazione di stampa: due PC veri, il telefono che inquadra il suo QR, gli ordini (test/ext-stazione.mjs)
                    # + le aree, su pagine sintetiche: sezioni, PsoPsoImposta, mappa dell'Alta, lista smart (test/aree.mjs)
+                   # + chi il PC conosce solo dalla smart, dal telefono: la lista dell'area letta dietro, «Passa il PC all'area …» (test/ext-area-tel.mjs)
                    # (Chromium che va in crash aprendo un PDF, in un contenitore Linux: PSA_CHROMIUM_ARGS=--disable-features=PdfOopif)
 ```
 
