@@ -8,9 +8,10 @@
  *
  *   rifiuto di partenza — ogni testo e ogni valore di attributo si sostituisce
  *   con uno inventato della stessa forma, A MENO CHE sia vocabolario del
- *   programma: una stringa che compare nelle pagine di almeno DUE pazienti
- *   diversi in questa registrazione, o nelle pagine di esempio già pubblicate
- *   (esempi-gestionale/), o nel catalogo degli esami. Un elenco di rifiuto toglie
+ *   programma: nelle pagine di esempio già pubblicate (esempi-gestionale/), nel
+ *   catalogo degli esami, un'etichetta della pagina; o una stringa vista nelle
+ *   pagine di almeno DUE PERSONE diverse (non due episodi: oggi e uno di prima
+ *   della stessa persona sono una) che ha la forma di un'etichetta. Un elenco di rifiuto toglie
  *   quello che è condiviso ma identifica comunque (personale, utenti, ospedale,
  *   fornitore); le espressioni regolari prendono codici fiscali, date di nascita,
  *   tessere, telefoni, indirizzi, email; i campi di testo libero diventano testo
@@ -445,6 +446,9 @@
   }
 
   // ======================================================================
+  // le particelle dei cognomi («DE LUCA», «DELLA VALLE»): da sole non sono nessuno
+  const PARTICELLE_NOMI = new Set(["DEL", "DELLA", "DELLE", "DELLO", "DEI", "DEGLI", "DAL", "DALLA", "DALLE", "DALLO", "VAN", "VON", "SAN", "SANTA", "SANTO", "MAC", "DE", "DI", "DA", "LA", "LO", "LE", "LI"]);
+
   function anonimizza(raccolta, opz = {}) {
     const voc = opz.vocabolario || {};
     const STATICO = new Set((voc.testi || []).map((s) => pulisci(s).trim()));
@@ -540,6 +544,22 @@
       if (!testi.has(k)) testi.set(k, new Set());
       if (unita) testi.get(k).add(unita);
     };
+    // Le unità della STESSA persona: l'episodio di oggi e uno di prima, la
+    // pagina dell'assistito e quella dell'episodio. Le lega quello che dice chi
+    // è — lo stesso nome di paziente, lo stesso codice fiscale, lo stesso
+    // ASSISTITO_ID —, e quello che si vede solo nelle pagine di una persona è
+    // suo, anche se sta in due episodi: mai vocabolario. (Legare per sbaglio
+    // due persone toglie solo vocabolario: si sostituisce di più, mai di meno.)
+    let unitaOra = "";                  // l'unità della stringa che si sta guardando (prima passata)
+    const chiUnita = new Map();         // «N:nome» | «C:cf» | «A:assistito» → Set(unità)
+    const lega = (chiave, unita = unitaOra) => {
+      if (!chiave || !unita) return;
+      if (!chiUnita.has(chiave)) chiUnita.set(chiave, new Set());
+      chiUnita.get(chiave).add(unita);
+    };
+    const capo = new Map();             // unità → l'unità che sta per la sua persona
+    const persona = (u) => { let x = u; while (capo.has(x) && capo.get(x) !== x) x = capo.get(x); return x; };
+    const persone = (unita) => new Set([...unita].map(persona)).size;
 
     // ------------------------------------------ le etichette del programma
     // Le parole che il programma mette su pulsanti, linguette, intestazioni di
@@ -564,6 +584,7 @@
       if (MARCHI.some((re) => re.test(t))) return;
       if (sissOra && (SISS_STATICO.has(t) || tuttoSiss(t))) return;
       const k = norma(t);
+      if (!nomiLocali && cat === "nomi") lega("N:" + k);   // (il nome di chi è la pagina: lega le sue unità)
       if (nomiLocali && nomiVisti.has(k)) return;   // (già una persona di tutto lo zip)
       const dove = nomiLocali || nomiVisti;
       const prima = dove.get(k);
@@ -582,19 +603,61 @@
     };
     const utente = (t) => /^[A-Z]{5,7}$/.test(t) && !areaVoce(t) && !PAROLE_STATICHE.has(t) && !paroleApp(t) && !STATICO.has(t);
     const negato = (t) => MARCHI.some((re) => re.test(t)) || formaNome(t) || utente(t) || haCF(t);
+    // Le parole dei nomi dei pazienti (le liste che l'estensione conosce e le
+    // pagine), da sole: un cognome in una cella, il nome di un parente. Si
+    // sostituiscono ovunque (la ripulitura) e il cancello le cerca; mai quelle
+    // del programma (il vocabolario, le parole dell'app, le particelle). Si
+    // contano una volta, quando tutti i nomi sono stati visti.
+    const parolaDelProgramma = (w) => PAROLE_STATICHE.has(w) || SISS_PAROLE.has(w) || VIEWER_PAROLE.has(w) || VIEWER_PAROLE_ETI.has(w) || PARTICELLE_NOMI.has(w) || paroleApp(w) || /\d/.test(w);
+    let paroleNomiPaz = null;           // MAIUSC(parola) → { pieno, i }
+    const paroleDeiPazienti = () => {
+      if (paroleNomiPaz) return paroleNomiPaz;
+      paroleNomiPaz = new Map();
+      for (const { cat, orig } of nomiVisti.values()) {
+        if (cat !== "nomi") continue;
+        orig.trim().split(/\s+/).forEach((pezzo, i) => {
+          for (const w of norma(pezzo).trim().split(" ")) if (w.length >= 3 && !parolaDelProgramma(w) && !paroleNomiPaz.has(w)) paroleNomiPaz.set(w, { pieno: orig, i });
+        });
+      }
+      return paroleNomiPaz;
+    };
+    // Una stringa vista nelle pagine di DUE persone diverse resta solo se ha la
+    // forma di un'etichetta del programma — una voce, uno stato, il nome di un
+    // esame: corta (al più 6 parole, 60 caratteri), senza numeri lunghi (un
+    // anno, un CAP: le date si spostano comunque), e fatta per almeno metà di
+    // parole del vocabolario dell'estensione (le pagine di esempio del
+    // gestionale, il catalogo, il pannello). Le parole dei nomi non contano: la
+    // ripulitura le sostituisce; una stringa di soli nomi non è un'etichetta.
+    // Il resto — una frase, un indirizzo, una storia — si sostituisce: nel
+    // dubbio, si sostituisce.
+    const etichettaVista = (k) => {
+      if (k.length > 60 || /\d{4,}/.test(k.replace(DATA_RE, " ").replace(ISO_RE, " "))) return false;
+      const w = lettura(k).parole.map((x) => x.w);
+      if (w.length > 6) return false;
+      const paz = paroleDeiPazienti();
+      let voc = 0, altre = 0, nomi = 0;
+      for (const x of w) {
+        if (x.length < 3 || /\d/.test(x)) continue;
+        if (paz.has(x)) nomi++;
+        else if (PAROLE_STATICHE.has(x) || paroleApp(x)) voc++;
+        else altre++;
+      }
+      if (nomi && !voc && !altre) return false;
+      return voc >= altre;
+    };
     const vocabolo = (s) => {
       const k = pulisci(s).trim();
       if (!k) return true;
       if (negato(k) || nomiVisti.has(norma(k))) return false;
       if (STATICO.has(k) || isExam(k) || CODICI.has(k) || areaVoce(k) || etichetta(k)) return true;
       const u = testi.get(k);
-      return !!u && u.size >= 2;
+      return !!u && persone(u) >= 2 && etichettaVista(k);
     };
 
     // ------------------------------------------- le scoperte (prima passata)
     // i dati che si sostituiscono per quello che sono (codici fiscali, email, telefoni, tessere, date, numeri)
     const scopriValori = (t) => {
-      for (const m of t.matchAll(CF_RE)) if (!FINTO_CF.test(m[0])) visto.cf.add(m[0]);
+      for (const m of t.matchAll(CF_RE)) if (!FINTO_CF.test(m[0])) { visto.cf.add(m[0]); lega("C:" + m[0]); }
       for (const m of t.matchAll(EMAIL_RE)) if (!/@esempio\.it$/i.test(m[0])) visto.email.add(m[0]);
       for (const re of TEL_RE) for (const m of t.matchAll(re)) { const v = (m[1] || m[0]).trim(); if ((v.match(/\d/g) || []).length >= 7) visto.telefoni.add(v); }
       for (const re of TESSERA_RE) for (const m of t.matchAll(re)) { const v = (m[1] || m[0]).trim(); if (/\d/.test(v)) visto.tessere.add(v); }
@@ -1456,8 +1519,11 @@
       sissOra = p.siss;
       let eti = null, etiV = null, dopoCodice = false, cog = "", nom = "";
       const persona = (c, v) => { if (c === "cognome") cog = v; else nom = v; };
+      // (l'assistito dell'indirizzo è la persona dell'unità della pagina)
+      if (p.unita) { const a = paramDi(p.url, "ASSISTITO_ID"); if (a) lega("A:" + a, p.unita); if (/^A:/.test(p.unita)) lega(p.unita, p.unita); }
       for (const pz of p.pezzi) {
         const unita = p.multi ? (pz.riga >= 0 ? p.unitaRighe[pz.riga] : "") : p.unita;
+        unitaOra = unita || "";
         // il visualizzatore: i nomi DICOM, la sovraimpressione (anche su due nodi), le chiavi DICOM negli script, gli UID, i gettoni
         if (p.viewer) {
           if (pz.k === "testo" || (pz.k === "corpo" && pz.nome === "title")) {
@@ -1492,14 +1558,16 @@
             if (a.v == null) continue;
             const K = a.k.toLowerCase(), v = decodifica(a.v);
             if (ATTR_STRUTTURA.has(K)) continue;
-            if (ATTR_URL.has(K) || K.startsWith("on")) { scopri(decURI(v)); continue; }
+            if (ATTR_URL.has(K) || K.startsWith("on")) { const ass = paramDi(v, "ASSISTITO_ID"); if (ass) lega("A:" + ass); scopri(decURI(v)); continue; }
             osservaStringa(v, unita);
             scopri(v);
             if (p.siss) scopriSiss(v);
           }
         }
       }
+      unitaOra = p.multi ? "" : p.unita || "";
       if (cog || nom) personaSiss(cog, nom);
+      unitaOra = "";
       delete p.pezzi;
       sissOra = false;
     }
@@ -1507,8 +1575,16 @@
       const u = d.unita || unitaDiScheda(d.scheda, d.ts) || (apertaDa.has(d.scheda) ? unitaDiScheda(apertaDa.get(d.scheda), d.ts) : "");
       d.unitaVista = u;
       sissOra = isSiss(d.url);
+      unitaOra = u || "";
       for (const r of d.righe || []) { osservaStringa(r, u); scopri(r); if (sissOra) scopriSiss(r); }
-      sissOra = false;
+      sissOra = false; unitaOra = "";
+    }
+    // chi è chi: le unità legate dallo stesso nome di paziente, codice fiscale o
+    // assistito diventano una persona sola (il nome di chi lavora non lega niente)
+    for (const [chiave, l] of chiUnita) {
+      if (chiave.startsWith("N:") && (nomiVisti.get(chiave.slice(2)) || {}).cat !== "nomi") continue;
+      const [u0, ...altre] = [...l];
+      for (const u of altre) { const a = persona(u0), b = persona(u); if (a !== b) capo.set(b, a); }
     }
     for (const r of flusso) { scopri(decURI(r.url || "")); for (const v of Object.values(r.corpo || {})) scopri(String(v)); }
     // i clic sul visualizzatore: il loro indirizzo e il testo corto del bersaglio
@@ -1552,7 +1628,7 @@
     const numeriVoc = new Set();
     if (testiLiberi.length) {
       for (const s of STATICO) for (const m of s.matchAll(/\d{5,}/g)) numeriVoc.add(m[0]);
-      for (const [s, u] of testi) if (u.size >= 2) for (const m of s.matchAll(/\d{5,}/g)) numeriVoc.add(m[0]);
+      for (const [s, u] of testi) if (persone(u) >= 2) for (const m of s.matchAll(/\d{5,}/g)) numeriVoc.add(m[0]);
     }
     for (const x of testiLiberi) {
       for (const riga of String(x.testo).split(/\r?\n/)) {
@@ -1577,6 +1653,11 @@
     }
 
     // --------------------------------------- seconda passata: trasformare
+    // le parole dei nomi dei pazienti, adesso che ci sono tutti: da sole si
+    // sostituiscono come le parole di una persona del SISS (la stessa parola del
+    // suo nome finto), e il cancello le cerca
+    paroleNomiPaz = null;
+    for (const [w, e] of paroleDeiPazienti()) if (!parolePersona.has(w)) parolePersona.set(w, { pieno: e.pieno, i: e.i, cognome: e.i === 0, paziente: true });
     const files = {};
     const tipoDi = (u) => {
       const mv = paramDi(u, "MVPG");
@@ -1784,7 +1865,7 @@
       const w = orig.trim().split(/\s+/);
       if (cat === "nomi" && w.length === 2 && w.every((x) => x.length >= 3)) daCercare.push({ cat, testo: `${w[1]} ${w[0]}`, orig, girato: true });
     }
-    for (const [w, e] of parolePersona) if (e.cognome && w.length >= 4) daCercare.push({ cat: "nomi", testo: w, orig: w, parola: true });
+    for (const [w, e] of parolePersona) if ((e.cognome || e.paziente) && w.length >= 4) daCercare.push({ cat: "nomi", testo: w, orig: w, parola: true, ...(e.paziente ? { sola: true } : {}) });
     for (const v of idOriginali) if (v.length >= 5) daCercare.push({ cat: "id", testo: v, fn: () => fintoId(v) });
     for (const v of visto.nascita) if (date(v) !== v || /^\d{8}$/.test(v)) daCercare.push({ cat: "nascita", testo: v, fn: letterali.get(v) });
     for (const v of visto.telefoni) daCercare.push({ cat: "telefoni", testo: v, fn: () => v.replace(/\d/g, "0") });
@@ -1803,7 +1884,9 @@
     // si trova e si sostituisce — anche in una frase tenuta come vocabolario, in uno
     // script, in un indirizzo, con un altro separatore o un'altra forma. Il separatore
     // del posto (%20, _, -, &nbsp;) resta; il nome finto ha le stesse maiuscole del vero.
-    const nomiComeIlCancello = (t) => {
+    // (in un .json di nostro, una parola seguita da «":» è una chiave: struttura, non un nome)
+    const chiaveJson = (t, a) => /^"\s*:/.test(t.slice(a, a + 4));
+    const nomiComeIlCancello = (t, json = false) => {
       if (!indiceNomi.size) return t;
       const L = lettura(t, true), w = L.parole;
       if (!w.length) return t;
@@ -1821,7 +1904,7 @@
         }
         if (!meglio) continue;
         const j = i + meglio.parole.length - 1, da = w[i].da, a = w[j].a;
-        if (da < fine) continue;
+        if (da < fine || (json && meglio.sola && chiaveJson(t, a))) continue;
         if (meglio.fn) {
           // il dato finto con i separatori che il posto aveva («12-03-1950» resta con i trattini)
           let f = meglio.fn();
@@ -1838,11 +1921,11 @@
       }
       return fine ? out + t.slice(fine) : t;
     };
-    const ripulisci = (s) => {
+    const ripulisci = (s, json = false) => {
       let t = s;
       if (reNomi) t = t.replace(reNomi, (m) => nomeFinto(m.replace(/&nbsp;|%[0-9A-Fa-f]{2}|[^A-Za-z0-9À-ÿ]+/g, " ").trim(), (nomiVisti.get(norma(m.replace(/&nbsp;|%[0-9A-Fa-f]{2}/g, " "))) || {}).cat));
-      t = nomiComeIlCancello(t);
-      if (rePers) t = t.replace(rePers, (m) => (parolePersona.has(MAIUSC(m)) ? parolaFinta(m) : m));
+      t = nomiComeIlCancello(t, json);
+      if (rePers) t = t.replace(rePers, (m, at, tutto) => (json && chiaveJson(tutto, at + m.length) ? m : parolePersona.has(MAIUSC(m)) ? parolaFinta(m) : m));
       if (reLett) t = t.replace(reLett, (m) => letterali.get(m)());
       if (reIdAlfa) t = t.replace(reIdAlfa, (m) => fintoId(m));
       t = t.replace(/(?<![\dA-Za-z])\d{5,}(?![\dA-Za-z])/g, (d) => (idOriginali.has(d) ? fintoId(d) : d));
@@ -1856,7 +1939,7 @@
       const v = m.replace(/&nbsp;|%[0-9A-Fa-f]{2}|[^A-Za-z0-9À-ÿ'’]+/g, " ").trim();
       return nomeFinto(v, (nomiTesti.get(norma(v)) || {}).cat || "nomi");
     })));
-    for (const k of Object.keys(files)) files[k] = ripulisci(k.startsWith("testi/") ? localiNeiTesti(files[k]) : files[k]);
+    for (const k of Object.keys(files)) files[k] = ripulisci(k.startsWith("testi/") ? localiNeiTesti(files[k]) : files[k], k.endsWith(".json"));
 
     // ------------------------------------------------- il riepilogo
     const conteggi = {
@@ -2050,16 +2133,18 @@
     // -------------------------------------------------- il cancello
     const sensibili = { nomi: [], personale: [], cf: [...visto.cf], nascita: [], id: [], email: [], telefoni: [], tessere: [] };
     // (le stesse persone che la ripulitura ha cercato: `daCercare`)
-    for (const x of daCercare) sensibili[x.cat].push(x.testo);
+    // (le parole sole dei pazienti il cancello le ricava dai nomi interi: contate una volta, mai dentro un nome già contato)
+    for (const x of daCercare) if (!x.sola) sensibili[x.cat].push(x.testo);
     // (opz.aggiungi: file messi fra quelli in uscita prima del controllo — solo per i test)
     Object.assign(files, opz.aggiungi || {});
     const prova = { ...files, "riepilogo.txt": riepilogo({ ok: true, punti: 0 }) };
-    const gate = cancello(prova, sensibili, { finti: [...finti.values()], diagnosi: opz.diagnosi });
+    // (il riepilogo è testo nostro, con le sue parole comuni — «altro testo sostituito»: lì niente parole sole)
+    const gate = cancello(prova, sensibili, { finti: [...finti.values()], diagnosi: opz.diagnosi, statica: parolaDelProgramma, senzaParole: ["riepilogo.txt"] });
     // (e le persone trovate solo nei testi: là le cerca)
     if (locali.length) {
       const g = cancello(Object.fromEntries(Object.entries(prova).filter(([k]) => k.startsWith("testi/"))),
         { nomi: locali.filter((x) => x.cat !== "personale").map((x) => x.orig), personale: locali.filter((x) => x.cat === "personale").map((x) => x.orig) },
-        { finti: [...finti.values()], diagnosi: opz.diagnosi, soloSensibili: true });
+        { finti: [...finti.values()], diagnosi: opz.diagnosi, soloSensibili: true, parole: false });
       for (const [f, c] of Object.entries(g.dove)) for (const [k, n] of Object.entries(c)) {
         const d = (gate.dove[f] = gate.dove[f] || {});
         d[k] = k === "valori" ? [...(d[k] || []), ...n] : (d[k] || 0) + n;
@@ -2068,7 +2153,7 @@
     }
     files["riepilogo.txt"] = riepilogo(gate);
     // nessuna stringa vera nel riepilogo stesso: si ricontrolla
-    const g2 = cancello({ "riepilogo.txt": files["riepilogo.txt"] }, sensibili, { finti: [...finti.values()] });
+    const g2 = cancello({ "riepilogo.txt": files["riepilogo.txt"] }, sensibili, { finti: [...finti.values()], statica: parolaDelProgramma, parole: false });
     if (!g2.ok) {
       gate.ok = false; gate.punti += g2.punti; Object.assign(gate.dove, g2.dove);
       files["riepilogo.txt"] = riepilogo(gate);
@@ -2101,6 +2186,25 @@
         if (!l.some((x) => x.cat === cat && x.parole.join(" ") === parole.join(" "))) l.push({ cat, parole });
       }
     }
+    // E ogni parola di un nome di paziente, da sola (4 lettere o più): un cognome
+    // in una cella, il nome di un parente. Non le particelle, non le parole del
+    // programma (opz.statica, dall'anonimizzazione: le stesse che la ripulitura
+    // lascia), non quelle dei nomi finti; e non dove sta dentro un nome intero
+    // già contato (opz.parole === false: niente parole sole).
+    const statica = typeof opz.statica === "function" ? opz.statica : () => false;
+    const fintiParole = new Set([...finti].flatMap((f) => f.trim().split(" ")));
+    if (opz.parole !== false) {
+      for (const v of sensibili.nomi || []) {
+        const p = norma(v).trim().split(" ");
+        if (p.length < 2) continue;
+        for (const w of p) {
+          if (w.length < 4 || /\d/.test(w) || PARTICELLE_NOMI.has(w) || statica(w) || fintiParole.has(w)) continue;
+          if (!indice.has(w)) indice.set(w, []);
+          const l = indice.get(w);
+          if (!l.some((x) => x.cat === "nome" && x.parole.length === 1)) l.push({ cat: "nome", parole: [w], sola: true });
+        }
+      }
+    }
     for (const [file, contenuto] of Object.entries(files)) {
       const L = lettura(contenuto), raw = L.d;
       if (!opz.soloSensibili) {
@@ -2110,13 +2214,22 @@
       }
       if (!indice.size) continue;
       const w = L.parole.map((x) => x.w);
+      const json = file.endsWith(".json"), soleVia = (opz.senzaParole || []).includes(file);
+      let coperto = 0;                 // (fin qui, una parola sta dentro un nome intero già contato)
       for (let i = 0; i < w.length; i++) {
         const l = indice.get(w[i]);
         if (!l) continue;
+        let lungo = 0;
         for (const e of l) {
+          if (e.sola) continue;
           let ok = true;
           for (let j = 1; j < e.parole.length; j++) if (w[i + j] !== e.parole[j]) { ok = false; break; }
-          if (ok) { segna(file, e.cat); if (opz.diagnosi) (dove[file].valori = dove[file].valori || []).push(e.parole.join(" ")); }
+          if (ok) { segna(file, e.cat); lungo = Math.max(lungo, e.parole.length); if (opz.diagnosi) (dove[file].valori = dove[file].valori || []).push(e.parole.join(" ")); }
+        }
+        if (lungo > 1) coperto = Math.max(coperto, i + lungo);
+        else if (!lungo && i >= coperto && !soleVia && !(json && /^"\s*:/.test(raw.slice(L.parole[i].a, L.parole[i].a + 4)))) {
+          const e = l.find((x) => x.sola);
+          if (e) { segna(file, e.cat); if (opz.diagnosi) (dove[file].valori = dove[file].valori || []).push(e.parole[0]); }
         }
       }
     }

@@ -2023,11 +2023,16 @@ le pagine e ricontrollati dal cancello. Col preferito (bookmarklet) la voce most
   è stato il server o il pannello.
 - **Cosa non esce mai**: il grezzo resta nella memoria dell'estensione su questo PC (IndexedDB),
   e ne esce solo anonimizzato, nello zip, **qui**, con lo stesso metodo di `tools/esempi.mjs`: ogni
-  testo diventa inventato a meno che sia vocabolario del programma (compare per almeno **due
-  pazienti diversi**, o nelle pagine di esempio, o nel catalogo); nomi → nomi finti sempre uguali
+  testo diventa inventato a meno che sia vocabolario del programma (nelle pagine di esempio, nel
+  catalogo, un'etichetta della pagina — o visto per almeno **due persone diverse** *e* con la forma di
+  un'etichetta: corto, senza numeri lunghi, fatto per almeno metà di parole del vocabolario). Due
+  episodi della stessa persona (oggi e uno di prima: lo stesso nome, codice fiscale o assistito) sono
+  **una** persona: la sua storia, la via, i parenti non diventano «vocabolario» perché si vedono due
+  volte; e una frase che due parenti hanno in comune non resta. Nomi → nomi finti sempre uguali
   per la stessa persona — anche i pazienti che l'estensione conosce (la lista del pannello, quelli
   aperti, chi aspetta al Triage, gli ordini) dove nessuna pagina li mostra, come il Registro di un'altra
-  scheda; i nomi degli analiti che il pannello conosce (le sue sigle) non sono persone; nel
+  scheda — e **ogni parola di un nome di paziente da sola** (il cognome in una cella, il nome di un
+  parente) diventa la stessa parola del suo nome finto, ovunque; i nomi degli analiti che il pannello conosce (le sue sigle) non sono persone; nel
   Registro un COGNOME NOME in maiuscolo senza parole del programma o cliniche diventa un nome finto
   solo lì (mai nelle pagine, né dentro il markup della diagnosi); personale e utenti → `OPERATORE n` / `UTENTEn`; codici fiscali, date di
   nascita, tessere, telefoni, indirizzi, email tolti; anamnesi, esame obiettivo, diario, note,
@@ -2035,7 +2040,8 @@ le pagine e ricontrollati dal cancello. Col preferito (bookmarklet) la voce most
   sempre gli stessi (i collegamenti restano); ospedale e fornitore → `OSPEDALE ESEMPIO`. Dei PDF
   viaggia solo il testo anonimizzato. Niente parte da solo verso nessuno: lo zip lo mandi tu.
 - **Il controllo**: prima di scrivere lo zip si rilegge tutto cercando quello che è stato visto
-  di vero (codici fiscali, nomi, date di nascita, episodi). Se resta qualcosa lo zip si salva
+  di vero (codici fiscali, nomi — anche una parola sola di un nome, di 4 lettere o più, che non sia
+  del programma —, date di nascita, episodi). Se resta qualcosa lo zip si salva
   **lo stesso**, ma la vista dice «restano N dati da controllare» e lo stesso avviso apre
   `riepilogo.txt`, con il file e il tipo di dato di ognuno — mai il valore: **controlla quei punti
   prima di mandarlo**.
