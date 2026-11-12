@@ -1997,7 +1997,12 @@
       x.stato = ""; x.esito = { tono: e.incerto ? "warn" : "err", testo: e.message };
       if (!e.incerto) x.rq = "";   // il PC ha detto di no (niente cambiato): un tocco nuovo è una richiesta nuova
       avviso(e.message, e.incerto ? "" : "err", !!e.incerto);
-      if (e.message && /^PC ora sull'area/.test(e.message)) aggiornaLista(true);   // (l'area è cambiata comunque: l'elenco lo sa)
+      if (e.message && /^PC ora sull'area/.test(e.message)) {
+        // (l'area è cambiata comunque: l'elenco lo sa — e la smart degli esiti di prima, «un'altra area», non vale più)
+        const es = S.esiti.get(ep);
+        if (es) delete es.smart;
+        aggiornaLista(true);
+      }
     };
     try {
       // (come un ordine: l'ora del tocco, e oltre 30 secondi non parte più — il PC, arrivato tardi, non lo fa)

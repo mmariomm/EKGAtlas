@@ -55,8 +55,9 @@ const DOPPIA2 = P("730004", "DOPPI ADA", "04/05/1980", 46, "AZZURRO", "alta");
 const NERO = P("730005", "NERO PIO", "09/10/1950", 76, "ARANCIONE", "alta");     // …la sua riga porta l'episodio di un altro
 const BLU = P("730011", "BLU MARCO", "06/07/1965", 61, "AZZURRO", "bassa");      // solo dalla smart, in un'altra area
 const GRIGI = P("730012", "GRIGI NORA", "08/09/1975", 51, "VERDE", "bassa");     // …col carrello aperto sul PC
-const TUTTI = [MEDICO, VERDE, DOPPIA, DOPPIA2, NERO, BLU, GRIGI];
-const SOLO_SMART = [VERDE, DOPPIA, NERO, BLU, GRIGI];
+const ROSA = P("730013", "ROSA LIA", "01/02/1960", 66, "VERDE", "bassa");        // …la sua riga mai nella lista della Bassa (revisione 3.87, P3-2)
+const TUTTI = [MEDICO, VERDE, DOPPIA, DOPPIA2, NERO, BLU, GRIGI, ROSA];
+const SOLO_SMART = [VERDE, DOPPIA, NERO, BLU, GRIGI, ROSA];
 const chi = (ep) => TUTTI.find((p) => p.ep === ep) || null;
 // le chiavi del PC (core.js): l'impronta della nascita e la chiave di chi si conosce solo dalla smart (FNV-1a)
 const fnv = (d) => { let h = 0x811c9dc5; for (const c of d) h = Math.imul(h ^ c.charCodeAt(0), 0x01000193) >>> 0; return h.toString(36); };
@@ -67,7 +68,7 @@ const breve = (p) => `${p.name.split(" ")[0]} ${p.name.split(" ")[1][0]}.`;
 
 // (`nascosti`: righe che la lista non mostra ancora — ma il suo conto sì: una lista monca, che aggiunge e
 // basta, come quando si carica a metà. Così ogni prova legge solo le righe che le servono.)
-const srv = { area: "alta", log: [], conferme: [], nascosti: new Set([DOPPIA.ep, DOPPIA2.ep, NERO.ep]) };
+const srv = { area: "alta", log: [], conferme: [], nascosti: new Set([DOPPIA.ep, DOPPIA2.ep, NERO.ep, ROSA.ep]) };
 const testa = () => `<table class="AFCHeaderTable" border="0" width="100%"><tbody><tr><td>
     <table width="100%"><tbody><tr><td width="15%"></td>
     <td width="70%" align="center"><font style="font-size: 130%; font-weight: bolder; ">OSPEDALE ESEMPIO</font><br><font style="font-size: 110%; font-weight: bolder; ">${AREE[srv.area].label}</font><br><b>Salve!</b></td>
@@ -131,6 +132,8 @@ await ctx.route(`${ORIGIN}/**`, async (r) => {
     const k = Object.keys(AREE).find((x) => AREE[x].id === id);
     srv.conferme.push({ id, medico: voce.medico });
     if (k) srv.area = k;
+    // (`rinvia`: con un rinvio vero, la lista al suo indirizzo — revisione 3.87, P3-2)
+    if (srv.rinvia) return r.fulfill({ status: 302, headers: { location: `${ORIGIN}${DIR}menuPso.do?MVPG=PsoPazientiAmbulatorio` } }).catch(() => {});
     return html(listaPage());   // (il gestionale rinvia alla lista dell'area nuova)
   }
   if (mvpg === "PsoPazientiAmbulatorio" || mvpg === "PsoPazienti") return html(listaPage());
@@ -345,6 +348,49 @@ try {
       `un «Passa il PC all'area» arrivato 60 secondi dopo il tocco (o senza l'ora): «${tardi && tardi.errore}», nessun Imposta, la scheda del medico ferma`);
     check(!!ancora && ancora.errore === "Scaduta: niente cambiato" && !!annotato && annotato.esito && annotato.esito.scaduto === true,
       `…annotato in ponte.area.rq: rimandato con lo stesso numero, la stessa risposta («${ancora && ancora.errore}»)`);
+  }
+
+  // ---- (revisione 3.87, P3-2) passato all'area ma il paziente non si apre («cambiata»): il bottone non torna,
+  // e un «Passa il PC all'area» per l'area dov'è già, o con un numero già dato a una scheda, non muove niente
+  {
+    srv.area = "alta"; srv.rinvia = true;
+    // (il medico ha anche un'altra scheda, su un suo paziente: risponde al telefono mentre la sua è sulla lista)
+    const doc2 = await ctx.newPage();
+    await doc2.goto(URL_PAZ(MEDICO));
+    await doc2.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
+    await doc.goto(URL_PAZ(MEDICO));
+    await doc.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
+    await doc.bringToFront();
+    const pagine = () => srv.log.filter((x) => x.tipo === "document").length;
+    check(await finche(async () => (await ls("area.corrente.v1"))?.k === "alta", 10000), "(il gestionale di nuovo sull'Alta, dalla pagina del medico)");
+    await tornaAllElenco();
+    await sospendi(5000);   // (l'elenco riletto: per il telefono ROSA LIA è di nuovo in un'altra area)
+    await apriSulTel(ROSA);
+    const bC = tel.locator(`[data-a="areaApri"]`);
+    check(await finche(async () => (await bC.count()) === 1, 20000), `ROSA LIA (Bassa, il gestionale sull'Alta): il bottone (${(await testoTel()).replace(/\n+/g, " / ").slice(0, 200)})`);
+    await senzaAvviso();
+    await bC.click();
+    check(!!(await aspettaTel(/PC ora sull'area Bassa, ma/, 60000)) && srv.area === "bassa", `il PC passa all'area Bassa, ma ROSA LIA non si apre: «cambiata» (${await avviso()})`);
+    await sospendi(5000);
+    check((await bC.count()) === 0, `…e il bottone non torna: per il telefono adesso è nell'area del gestionale (${(await testoTel()).replace(/\n+/g, " / ").slice(0, 160)} · PC ${(await ls("area.corrente.v1"))?.k}, ${doc.url().slice(-40)})`);
+    await finche(async () => (await ls("area.corrente.v1"))?.k === "bassa", 10000);
+    const c2 = srv.conferme.length, i2 = imposte().length, p2 = pagine();
+    const gia = await sw.evaluate(({ ep }) => ponteAreaApri({ ep, rq: "rq-gia-area-01", nato: Date.now() }), { ep: chiaveSmart(ROSA) });
+    await sospendi(2500);
+    check(!!gia && gia.ok === false && /già su quell'area/.test(gia.errore || "") && pagine() === p2 && imposte().length === i2 && srv.conferme.length === c2,
+      `un altro tocco per l'area dov'è già: «${gia && gia.errore}», nessuna scheda si muove (${pagine() - p2} pagine)`);
+    // (un numero che una scheda ha già avuto — la memoria del gestionale —: anche per un'altra area, niente)
+    // (per la scheda il gestionale è sull'Alta: ROSA LIA è in un'altra area, e il numero l'ha già avuto)
+    await doc.evaluate(() => {
+      localStorage.setItem("psassist:area.tel.rq.v1", JSON.stringify(["rq-gia-dato-01"]));
+      const o = JSON.parse(localStorage.getItem("psassist:area.corrente.v1") || "{}");
+      localStorage.setItem("psassist:area.corrente.v1", JSON.stringify({ ...o, k: "alta" }));
+    });
+    const dato = await sw.evaluate(({ ep }) => ponteAreaApri({ ep, rq: "rq-gia-dato-01", nato: Date.now() }), { ep: chiaveSmart(ROSA) });
+    await sospendi(2500);
+    check(!!dato && dato.ok === false && /Già chiesto/.test(dato.errore || "") && pagine() === p2 && imposte().length === i2 && srv.conferme.length === c2,
+      `un numero già dato a una scheda: «${dato && dato.errore}», niente navigato (${pagine() - p2} pagine)`);
+    await doc2.close();
   }
 
   // ---- sul PC di sola lettura: rifiutato (il primo muro, nel service worker)
