@@ -31,6 +31,8 @@ await import(join(root, "../public/ponte/cripto.js"));
 const P = globalThis.PonteCripto;
 const EXT = join(root, "extension");
 const PROFILE = join("/tmp", "psa-ponte-" + process.pid);
+// (una prova di prima finita male non lo toglie, e lo stesso pid torna: il profilo di allora — col ponte e la coppia — no)
+rmSync(PROFILE, { recursive: true, force: true });
 const SHOTS = process.env.TEST_SHOTS_DIR || "";
 if (SHOTS) mkdirSync(SHOTS, { recursive: true });
 function chromiumPath() {
@@ -220,7 +222,14 @@ async function chiaveNota(...tels) {
 const registroPonte = async () => ((await statoPonte())?.registro || []).map((x) => x.testo).join("\n");
 const nuovaPagina = (timeout = 15000) => ctx.waitForEvent("page", { timeout }).catch(() => null);
 async function suPagina(p, url) {
-  await p.goto(url);
+  // (la pagina che si ricarica da sola — salvata dal telefono — può interrompere questo goto: finita la sua, si rifà)
+  for (let i = 0; ; i++) {
+    try { await p.goto(url); break; } catch (e) {
+      if (i >= 5 || !/interrupted by another navigation/.test(String(e && e.message))) throw e;
+      await sospendi(1500);
+      await p.waitForLoadState("load").catch(() => {});
+    }
+  }
   await p.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
 }
 const registroPc = (p) => p.evaluate(() => Object.entries(sessionStorage).filter(([k]) => /^psassist:log\./.test(k)).map(([, v]) => (JSON.parse(v).lines || []).join("\n")).join("\n"));
@@ -1544,6 +1553,24 @@ sezione("la cartella dal telefono: leggere, scrivere col «Conferma» della pagi
   CART.altrove = false;
   check(await ricaricata("DUBBIOZETA"), "…e la pagina di ROSSI sul PC, pulita, si ricarica: il gestionale aveva salvato");
   await doc.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
+  // la navigazione della scheda di sottofondo che si perde (il primo `tabs.update` verso il paziente inghiottito: la
+  // scheda resta vuota, nessuna pagina chiede «chi sono?»): dopo qualche secondo la si rifà UNA volta, e si salva
+  await tocca(tel, '[data-a="crileggi"]');
+  await sospendi(3000);
+  await sw.evaluate(() => {
+    const vero = chrome.tabs.update.bind(chrome.tabs);
+    self.__veroUpdateC = chrome.tabs.update;
+    self.__perdiC = 1;
+    chrome.tabs.update = (id, p, ...resto) => (self.__perdiC > 0 && p && /EPISODIO_ID=999001/.test(p.url || "") ? (self.__perdiC--, Promise.resolve({ id })) : vero(id, p, ...resto));
+  });
+  const postP = CART.post.length, schedeP = schedeNuove.length, tP = Date.now();
+  await segnaPagina();
+  const okP = await salvaAnamnesi("Dolore toracico PERSAZETA");
+  const persaC = await sw.evaluate(() => { const r = self.__perdiC === 0; chrome.tabs.update = self.__veroUpdateC; return r; });
+  check(persaC && okP && CART.post.length === postP + 1 && CART.campi.ANAMNESI === "Dolore toracico PERSAZETA" && schedeNuove.length === schedeP + 1,
+    `la scheda di sottofondo la cui navigazione si perde: si rifà una volta, e la cartella si salva («Salvato» dopo ${((Date.now() - tP) / 1000).toFixed(1)} s, ${schedeNuove.length - schedeP} schede)`);
+  check(await ricaricata("PERSAZETA"), "…e la pagina di ROSSI sul PC, pulita, si ricarica col testo del telefono");
+  await doc.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
   // via la cartella: le sezioni dopo hanno la pagina di sempre
   ctx.off("page", contaSchede);
   CART.on = false;
@@ -2076,17 +2103,38 @@ await aspettaTel(tel, /Parametri di 5 ore fa/, 15000);
 const v3 = await vitTel();
 check(!!v3 && /^Parametri di 5 ore fa PA 120 · FC 80 · SpO2 97 · FR 16 · T 36,6 · NEWS2 0$/.test(v3.riga) && v3.grigio && !v3.ros.length && !v3.amb.length,
   `vecchio: «Parametri di 5 ore fa», grigio; tutto nella norma: niente colori, NEWS2 0 (${JSON.stringify(v3)})`);
+// (il telefono che ha ancora l'elenco di prima: se in questi secondi l'elenco si rilegge da sé — la lista smart
+// riletta sul PC lo richiede 25 s dopo — il paziente se ne va dal telefono prima del tocco, «Questo paziente non è
+// più nell'elenco del PC», e la nota non si prova nemmeno. Qui il PC lo dà ancora com'era, finché la nota non è partita)
+await sw.evaluate(async () => {
+  const r = await ponteSuScheda("pazienti", {});
+  self.__rigaPrima = ((r && r.dati) || []).find((x) => x.ep === "999003") || null;
+  if (!self.__suSchedaPaz) {
+    self.__suSchedaPaz = ponteSuScheda;
+    ponteSuScheda = async (c, ...a) => {
+      const x = await self.__suSchedaPaz(c, ...a);
+      if (c === "pazienti") self.__nPaz = (self.__nPaz || 0) + 1;
+      if (c === "pazienti" && self.__rigaPrima && x && Array.isArray(x.dati) && !x.dati.some((y) => y.ep === self.__rigaPrima.ep)) x.dati.push(self.__rigaPrima);
+      return x;
+    };
+  }
+});
 await doc.evaluate(() => {
   const K = "psassist:patients.v1"; const l = JSON.parse(localStorage.getItem(K) || "[]");
   for (const p of l) if (p.ep === "999003") { p.arch = true; p.archTs = Date.now(); }
   localStorage.setItem(K, JSON.stringify(l));
 });
+const nPaz0 = await sw.evaluate(() => self.__nPaz || 0);
+await rileggiTel(tel);   // (l'elenco si rilegge adesso, non quando capita)
+await finche(async () => (await sw.evaluate(() => self.__nPaz || 0)) > nPaz0, 10000);
+await sospendi(500);
 await tocca(tel, '[data-a="scheda"][data-s="richieste"]');
 await aggiungiNota(tel, "nota dopo la dimissione");
 check(/Dimesso sul PC: niente inviato/.test(await aspettaTel(tel, /Dimesso sul PC/, 10000)), "dimesso sul PC: «Dimesso sul PC: niente inviato»");
 check(!(await notePc()).some((t) => /dimissione/.test(t)), "e la nota non arriva");
+await sw.evaluate(() => { self.__rigaPrima = null; });
 await tocca(tel, '[data-a="indietro"]');
-check(!/VERDI/.test(await aspettaTel(tel, /ROSSI MARIO/, 10000)), "e dall'elenco del telefono se ne va");
+check(await finche(async () => { const t = await testoTel(tel); return /ROSSI MARIO/.test(t) && !/VERDI/.test(t); }, 10000), "e dall'elenco del telefono se ne va");
 // un paziente senza parametri letti (o un PC più vecchio, che il campo non lo manda): niente riga, nessun errore
 await tocca(tel, '.paz[data-ep="999001"]');
 await aspettaTel(tel, /Richieste/, 10000);
@@ -2457,19 +2505,26 @@ sezione("l'app in sottofondo: la presa si chiude, al ritorno si riprende da sola
   const mostra = (t) => t.evaluate(() => { delete document.visibilityState; document.dispatchEvent(new Event("visibilitychange")); window.dispatchEvent(new Event("pageshow")); });
   const usciteTel = (da) => relay.eventi().filter((e) => e.ruolo === "tel" && e.tipo === "esce" && e.ts >= da);
   const eseguiti = () => sw.evaluate(() => self.__cmdPc.slice());
+  // (i tocchi della prova su ROSSI non leggono da sé: gli esiti senza `leggi`. Il «nuovi» al più ogni 10 minuti
+  // per paziente è del telefono, e quando cadono i 10 minuti dipende da quanto è durato il resto della prova —
+  // qui si guarda solo che il ritorno sull'app non faccia partire niente)
   await sw.evaluate(() => {
-    self.__cmdPc = []; self.__ritardoEsiti = 0;
+    self.__cmdPc = []; self.__ritardoEsiti = 0; self.__senzaLeggi = true;
     if (!self.__suSchedaSf) {
       self.__suSchedaSf = ponteSuScheda;
       ponteSuScheda = async (c, ...a) => {
         self.__cmdPc.push(c);
         if (c === "esiti" && self.__ritardoEsiti) { const r = self.__ritardoEsiti; self.__ritardoEsiti = 0; await new Promise((ok) => setTimeout(ok, r)); }
-        return self.__suSchedaSf(c, ...a);
+        if (c === "aggiornaValori" && self.__ritardoValori) { const r = self.__ritardoValori; self.__ritardoValori = 0; await new Promise((ok) => setTimeout(ok, r)); }
+        const r = await self.__suSchedaSf(c, ...a);
+        if (c === "esiti" && self.__senzaLeggi && r && r.dati) delete r.dati.leggi;
+        return r;
       };
     }
   });
   const nonRaggiungibile = /non è raggiungibile|Incerto|Sessione chiusa|non ha risposto/;
   await finche(async () => relay.prese().tel === 1, 10000);
+  await finche(async () => await dietroSu("999001") === 0, 60000);   // (una lettura da sé partita prima, finita: le pagine del PC contano da qui)
 
   // 1. con l'app in sottofondo e niente in volo: la presa si chiude pulita (1000) entro un secondo
   let e0 = relay.entrate().tel, t0 = Date.now();
@@ -2532,6 +2587,28 @@ sezione("l'app in sottofondo: la presa si chiude, al ritorno si riprende da sola
     "…e anche qui sul PC non si apre nessuna pagina");
   await tocca(tel, '[data-a="indietro"]');
   await aspettaTel(tel, /ROSSI MARIO/, 10000);
+
+  // 4b. «↻ Rileggi» (apre la pagina del paziente dietro) con la risposta oltre i 20 s di grazia: al ritorno il telefono
+  //     lo rimanda col suo numero, e il PC non lo rifà — nessuna pagina in più, la stessa risposta
+  await tocca(tel, '.paz[data-ep="999001"]');
+  await aspettaTel(tel, /Rileggi/, 10000);
+  await finche(() => tel.locator('[data-a="valori"]:not([disabled])').count().then((n) => n === 1), 150000);
+  const quanteValori = async () => (await eseguiti()).filter((c) => c === "aggiornaValori").length;
+  await sw.evaluate(() => { self.__ritardoValori = 25000; });
+  const val0 = await quanteValori();
+  await tocca(tel, '[data-a="valori"]');
+  await sospendi(700);
+  t0 = Date.now();
+  await nascondi(tel);
+  check(await finche(async () => relay.prese().tel === 0, 25000) && await quanteValori() === val0 + 1, `«↻ Rileggi» in volo in sottofondo: la presa si chiude coi 20 s di grazia (${((Date.now() - t0) / 1000).toFixed(1)} s)`);
+  await mostra(tel);
+  check(await finche(async () => relay.prese().tel === 1, 5000) && await finche(() => tel.locator('[data-a="valori"]:not([disabled])').count().then((n) => n === 1), 150000)
+    && !nonRaggiungibile.test(await testoTel(tel)), "…tornati: la risposta arriva, nessun errore");
+  check(await quanteValori() === val0 + 1, `…e il PC l'ha fatto una volta sola: rimandato col suo numero, non riapre la pagina (${await quanteValori() - val0})`);
+  await tocca(tel, '[data-a="indietro"]');
+  await aspettaTel(tel, /ROSSI MARIO/, 10000);
+
+  await sw.evaluate(() => { self.__senzaLeggi = false; });
 
   // 5. il ponte chiude con 4403: ci si ferma, «Scollegato», nessun tentativo; «Riprova» riparte
   e0 = relay.entrate().tel;
