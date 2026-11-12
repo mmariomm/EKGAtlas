@@ -664,6 +664,67 @@ if (prova("«Conferma e stampa» sulla riga, la Conferma lenta (14 s): la riga n
   check(conferme(A).length === 1, `una Conferma sola (got ${conferme(A).length})`);
   sess.confermaLenta = 0;
 }
+// …e lo stesso quando la Conferma l'ha premuta il gestionale (il medico, sul
+// suo bottone) o la conferma automatica: «Conferma per …» toccato mentre è in
+// volo non ne manda una seconda.
+async function alCarrelloSolo() {
+  await daCapo();
+  await suPagina(doc, A.patientUrl);
+  await nienteSmart(doc);
+  const nasce = nuovaPagina();
+  await ordina(doc, ["TROPONINA"], { solo: true });
+  await nasce;
+  await striscia(doc, /in carrello.*Conferma dal gestionale/, 40000).catch(() => "");
+  await $panel(doc, AZIONE).click();   // «apri il carrello»
+  await doc.waitForURL(/RcsRichiestaPrestazioniRicercaErogatore/, { timeout: 15000 });
+  await doc.waitForSelector("#psassist-host .pill.run", { timeout: 10000 });
+  await $panel(doc, ".pill.run").click();
+  await doc.waitForSelector("#psassist-host #confirmnow", { timeout: 10000 });
+}
+// (dentro la pagina: alla Conferma che parte, «Conferma per …» toccato poco dopo — il pannello
+// aperto, se era nella pill —; se c'era, lo annota)
+const toccaDopoLaConferma = () => {
+  if (!sessionStorage.getItem("__prova.doppia")) return;
+  document.addEventListener("submit", () => {
+    sessionStorage.removeItem("__prova.doppia");
+    const r = () => document.getElementById("psassist-host")?.shadowRoot;
+    setTimeout(() => { if (!r()?.querySelector("#confirmnow")) r()?.querySelector(".pill")?.click(); }, 300);
+    setTimeout(() => {
+      const b = r()?.querySelector("#confirmnow");
+      sessionStorage.setItem("__prova.toccato", b ? "si" : "manca: " + (r()?.textContent || "").replace(/\s+/g, " ").slice(0, 200));
+      b?.click();
+    }, 900);
+  }, true);
+};
+if (prova("la Conferma del gestionale premuta, poi «Conferma per …» mentre è in volo: una Conferma sola")) {
+  await alCarrelloSolo();
+  check(conferme(A).length === 0, "solo carrello: niente confermato da solo");
+  sess.confermaLenta = 6000;
+  await doc.evaluate(() => sessionStorage.setItem("__prova.doppia", "1"));
+  await doc.evaluate(toccaDopoLaConferma);
+  await doc.evaluate(() => document.querySelector('input[type="submit"][name="Update"], input[type="submit"][name="Update1"]').click());
+  await sospendi(9000);
+  const toccato = await doc.evaluate(() => sessionStorage.getItem("__prova.toccato")).catch(() => null);
+  check(toccato === "si" && conferme(A).length === 1, `la Conferma del gestionale, poi «Conferma per …»: una Conferma sola (got ${conferme(A).length}, il bottone: ${toccato})`);
+  sess.confermaLenta = 0;
+}
+if (prova("la Conferma automatica in volo, poi «Conferma per …»: una Conferma sola")) {
+  await alCarrelloSolo();
+  // il segno della conferma automatica, come lo lascia il motore: la pagina riletta lo trova e preme Conferma
+  await doc.evaluate(() => {
+    const r = JSON.parse(sessionStorage.getItem("psassist:receipt.v1"));
+    const u = r.items[r.items.length - 1];
+    sessionStorage.setItem("psassist:confirm.v1", JSON.stringify({ richiestaId: r.richiestaId, episodeId: r.episodeId, lastCode: u.code, lastLabel: u.label, count: r.items.length, ts: Date.now() }));
+    sessionStorage.setItem("__prova.doppia", "1");
+  });
+  await doc.addInitScript(toccaDopoLaConferma);
+  sess.confermaLenta = 6000;
+  await doc.reload();
+  await sospendi(10000);
+  const toccato = await doc.evaluate(() => sessionStorage.getItem("__prova.toccato")).catch(() => null);
+  check(toccato === "si" && conferme(A).length === 1, `la conferma automatica, poi «Conferma per …»: una Conferma sola (got ${conferme(A).length}, il bottone: ${toccato})`);
+  sess.confermaLenta = 0;
+}
 
 // ---- 8. gli ordini finiti non restano in memoria --------------------------
 if (prova("dopo tanti ordini la memoria della sessione resta piccola")) {
