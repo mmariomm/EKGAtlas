@@ -16727,7 +16727,7 @@
           : `<button class="pwbtn re" id="pwre" title="Riapre la finestra di stampa del browser" ${cur ? "" : "disabled"}>${icoIn("stampante")}Stampa</button>`}
         <button class="pwbtn next" id="pwnext" title="${i + 1 < jobs.length ? "Passa al documento successivo" : "Chiude: hai stampato tutto"}">${nextLbl}</button>
         ${viewer ? "" : `<button class="pwbtn ghost" id="pwtab" title="Se la stampa non parte, aprilo in una scheda">${icoIn("esterno")}Scheda</button>`}
-        ${viewer && ultimaDiag ? `<button class="pwbtn ghost" id="pwdiag" title="Copia com'è fatto il visualizzatore, da mandare a chi fa il pannello: senza numeri, date né valori dei campi, e ${hasExt() ? "pseudonimizzato come le registrazioni (nomi e codici fiscali finti)" : "senza i nomi dei pazienti che il pannello conosce"}. Il testo della pagina resta: rileggilo prima di mandarlo.">⧉&nbsp; Diagnosi</button>` : ""}
+        ${viewer && ultimaDiag ? `<button class="pwbtn ghost" id="pwdiag" title="Copia com'è fatto il visualizzatore, da mandare a chi fa il pannello: senza numeri, date né valori dei campi, e ${hasExt() && !TABELLONE ? "pseudonimizzato come le registrazioni (nomi e codici fiscali finti)" : "senza i nomi dei pazienti che il pannello conosce"}. Il testo della pagina resta: rileggilo prima di mandarlo.">⧉&nbsp; Diagnosi</button>` : ""}
         <button class="pwbtn exit" id="pwexit" title="Chiude senza stampare il resto (Esc)">✕&nbsp; Chiudi</button>
         <div class="pwhint">${viewer
           ? `Questo documento non si lascia stampare da qui: <b>Apri e stampa</b>, poi Ctrl+P → <b>${esc(job.printer)}</b>, e qui «→ Avanti».`
