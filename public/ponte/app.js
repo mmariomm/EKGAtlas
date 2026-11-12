@@ -833,15 +833,16 @@
     leggiDaSolo(qui, auto);
   }
   // Chi il PC conosceva solo dalla lista smart, trovato nella lista della sua area (o aperto passando il PC
-  // alla sua area): il PC lo chiama ora col suo episodio vero (`rinomina`, `da` → `a`). La sua riga, la vista
-  // aperta e quello che si sa di lui passano al numero nuovo; l'elenco si rilegge da sé.
+  // alla sua area): il PC lo chiama ora col suo episodio vero (`rinomina`, `da` → `a`). La sua riga e la
+  // vista aperta passano al numero nuovo; quello che si sapeva col numero di prima («solo dalla lista
+  // smart», niente pagina) se ne va: si rilegge col numero nuovo.
   function rinomina(da, a) {
     if (!da || !a || da === a || !/^[\w.-]{1,40}$/.test(a)) return da;
     const p = paziente(da);
-    if (p && !paziente(a)) p.ep = a;
+    if (p && !paziente(a)) { p.ep = a; delete p.smart; }
     else if (p) S.pazienti = S.pazienti.filter((x) => x !== p);
     if (S.vista.ep === da) S.vista = { ...S.vista, ep: a };
-    for (const m of [S.esiti, S.cartelle, S.terapie, S.ristampe, S.areaTel]) if (m.has(da)) { if (!m.has(a)) m.set(a, m.get(da)); m.delete(da); }
+    for (const m of [S.esiti, S.cartelle, S.terapie, S.ristampe, S.areaTel]) m.delete(da);
     return a;
   }
   const nuovoEp = (ep, d) => (d && d.rinomina && d.rinomina.da === ep && typeof d.rinomina.a === "string" ? rinomina(ep, d.rinomina.a) : ep);

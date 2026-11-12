@@ -300,6 +300,9 @@ async function ponteControlla() {
   for (const [id, v] of Object.entries(await ponteAccetteTutte())) {
     if (ora - v.ts > PONTE_ACCETTA_MAX + 5e3) await ponteAccettaFine(Number(id), { ok: false, incerto: true, testo: "la scheda non ha finito in tempo" });
   }
+  for (const [id, v] of Object.entries(await ponteListeTutte())) {
+    if (ora - v.ts > PONTE_LISTA_MAX + 5e3) await ponteListaFine(Number(id), { ok: false, testo: "la lista non è arrivata in tempo" });
+  }
   if (pt.sessione && ora - pt.sessione.ultimo >= PONTE_INATTIVO) await ponteFine("inattivo");
   if (pt.attesa && ora - pt.attesa.ts > PONTE_SALUTO_MAX) pt.attesa = null;
   // Il PC serve ancora? Se no, via dal ponte (l'associazione resta); se sì e la presa non c'è
@@ -1868,6 +1871,20 @@ function ponteAreaApri(d) {
   p.finally(() => pt.areaRq.delete(rq)).catch(() => {});
   return p;
 }
+// Dopo il clic sulla sua riga, la scheda del medico va sulla pagina del paziente: si risponde al
+// telefono quando lei c'è e risponde (al più 10 secondi) — così le domande che il telefono fa
+// subito dopo (l'elenco, gli esiti) non trovano una pagina a metà.
+async function ponteAreaAtterrato(id, ep) {
+  for (const fine = ponteOra() + 10e3; id != null && ponteOra() < fine; await attendi(300)) {
+    const t = await chrome.tabs.get(id).catch(() => null);
+    if (!t) return;
+    let su = false;
+    try { su = t.status === "complete" && new URL(t.url || "").searchParams.get("EPISODIO_ID") === ep; } catch { /* non ancora */ }
+    if (!su) continue;
+    const r = await Promise.race([chrome.tabs.sendMessage(id, { t: "ponteEsegui", cmd: "eo", args: {} }).catch(() => null), attendi(2000, null)]);
+    if (r && r.ok) return;
+  }
+}
 async function ponteAreaApriOra(ep, rq) {
   let nota = "";
   const fatto = async (esito) => {
@@ -1914,7 +1931,10 @@ async function ponteAreaApriOra(ep, rq) {
     await ponteScriviStato();
     const e = await Promise.race([arrivo, attendi(PONTE_AREA_MAX, null)]);
     if (!e) return fatto({ ok: false, incerto: true, errore: `Non so se il PC è passato all'area ${area}: guardalo sul PC` });
-    if (e.ok && /^[\w.-]{1,40}$/.test(String(e.ep || ""))) return fatto({ ok: true, dati: { ep: e.ep, da: ep, area: corto(e.area, 40) || area } });
+    if (e.ok && /^[\w.-]{1,40}$/.test(String(e.ep || ""))) {
+      await ponteAreaAtterrato(e.tab, e.ep);
+      return fatto({ ok: true, dati: { ep: e.ep, da: ep, area: corto(e.area, 40) || area } });
+    }
     if (e.cambiata) return fatto({ ok: false, cambiata: true, errore: `PC ora sull'area ${area}, ma ${corto(e.testo, 120) || "il paziente non si apre"}` });
     return no(`Non cambiato: ${corto(e.testo, 120) || "il gestionale non è passato all'area"}`);
   } finally {
@@ -2173,7 +2193,7 @@ function ponteDaPagina(msg, sender, reply) {
       const arriva = typeof msg.rq === "string" ? pt.areaAttese.get(msg.rq) : null;
       if (!arriva) return { ok: false };
       pt.areaAttese.delete(msg.rq);
-      arriva({ ok: !!msg.ok, ep: typeof msg.ep === "string" ? msg.ep : "", area: corto(msg.area, 40), testo: corto(msg.testo, 160), cambiata: !!msg.cambiata });
+      arriva({ ok: !!msg.ok, ep: typeof msg.ep === "string" ? msg.ep : "", area: corto(msg.area, 40), testo: corto(msg.testo, 160), cambiata: !!msg.cambiata, tab: sender.tab.id });
       return { ok: true };
     });
   }
