@@ -164,7 +164,8 @@
   // quello che di una coppia va nella cassa: la chiave di adesso, quella rinnovata che aspetta il primo
   // saluto (`prossima`), e la chiave d'entrata di prima, per la stanza che non sa ancora quella nuova
   const perCassa = (p) => ({ k: p.k, ...(p.prossima ? { prossima: p.prossima } : {}), ...(p.jkVecchia ? { jkVecchia: p.jkVecchia } : {}) });
-  const salvaChiave = (p) => (senzaCassa ? Promise.resolve() : cassaScrivi(p.id, perCassa(p)).catch(() => {}));
+  // (P2-6: un errore della cassa arriva a chi chiama — un rinnovo che non si salva non si fa)
+  const salvaChiave = (p) => (senzaCassa ? Promise.resolve() : cassaScrivi(p.id, perCassa(p)));
   const nuovoDev = () => P.b64u(P.casuale(16));
   // Il PC attivo è di sola lettura? (la build mini: si vede ma non si scrive)
   const solaLettura = () => !!(S.coppia && S.coppia.kind === "lettura");
@@ -172,7 +173,8 @@
   // fin quando il link vale per il primo scambio, e un numero nuovo per questo telefono
   // (3.87) un QR vale pochi minuti: il PC scrive l'ora di fine a 5 minuti da quando lo mostra. Uno che dice
   // di valere più di 6 minuti da adesso non è di un PC di PS Assist (un adesivo, un link mandato): non si usa.
-  const QR_MAX_AVANTI = 6 * 60e3;
+  // (P3: 5 minuti del QR più fino a 5 di orologio del PC avanti, e un margine — un QR di 30 giorni resta fuori)
+  const QR_MAX_AVANTI = 11 * 60e3;
   const GIRO_MS = 4000;   // (P2-1) il PC non c'è in questa stanza da tanto: si prova l'altra
   function dalLink(hash) {
     const c = P.leggiFrammento(hash);
@@ -183,13 +185,19 @@
   // disco solo il tipo e il nome brevi che il PC ha detto al saluto, il numero
   // della stanza (non cambia quando la chiave si rinnova), quando la chiave si è
   // rinnovata, e l'id dell'ultimo attivo. Ogni PC ha la SUA chiave: una non apre gli altri.
+  // (P2-5) Le righe che all'avvio non si sono potute leggere (la cassa non rispondeva) restano su disco com'erano:
+  // S.pcsGrezze, rimesse in coda a ogni salvataggio. (P2-7) Un PC appena inquadrato (`provvisoria`) non si salva
+  // finché il saluto non ha deciso dove va (e, se prende il posto di un altro, finché il medico non dice sì).
   function salvaPcs() {
     try {
-      const v = S.pcs.map((p) => ({ dev: p.dev, kind: p.kind || "", nome: p.nome || "", id: p.id, stanza: p.stanza || "",
+      const salve = S.pcs.filter((p) => !p.provvisoria);
+      const grezze = (S.pcsGrezze || []).filter((x) => !salve.some((p) => p.id === x.id));
+      const attivo = salve.some((p) => p.id === S.attivo) ? S.attivo : (S.attivoPrima || "");
+      const v = salve.map((p) => ({ dev: p.dev, kind: p.kind || "", nome: p.nome || "", id: p.id, stanza: p.stanza || "",
         ...(senzaCassa && p.k instanceof Uint8Array ? { k: P.b64u(p.k) } : {}),
         ...(p.rinnovata ? { rinnovata: p.rinnovata } : {}),
         ...(p.qrFino ? { qrFino: p.qrFino } : {}), ...(p.ver ? { ver: p.ver } : {}), ...(p.visto ? { visto: p.visto } : {}) }));   // (per ⋯ → Dispositivi: la versione, e quando si è fatto sentire)
-      localStorage.setItem(PCS, JSON.stringify({ v, attivo: S.attivo }));
+      localStorage.setItem(PCS, JSON.stringify({ v: [...v, ...grezze], attivo }));
     } catch { /* solo in memoria */ }
   }
   // Una coppia letta da disco: la sua chiave dalla cassa — o, se è della 3.86 (la chiave in localStorage),
@@ -210,10 +218,13 @@
       if (senzaCassa) { p.k = raw; return p; }
       p.k = await P.chiaveDa(raw);
       await cassaScrivi(p.id, perCassa(p));
+      const y = await cassaLeggi(p.id);
+      if (!y || !y.k) throw new Error("cassa: la chiave non si rilegge");   // (P2-5: la riga resta com'era, con `k`)
       return p;
     }
     if (senzaCassa || !p.stanza) return null;
-    const c = await cassaLeggi(p.id).catch(() => null);
+    // (P2-5: un errore di lettura passa — la riga resta; letta, e la chiave non c'è: la riga non serve più)
+    const c = await cassaLeggi(p.id);
     if (!c || !c.k) return null;
     p.k = c.k;
     if (c.prossima) p.prossima = c.prossima;
@@ -222,12 +233,16 @@
   }
   async function leggiPcs() {
     let out = { v: [], attivo: "" };
-    try { await cassa(); } catch { senzaCassa = true; }
+    // (P2-5) senza IndexedDB davvero (una navigazione privata vecchia): come fino alla 3.86. Un IndexedDB che c'è ma
+    // non si apre adesso NON è «senza cassa»: le righe restano com'erano, e si rileggono alla prossima apertura.
+    if (!window.indexedDB) senzaCassa = true;
+    else { try { await cassa(); } catch { /* le righe, sotto, non si leggono: restano grezze */ } }
+    S.pcsGrezze = [];
     try {
       const o = JSON.parse(localStorage.getItem(PCS) || "null");
       if (o && Array.isArray(o.v)) {
         const l = [];
-        for (const x of o.v) { try { const p = x && await conChiave(x); if (p) l.push(p); } catch { /* questa no */ } }
+        for (const x of o.v) { try { const p = x && await conChiave(x); if (p) l.push(p); } catch { if (x && typeof x === "object") S.pcsGrezze.push(x); } }
         out.v = l;
         out.attivo = typeof o.attivo === "string" ? o.attivo : "";
         // (le chiavi della 3.86 sono nella cassa: su disco non restano)
@@ -235,7 +250,7 @@
       }
     } catch { /* niente */ }
     // migrazione dalla vecchia chiave singola (un solo PC)
-    if (!out.v.length) {
+    if (!out.v.length && !S.pcsGrezze.length) {
       const vecchia = salvataLegacy();
       if (vecchia) {
         const p = await conChiave({ k: P.b64u(vecchia.k), dev: vecchia.dev, id: nuovoId() }).catch(() => null);
@@ -281,8 +296,15 @@
       S.pcs = S.pcs.map((p) => (p.id === S.coppia.id ? S.coppia : p));
     }
     S.attivo = S.coppia.id;
-    salvaPcs();
+    if (S.coppia.provvisoria) conferma(S.coppia).catch(() => {});
+    else salvaPcs();
     return true;
+  }
+  // (P2-7) Il PC appena inquadrato ha il suo posto: adesso la sua chiave va nella cassa, e la riga su disco
+  async function conferma(c) {
+    try { await salvaChiave(c); } catch (e) { avviso("Non riesco a salvare l'associazione su questo telefono: riprova", "err"); throw e; }
+    delete c.provvisoria;
+    salvaPcs();
   }
   // «Sostituisci»: il PC nuovo prende il posto di quelli di prima (le loro chiavi via da qui)
   function sostituisci(si) {
@@ -290,17 +312,16 @@
     if (!x) return;
     S.sostituisci = null;
     if (!si) {
-      // tenuto quello di prima: il PC nuovo se ne va (la sua chiave con lui), e si torna a quello
+      // tenuto quello di prima: il PC nuovo se ne va (non era salvato: P2-7), e si torna a quello
       S.pcs = S.pcs.filter((p) => p.id !== x.nuovo.id);
-      cassaTogli(x.nuovo.id);
       salvaPcs();
       S.coppia = null;
       return attivaPc(x.tolti[0].id);
     }
     S.pcs = [x.nuovo, ...S.pcs.filter((p) => p.id !== x.nuovo.id && !x.tolti.includes(p))];
-    for (const p of x.tolti) cassaTogli(p.id);
     S.attivo = x.nuovo.id;
-    salvaPcs();
+    // (le chiavi dei PC di prima escono solo quando quella del nuovo è nella cassa: P2-5)
+    conferma(x.nuovo).then(() => { for (const p of x.tolti) cassaTogli(p.id); }, () => {});
     dopoCiao(true);
   }
   // Passa a un altro PC della lista (dal menu): chiude la presa di adesso e si
@@ -330,7 +351,7 @@
       if (resto.length) { S.pcs = resto; S.attivo = resto[0].id; salvaPcs(); return attivaPc(resto[0].id); }
     }
     for (const p of S.pcs) cassaTogli(p.id);
-    S.pcs = []; S.attivo = "";
+    S.pcs = []; S.attivo = ""; S.pcsGrezze = [];
     try { localStorage.removeItem(PCS); localStorage.removeItem(CHIAVE); } catch { /* niente */ }
     S.coppia = null; S.chiavi = null; S.canale = null; S.saluto = null; S.nSessione = "";
     svuota(); S.daSolo.clear();
@@ -519,7 +540,8 @@
   let salutiSenza = 0;
   async function saluta(rinnovo = false) {
     const n = P.casuale(16);
-    const ch = S.chiaviProssima && (rinnovo || salutiSenza % 2 === 0) ? S.chiaviProssima : S.chiavi;
+    // (P2-4) chiesto il rinnovo, si saluta solo con la chiave nuova: mai indietro verso K per una risposta sotto K
+    const ch = S.chiaviProssima || S.chiavi;
     const mio = { n: P.b64u(n), byte: n, t0: Date.now(), ch, rinnovo };
     S.saluto = mio;
     manda(await P.sigilla(ch.salutoTel, P.TIPO.SALUTO_TEL, 0, { v: 1, n: mio.n, dev: S.coppia.dev, entra: 1 }));
@@ -541,7 +563,9 @@
     c.k = c.prossima; delete c.prossima;
     c.jkVecchia = { tel: prima, fino: Date.now() + 24 * 3600e3 };
     c.rinnovata = Date.now();
-    await salvaChiave(c);
+    // (la cassa che non si scrive adesso: resta {k, prossima} — al prossimo avvio si saluta con prossima, e il PC,
+    // che l'ha già fatta sua, risponde: si ritorna qui)
+    await salvaChiave(c).catch(() => {});
     salvaPcs();
     await chiaviDi(c);
   }
@@ -581,8 +605,10 @@
     let pubPc;
     try { pubPc = P.daB64u(d && d.pub); } catch { return; }
     if (S.coppia !== c) return;
-    c.prossima = await P.rinnova(c.k, e.privata, pubPc, e.pub, pubPc, legame);
-    await salvaChiave(c);
+    const prossima = await P.rinnova(c.k, e.privata, pubPc, e.pub, pubPc, legame);
+    // (P2-6) la chiave nuova prima nella cassa: se non si salva, il rinnovo non si fa (niente saluto con lei)
+    c.prossima = prossima;
+    try { await salvaChiave(c); } catch { delete c.prossima; S.rinnovaNo = c.id; return; }
     await chiaviDi(c);
     // il primo saluto con la chiave nuova: il PC la fa sua, e la sessione continua su lei
     await new Promise((fatto) => { S.rinnovo = { fatto }; saluta(true); setTimeout(() => fatto(false), 9000); });
@@ -598,6 +624,8 @@
         if (typeof m.sfida === "string" && S.ws) rispondiSfida(S.ws, m.sfida, S.entra);
         // (la stanza ha detto «entrato»: questa presa ha provato una chiave d'entrata che il PC le ha dato)
         if (typeof m.entrato === "number" && S.ws) S.entrato = S.ws;
+        // (P3: entrato con la prima, quella di adesso — la stanza la sa: quella di prima non serve più)
+        if (m.entrato === 0 && S.coppia && S.coppia.jkVecchia && !S.chiaviProssima) { delete S.coppia.jkVecchia; salvaChiave(S.coppia).catch(() => {}); }
       } catch { /* niente */ }
       return;
     }
@@ -622,8 +650,7 @@
       if (m.no) { if (mio.rinnovo && S.rinnovo) S.rinnovo.fatto(false); return mio.cambio ? cambioNo() : rifiuta(); }   // il PC è di un altro telefono
       // il PC ha risposto alla chiave rinnovata: da adesso è lei
       if (mio.ch === S.chiaviProssima) await rinnovata();
-      // (la chiave rinnovata non c'è più sul PC — una revoca, un QR nuovo —: risponde a quella di prima, e la nuova si rifà)
-      else if (S.chiaviProssima && S.coppia.prossima) { delete S.coppia.prossima; await salvaChiave(S.coppia); await chiaviDi(S.coppia); }
+      // (P2-4: una risposta con la chiave di prima non fa buttare quella rinnovata — il telefono saluta solo con lei)
       S.canale = P.canaleTel(await P.chiaviSessione(mio.ch.k, mio.byte, P.daB64u(m.n)));
       S.cambio = null;
       S.nSessione = mio.n; S.nPc = m.n;
@@ -3093,9 +3120,11 @@
       // un PC nuovo: entry provvisoria, si collega e il saluto decide dove va
       // (aggiunge un PC di sola lettura, sostituisce il PC completo — chiedendolo prima). Non tocca
       // le altre associazioni: ognuna ha la sua chiave. (La chiave, non estraibile, nella cassa.)
-      const nuova = { k: senzaCassa ? link.k : await P.chiaveDa(link.k), dev: link.dev, kind: "", nome: "", id: nuovoId(), stanza, qrFino: link.qrScade + 60e3 };
-      await salvaChiave(nuova);
-      S.pcs = [nuova, ...S.pcs]; S.attivo = nuova.id; S.classifica = true; salvaPcs();
+      // (P2-7: in memoria — niente nella cassa né su disco, e l'attivo resta quello di prima — finché il saluto non
+      // decide dove va: classificaCiao, o «Sostituisci» se prende il posto di un altro)
+      const nuova = { k: senzaCassa ? link.k : await P.chiaveDa(link.k), dev: link.dev, kind: "", nome: "", id: nuovoId(), stanza, qrFino: link.qrScade + 60e3, provvisoria: true };
+      S.attivoPrima = S.attivo;
+      S.pcs = [nuova, ...S.pcs]; S.attivo = nuova.id; S.classifica = true;
       await parti(nuova);
       return;
     }

@@ -158,20 +158,24 @@ await ctx.close();
 // ============================================================ 2. il telefono
 sezione("il telefono contro un PC finto (telefono-probe)");
 // Un PC finto, col protocollo vero: la prova d'entrata (registra la sua e quella del telefono), il saluto,
-// `rinnova`, e il saluto con la chiave nuova che la fa sua. `risposte`: cmd → dati.
-function pcFinto(nome, risposte) {
+// `rinnova`, e il saluto con la chiave nuova che la fa sua. `risposte`: cmd → dati. Le opzioni: `altro` (false: non dà
+// alla stanza la chiave del telefono — il telefono entra senza «entrato», nel passaggio), `perde` (risponde a
+// `rinnova` ma la chiave nuova non la tiene: il telefono la saluta e nessuno risponde), `sposta` (rinnovata la
+// chiave, passa alla stanza che nasce da lei, come il PC vero fuori dalla finestra del QR).
+function pcFinto(nome, risposte, { altro = true, perde = false, sposta = false } = {}) {
   const kQr = P.casuale(32), pc = { k: kQr, kQr, comandi: [], saluti: [], rinnovata: false };
-  pc.pronto = (async () => {
-    pc.prossima = null;
+  let ws = null, canale = null;
+  const apri = async () => {
     const ch0 = await P.chiaviCoppia(pc.k), e0 = await P.chiaviEntra(pc.k);
-    pc.stanza = ch0.stanza;
-    const ws = new WebSocket(`${WS}/ponte/ws?r=${ch0.stanza}&ruolo=pc`);
+    pc.stanzaOra = ch0.stanza;
+    if (!pc.stanza) pc.stanza = ch0.stanza;   // (la stanza del QR: quella del legame del rinnovo)
+    if (ws) { ws.onmessage = null; ws.close(); }
+    ws = new WebSocket(`${WS}/ponte/ws?r=${ch0.stanza}&ruolo=pc`);
     ws.binaryType = "arraybuffer";
-    let canale = null;
     ws.onmessage = async (e) => {
       if (typeof e.data === "string") {
         const m = JSON.parse(e.data);
-        if (m.sfida) ws.send(JSON.stringify({ prova: [await P.provaEntra(e0.pc, m.sfida)], chiave: e0.pc, altro: [e0.tel] }));
+        if (m.sfida) ws.send(JSON.stringify({ prova: [await P.provaEntra(e0.pc, m.sfida)], chiave: e0.pc, ...(altro ? { altro: [e0.tel] } : {}) }));
         return;
       }
       const b = new Uint8Array(e.data), h = P.leggiTestata(b);
@@ -180,11 +184,13 @@ function pcFinto(nome, risposte) {
         let m = null, k = null;
         for (const kk of [pc.k, pc.prossima].filter(Boolean)) { try { m = (await P.apri((await P.chiaviCoppia(kk)).salutoTel, b, P.TIPO.SALUTO_TEL)).dati; k = kk; break; } catch { /* altra */ } }
         if (!m) return;
+        const spostati = k === pc.prossima && sposta;
         if (k === pc.prossima) { pc.k = pc.prossima; pc.prossima = null; pc.rinnovata = true; }
         pc.saluti.push(m);
         const nPc = P.casuale(16);
         canale = P.canalePc(await P.chiaviSessione(k, P.daB64u(m.n), nPc)); pc.nTel = m.n; pc.nPc = P.b64u(nPc);
         ws.send(await P.sigilla((await P.chiaviCoppia(k)).salutoPc, P.TIPO.SALUTO_PC, 0, { v: 1, n: P.b64u(nPc), eco: m.n, ora: Date.now() }));
+        if (spostati) setTimeout(() => apri().catch(() => {}), 300);
         return;
       }
       if (h.tipo !== P.TIPO.DATI_TEL || !canale) return;
@@ -194,7 +200,8 @@ function pcFinto(nome, risposte) {
       let out;
       if (d.cmd === "rinnova") {
         const e = await P.coppiaEcdh();
-        pc.prossima = await P.rinnova(pc.k, e.privata, P.daB64u(d.pub), P.daB64u(d.pub), e.pub, P.legame(pc.nTel, pc.nPc, pc.stanza));
+        const k2 = await P.rinnova(pc.k, e.privata, P.daB64u(d.pub), P.daB64u(d.pub), e.pub, P.legame(pc.nTel, pc.nPc, pc.stanza));
+        if (!perde) pc.prossima = k2;
         out = { re: d.id, ok: true, dati: { pub: P.b64u(e.pub) } };
       } else {
         const r = risposte[d.cmd];
@@ -203,7 +210,8 @@ function pcFinto(nome, risposte) {
       ws.send(await canale.cifra(out));
     };
     await new Promise((ok) => { ws.onopen = ok; });
-  })();
+  };
+  pc.pronto = apri();
   pc.link = (scade) => `${relay.url}/ponte/#${P.frammento(pc.k, scade)}`;
   return pc;
 }
@@ -260,6 +268,128 @@ await tel.locator('[data-a="menu"]').click();
 const sc = tel.locator('[data-a="dimentica"]');
 if (await sc.count()) { await sc.click(); await sc.click(); }
 check(await finche(() => vero.comandi.slice(primi).includes("scollega"), 8000), "«Scollega» sul telefono: il PC riceve «scollega» (e chiude l'associazione anche lui)");
+
+sezione("il telefono: il rinnovo, la cassa, il QR nuovo (rev-s2)");
+// P2-7: mentre chiede «Sostituisco?», niente del PC nuovo è salvato (né la riga, né la chiave)
+{
+  const t2 = await tctx.newPage();
+  const vero2 = pcFinto("vero2", RISPOSTE("PC reparto", "ROSSI MARIO")), nuovo2 = pcFinto("nuovo2", RISPOSTE("PC nuovo", "VERDI LUCA"));
+  await Promise.all([vero2.pronto, nuovo2.pronto]);
+  await t2.goto(vero2.link(Date.now() + 5 * 60e3));
+  await finche(async () => /ROSSI MARIO/.test(await t2.locator("#app").innerText().catch(() => "")), 20000);
+  await t2.goto(nuovo2.link(Date.now() + 5 * 60e3));
+  await finche(async () => /Sostituisco/.test(await t2.locator("#app").innerText().catch(() => "")), 15000);
+  const sul = await t2.evaluate(async () => {
+    const o = JSON.parse(localStorage.getItem("psassist.ponte.pcs.v1") || "null");
+    const db = await new Promise((ok) => { const r = indexedDB.open("psassist-ponte"); r.onsuccess = () => ok(r.result); r.onerror = () => ok(null); });
+    const n = db ? await new Promise((ok) => { const t = db.transaction("chiavi").objectStore("chiavi").count(); t.onsuccess = () => ok(t.result); t.onerror = () => ok(-1); }) : -1;
+    return { righe: o ? o.v.length : 0, chiavi: n };
+  });
+  check(sul.righe === 1 && sul.chiavi === 1, `P2-7. mentre il telefono chiede «Sostituisco?», il PC nuovo non è salvato (righe ${sul.righe}, chiavi ${sul.chiavi}: solo quello di prima)`);
+  await t2.close();
+}
+// P3: un QR del PC con l'orologio 4 minuti avanti (scade fra 9 minuti, sul telefono): vale
+{
+  const t3 = await tctx.newPage();
+  const lett = pcFinto("lettura", { ...RISPOSTE("PC lettura", "BIANCHI ANNA"), ciao: { kind: "lettura", nome: "PC lettura", versione: "3.87.0" } });
+  await lett.pronto;
+  await t3.goto(lett.link(Date.now() + 9 * 60e3));
+  const v3 = await finche(async () => { const x = await t3.locator("#app").innerText().catch(() => ""); return /BIANCHI ANNA|QR non valido/.test(x) ? x : ""; }, 20000);
+  check(!!v3 && /BIANCHI ANNA/.test(v3), "P3. un QR vero di un PC con l'orologio 4 minuti avanti (fino a 5): vale (non «QR non valido»)");
+  await t3.close();
+}
+// P2-3: un PC che non dà alla stanza la chiave del telefono (il telefono entra senza «entrato»): niente rinnovo
+{
+  const c4 = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, locale: "it-IT" });
+  const t4 = await c4.newPage();
+  const senza = pcFinto("senza", RISPOSTE("PC reparto", "NERI PIO"), { altro: false });
+  await senza.pronto;
+  await t4.goto(senza.link(Date.now() + 5 * 60e3));
+  await finche(async () => /NERI PIO/.test(await t4.locator("#app").innerText().catch(() => "")), 20000);
+  await sospendi(2500);
+  check(senza.comandi.includes("ciao") && !senza.comandi.includes("rinnova"), "P2-3. il telefono entrato nella stanza senza «entrato» (la sua chiave non c'era): non chiede il rinnovo");
+  await c4.close();
+}
+// P2-4: il PC risponde a «rinnova» ma la chiave nuova non la tiene: il telefono non torna indietro a K
+{
+  const c5 = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, locale: "it-IT" });
+  const t5 = await c5.newPage();
+  const perde = pcFinto("perde", RISPOSTE("PC reparto", "GIALLI EVA"), { perde: true });
+  await perde.pronto;
+  await t5.goto(perde.link(Date.now() + 5 * 60e3));
+  await finche(() => perde.comandi.includes("rinnova"), 20000);
+  await sospendi(10000);
+  // (l'app riaperta: una sessione nuova — prima la 3.87 dopo un saluto senza risposta salutava con K, e alla risposta buttava K')
+  const n0 = perde.saluti.length;
+  await t5.reload();
+  await sospendi(20000);
+  const tiene = await t5.evaluate(async () => {
+    const db = await new Promise((ok) => { const r = indexedDB.open("psassist-ponte"); r.onsuccess = () => ok(r.result); r.onerror = () => ok(null); });
+    const v = db ? await new Promise((ok) => { const t = db.transaction("chiavi").objectStore("chiavi").getAll(); t.onsuccess = () => ok(t.result); t.onerror = () => ok([]); }) : [];
+    return v.length === 1 && !!v[0].prossima;
+  });
+  check(tiene && perde.saluti.length === n0, "P2-4. chiesto il rinnovo, una risposta con K non fa buttare la chiave nuova: il telefono saluta solo con lei (e qui nessuno risponde)");
+  await c5.close();
+}
+// P2-6: la chiave nuova che non si salva nella cassa: il rinnovo non si fa (nessun saluto con lei), e si resta su K
+{
+  const c6 = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, locale: "it-IT" });
+  await c6.addInitScript(() => {
+    const put = IDBObjectStore.prototype.put;
+    IDBObjectStore.prototype.put = function (v, k) { if (v && v.prossima) throw new DOMException("piena", "QuotaExceededError"); return put.call(this, v, k); };
+  });
+  const t6 = await c6.newPage();
+  const pieno = pcFinto("pieno", RISPOSTE("PC reparto", "VIOLA LIA"));
+  await pieno.pronto;
+  await t6.goto(pieno.link(Date.now() + 5 * 60e3));
+  await finche(() => pieno.comandi.includes("rinnova"), 20000);
+  await sospendi(3000);
+  check(!pieno.rinnovata && /VIOLA LIA/.test(await t6.locator("#app").innerText().catch(() => "")), "P2-6. la chiave nuova non si salva: nessun saluto con lei (il PC non la fa sua), e il telefono lavora con quella di prima");
+  await c6.close();
+}
+// P2-5: la cassa del telefono che non legge una riga, all'apertura: la riga non sparisce dall'elenco su disco
+{
+  const c7 = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, locale: "it-IT" });
+  await c7.addInitScript(() => {
+    const rotta = localStorage.getItem("prova.rotta");
+    if (!rotta) return;
+    const get = IDBObjectStore.prototype.get;
+    IDBObjectStore.prototype.get = function (k) { if (k === rotta) throw new DOMException("non risponde", "UnknownError"); return get.call(this, k); };
+  });
+  const t7 = await c7.newPage();
+  const uno = pcFinto("uno", { ...RISPOSTE("PC uno", "AZZURRI UGO"), ciao: { kind: "lettura", nome: "PC uno", versione: "3.87.0" } });
+  const due = pcFinto("due", RISPOSTE("PC due", "ROSA ADA"));
+  await Promise.all([uno.pronto, due.pronto]);
+  await t7.goto(uno.link(Date.now() + 5 * 60e3));
+  await finche(async () => /AZZURRI UGO/.test(await t7.locator("#app").innerText().catch(() => "")), 20000);
+  await t7.goto(due.link(Date.now() + 5 * 60e3));
+  await finche(async () => /ROSA ADA/.test(await t7.locator("#app").innerText().catch(() => "")), 20000);
+  await sospendi(1500);
+  const righe = await t7.evaluate(() => JSON.parse(localStorage.getItem("psassist.ponte.pcs.v1")).v.map((x) => ({ id: x.id, nome: x.nome })));
+  const idUno = (righe.find((x) => x.nome === "PC uno") || {}).id;
+  await t7.evaluate((id) => localStorage.setItem("prova.rotta", id), idUno);
+  await t7.goto(`${relay.url}/ponte/`);
+  await finche(async () => /ROSA ADA/.test(await t7.locator("#app").innerText().catch(() => "")), 20000);
+  await sospendi(1500);
+  const dopo = await t7.evaluate(() => JSON.parse(localStorage.getItem("psassist.ponte.pcs.v1")).v.map((x) => x.id));
+  check(righe.length === 2 && !!idUno && dopo.includes(idUno), "P2-5. una riga che la cassa non legge all'apertura (IndexedDB che non risponde): resta su disco — il telefono lavora con l'altra, e non la cancella");
+  await c7.close();
+}
+// P2-1: il PC passa alla stanza della chiave nuova; il telefono, riaperto, lo trova lì (e la tiene)
+{
+  const c8 = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, locale: "it-IT" });
+  const t8 = await c8.newPage();
+  const sp = pcFinto("sposta", RISPOSTE("PC reparto", "ARANCIO TEO"), { sposta: true });
+  await sp.pronto;
+  await t8.goto(sp.link(Date.now() + 5 * 60e3));
+  await finche(() => sp.rinnovata, 20000);
+  await finche(() => sp.stanzaOra !== sp.stanza, 3000);
+  await t8.goto(`${relay.url}/ponte/`);
+  const trovato = await finche(async () => /ARANCIO TEO/.test(await t8.locator("#app").innerText().catch(() => "")), 25000);
+  const st8 = await t8.evaluate(() => JSON.parse(localStorage.getItem("psassist.ponte.pcs.v1")).v[0].stanza);
+  check(sp.rinnovata && sp.stanzaOra !== sp.stanza && !!trovato && st8 === sp.stanzaOra, "P2-1. il PC passato alla stanza della chiave nuova: il telefono, riaperto, lo cerca anche lì, lo trova, e da allora è quella la sua stanza");
+  await c8.close();
+}
 await browser.close();
 await relay.chiudi();
 console.log(fail ? `\nSICUREZZA: ${fail} FALLITI` : "\nSICUREZZA: TUTTO OK");
