@@ -605,7 +605,7 @@ await tocca(tel, '[data-a="menu"]');
 const vociMenu = await tel.locator(".menu button").evaluateAll((l) => l.map((b) => [...b.childNodes].filter((n) => n.nodeName !== "SMALL").map((n) => n.textContent).join("").replace(/\s+/g, " ").trim()));
 check(await tel.locator('.menu [data-a="stampaPdf"]').isDisabled() === /stampa automatica non è impostata/.test(await tel.locator('.menu [data-a="stampaPdf"]').innerText()),
   "«Stampa PDF» spenta solo col suo perché (il PC senza stampa automatica), accesa senza");
-check(JSON.stringify(vociMenu) === JSON.stringify(["📄 Stampa PDF", "📷 Scansiona il QR", "● Registrazioni", "🗑️ Scollega il PC"])
+check(JSON.stringify(vociMenu) === JSON.stringify(["📄 Stampa PDF", "📷 Scansiona il QR", "🖥️ Dispositivi", "● Registrazioni", "🗑️ Scollega il PC"])
   && !/codice|Aggiorna elenco|Chiudi sessione|Stampa su|Dimentica|Associato/.test(await tel.locator(".menu").innerText()),
   `il ⋯ del telefono: solo quello che non c'è altrove — niente «Aggiorna elenco», «Chiudi sessione», codice; per finire una parola sola, «Scollega» (${vociMenu.join(" | ")})`);
 await shot(tel, "tel-1-menu");
