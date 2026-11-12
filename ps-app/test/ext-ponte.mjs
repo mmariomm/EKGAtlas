@@ -1512,6 +1512,24 @@ sezione("la cartella dal telefono: leggere, scrivere col «Conferma» della pagi
   CART.altrove = false;
   check(await ricaricata("DUBBIOZETA"), "…e la pagina di ROSSI sul PC, pulita, si ricarica: il gestionale aveva salvato");
   await doc.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
+  // la navigazione della scheda di sottofondo che si perde (il primo `tabs.update` verso il paziente inghiottito: la
+  // scheda resta vuota, nessuna pagina chiede «chi sono?»): dopo qualche secondo la si rifà UNA volta, e si salva
+  await tocca(tel, '[data-a="crileggi"]');
+  await sospendi(3000);
+  await sw.evaluate(() => {
+    const vero = chrome.tabs.update.bind(chrome.tabs);
+    self.__veroUpdateC = chrome.tabs.update;
+    self.__perdiC = 1;
+    chrome.tabs.update = (id, p, ...resto) => (self.__perdiC > 0 && p && /EPISODIO_ID=999001/.test(p.url || "") ? (self.__perdiC--, Promise.resolve({ id })) : vero(id, p, ...resto));
+  });
+  const postP = CART.post.length, schedeP = schedeNuove.length, tP = Date.now();
+  await segnaPagina();
+  const okP = await salvaAnamnesi("Dolore toracico PERSAZETA");
+  const persaC = await sw.evaluate(() => { const r = self.__perdiC === 0; chrome.tabs.update = self.__veroUpdateC; return r; });
+  check(persaC && okP && CART.post.length === postP + 1 && CART.campi.ANAMNESI === "Dolore toracico PERSAZETA" && schedeNuove.length === schedeP + 1,
+    `la scheda di sottofondo la cui navigazione si perde: si rifà una volta, e la cartella si salva («Salvato» dopo ${((Date.now() - tP) / 1000).toFixed(1)} s, ${schedeNuove.length - schedeP} schede)`);
+  check(await ricaricata("PERSAZETA"), "…e la pagina di ROSSI sul PC, pulita, si ricarica col testo del telefono");
+  await doc.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
   // via la cartella: le sezioni dopo hanno la pagina di sempre
   ctx.off("page", contaSchede);
   CART.on = false;

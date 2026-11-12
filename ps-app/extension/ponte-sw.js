@@ -1248,6 +1248,7 @@ async function ponteLavoroDi(tabId) {
   }
   // la scheda della cartella: che cosa salvare (o, se il service worker ha perso il lavoro, niente)
   const c = pt.cartelle.get(tabId);
+  if (c) c.chiesto = true;   // (la pagina è arrivata: non è una navigazione persa)
   if (c) return { ponteCartella: { ep: c.ep, fase: c.fase, campi: c.campi } };
   const a = (await ponteCartelleTutte())[tabId];
   if (a) return { ponteCartella: { ep: a.ep, fase: "perso" } };
@@ -1395,18 +1396,30 @@ async function ponteCartellaSotto(url, ep, campi) {
   const promessa = new Promise((r) => { risolvi = r; });
   pt.cartelle.set(t.id, { ep, fase: "compila", campi, risolvi });
   await ponteCartelleCambia((v) => { v[t.id] = { ep, ts: ponteOra() }; });
+  // la scheda vuota finisce di nascere prima di partire, come quella dei valori (ponteValoriApri)
+  await ponteSchedaNata(t.id, () => pt.cartelle.has(t.id));
+  if (!pt.cartelle.has(t.id)) return promessa;   // (chiusa mentre nasceva: niente pagina)
   const tempo = setTimeout(() => ponteCartellaFine(t.id, { ok: false, incerto: pt.cartelle.get(t.id)?.fase === "inviato", testo: "la scheda non ha finito in tempo" }), PONTE_CARTELLA_MAX);
   try {
     await chrome.tabs.update(t.id, { url: u.href, autoDiscardable: false });
   } catch {
     ponteCartellaFine(t.id, { ok: false, testo: "la pagina del paziente sul PC non si apre" });
   }
+  // La navigazione persa per strada (la scheda è ancora vuota, nessuna pagina ha chiesto «chi sono?»): si
+  // rifà una volta, come per i valori. Niente è stato scritto né cliccato: la pagina non è mai arrivata.
+  const w = pt.cartelle.get(t.id);
+  if (w) w.persa = setTimeout(async () => {
+    const x = await chrome.tabs.get(t.id).catch(() => null);
+    if (pt.cartelle.get(t.id) !== w || w.chiesto || w.fase !== "compila" || !x || x.status === "loading" || sulGestionale(x.url) || sulGestionale(x.pendingUrl)) return;
+    chrome.tabs.update(t.id, { url: u.href }).catch(() => {});
+  }, PONTE_PERSA_MS);
   const esito = await promessa;
   clearTimeout(tempo);
   return esito;
 }
 async function ponteCartellaFine(id, esito) {
   const w = pt.cartelle.get(id);
+  if (w) clearTimeout(w.persa);
   pt.cartelle.delete(id);
   const c = await ponteCartelleCambia((v) => { const c = v[id]; delete v[id]; return c; });
   if (!c && !w) return false;
