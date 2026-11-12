@@ -483,10 +483,11 @@ check(/Stampato in Infermeria/.test(await aspettaTel(/Stampato in Infermeria/, 1
 // ===========================================================================
 sezione("dal telefono, in Infermeria: un referto con 🖨️, e «Ristampa» solo le etichette");
 {
-  // un referto PDF salvato sul PC per ROSSI: la TC (il suo id è quello del gestionale simulato)
+  // un referto PDF salvato sul PC per ROSSI: la TC (il suo id è quello del gestionale simulato). La copia è già
+  // stata guardata ed è sua (`chi: "ok"`): un PDF senza testo, se no, al telefono non va (fail-closed)
   const ID_TC = "cccc3333-0000-0000-0000-000000000003";
   const pdfRef = Buffer.from("%PDF-1.4\n1 0 obj << /Type /Catalog >> endobj\ntrailer << /Root 1 0 R >>\n%%EOF\n");
-  await sw.evaluate(([k, data]) => chrome.storage.local.set({ [k]: { ep: "999001", data, ts: Date.now() } }), ["ref:" + ID_TC, pdfRef.toString("base64")]);
+  await sw.evaluate(([k, data]) => chrome.storage.local.set({ [k]: { ep: "999001", data, ts: Date.now(), chi: "ok" } }), ["ref:" + ID_TC, pdfRef.toString("base64")]);
   await tel.reload();
   await aspettaTel(/ROSSI MARIO/, 30000);
   await tocca('[data-a="paz"]:has-text("ROSSI MARIO")');
