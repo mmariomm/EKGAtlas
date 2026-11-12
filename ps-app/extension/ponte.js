@@ -40,7 +40,7 @@ function righeStato(s, codice, qr) {
   }
   if (!s.accoppiato) return { cls: "", testa: "Nessun iPhone associato", righe: ["«Associa l'iPhone» mostra un QR: lo inquadri col telefono e il telefono resta associato finché non lo scolleghi.", fine] };
   const cod = codice ? ` · codice ${codice}` : "";
-  const cam = s.cambiato ? `iPhone cambiato alle ${hhmm(s.cambiato)}.` : "";   // un altro telefono ha preso il posto del primo
+  const cam = s.cambiato ? `iPhone cambiato alle ${hhmm(s.cambiato)} («Usa questo telefono»): se non sei stato tu, Revoca e Nuovo QR.` : "";   // un altro telefono ha preso il posto del primo
   if (s.sessione) {
     return { cls: "vivo", testa: "iPhone collegato", righe: [
       cam,
@@ -76,6 +76,7 @@ async function aggiorna() {
   $("revoca").hidden = !s.accoppiato;
   $("revoca").textContent = armata === "revoca" ? "Revoco? L'iPhone non entrerà più" : "Revoca l'iPhone";
   $("dove").textContent = s.host ? `(${new URL(s.host).host})` : "";
+  chiede(s);
   // solo i comandi del medico: le letture automatiche (l'elenco, il catalogo) restano nel Registro
   // del pannello; le righe uguali di fila diventano una, «×3»
   const reg = [];
@@ -90,6 +91,40 @@ async function aggiorna() {
     return li;
   }) : [Object.assign(document.createElement("li"), { className: "vuoto", textContent: "Ancora niente." })]));
 }
+
+// (3.87) Quello che il PC deve decidere, uno alla volta: la stazione da tenere dopo la revoca, un altro
+// utente nel gestionale (l'iPhone fermo), una stazione che il telefono vuole al posto di quella collegata.
+let dopoRevoca = "";      // il nome della stazione collegata dal telefono, appena revocato l'iPhone
+let fai = { si: null, no: null };
+function chiede(s) {
+  let c = null;
+  const ch = s.stazioneChiesta;
+  if (dopoRevoca) {
+    const nome = dopoRevoca;
+    c = { t: `«${nome}» l'aveva collegata l'iPhone`, r: "Se l'iPhone è perso o non è più tuo, scollegala: i fogli degli ordini non vanno più lì.",
+      si: `Scollega anche «${nome}»`, no: "Tienila",
+      fSi: async () => { const r = await chiedi({ t: "stazioneScollega", ruolo: "medico" }); dopoRevoca = ""; dice(r && r.ok ? `«${nome}» scollegata da questo PC.` : "Non riuscito.", !!(r && r.ok)); },
+      fNo: async () => { dopoRevoca = ""; } };
+  } else if (s.pausa) {
+    c = { t: "Sul PC è entrato un altro utente", r: `${s.pausa.operatore ? `Nel gestionale c'è ${s.pausa.operatore}` : "Nel gestionale c'è un altro utente"}${s.pausa.prima ? `, l'iPhone era di ${s.pausa.prima}` : ""}: è in pausa (niente letture né scritture) finché non lo riconfermi.`,
+      si: "Riconferma l'iPhone", no: "",
+      fSi: async () => { const r = await chiedi({ t: "ponteRiconferma" }); dice(r && r.ok ? "Riconfermato: l'iPhone riprende con chi c'è adesso nel gestionale." : "Non riuscito.", !!(r && r.ok)); } };
+  } else if (ch) {
+    c = { t: `L'iPhone chiede di collegare «${ch.nome}» al posto di «${ch.prima}»`,
+      r: `Codice della stazione ${ch.codice}: controlla che sia quello sulla sua pagina. La richiesta vale fino alle ${hhmm(ch.scade)}.`,
+      si: `Sostituisci con «${ch.nome}»`, no: `Tieni «${ch.prima}»`,
+      fSi: async () => { dice("Collego la stazione…", true); const r = await chiedi({ t: "ponteStazioneConferma", si: true }); dice(r && r.ok ? `Collegata «${r.dati.nome}» (codice ${r.dati.codice}).` : (r && r.errore) || "Non riuscito.", !!(r && r.ok)); },
+      fNo: async () => { await chiedi({ t: "ponteStazioneConferma", si: false }); dice("Resta la stazione di prima.", true); } };
+  }
+  $("chiede").hidden = !c;
+  if (!c) return;
+  $("chiedet").textContent = c.t; $("chieder").textContent = c.r;
+  $("chiedesi").textContent = c.si;
+  $("chiedeno").textContent = c.no; $("chiedeno").hidden = !c.no;
+  fai = { si: c.fSi, no: c.fNo || null };
+}
+$("chiedesi").addEventListener("click", async () => { const f = fai.si; if (f) { $("chiedesi").disabled = true; try { await f(); } finally { $("chiedesi").disabled = false; } aggiorna(); } });
+$("chiedeno").addEventListener("click", async () => { const f = fai.no; if (f) { await f(); aggiorna(); } });
 
 $("associa").addEventListener("click", async () => {
   dice("");
@@ -123,10 +158,11 @@ $("revoca").addEventListener("click", async () => {
   qrVisibile = false;
   const r = await chiedi({ t: "ponteRevoca" });
   dice(r && r.ok ? "Revocata: l'iPhone non entra più. Per riassociarlo serve un QR nuovo." : "Non riuscito.", !!(r && r.ok));
+  if (r && r.ok && r.stazione) dopoRevoca = r.stazione;   // (e la stazione che l'iPhone aveva collegato? lo chiede qui sotto)
   aggiorna();
 });
 
-chrome.storage.onChanged.addListener((ch, area) => { if (area === "session" && ch.ponte) aggiorna(); });
+chrome.storage.onChanged.addListener((ch, area) => { if (area === "session" && (ch.ponte || ch.stazione)) aggiorna(); });
 setInterval(aggiorna, 15000);
 aggiorna();
 

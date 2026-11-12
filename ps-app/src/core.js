@@ -14911,6 +14911,7 @@
       $("#ponteapri")?.addEventListener("click", () => this.ponteInScheda());
       $("#ponteoff")?.addEventListener("click", (e) => { e.stopPropagation(); ask({ t: "ponteScollega" }); });
       $("#ponterica")?.addEventListener("click", (e) => { e.stopPropagation(); ponteRicarica(); });
+      $("#ponteavv")?.addEventListener("click", (e) => { e.stopPropagation(); this.menuAperto = false; this._ponteNo = ""; this.setView("iphone"); });
       $("#risall")?.addEventListener("click", () => this.caricaValori().catch(() => {}).then(() => this.caricaReferti()));
       // «Letto»: da qui in poi le novità si contano da adesso, per tutti i prelievi
       $("#letto")?.addEventListener("click", () => {
@@ -17507,6 +17508,9 @@
     .hd .pontespia .pdot { background: var(--ok); }   /* ferma: la spia resta, il movimento no */
     .pontespia button { border: 0; border-radius: 999px; background: #fff; color: #16232E; padding: 4px 10px; font: inherit; font-size: 11.5px; font-weight: 700; cursor: pointer; }
     .pontespia button:hover { background: #E3E9F0; }
+    /* (3.87) un avviso del ponte: ambra, e non è la spia della sessione */
+    .ponteavv { display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 3px 0 11px; border-radius: 999px; background: #FFF4DB; color: #5C3B00; font-weight: 600; font-size: 12px; }
+    .ponteavv button { border: 0; border-radius: 999px; background: #fff; color: #16232E; height: 24px; padding: 0 10px; font: inherit; font-size: 11.5px; font-weight: 700; cursor: pointer; }
   `;
   // «iPhone collegato · Scollega»: finché una sessione è aperta, in ogni
   // scheda, a pannello aperto o ridotto. Chi passa davanti al PC lo vede.
@@ -17515,7 +17519,11 @@
     // la cartella di questa pagina è stata salvata dal telefono mentre qui c'era un testo scritto: la pagina è vecchia
     // (non si è ricaricata da sola per non perderlo), e il suo «Conferma» è fermo finché non la si ricarica
     + (PONTE_AGG ? `<div class="pontespia" role="status" title="Anamnesi, farmaci o allergie salvati dall'iPhone: questa pagina mostra ancora i testi di prima, e il suo «Conferma» è fermo">
-      ${ICO_TEL}<span>Aggiornato dal telefono</span><button type="button" id="ponterica">Ricarica</button></div>` : "");
+      ${ICO_TEL}<span>Aggiornato dal telefono</span><button type="button" id="ponterica">Ricarica</button></div>` : "")
+    // (3.87) un avviso del ponte, per mezz'ora: un altro iPhone ha preso il posto, l'iPhone in pausa per un altro utente,
+    // una stazione di stampa da confermare — «Apri» porta alla pagina iPhone, dove si decide
+    + (PONTE_STATO && PONTE_STATO.avviso && Date.now() - PONTE_STATO.avviso.ts < 30 * 60e3 ? `<div class="ponteavv" role="status" title="${esc(PONTE_STATO.avviso.testo)}">
+      ${ICO_TEL}<span>${esc(PONTE_STATO.pausa ? "iPhone in pausa: un altro utente" : /stazione/i.test(PONTE_STATO.avviso.testo) ? "Stazione da confermare" : "iPhone cambiato")}</span><button type="button" id="ponteavv">Apri</button></div>` : "");
 
   const pontePaziente = (ep) => tuttiPazienti().find((p) => p.ep === ep) || null;
   // Chi il PC conosce solo dalla lista smart non ha ancora un indirizzo della sua pagina: lo dà la riga
@@ -18175,12 +18183,16 @@
         ponteEsegui(m).then(reply, (e) => reply({ ok: false, errore: `Errore sul PC: ${e?.head || e?.message || e}` }));
         return true;
       });
-      const segui = (s) => {
+      const segui = (s, primo = false) => {
         const prima = !!(PONTE_STATO && PONTE_STATO.sessione);
+        const avvisoPrima = PONTE_STATO && PONTE_STATO.avviso ? PONTE_STATO.avviso.ts : 0;
         PONTE_STATO = s || null;
-        if (prima !== !!(PONTE_STATO && PONTE_STATO.sessione) && PANNELLO && !PANNELLO.root.activeElement) PANNELLO.render();
+        // (3.87) un avviso del ponte (un altro iPhone, un altro utente, una stazione da confermare): nel Registro, una volta
+        const av = PONTE_STATO && PONTE_STATO.avviso;
+        if (!primo && av && av.ts !== avvisoPrima && PANNELLO && typeof av.testo === "string") PANNELLO.log(`${now()}  iPhone · ${av.testo}`);
+        if ((prima !== !!(PONTE_STATO && PONTE_STATO.sessione) || (av ? av.ts : 0) !== avvisoPrima) && PANNELLO && !PANNELLO.root.activeElement) PANNELLO.render();
       };
-      chrome.storage.session.get("ponte").then((o) => segui(o.ponte)).catch(() => {});
+      chrome.storage.session.get("ponte").then((o) => segui(o.ponte, true)).catch(() => {});
       chrome.storage.onChanged.addListener((ch, area) => { if (area === "session" && ch.ponte) segui(ch.ponte.newValue); });
       window.addEventListener("click", confermaFerma, true);
       window.addEventListener("submit", confermaFerma, true);
@@ -18189,6 +18201,8 @@
       // worker dorme. Ogni 30 secondi solo nel ripiego (un Chrome senza documento fuori schermo: `sveglia`).
       ask({ t: "ponteSveglia", login: classify(document) === "login" });
       setInterval(() => { if (PONTE_STATO && PONTE_STATO.accoppiato && PONTE_STATO.sveglia) ask({ t: "ponteSveglia" }); }, 30e3);
+      // chi è entrato nel gestionale (la testata): l'associazione col telefono lo ricorda (3.87, il cambio turno)
+      reportOperatore();
     } catch { /* niente estensione */ }
   }
   // La scheda aperta dietro sulla pagina di un paziente (ponteValoriSotto, in

@@ -316,22 +316,42 @@ il medico usa il pannello.
 **La chiave.** `K`, 32 byte casuali, nasce nel service worker del PC a ogni «Associa l'iPhone». Va
 al telefono **solo nel frammento** del QR: `https://ekg-atlas.whirly.workers.dev/ponte/#k=<base64url>&scade=<ms>` (la fine del link, pochi minuti: non dell'associazione) — il
 frammento non viaggia mai verso un server. L'app lo legge, lo toglie dalla barra e dalla
-cronologia, e tiene `K` e un numero casuale suo
-(`dev`) nel `localStorage` di Safari: è l'unica cosa che resta sul telefono. Sul PC `K` sta in
-`chrome.storage.local` (`ponte.coppia`) fino alla revoca, senza scadenza: regge il browser chiuso e
-riaperto, il logout e il rientro; la pagina d'accesso del gestionale chiude la sessione, non
-l'associazione. Il QR si rivede solo nei primi due minuti e prima che
-un telefono entri; il primo che entra lega l'associazione al suo `dev` (`ponte.coppia.dev`), e il PC
-risponde «no» al saluto di ogni altro — salvo `cambio`, qui sotto.
+cronologia, e tiene `K` in IndexedDB come **CryptoKey non estraibile** (3.87: si usa, i suoi byte non
+escono più, nemmeno per uno script del sito) e, in `localStorage`, un numero casuale suo (`dev`), il tipo
+e il nome del PC e il numero della stanza — niente di segreto. Sul PC `K` sta nella **cassa** (`cassa.js`:
+l'IndexedDB del service worker, CryptoKey non estraibile), mai in `chrome.storage` (che gli script
+delle pagine leggono); in `chrome.storage.local` (`ponte.coppia`) restano solo l'id della chiave, la
+stanza e i conti. Fino alla revoca, senza scadenza: regge il browser chiuso e riaperto, il logout e il
+rientro; la pagina d'accesso del gestionale chiude la sessione, non l'associazione. Il QR si rivede
+solo nei primi due minuti e prima che un telefono entri; il primo che entra lega l'associazione al
+suo `dev` (`ponte.coppia.dev`), e il PC risponde «no» al saluto di ogni altro — salvo `cambio`, qui sotto.
+
+**La chiave si rinnova (3.87).** Il QR non è una chiave per sempre: alla prima sessione il telefono
+manda `rinnova` con la chiave pubblica di un ECDH P-256, il PC risponde con la sua, e da `K` e dal
+segreto dell'ECDH (HKDF, «rinnova») nasce `K'`, che il QR non contiene. Il primo saluto con `K'` la fa
+diventare LA chiave, sui due lati; `K` resta solo per la **finestra del QR** (5 minuti + 1 dal QR) e
+poi se ne va. Una foto del QR, o `K` copiata dopo, non aprono più niente. Le associazioni di prima
+(con `K` in `storage.local` o in `localStorage`) si spostano nelle casse al primo avvio e si
+rinnovano alla prima sessione, da sole. La stanza resta quella del QR (sta nella coppia).
+
+**L'entrata nella stanza (3.87).** Il ripetitore manda a chi entra una sfida; il client risponde con
+HMAC-SHA256 della sfida con la sua **chiave d'entrata** (da `K`, per ruolo: `chiaviEntra`), che non
+viaggia mai nell'indirizzo. La stanza tiene le chiavi d'entrata la prima volta: il PC registra la sua e
+dà quella del telefono (dal saluto in cui il telefono dice `entra: 1`, o subito per un QR nuovo); le
+cambia, provando con quelle di prima, quando la chiave si rinnova. Chi sa solo il numero della stanza
+non entra, non butta fuori nessuno, non allaga. I client della 3.86 (senza prova) entrano come prima
+finché il loro ruolo non ha una chiave (il passaggio, `PONTE.senzaProva`, e il log lo conta).
 
 **«Usa questo telefono».** Il telefono rifiutato tiene la chiave del QR e può rimandare il saluto con
 un campo in più, `cambio: true` (stesso messaggio cifrato di ogni saluto, con `salutoTel`: senza la
-chiave non si apre e il PC non risponde nemmeno). La sessione di prima finisce («Un altro iPhone ha
-preso il posto di questo»), `ponte.coppia.dev` passa al nuovo telefono, e la risposta è quella di ogni
-saluto. Un saluto di cambio già visto (rimandato da chi sta in mezzo) non vale due volte. Il vecchio
-telefono, se rientra, trova «associato a un altro telefono» e può riprendersi il posto allo stesso
-modo. (Un PC con l'estensione di prima voleva un codice: il telefono dice «Non cambiato: sul PC ⋯ →
-iPhone → Associa l'iPhone, e inquadra il QR nuovo».)
+chiave non si apre e il PC non risponde nemmeno). **Solo nella finestra del QR** (3.87: la Fotocamera,
+poi l'app della Home, entro pochi minuti); dopo, un QR nuovo. La sessione di prima finisce («Un altro
+iPhone ha preso il posto di questo»), `ponte.coppia.dev` passa al nuovo telefono, e il PC lo dice in
+vista (la pagina iPhone, la spia del pannello, il Registro). Un saluto di cambio già visto (rimandato
+da chi sta in mezzo) non vale due volte. Il vecchio telefono, se rientra nella finestra, trova
+«associato a un altro telefono» e può riprendersi il posto allo stesso modo. (Fuori dalla finestra, o
+con un PC di prima che voleva un codice, il telefono dice «Non cambiato: sul PC ⋯ → iPhone → Associa
+l'iPhone, e inquadra il QR nuovo».)
 
 **Da K, con HKDF-SHA256** (sale `ps-ponte/1`, WebCrypto, nessuna libreria — `public/ponte/cripto.js`,
 copiato tale e quale in `extension/ponte-cripto.js` da `npm run build`, e un test controlla che
@@ -674,8 +694,11 @@ medico e una sul PC dell'infermeria, finché sono collegati. I **fogli degli ord
 pazienti — passano dal ripetitore di Cloudflare, cioè escono dall'ospedale e ci tornano, cifrati da
 un capo all'altro (AES-256-GCM): il ripetitore non li legge né li tiene. Con «Stampa: Qui» non passa niente.
 
-**Che cosa resta**: K in `storage.local` sui due PC, finché non si scollega (un PC fisso: niente
-scadenza). Sulla stazione, del foglio, il numero e com'è andata, e per la sua pagina («Ultimi fogli»,
+**Che cosa resta**: K nella cassa dei due PC (IndexedDB del service worker, non estraibile; la chiave
+privata dell'offerta del QR anche lei, finché vale), finché non si scollega (un PC fisso: niente
+scadenza). Una stazione già collegata non si sostituisce dal telefono: il PC chiede conferma (la
+pagina iPhone); «Revoca l'iPhone» chiede se scollegare anche la stazione che l'iPhone aveva
+collegato; un «riparti» della stazione vale solo per la sessione di cui porta il numero. Sulla stazione, del foglio, il numero e com'è andata, e per la sua pagina («Ultimi fogli»,
 30) l'ora, il tipo, le pagine, le copie, la stampante — mai un nome; il PDF solo in memoria finché il
 suo aiutante non l'ha stampato (e il suo file temporaneo, come per ogni foglio).
 
@@ -693,8 +716,10 @@ suo aiutante non l'ha stampato (e il suo file temporaneo, come per ogni foglio).
   l'iPhone** dal PC (la chiave di quel telefono non apre più niente): se il telefono si perde sbloccato,
   la prima cosa è **Revoca** sul PC.
 - **Il QR sullo schermo** vale quanto la chiave, ma per poco e per uno: si rivede solo nei primi due
-  minuti, si toglie da solo appena l'iPhone entra, e dopo il primo telefono non apre a nessun altro.
-  Nel dubbio, Revoca. Nel pannello (⋯ → iPhone) il QR sta nella pagina dell'estensione, in una
+  minuti, si toglie da solo appena l'iPhone entra, dopo il primo telefono non apre a nessun altro, e
+  finita la sua finestra non apre più niente (la chiave si è rinnovata). Nel dubbio, Revoca. Sul
+  telefono, un QR che dice di valere più di 6 minuti non si usa («QR non valido»: un adesivo, un link
+  mandato), e uno nuovo che sostituirebbe un PC che c'è chiede prima, col codice da guardare sul PC. Nel pannello (⋯ → iPhone) il QR sta nella pagina dell'estensione, in una
   cornice: la pagina del gestionale vede la cornice ma non ci legge dentro (un'altra origine); si apre
   solo dalle origini del gestionale (`web_accessible_resources`, solo `ponte.html`) e da un indirizzo
   che cambia a ogni avvio del browser (`use_dynamic_url`).
@@ -703,9 +728,11 @@ suo aiutante non l'ha stampato (e il suo file temporaneo, come per ogni foglio).
   nel Registro) e il primo telefono ne esce.
 - **PC sbloccato e incustodito**: dà già tutto il gestionale a chi si siede. Il ponte aggiunge che una
   sessione aperta si vede e si chiude con un tocco; il QR di prima non si rivede. La chiave vale
-  finché non la si revoca, anche col browser chiuso e riaperto: se nel gestionale rientra un altro medico, il
-  telefono associato lavora col suo accesso. Se il PC cambia mano, **Revoca l'iPhone**.
-- **L'app del telefono divide l'origine con EKG Atlas**: chi può cambiare il sito (l'account Cloudflare, il repository, una sua dipendenza) può leggere la chiave e i dati decifrati; il medico lo accetta.
+  finché non la si revoca, anche col browser chiuso e riaperto. **Il cambio turno** (3.87): l'associazione
+  ricorda chi era entrato nel gestionale (il nome nella testata); se entra un altro utente, il telefono
+  è in pausa — niente letture né scritture, «Sul PC è entrato un altro utente: riconferma sul PC» —
+  finché il medico non lo riconferma sulla pagina iPhone (o un QR nuovo). Se il PC cambia mano, **Revoca l'iPhone**.
+- **L'app del telefono divide l'origine con EKG Atlas**: chi può cambiare il sito (l'account Cloudflare, il repository, una sua dipendenza) può usare la chiave e leggere i dati decifrati; il medico lo accetta. Dalla 3.87 la chiave non si copia (CryptoKey non estraibile), e le pagine del sito hanno una CSP stretta (`public/_headers`: solo i loro script).
 - **Niente segretezza «in avanti»**: le chiavi di sessione vengono da K e da numeri che viaggiano
   cifrati con chiavi derivate da K. Chi registrasse il traffico di un giorno *e* poi rubasse K di
   quel giorno (dal PC o dal telefono) potrebbe decifrarlo. K vive finché non la si revoca; uno scambio

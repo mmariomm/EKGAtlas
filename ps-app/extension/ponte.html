@@ -53,6 +53,11 @@
   <p class="sub">Elenco dei pazienti, esiti, ordini, note e promemoria dal telefono, mentre sei lontano dal PC. Tutto passa da qui, cifrato da un capo all'altro.</p>
 
   <section id="stato" class="stato" aria-live="polite"></section>
+  <!-- (3.87) quello che il PC deve decidere: un altro utente nel gestionale, una stazione che il telefono vuole sostituire, la stazione dopo la revoca -->
+  <section id="chiede" class="stato warn" aria-live="polite" hidden style="margin-top:12px">
+    <b id="chiedet"></b><span class="riga" id="chieder"></span>
+    <div class="azioni"><button id="chiedesi" type="button"></button><button id="chiedeno" class="quiet" type="button"></button></div>
+  </section>
 
   <section id="qrsec" class="qrsec" hidden>
     <div id="qr" role="img" aria-label="Codice QR per associare l'iPhone"></div>

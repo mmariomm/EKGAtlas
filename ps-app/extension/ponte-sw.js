@@ -14,11 +14,24 @@
  * un nome, un esame, un valore. Il suo indirizzo è fissato nella build
  * (ponte-host.js, da ponte/host.txt): nessuna pagina lo cambia.
  *
- * La chiave sta in storage.local finché non la si revoca (Revoca, Nuovo QR, o
- * «Scollega» sul telefono): nessuna scadenza, anche se il browser si chiude
- * e si riapre. Il QR si rivede solo nei primi due minuti, il suo link vale per
- * il primo scambio solo pochi minuti, e solo finché nessun telefono è entrato; il primo che entra è
- * quello dell'associazione, e un altro telefono con lo stesso QR non entra.
+ * La chiave sta nella cassa (cassa.js: l'IndexedDB del service worker, una
+ * CryptoKey non estraibile — mai in chrome.storage, che gli script delle
+ * pagine leggono) finché non la si revoca (Revoca, Nuovo QR, o «Scollega» sul
+ * telefono): nessuna scadenza, anche se il browser si chiude e si riapre. Il
+ * QR si rivede solo nei primi due minuti, il suo link vale per il primo
+ * scambio solo pochi minuti (la «finestra del QR»), e solo finché nessun
+ * telefono è entrato; il primo che entra è quello dell'associazione, e un
+ * altro telefono con lo stesso QR non entra — salvo «Usa questo telefono»,
+ * e solo dentro la finestra del QR.
+ *
+ * Il QR non è una chiave per sempre (3.87): nella prima sessione il telefono
+ * e il PC fanno un ECDH (`rinnova`: le chiavi pubbliche viaggiano nella
+ * sessione cifrata, il QR non le ha) e da lì, e da K, una chiave nuova; il
+ * primo saluto con quella la fa diventare LA chiave, e K se ne va (finita la
+ * finestra del QR). Una foto del QR, o K copiata dopo, non aprono più niente.
+ * La stanza sul ripetitore resta quella (il suo numero è nella coppia: si
+ * entra con la prova della chiave d'entrata, ponte-logica.js, e il PC le dà
+ * alla stanza — la sua e quella del telefono — dalla chiave nuova).
  *
  * La presa sta nel documento fuori schermo (fuori.html, fuori-sw.js), non nel
  * service worker: su Chrome 109 lui si ferma mezzo minuto dopo ogni risveglio,
@@ -47,10 +60,18 @@
  * Mentre è aperta, ogni scheda del gestionale lo dice nell'intestazione del
  * pannello: «iPhone collegato · Scollega».
  */
-/* global PonteCripto, PONTE_HOST_FISSO, ordLeggi, sulGestionale, leggibileOrd, corto, KEY, REF_TTL, stampaScelte, stampaDalTel, stampaTelVista, regElenco, regPezzo, regZipVia, stazioneCollega, Presa, fuoriRipiego, staCambio */
+/* global PonteCripto, PONTE_HOST_FISSO, ordLeggi, sulGestionale, leggibileOrd, corto, KEY, REF_TTL, stampaScelte, stampaDalTel, stampaTelVista, regElenco, regPezzo, regZipVia, stazioneCollega, Presa, fuoriRipiego, staCambio, cassaLeggi, cassaScrivi, cassaTogli, stazioneChiesta, stazioneDelTelefono, stazioneConferma */
 
 const PONTE_HOST_PROVA = "ponte.host";      // storage.local: solo per le prove, e solo verso questo PC
-const PONTE_COPPIA = "ponte.coppia";        // storage.local: { k, creata, usata, dev, nTel, cambiata?, cambi? }
+// storage.local, niente di segreto: { id, gen, stanza, creata, usata, dev, nTel, cambiata?, cambi?, rinnovata?, telProva?, operatore?, pausa? }
+// (fino alla 3.86 c'era anche `k`: al primo avvio va nella cassa, e da qui se ne va)
+const PONTE_COPPIA = "ponte.coppia";
+// la cassa (cassa.js): { id, k (la chiave di adesso), qr? (quella del QR, finché vale la sua finestra), qrRaw? (i suoi
+// byte, solo per mostrare il QR: due minuti, e mai dopo il primo telefono), prossima? (quella rinnovata, che aspetta il
+// primo saluto), vecchia? ({ entra, fino }: la chiave d'entrata di prima, per provare alla stanza che è ancora lui) }
+const PONTE_CASSA = "ponte";
+const PONTE_VECCHIA_MAX = 24 * 3600e3;      // la chiave d'entrata di prima resta per tanto (la stanza la cambia alla prima entrata)
+const PONTE_PAUSA = "Sul PC è entrato un altro utente: riconferma sul PC";
 const PONTE_STATO = "ponte";                // storage.session: quello che le pagine mostrano
 const PONTE_ORDINI = "ponte.ordini";        // storage.session: gli ordini partiti dal telefono
 const PONTE_VALORI = "ponte.valori";        // storage.session: le schede aperte per «Aggiorna i valori»
@@ -92,11 +113,21 @@ const PONTE_PERCHE = {
   "chiusa dall'iPhone": "Chiusa dall'iPhone", riavvio: "L'estensione sul PC si è riavviata",
   login: "Il gestionale sul PC è tornato alla pagina d'accesso",
   cambiato: "Un altro iPhone ha preso il posto di questo",
+  "altro utente": PONTE_PAUSA, dimentica: "I dati del PC sono stati cancellati («Dimentica i dati…»)",
+  "scollegata dall'iPhone": "Scollegato dall'iPhone: serve un QR nuovo",
 };
 const ponteFrase = (perche) => PONTE_PERCHE[perche] || corto(perche, 80) || "Sessione chiusa";
 
 const pt = {
-  host: "", coppia: null, k: null, chiavi: null, codice: "", chiaviDi: "",
+  // k: la chiave di adesso (CryptoKey); chiavi: quello che se ne ricava (la stanza è quella della coppia);
+  // entra: le chiavi d'entrata nella stanza; chiaviDi: «id.gen» (anche in storage.session: mai la chiave)
+  host: "", coppia: null, k: null, chiavi: null, codice: "", chiaviDi: "", entra: null, cassaDi: "",
+  qr: null,            // { k, chiavi, entra }: la chiave del QR, finché vale la sua finestra (e non è già quella di adesso)
+  qrRaw: null,         // i suoi byte, solo per disegnare il QR nei primi due minuti
+  prossima: null,      // { k, chiavi }: la chiave rinnovata, che aspetta il primo saluto del telefono
+  scartata: null,      // { k, chiavi, entra }: nella finestra del QR, la chiave del telefono che un altro ha sostituito («Usa questo telefono»): lui lo sa, e può riprendersi il posto
+  vecchia: null,       // { entra, fino }: la chiave d'entrata di prima (per la stanza che non sa ancora quella nuova)
+  avviso: null,        // { ts, testo }: un avviso per il PC (un altro iPhone, un altro utente, una stazione da confermare)
   presa: null,         // la presa verso il ripetitore (fuori-sw.js: nel documento fuori schermo)
   lavori: 0,           // i comandi del telefono che stanno lavorando (tengono il PC sul ponte)
   scollegato: 0,       // quando il ripetitore ha detto di no a questo PC (4403)
@@ -135,7 +166,19 @@ function pontePubblico() {
     cambiato: (pt.coppia && pt.coppia.cambiata) || 0,   // quando un altro iPhone ha preso il posto del primo
     // (nel ripiego, senza documento fuori schermo, le schede del gestionale svegliano il service worker ogni 30 secondi, come fino alla 3.86)
     sveglia: !!pt.coppia && fuoriRipiego(),
+    // un altro utente nel gestionale: l'iPhone è fermo finché il medico non lo riconferma qui
+    pausa: pt.coppia && pt.coppia.pausa ? { ts: pt.coppia.pausa.ts, operatore: pt.coppia.pausa.operatore || "", prima: pt.coppia.operatore || "" } : null,
+    rinnovata: (pt.coppia && pt.coppia.rinnovata) || 0,   // quando la chiave del QR è stata sostituita da quella nuova
+    avviso: pt.avviso,
+    // la stazione di stampa che il telefono vuole al posto di quella che c'è: si conferma qui (stazione-sw.js)
+    stazioneChiesta: typeof stazioneChiesta === "function" ? stazioneChiesta() : null,
+    stazioneTel: typeof stazioneDelTelefono === "function" ? stazioneDelTelefono() : "",
   };
+}
+// Un avviso che il PC deve far vedere (la pagina iPhone, la spia del pannello, il Registro): anche nel registro del ponte
+function ponteAvviso(testo) {
+  pt.avviso = { ts: ponteOra(), testo: corto(testo, 160) };
+  ponteNota(testo);
 }
 // a che punto è la presa, per le pagine: spento (niente da fare), riposo (associato, ma fuori dal ponte
 // perché non serve), collego, su, giu (caduta: si riprova), scollegato (il ripetitore ha detto di no)
@@ -169,8 +212,32 @@ async function ponteIndirizzo() {
 }
 // Il QR si rivede solo nei primi due minuti, e solo finché nessun telefono è
 // entrato: dopo, «Associa» fa una chiave nuova.
-const ponteQr = () => (pt.host && pt.coppia && !pt.coppia.usata && ponteOra() - pt.coppia.creata < PONTE_QR_MAX
-  ? `${pt.host}/ponte/#${PonteCripto.frammento(pt.k, pt.coppia.creata + PONTE_QR_PRIMO)}` : "");
+const ponteQr = () => (pt.host && pt.coppia && !pt.coppia.usata && pt.qrRaw && ponteOra() - pt.coppia.creata < PONTE_QR_MAX
+  ? `${pt.host}/ponte/#${PonteCripto.frammento(pt.qrRaw, pt.coppia.creata + PONTE_QR_PRIMO)}` : "");
+// La finestra del QR: il suo link vale per il primo scambio (e per «Usa questo telefono») fin qui
+const ponteFinestra = () => !!pt.coppia && ponteOra() - pt.coppia.creata < PONTE_QR_PRIMO + 60e3;
+
+// ------------------------------------------------------------- la cassa
+// La coppia su disco (niente di segreto) e le sue chiavi nella cassa (cassa.js). Una coppia della 3.86
+// (con `k` in storage.local) si sposta qui la prima volta: la chiave nella cassa, e via da storage.local.
+const ponteNuovoId = () => PonteCripto.b64u(PonteCripto.casuale(9));
+async function ponteMigra(c) {
+  if (!c || typeof c.k !== "string") return c;
+  const raw = PonteCripto.daB64u(c.k);
+  const { k, ...resto } = c;
+  const id = ponteNuovoId(), K = await PonteCripto.chiaveDa(raw), stanza = (await PonteCripto.chiaviCoppia(raw)).stanza;
+  const quiQr = !c.usata && ponteOra() - (c.creata || 0) < PONTE_QR_PRIMO + 60e3;
+  await cassaScrivi(PONTE_CASSA, { id, k: K, ...(quiQr ? { qr: K, ...(ponteOra() - (c.creata || 0) < PONTE_QR_MAX ? { qrRaw: raw } : {}) } : {}) });
+  const nuova = { ...resto, id, gen: 0, stanza };
+  await chrome.storage.local.set({ [PONTE_COPPIA]: nuova });
+  return nuova;
+}
+// Quello che si ricava da una chiave: i saluti, il codice, le chiavi d'entrata
+const ponteDa = async (k) => ({ k, chiavi: await PonteCripto.chiaviCoppia(k), entra: await PonteCripto.chiaviEntra(k) });
+async function ponteCassaScrivi(x) {
+  await cassaScrivi(PONTE_CASSA, x);
+  pt.cassaDi = "";   // (si rilegge al prossimo avvio)
+}
 
 // ---------------------------------------------------------------- la presa
 // Una alla volta: le schede che svegliano, un QR nuovo e un nuovo tentativo
@@ -183,18 +250,42 @@ const ponteAvvia = (serve = true) => (ponteFilaAvvio = ponteFilaAvvio.then(() =>
 async function ponteAvviaOra(serve = true) {
   pt.host = await ponteIndirizzo();
   let c = (await chrome.storage.local.get(PONTE_COPPIA))[PONTE_COPPIA] || null;
-  if (c && pt.chiaviDi !== c.k) {
-    try {
-      pt.k = PonteCripto.daB64u(c.k);
-      pt.chiavi = await PonteCripto.chiaviCoppia(pt.k);
-      pt.codice = await PonteCripto.codice(pt.k);
-      pt.chiaviDi = c.k;
-    } catch {   // una chiave rovinata su disco non tiene fermo il ponte per sempre
-      await chrome.storage.local.remove(PONTE_COPPIA);
-      c = null;
+  try {
+    c = await ponteMigra(c);
+    const x = c ? await cassaLeggi(PONTE_CASSA) : null;
+    if (c && (!x || x.id !== c.id || !x.k || !/^[0-9a-f]{32}$/.test(c.stanza || ""))) throw new Error("coppia senza chiave");
+    // la finestra del QR è finita: la sua chiave non vale più (e i suoi byte nemmeno per disegnarlo)
+    const fuori = ponteOra() - c.creata >= PONTE_QR_PRIMO + 60e3;
+    if (x && (((x.qr || x.scartata) && fuori) || (x.qrRaw && (c.usata || ponteOra() - c.creata >= PONTE_QR_MAX))
+      || (x.vecchia && !(ponteOra() < x.vecchia.fino)))) {
+      const { qr, qrRaw, vecchia, scartata, ...resto } = x;
+      const tieni = { ...resto };
+      if (qr && !fuori) tieni.qr = qr;
+      if (scartata && !fuori) tieni.scartata = scartata;
+      if (qrRaw && !c.usata && ponteOra() - c.creata < PONTE_QR_MAX) tieni.qrRaw = qrRaw;
+      if (vecchia && ponteOra() < vecchia.fino) tieni.vecchia = vecchia;
+      await ponteCassaScrivi(tieni);
+      Object.assign(x, { qr: tieni.qr, qrRaw: tieni.qrRaw, vecchia: tieni.vecchia, scartata: tieni.scartata });
     }
+    const firma = x ? `${c.id}.${c.gen || 0}.${!!x.qr}.${!!x.qrRaw}.${!!x.prossima}.${!!x.vecchia}.${!!x.scartata}` : "";
+    if (c && pt.cassaDi !== firma) {
+      const ora = await ponteDa(x.k);
+      pt.k = ora.k; pt.chiavi = { ...ora.chiavi, stanza: c.stanza }; pt.entra = ora.entra;
+      pt.codice = await PonteCripto.codice(x.k);
+      pt.qr = x.qr && x.qr !== x.k ? await ponteDa(x.qr) : null;
+      pt.qrRaw = x.qrRaw || null;
+      pt.prossima = x.prossima ? await ponteDa(x.prossima) : null;
+      pt.scartata = x.scartata ? await ponteDa(x.scartata) : null;
+      pt.vecchia = x.vecchia || null;
+      pt.chiaviDi = `${c.id}.${c.gen || 0}`;
+      pt.cassaDi = firma;
+    }
+  } catch {   // una chiave rovinata (o che manca) non tiene fermo il ponte per sempre: serve un QR nuovo
+    await chrome.storage.local.remove(PONTE_COPPIA).catch(() => {});
+    await cassaTogli(PONTE_CASSA).catch(() => {});
+    c = null;
   }
-  if (!c) { pt.coppia = null; pt.k = null; pt.chiavi = null; pt.codice = ""; pt.chiaviDi = ""; }
+  if (!c) Object.assign(pt, { coppia: null, k: null, chiavi: null, codice: "", chiaviDi: "", entra: null, cassaDi: "", qr: null, qrRaw: null, prossima: null, vecchia: null, scartata: null });
   else pt.coppia = c;
   if (!pt.host || !pt.coppia) await pt.presa.ferma();
   // (nel ripiego la presa sta qui, ed è morta col service worker di prima: si riapre, se serve)
@@ -270,9 +361,17 @@ chrome.tabs.onUpdated.addListener((id, info) => {
   if (info.url !== undefined && !sulGestionale(info.url)) ponteSegnaAccesso(id, false).catch(() => {});
   psaCambio();
 });
+// L'indirizzo della presa, con le chiavi d'entrata nel frammento: alla rete va senza (presa.js). `c` la
+// chiave d'entrata del PC (la stanza la tiene la prima volta, e la cambia se le si prova quella di prima: `p`),
+// `a` quelle del telefono — quando si sa che il telefono sa provare (una coppia nuova, o un telefono che l'ha detto),
+// la chiave di adesso e, nella finestra del QR, quella del QR (per «Usa questo telefono»).
 function ponteUrlPresa() {
   const u = new URL(pt.host);
-  return `${u.protocol === "https:" ? "wss:" : "ws:"}//${u.host}/ponte/ws?r=${pt.chiavi.stanza}&ruolo=pc`;
+  const base = `${u.protocol === "https:" ? "wss:" : "ws:"}//${u.host}/ponte/ws?r=${pt.chiavi.stanza}&ruolo=pc`;
+  if (!pt.entra) return base;
+  const prove = [pt.qr && pt.qr.entra.pc, pt.vecchia && pt.vecchia.entra].filter((x) => x && x !== pt.entra.pc);
+  const tel = pt.coppia && pt.coppia.telProva ? [pt.entra.tel, ponteFinestra() && pt.qr ? pt.qr.entra.tel : "", ponteFinestra() && pt.scartata ? pt.scartata.entra.tel : ""].filter(Boolean) : [];
+  return `${base}#c=${pt.entra.pc}${prove.length ? "&p=" + [...new Set(prove)].join(",") : ""}${tel.length ? "&a=" + tel.join(",") : ""}`;
 }
 // La presa: nel documento fuori schermo (fuori-sw.js), che la tiene, la batte, la riprova e la
 // chiude alla sua ora. Quello che arriva sveglia il service worker, e passa di qui.
@@ -323,6 +422,8 @@ async function ponteControlla() {
   // dal ponte (l'associazione resta); se sì e la presa non c'è, la si riapre. Col documento fuori
   // schermo no: la presa la chiude lui alla sua ora, e la riapre solo un cambiamento (psaCambio).
   if (fuoriRipiego() && pt.host && pt.coppia) await ponteAssicura();
+  // finita la finestra del QR: la sua chiave non vale più (anche come chiave d'entrata per la stanza)
+  else if (pt.coppia && (pt.qr || pt.qrRaw) && !ponteFinestra()) await ponteAvvia();
 }
 
 // ------------------------------------------------------- i messaggi in arrivo
@@ -339,37 +440,97 @@ async function ponteRicevi(dati) {
 // Il telefono apre una sessione: il suo numero casuale, il nostro, le chiavi
 // nuove. La sessione di prima (se c'è) resta finché la nuova non parla: un
 // saluto ripetuto da qualcun altro non chiude niente.
+// Il saluto si apre con la chiave di adesso; o con quella rinnovata (il telefono l'ha: da qui è lei, e
+// quella di prima se ne va); o — solo nella finestra del QR — con quella del QR (un telefono che l'ha
+// soltanto: «Usa questo telefono», o lo stesso telefono che ha perso la chiave nuova).
 async function ponteSaluto(b) {
-  let m, nTel;
-  try {
-    m = (await PonteCripto.apri(pt.chiavi.salutoTel, b, PonteCripto.TIPO.SALUTO_TEL)).dati;
-    nTel = PonteCripto.daB64u(m.n);
-  } catch { return; }
+  let m, nTel, quale = "", chiavi = null, cambiato = false;
+  for (const [nome, x] of [["ora", pt], ["prossima", pt.prossima], ["qr", ponteFinestra() ? pt.qr : null], ["scartata", ponteFinestra() ? pt.scartata : null]]) {
+    if (!x || !x.chiavi) continue;
+    try { m = (await PonteCripto.apri(x.chiavi.salutoTel, b, PonteCripto.TIPO.SALUTO_TEL)).dati; quale = nome; chiavi = x.chiavi; break; } catch { /* un'altra */ }
+  }
+  if (!quale) return;
+  try { nTel = PonteCripto.daB64u(m.n); } catch { return; }
   if (m.v !== 1 || nTel.length !== 16 || typeof m.dev !== "string" || !/^[\w-]{16,32}$/.test(m.dev)) return;
   // il link del QR vale per il primo scambio solo pochi minuti: poi non entra più nessuno
-  if (!pt.coppia.dev && ponteOra() - pt.coppia.creata >= PONTE_QR_PRIMO + 60e3) return;
+  if (!pt.coppia.dev && !ponteFinestra()) return;
+  // (la chiave rinnovata ce l'ha solo il telefono dell'associazione)
+  if (quale === "prossima" && m.dev !== pt.coppia.dev) return;
   // L'associazione è del primo telefono che è entrato: un altro, anche con lo
   // stesso QR, si sente dire di no (e il registro lo dice, una volta al minuto)
-  // — a meno che chieda «Usa questo telefono»: allora è lui.
+  // — a meno che chieda «Usa questo telefono» finché il QR è sullo schermo: allora è lui.
   if (pt.coppia.dev && m.dev !== pt.coppia.dev) {
-    const no = m.cambio ? await ponteCambio(m) : { no: "altro telefono" };
+    const no = m.cambio && !m.sonda ? await ponteCambio(m, quale) : { no: "altro telefono" };
     if (no) {
       if (no.no === "altro telefono" && ponteOra() - pt.rifiuto > 60e3) {
         pt.rifiuto = ponteOra();
-        ponteNota("Un altro telefono ha provato a entrare con il QR: rifiutato");
+        ponteNota(m.cambio ? "Un altro telefono ha chiesto «Usa questo telefono» fuori dalla finestra del QR: rifiutato (serve un QR nuovo)" : "Un altro telefono ha provato a entrare con il QR: rifiutato");
         await ponteScriviStato();
       }
-      ponteManda(await PonteCripto.sigilla(pt.chiavi.salutoPc, PonteCripto.TIPO.SALUTO_PC, 0, { v: 1, eco: m.n, ...no }));
+      ponteManda(await PonteCripto.sigilla(chiavi.salutoPc, PonteCripto.TIPO.SALUTO_PC, 0, { v: 1, eco: m.n, ...no }));
       return;
     }
+    chiavi = pt.chiavi; cambiato = true;   // (cambiato: la chiave di adesso è quella di questo telefono — già sistemata da ponteCambio)
   }
-  if (m.sonda === true) return ponteSonda(m);   // ⋯ → Dispositivi sul telefono: chi è questo PC, e nessuna sessione
+  if (m.sonda === true) return ponteSonda(m, chiavi);   // ⋯ → Dispositivi sul telefono: chi è questo PC, e nessuna sessione
+  let riapri = false;
+  // il telefono sa dare la prova dell'entrata (3.87): da adesso la stanza ha anche la sua chiave
+  if (m.entra === 1 && !pt.coppia.telProva) { await ponteScriviCoppia({ ...pt.coppia, telProva: true }); riapri = true; }
+  if (quale === "prossima") { await ponteRinnovata(); riapri = true; }
+  if (cambiato) riapri = true;   // (la chiave di adesso è cambiata: anche quelle d'entrata della stanza)
+  else if (!cambiato && ((quale === "qr" && pt.qr) || (quale === "scartata" && pt.scartata))) { await ponteTornaA(quale, "stesso"); riapri = true; }
   const nPc = PonteCripto.casuale(16);
   pt.attesa = { canale: PonteCripto.canalePc(await PonteCripto.chiaviSessione(pt.k, nTel, nPc)), ts: ponteOra(), dev: m.dev, nTel: m.n, nPc: PonteCripto.b64u(nPc) };
   await ponteSessioneSalva();   // (prima di rispondere: se il service worker si ferma qui, il primo messaggio la trova lo stesso)
   // (con l'ora del PC: il telefono ne tiene lo scarto, e un ordine porta l'ora del tocco sull'orologio del PC)
-  ponteManda(await PonteCripto.sigilla(pt.chiavi.salutoPc, PonteCripto.TIPO.SALUTO_PC, 0,
+  await ponteManda(await PonteCripto.sigilla(pt.chiavi.salutoPc, PonteCripto.TIPO.SALUTO_PC, 0,
     { v: 1, n: PonteCripto.b64u(nPc), eco: m.n, ora: ponteOra() }));
+  // le chiavi d'entrata sono cambiate: la presa si rifà (dopo la risposta), e la stanza tiene le nuove
+  if (riapri) await ponteAvvia();
+}
+// La chiave rinnovata ha salutato: da adesso è lei. Quella di prima resta solo per la finestra del QR
+// (se c'è ancora: «Usa questo telefono») e, come chiave d'entrata, per provare alla stanza che è il PC.
+async function ponteRinnovata() {
+  const x = await cassaLeggi(PONTE_CASSA);
+  if (!x || !x.prossima || x.id !== pt.coppia.id) return;
+  const vecchia = { entra: pt.entra.pc, fino: ponteOra() + PONTE_VECCHIA_MAX };
+  const { prossima, ...resto } = x;
+  const qr = ponteFinestra() ? x.qr || x.k : null;
+  await ponteCassaScrivi({ ...resto, k: prossima, vecchia, ...(qr ? { qr } : {}) });
+  const gen = (pt.coppia.gen || 0) + 1, ora = ponteOra();
+  await ponteScriviCoppia({ ...pt.coppia, gen, rinnovata: ora, telProva: true });
+  const prima = { k: pt.k, chiavi: pt.chiavi, entra: pt.entra };
+  pt.k = pt.prossima.k; pt.chiavi = { ...pt.prossima.chiavi, stanza: pt.coppia.stanza }; pt.entra = pt.prossima.entra;
+  pt.codice = await PonteCripto.codice(pt.k);
+  if (qr && !pt.qr) pt.qr = prima;
+  pt.prossima = null; pt.vecchia = vecchia; pt.chiaviDi = `${pt.coppia.id}.${gen}`;
+  ponteNota(`Chiave dell'associazione rinnovata alle ${hhmmPonte(ora)}: la chiave del QR non apre più niente`);
+  await ponteScriviStato();
+}
+// Nella finestra del QR, un saluto con la chiave del QR (il telefono ha solo lei: «Usa questo telefono» dall'app
+// della Home), o con quella del telefono che un altro aveva sostituito (si riprende il posto): la chiave torna
+// quella. Quella di adesso, se è una chiave rinnovata (non quella del QR), resta «scartata» fino alla fine della
+// finestra: il suo telefono si sente dire «un altro telefono», e può riprendersi il posto.
+async function ponteTornaA(quale, perche) {
+  const x = await cassaLeggi(PONTE_CASSA);
+  const nuova = x && (quale === "qr" ? x.qr : x.scartata);
+  const da = quale === "qr" ? pt.qr : pt.scartata;
+  if (!x || !nuova || !da || x.id !== pt.coppia.id) return;
+  const { prossima, scartata, ...resto } = x;
+  const scarto = x.k !== x.qr && x.k !== nuova ? x.k : null;
+  const vecchia = { entra: pt.entra.pc, fino: ponteOra() + PONTE_VECCHIA_MAX };
+  await ponteCassaScrivi({ ...resto, k: nuova, vecchia, ...(scarto ? { scartata: scarto } : {}) });
+  const gen = (pt.coppia.gen || 0) + 1;
+  await ponteScriviCoppia({ ...pt.coppia, gen });
+  const prima = { k: pt.k, chiavi: pt.chiavi, entra: pt.entra };
+  pt.vecchia = vecchia;
+  pt.k = da.k; pt.chiavi = { ...da.chiavi, stanza: pt.coppia.stanza }; pt.entra = da.entra;
+  pt.codice = await PonteCripto.codice(pt.k);
+  // (il QR resta per la sua finestra, se non è lui la chiave di adesso)
+  pt.qr = quale === "qr" ? null : pt.qr || (x.qr && x.qr !== nuova ? prima : null);
+  pt.scartata = scarto ? prima : null;
+  pt.prossima = null; pt.chiaviDi = `${pt.coppia.id}.${gen}`;
+  if (perche === "stesso") ponteNota("L'iPhone è rientrato con la chiave del QR: la chiave nuova si rifà");
 }
 // «Usa questo telefono» (due tocchi sul telefono che trova il PC già associato):
 // la richiesta è un saluto con `cambio`, cifrato con la chiave del QR — senza, non
@@ -378,15 +539,26 @@ async function ponteSaluto(b) {
 // scadenza, come l'altra — e questo è il telefono dell'associazione; il registro
 // del ponte e la pagina ⋯ → iPhone dicono «iPhone cambiato alle …».
 // Ritorna null se il cambio è fatto, se no la risposta da dare.
-async function ponteCambio(m) {
-  const { errori, blocco, ...c } = pt.coppia, ora = ponteOra();   // (errori e blocco: i conti del codice di prima, via)
+// (3.87) Solo nella finestra del QR — finché il QR è sullo schermo, o appena dopo: «la Fotocamera, poi l'app
+// della Home» —; dopo, un QR nuovo. Il PC lo dice in vista: la pagina iPhone, la spia del pannello, il Registro.
+async function ponteCambio(m, quale) {
+  if (!ponteFinestra()) return { no: "altro telefono" };
+  const ora = ponteOra();
   // un saluto già visto (rimandato dal ripetitore) non vale una seconda volta
-  const cambi = (Array.isArray(c.cambi) ? c.cambi : []).slice(-7);
+  const cambi = (Array.isArray(pt.coppia.cambi) ? pt.coppia.cambi : []).slice(-7);
   if (cambi.includes(m.n)) return { no: "altro telefono" };
   cambi.push(m.n);
   await ponteFine("cambiato");
+  // (col QR: la chiave torna quella del QR, la sola che questo telefono ha; la chiave nuova si rifà con lui)
+  if (quale === "qr" || quale === "scartata") await ponteTornaA(quale, "cambio");
+  else if (pt.prossima) {
+    const x = await cassaLeggi(PONTE_CASSA);
+    if (x && x.prossima) { const { prossima, ...resto } = x; await ponteCassaScrivi(resto); }
+    pt.prossima = null;
+  }
+  const { errori, blocco, ...c } = pt.coppia;   // (errori e blocco: i conti del codice di prima, via)
   await ponteScriviCoppia({ ...c, cambi, dev: m.dev, usata: true, nTel: m.n, cambiata: ora });
-  ponteNota(`iPhone cambiato alle ${hhmmPonte(ora)}: un altro telefono ha preso il posto («Usa questo telefono»)`);
+  ponteAvviso(`iPhone cambiato alle ${hhmmPonte(ora)}: un altro telefono ha preso il posto («Usa questo telefono»)`);
   await ponteScriviStato();
   return null;
 }
@@ -414,9 +586,13 @@ async function ponteDati(b) {
       await ponteSessioneSalva();
       // il telefono dell'associazione è questo (il primo che entra), e il QR
       // non si rivede più; il numero del suo saluto lega un eventuale «riparti»
-      await ponteScriviCoppia({ ...pt.coppia, dev: pt.coppia.dev || a.dev, usata: true, nTel: a.nTel });
+      const primo = !pt.coppia.usata;
+      // (chi è entrato nel gestionale, se non lo si sapeva ancora: l'associazione è sua — ponteOperatoreVisto)
+      const operatore = pt.coppia.operatore || (pt.coppia.pausa ? "" : await ponteOperatoreOra());
+      await ponteScriviCoppia({ ...pt.coppia, dev: pt.coppia.dev || a.dev, usata: true, nTel: a.nTel, ...(operatore ? { operatore } : {}) });
       ponteNota(nuova ? "iPhone collegato" : "iPhone ricollegato: sessione nuova");
       await ponteScriviStato();
+      if (primo) ponteAvvia(false).catch(() => {});   // (i byte del QR, via dalla cassa: il QR non si rivede più)
       ponteComando(pt.sessione, d);
       return;
     } catch { /* né l'una né l'altra */ }
@@ -462,6 +638,7 @@ async function ponteFine(perche) {
 async function ponteVia(perche, nota) {
   await ponteFine(perche);
   await chrome.storage.local.remove(PONTE_COPPIA);
+  await cassaTogli(PONTE_CASSA).catch(() => {});
   ponteNota(nota);
   await ponteAvvia();
 }
@@ -569,7 +746,22 @@ function ponteArgomenti(d) {
   return a;
 }
 // quelli che l'app manda da sé: non sono il medico, non tengono aperta la sessione
-const PONTE_DA_SE = new Set(["ciao", "ordini", "dispositivo"]);
+const PONTE_DA_SE = new Set(["ciao", "ordini", "dispositivo", "rinnova"]);
+// La chiave nuova (3.87), nella sessione: la chiave pubblica ECDH del telefono, la nostra in risposta, e K'
+// da K e dal segreto dell'ECDH. Resta «prossima» finché il telefono non saluta con lei (ponteSaluto). Lo
+// stesso numero (`rq`) rimandato ha la stessa risposta (ponteComandoOra): una sola chiave nuova per volta.
+async function ponteRinnova(d) {
+  let pubTel;
+  try { pubTel = PonteCripto.daB64u(d.pub); } catch { pubTel = null; }
+  if (!pubTel || pubTel.length !== 65 || pubTel[0] !== 4) return { ok: false, errore: "Chiave non valida" };
+  const x = await cassaLeggi(PONTE_CASSA);
+  if (!x || !pt.coppia || x.id !== pt.coppia.id) return { ok: false, errore: "Associazione non trovata" };
+  const e = await PonteCripto.coppiaEcdh();
+  const k2 = await PonteCripto.rinnova(pt.k, e.privata, pubTel, pubTel, e.pub);
+  await ponteCassaScrivi({ ...x, prossima: k2 });
+  pt.prossima = await ponteDa(k2);
+  return { ok: true, dati: { pub: PonteCripto.b64u(e.pub) } };
+}
 // La build mini (PS Assist · Lettura e stampa) è di SOLA LETTURA: il ponte
 // risponde solo ai comandi di lettura e alla ristampa (legge la pagina aperta e
 // stampa, non scrive niente nel gestionale). Elenco a consenso esplicito: tutto
@@ -585,6 +777,7 @@ const PONTE_LETTURA = new Set([
   "stampaReferto",                            // un referto già salvato su questo PC, stampato (non scrive nel gestionale)
   "visto",                                    // referti ed esiti visti sul telefono: solo la memoria dell'estensione
   "dispositivo",                              // chi è questo PC e la sua stazione di stampa (⋯ → Dispositivi): legge e basta
+  "rinnova", "scollega",                      // la chiave dell'associazione: la rinnova, o la chiude (non toccano il gestionale)
 ]);
 const ponteSolaLettura = () => typeof self !== "undefined" && self.PSA_SOLA_LETTURA === true;
 // Chi è questo PC, per il menu del telefono (nel saluto `ciao`): il tipo
@@ -600,8 +793,55 @@ async function ponteChiSono() {
   const s = (await chrome.storage.session.get(PONTE_OPERATORE).catch(() => ({})))[PONTE_OPERATORE];
   const operatore = s && typeof s.nome === "string" && Date.now() - (s.ts || 0) < 36e5 ? s.nome.slice(0, 60) : "";
   const versione = ponteVersione();
-  return { kind: ponteSolaLettura() ? "lettura" : "completo", nome, ...(versione ? { versione } : {}), ...(operatore ? { operatore } : {}) };
+  return { kind: ponteSolaLettura() ? "lettura" : "completo", nome, ...(versione ? { versione } : {}), ...(operatore ? { operatore } : {}),
+    ...(pt.coppia && pt.coppia.pausa ? { pausa: PONTE_PAUSA } : {}) };
 }
+// Il cambio turno (3.87): l'associazione ricorda chi era entrato nel gestionale quando si è fatta (il nome
+// nella testata). Se su questo profilo entra un altro utente, il telefono si ferma — niente letture, niente
+// scritture: «Sul PC è entrato un altro utente: riconferma sul PC» — finché il medico non lo riconferma qui
+// (un tocco sulla pagina iPhone) o non fa un QR nuovo. Torna quello di prima: riparte da sé.
+const ponteChi = (n) => String(n || "").replace(/\s+/g, " ").trim().toUpperCase();
+async function ponteOperatoreOra() {
+  const s = (await chrome.storage.session.get(PONTE_OPERATORE).catch(() => ({})))[PONTE_OPERATORE];
+  return s && typeof s.nome === "string" && ponteOra() - (s.ts || 0) < 36e5 ? s.nome.slice(0, 60) : "";
+}
+async function ponteOperatoreVisto(nome) {
+  const c = pt.coppia;
+  if (!c || !nome) return;
+  if (!c.operatore) {
+    // (una coppia della 3.86, o fatta prima che la testata si leggesse: da adesso è di chi c'è)
+    if (!c.pausa) await ponteScriviCoppia({ ...c, operatore: nome });
+    return;
+  }
+  if (ponteChi(nome) === ponteChi(c.operatore)) {
+    if (c.pausa) {
+      const { pausa, ...resto } = c;
+      await ponteScriviCoppia(resto);
+      ponteNota(`Nel gestionale è tornato ${c.operatore}: l'iPhone riprende`);
+      await ponteScriviStato();
+    }
+    return;
+  }
+  if (c.pausa && ponteChi(c.pausa.operatore) === ponteChi(nome)) return;
+  await ponteScriviCoppia({ ...c, pausa: { ts: ponteOra(), operatore: nome } });
+  ponteAvviso(`Sul PC è entrato un altro utente (${corto(nome, 40)}): l'iPhone di ${corto(c.operatore, 40)} è in pausa finché non lo riconfermi qui`);
+  await ponteFine("altro utente");
+  await ponteScriviStato();
+}
+// «Riconferma l'iPhone» sulla pagina iPhone: l'associazione è adesso di chi c'è nel gestionale
+async function ponteRiconferma() {
+  const c = pt.coppia;
+  if (!c || !c.pausa) return { ok: !!c };
+  const nome = (await ponteOperatoreOra()) || c.pausa.operatore || "";
+  const { pausa, ...resto } = c;
+  await ponteScriviCoppia({ ...resto, operatore: nome });
+  ponteNota(`iPhone riconfermato per ${corto(nome, 40) || "chi c'è nel gestionale"}`);
+  if (pt.avviso && /altro utente/.test(pt.avviso.testo)) pt.avviso = null;
+  await ponteScriviStato();
+  return { ok: true };
+}
+// in pausa, il telefono può solo sapere chi è il PC (e perché è fermo), chiudere, e tenere viva la chiave
+const PONTE_IN_PAUSA = new Set(["ciao", "esci", "tocco", "dispositivo", "rinnova", "scollega"]);
 
 // ------------------------------------------- i dispositivi, per il telefono
 // ⋯ → Dispositivi sul telefono: chi è questo PC (il tipo, il nome, la versione
@@ -637,8 +877,8 @@ async function ponteDispositivo() {
   const { kind, nome, versione } = await ponteChiSono();   // (chi è loggato nel gestionale qui non serve)
   return { kind, nome, ...(versione ? { versione } : {}), stazione: await ponteStazioneDi() };
 }
-async function ponteSonda(m) {
-  ponteManda(await PonteCripto.sigilla(pt.chiavi.salutoPc, PonteCripto.TIPO.SALUTO_PC, 0, { v: 1, eco: m.n, sonda: await ponteDispositivo() }));
+async function ponteSonda(m, chiavi = pt.chiavi) {
+  ponteManda(await PonteCripto.sigilla(chiavi.salutoPc, PonteCripto.TIPO.SALUTO_PC, 0, { v: 1, eco: m.n, sonda: await ponteDispositivo() }));
 }
 const PONTE_RQ_MAX = 40;   // le scritture ricordate per sessione (in memoria; le ultime anche in storage.session: ponteRqSegna)
 // Un comando che lavora tiene il PC sul ponte (ponteServeFino): finito l'ultimo, i due minuti cominciano da lì.
@@ -656,6 +896,8 @@ async function ponteComandoOra(s, d) {
   const rispondi = (r) => ponteInvia(s, { re: d.id, ...r });
   // (il telefono che chiude per i 3 minuti e si riapre subito: il suo saluto nuovo, se è già qui, resta)
   if (d.cmd === "esci") { await rispondi({ ok: true }); const a = pt.attesa; await ponteFine("chiusa dall'iPhone"); if (a && pt.coppia) { pt.attesa = a; ponteSessioneSalva(); } return; }
+  // «Scollega» sul telefono (3.87): l'associazione finisce anche qui, come con «Revoca»
+  if (d.cmd === "scollega") { await rispondi({ ok: true }); await ponteVia("scollegata dall'iPhone", "L'iPhone si è scollegato: associazione chiusa (per riassociarlo serve un QR nuovo)"); return; }
   // Una scrittura porta il suo numero (rq): rimandata dal telefono dopo una
   // presa caduta, non si rifà — si risponde com'è andata, o, se sta ancora
   // andando, quando finisce. Le letture si rifanno e basta. Anche dopo un
@@ -688,7 +930,10 @@ async function ponteRisposta(s, d) {
     // qui, prima di toccare una scheda. Il telefono lo sa (`solaLettura`) e
     // nasconde quei controlli, ma lo stesso comando mandato grezzo è rifiutato.
     if (ponteSolaLettura() && !PONTE_LETTURA.has(d.cmd)) return { ok: false, errore: "Questo PC è in sola lettura", solaLettura: true };
+    // un altro utente nel gestionale: niente letture e niente scritture, finché il medico non riconferma sul PC
+    if (pt.coppia && pt.coppia.pausa && !PONTE_IN_PAUSA.has(d.cmd)) return { ok: false, errore: PONTE_PAUSA, pausa: true };
     if (d.cmd === "ciao") return { ok: true, dati: { inattivoMin: PONTE_INATTIVO / 60e3, ...(await ponteChiSono()) } };
+    if (d.cmd === "rinnova") return await ponteRinnova(d);
     // il medico tocca o scorre il telefono (al più uno al minuto): conta come un comando — l'orologio dei 3
     // minuti si è già spostato qui sopra (ponteComando) — e basta
     if (d.cmd === "tocco") return { ok: true };
@@ -726,7 +971,9 @@ async function ponteRisposta(s, d) {
     // il QR di una stazione di stampa, inquadrato dal telefono: il PC la collega (stazione-sw.js)
     if (d.cmd === "stazioneCollega" && typeof stazioneCollega === "function") {
       const r = await stazioneCollega(d);
-      ponteNota(r.ok ? `iPhone · stazione di stampa collegata: ${corto(r.dati.nome, 40)}` : `iPhone · stazione di stampa non collegata: ${corto(r.errore, 100)}`);
+      // (3.87) una stazione già collegata non si sostituisce dal telefono: lo conferma il medico, qui
+      if (r.conferma) ponteAvviso(`L'iPhone chiede di collegare «${corto(r.conferma.nome, 40)}» al posto di «${corto(r.conferma.prima, 40)}»: confermalo nella pagina iPhone (⋯ → iPhone)`);
+      else ponteNota(r.ok ? `iPhone · stazione di stampa collegata: ${corto(r.dati.nome, 40)}` : `iPhone · stazione di stampa non collegata: ${corto(r.errore, 100)}`);
       await ponteScriviStato();
       return r;
     }
@@ -1424,6 +1671,9 @@ const ponteTerapiaMemoScrivi = (ep, l) => (ponteFilaTerapiaMemo = ponteFilaTerap
 // andando: le schede aperte, e i numeri delle richieste (chi ne rimanda una ha
 // la stessa risposta, mai un secondo invio).
 async function ponteDimentica() {
+  // (3.87) la sessione col telefono, se c'è, finisce: l'associazione resta (la scelta del medico)
+  await ponteCaricato;
+  await ponteFine("dimentica").catch(() => {});
   ponteFilaCartella = ponteFilaCartella.then(() => chrome.storage.session.remove(PONTE_CARTELLA)).catch(() => {});
   ponteFilaTerapiaMemo = ponteFilaTerapiaMemo.then(() => chrome.storage.session.remove(PONTE_TERAPIA)).catch(() => {});
   // I numeri delle terapie e delle accettazioni mandate dal telefono RESTANO: un
@@ -2189,6 +2439,7 @@ function ponteDaPagina(msg, sender, reply) {
     return fai(async () => {
       const nome = typeof msg.nome === "string" ? msg.nome.replace(/\s+/g, " ").trim().slice(0, 60) : "";
       if (nome) await chrome.storage.session.set({ [PONTE_OPERATORE]: { nome, ts: ponteOra() } });
+      if (nome) await ponteOperatoreVisto(nome);   // (3.87: un altro utente ferma il telefono, finché non lo si riconferma)
       return { ok: true };
     });
   }
@@ -2401,10 +2652,16 @@ function ponteDaPagina(msg, sender, reply) {
     return fai(async () => {
       if (!pt.host) return { ok: false, why: "Ponte da configurare: in questa versione di PS Assist manca il suo indirizzo." };
       await ponteFine("nuova associazione");
-      const k = PonteCripto.casuale(32);
-      const ora = ponteOra();
-      await ponteScriviCoppia({ k: PonteCripto.b64u(k), creata: ora, usata: false, dev: "", nTel: "" });
+      const raw = PonteCripto.casuale(32);
+      const ora = ponteOra(), id = ponteNuovoId(), K = await PonteCripto.chiaveDa(raw);
+      const stanza = (await PonteCripto.chiaviCoppia(raw)).stanza, operatore = await ponteOperatoreOra();
+      // la chiave nella cassa (i suoi byte solo per disegnare il QR, due minuti); su disco quello che non è segreto
+      await ponteCassaScrivi({ id, k: K, qr: K, qrRaw: raw });
+      await ponteScriviCoppia({ id, gen: 0, stanza, creata: ora, usata: false, dev: "", nTel: "", telProva: true, ...(operatore ? { operatore } : {}) });
+      if (pt.avviso) pt.avviso = null;
       ponteNota(`Nuovo QR: vale per il primo scambio fino alle ${hhmmPonte(ora + PONTE_QR_PRIMO)}`);
+      // (finita la finestra del QR, la sua chiave non vale più: anche per la stanza del ripetitore)
+      setTimeout(() => { ponteCaricato.then(() => ponteAvvia()).catch(() => {}); }, PONTE_QR_PRIMO + 61e3);
       await ponteAvvia(false);
       await ponteAssicura(true);   // (un QR nuovo: sul ponte adesso, senza aspettare un tentativo in programma)
       await ponteScriviStato();
@@ -2414,9 +2671,24 @@ function ponteDaPagina(msg, sender, reply) {
   if (msg.t === "ponteRevoca") {
     return fai(async () => {
       await ponteVia("revocata", "Associazione revocata: l'iPhone non entra più");
-      return { ok: true, stato: pontePubblico() };
+      // (3.87) la stazione di stampa che il telefono aveva collegato: la pagina chiede se scollegare anche lei
+      const stazione = typeof stazioneDelTelefono === "function" ? stazioneDelTelefono() : "";
+      return { ok: true, stato: pontePubblico(), ...(stazione ? { stazione } : {}) };
     });
   }
+  // un altro utente nel gestionale: il medico riconferma l'iPhone (l'associazione è adesso di chi c'è)
+  if (msg.t === "ponteRiconferma") return fai(async () => ({ ...(await ponteRiconferma()), stato: pontePubblico() }));
+  // la stazione che il telefono vuole al posto di quella collegata: sostituirla (o no) lo decide il PC
+  if (msg.t === "ponteStazioneConferma") {
+    return fai(async () => {
+      const r = typeof stazioneConferma === "function" ? await stazioneConferma(msg.si === true) : { ok: false, errore: "Stazione non disponibile" };
+      ponteNota(msg.si === true ? (r.ok ? `Stazione di stampa sostituita dal PC: ${corto(r.dati.nome, 40)}` : `Stazione di stampa non sostituita: ${corto(r.errore, 100)}`) : "Stazione di stampa: sostituzione rifiutata sul PC");
+      if (pt.avviso && /stazione/i.test(pt.avviso.testo)) pt.avviso = null;
+      await ponteScriviStato();
+      return { ...r, stato: pontePubblico() };
+    });
+  }
+  if (msg.t === "ponteAvvisoVisto") return fai(async () => { pt.avviso = null; await ponteScriviStato(); return { ok: true }; });
   reply({ ok: false, why: "richiesta sconosciuta" });
 }
 chrome.runtime.onMessage.addListener(ponteDaPagina);
@@ -2434,6 +2706,7 @@ const ponteCaricato = (async () => {
   const s = (await chrome.storage.session.get(PONTE_STATO))[PONTE_STATO];
   pt.registro = Array.isArray(s && s.registro) ? s.registro : [];
   if (s && s.fine) pt.fine = s.fine;
+  if (s && s.avviso && typeof s.avviso.testo === "string") pt.avviso = s.avviso;
   await ponteAvvia(false);
   const ripresa = await ponteSessioneRiprendi();
   if (s && s.sessione && !ripresa) {

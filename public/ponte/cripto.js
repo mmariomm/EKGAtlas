@@ -50,10 +50,19 @@
   }
   const esa = (bytes) => Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
 
+  // K può essere i 32 byte (il QR, i test) o una CryptoKey HKDF non estraibile (quella che si tiene:
+  // IndexedDB, chiaveDa): da lì si ricava tutto, e i suoi byte non escono più.
+  const eChiave = (k) => !!k && typeof k === "object" && !!k.algorithm && k.algorithm.name === "HKDF" && k.type === "secret";
   async function hkdf(k, sale, info, n) {
-    const base = await subtle.importKey("raw", k, "HKDF", false, ["deriveBits"]);
+    const base = eChiave(k) ? k : await subtle.importKey("raw", k, "HKDF", false, ["deriveBits"]);
     const bits = await subtle.deriveBits({ name: "HKDF", hash: "SHA-256", salt: sale, info: enc.encode(info) }, base, n * 8);
     return new Uint8Array(bits);
+  }
+  // I 32 byte di K → la CryptoKey da tenere: non estraibile, solo per ricavare (HKDF).
+  async function chiaveDa(raw) {
+    if (eChiave(raw)) return raw;
+    if (!raw || raw.length !== 32) throw new Error("chiave dell'associazione non valida");
+    return subtle.importKey("raw", raw, "HKDF", false, ["deriveBits"]);
   }
   const aes = (raw) => subtle.importKey("raw", raw, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
   const unisci = (...parti) => {
@@ -65,7 +74,7 @@
 
   // Quello che si ricava da K una volta per tutte.
   async function chiaviCoppia(k) {
-    if (!(k instanceof Uint8Array) || k.length !== 32) throw new Error("chiave dell'associazione non valida");
+    if (!eChiave(k) && (!(k instanceof Uint8Array) || k.length !== 32)) throw new Error("chiave dell'associazione non valida");
     return {
       stanza: esa(await hkdf(k, SALE, "stanza", 16)),
       salutoTel: await aes(await hkdf(k, SALE, "saluto tel>pc", 32)),
@@ -163,8 +172,37 @@
     return `${t.slice(0, 3)} ${t.slice(3)}`;
   }
 
+  // L'entrata nella stanza del ripetitore (3.87): per ogni ruolo una chiave d'entrata, da K (32 byte,
+  // base64url). Il ripetitore la tiene e manda una sfida; il client risponde con la prova (HMAC-SHA256,
+  // con l'etichetta di worker/ponte-logica.js). Vale solo per entrare nella stanza: non apre niente.
+  const RUOLI = ["pc", "tel", "medico", "stazione"];
+  async function chiaviEntra(k) {
+    const out = {};
+    for (const r of RUOLI) out[r] = b64u(await hkdf(k, SALE, "entra " + r, 32));
+    return out;
+  }
+  async function provaEntra(chiave, sfida) {
+    const h = await subtle.importKey("raw", daB64u(chiave), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+    return b64u(new Uint8Array(await subtle.sign("HMAC", h, enc.encode("ps-ponte/entra|" + String(sfida)))));
+  }
+
+  // La chiave che rinnova K (3.87): dentro la prima sessione cifrata, telefono e PC si scambiano le
+  // chiavi pubbliche di un ECDH (P-256) — il QR non le ha — e da lì, e da K, nasce la chiave nuova.
+  // Chi ha fotografato il QR (o copiato K dopo) vede quella sessione, ma non il segreto dell'ECDH.
+  async function coppiaEcdh() {
+    const e = await subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, false, ["deriveBits"]);
+    return { privata: e.privateKey, pub: new Uint8Array(await subtle.exportKey("raw", e.publicKey)) };
+  }
+  async function rinnova(k, privata, pubAltro, pubTel, pubPc) {
+    if (!(pubAltro && pubAltro.length === 65 && pubAltro[0] === 4)) throw new Error("chiave pubblica non valida");
+    const altro = await subtle.importKey("raw", pubAltro, { name: "ECDH", namedCurve: "P-256" }, false, []);
+    const z = new Uint8Array(await subtle.deriveBits({ name: "ECDH", public: altro }, privata, 256));
+    return chiaveDa(await hkdf(k, unisci(SALE, z, pubTel, pubPc), "rinnova", 32));
+  }
+
   globalThis.PonteCripto = {
     VERSIONE, TIPO, casuale, b64u, daB64u, chiaviCoppia, chiaviSessione,
     sigilla, apri, leggiTestata, Canale, canaleTel, canalePc, leggiFrammento, frammento, codice,
+    chiaveDa, chiaviEntra, provaEntra, coppiaEcdh, rinnova,
   };
 })();
