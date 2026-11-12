@@ -31,6 +31,8 @@ await import(join(root, "../public/ponte/cripto.js"));
 const P = globalThis.PonteCripto;
 const EXT = join(root, "extension");
 const PROFILE = join("/tmp", "psa-ponte-" + process.pid);
+// (una prova di prima finita male non lo toglie, e lo stesso pid torna: il profilo di allora — col ponte e la coppia — no)
+rmSync(PROFILE, { recursive: true, force: true });
 const SHOTS = process.env.TEST_SHOTS_DIR || "";
 if (SHOTS) mkdirSync(SHOTS, { recursive: true });
 function chromiumPath() {
@@ -2068,15 +2070,36 @@ await aspettaTel(tel, /Parametri di 5 ore fa/, 15000);
 const v3 = await vitTel();
 check(!!v3 && /^Parametri di 5 ore fa PA 120 · FC 80 · SpO2 97 · FR 16 · T 36,6 · NEWS2 0$/.test(v3.riga) && v3.grigio && !v3.ros.length && !v3.amb.length,
   `vecchio: «Parametri di 5 ore fa», grigio; tutto nella norma: niente colori, NEWS2 0 (${JSON.stringify(v3)})`);
+// (il telefono che ha ancora l'elenco di prima: se in questi secondi l'elenco si rilegge da sé — la lista smart
+// riletta sul PC lo richiede 25 s dopo — il paziente se ne va dal telefono prima del tocco, «Questo paziente non è
+// più nell'elenco del PC», e la nota non si prova nemmeno. Qui il PC lo dà ancora com'era, finché la nota non è partita)
+await sw.evaluate(async () => {
+  const r = await ponteSuScheda("pazienti", {});
+  self.__rigaPrima = ((r && r.dati) || []).find((x) => x.ep === "999003") || null;
+  if (!self.__suSchedaPaz) {
+    self.__suSchedaPaz = ponteSuScheda;
+    ponteSuScheda = async (c, ...a) => {
+      const x = await self.__suSchedaPaz(c, ...a);
+      if (c === "pazienti") self.__nPaz = (self.__nPaz || 0) + 1;
+      if (c === "pazienti" && self.__rigaPrima && x && Array.isArray(x.dati) && !x.dati.some((y) => y.ep === self.__rigaPrima.ep)) x.dati.push(self.__rigaPrima);
+      return x;
+    };
+  }
+});
 await doc.evaluate(() => {
   const K = "psassist:patients.v1"; const l = JSON.parse(localStorage.getItem(K) || "[]");
   for (const p of l) if (p.ep === "999003") { p.arch = true; p.archTs = Date.now(); }
   localStorage.setItem(K, JSON.stringify(l));
 });
+const nPaz0 = await sw.evaluate(() => self.__nPaz || 0);
+await rileggiTel(tel);   // (l'elenco si rilegge adesso, non quando capita)
+await finche(async () => (await sw.evaluate(() => self.__nPaz || 0)) > nPaz0, 10000);
+await sospendi(500);
 await tocca(tel, '[data-a="scheda"][data-s="richieste"]');
 await aggiungiNota(tel, "nota dopo la dimissione");
 check(/Dimesso sul PC: niente inviato/.test(await aspettaTel(tel, /Dimesso sul PC/, 10000)), "dimesso sul PC: «Dimesso sul PC: niente inviato»");
 check(!(await notePc()).some((t) => /dimissione/.test(t)), "e la nota non arriva");
+await sw.evaluate(() => { self.__rigaPrima = null; });
 await tocca(tel, '[data-a="indietro"]');
 check(!/VERDI/.test(await aspettaTel(tel, /ROSSI MARIO/, 10000)), "e dall'elenco del telefono se ne va");
 // un paziente senza parametri letti (o un PC più vecchio, che il campo non lo manda): niente riga, nessun errore
