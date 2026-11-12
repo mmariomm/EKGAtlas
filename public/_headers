@@ -1,0 +1,10 @@
+# Le intestazioni del sito (Cloudflare Workers Static Assets: questo file va in dist/ con la build,
+# e non si serve). PS Assist sull'iPhone (/ponte/) vive sulla stessa origine e tiene le sue chiavi in
+# IndexedDB: uno script estraneo su una pagina qualunque del sito le potrebbe usare. Quindi anche qui:
+# solo gli script del sito, niente in linea, niente da fuori. (/ponte/* ha le sue, più strette:
+# worker/ponte-logica.js, intestazioniApp — il Worker le mette prima di queste.)
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; media-src 'self'; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=()
