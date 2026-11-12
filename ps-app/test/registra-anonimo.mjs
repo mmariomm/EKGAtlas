@@ -570,11 +570,11 @@ check(!nomi.includes("eviewer.json") && !/Visualizzatore di immagini/.test(riep)
   // non ogni 12500 cambiato in un numero finto. Un numero di richiesta sì, anche scritto «rid=880778».
   const lab = { url: `${G}/sa4pso/restrict/menuPso.do?MVPG=PsoEpisodioClinicoAmbulatorio&EPISODIO_ID=150101`, ts: T6 + 1000, scheda: 1, alto: true,
     html: "<html><body><table><tr><td>NT-proBNP</td><td>12500</td><td>pg/mL</td><td>0 - 12500</td></tr><tr><td>CK-MB</td><td>23456</td><td>35000</td></tr></table></body></html>" };
-  const reg8 = ["08:00  valori: righe non lette: NT-proBNP = 12500 · Troponina = >35000", "08:01  CK-MB = 23456", "08:02  la richiesta 880777 non risulta confermata", "08:03  rid=880778"].join("\n");
+  const reg8 = ["08:00  valori: righe non lette: NT-proBNP = 12500 · Troponina = >35000", "08:01  CK-MB = 23456", "08:02  la richiesta 880777 non risulta confermata", "08:03  rid=880778", "08:04  Conferma in 15234 ms"].join("\n");
   const r8 = (testi) => anonimizza({ inizio: T6, origini: { gestionale: G }, pagine: [lab], testi }, { vocabolario, sfasamento: 30 });
   const con8 = r8([{ nome: "registro.txt", testo: reg8 }]), senza8 = r8([]);
   const t8 = con8.files["testi/registro.txt"] || "", pag8 = (x) => x.files["pagine/001-PsoEpisodioClinicoAmbulatorio.html"] || "";
-  check(t8.includes("NT-proBNP = 12500 · Troponina = >35000") && t8.includes("CK-MB = 23456") && pag8(con8) === pag8(senza8) && !/880777|880778/.test(t8),
+  check(t8.includes("NT-proBNP = 12500 · Troponina = >35000") && t8.includes("CK-MB = 23456") && t8.includes("Conferma in 15234 ms") && pag8(con8) === pag8(senza8) && !/880777|880778/.test(t8),
     `i valori di laboratorio nel Registro non sono identificativi: restano, e la pagina è quella di senza Registro (${t8.split("\n").slice(0, 2).join(" | ")})`);
   // (nella diagnosi, la struttura di una pagina coi suoi script, «var idReferto = 4567890;» resta un identificativo)
   const d8 = r8([{ nome: "diagnosi-1.txt", testo: "---\n<script>var idReferto = 4567890;</script>" }]).files["testi/diagnosi-1.txt"] || "";

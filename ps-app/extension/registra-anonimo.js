@@ -1540,9 +1540,9 @@
     const nomiTesti = new Map();          // NORMA → { cat, orig }: le persone trovate solo nei testi
     // Un numero di 5 o più cifre in un testo («la richiesta 880777», «(referto 4567890)») è un
     // identificativo anche se nessuna pagina registrata lo mostra: rimappato come lo stesso altrove.
-    // Non un decimale, una misura in byte, un codice d'errore («ORA-20965»), un numero del vocabolario
+    // Non un decimale, una misura in byte o una durata in ms («Conferma in 15234 ms»), un codice d'errore («ORA-20965»), un numero del vocabolario
     // (i codici negli esami del catalogo).
-    const ID_TESTO_RE = /(?<![\dA-Za-z]|\d[.,]|[A-Za-z]-)\d{5,}(?![\dA-Za-z]|[.,]\d|\s?(?:B|byte|bytes|KB|kB|MB)\b)/g;
+    const ID_TESTO_RE = /(?<![\dA-Za-z]|\d[.,]|[A-Za-z]-)\d{5,}(?![\dA-Za-z]|[.,]\d|\s?(?:B|byte|bytes|KB|kB|MB|ms)\b)/g;
     // …né un valore di laboratorio: sulla riga «valori:» del Registro quello che segue un «=» («righe non
     // lette: NT-proBNP = 12500 · …», core.js), e fuori dalla diagnosi un numero dopo il nome di un analita
     // e « = » («CK-MB = 23456»). Se no ogni 12500 di ogni file diventerebbe un numero finto, intervalli
