@@ -338,9 +338,9 @@ try {
   // ---- (revisione 3.87, P2-3) arrivato più di 30 secondi dopo il tocco: niente cambiato; rimandato, la stessa risposta
   {
     const c1 = srv.conferme.length, i1 = imposte().length, nv1 = navMedico, rqT = "rq-tardi-prova-01";
-    const tardi = await sw.evaluate(({ ep, rq }) => ponteAreaApri({ ep, rq, nato: Date.now() - 60e3 }), { ep: chiaveSmart(GRIGI), rq: rqT });
-    const ancora = await sw.evaluate(({ ep, rq }) => ponteAreaApri({ ep, rq, nato: Date.now() }), { ep: chiaveSmart(GRIGI), rq: rqT });
-    const senza = await sw.evaluate(({ ep }) => ponteAreaApri({ ep, rq: "rq-senza-ora-01" }), { ep: chiaveSmart(GRIGI) });
+    const tardi = await sw.evaluate(({ ep, rq }) => ponteAreaApri({ ep, rq, nato: Date.now() - 60e3 }), { ep: chiaveSmart(ROSA), rq: rqT });
+    const ancora = await sw.evaluate(({ ep, rq }) => ponteAreaApri({ ep, rq, nato: Date.now() }), { ep: chiaveSmart(ROSA), rq: rqT });
+    const senza = await sw.evaluate(({ ep }) => ponteAreaApri({ ep, rq: "rq-senza-ora-01" }), { ep: chiaveSmart(ROSA) });
     await sospendi(1500);
     const annotato = ((await sw.evaluate(() => chrome.storage.session.get("ponte.area.rq")))["ponte.area.rq"] || {})[rqT];
     check(!!tardi && tardi.ok === false && tardi.errore === "Scaduta: niente cambiato" && !!senza && senza.errore === tardi.errore
