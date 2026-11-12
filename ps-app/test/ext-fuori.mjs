@@ -495,6 +495,23 @@ sezione("storage.session piena: quello che non si annota non si fa — e la sess
   check(!!q.grande && q.grande.ok === false && q.grande.incerto === true, `una risposta troppo grande, tenuta senza i dati: «${q.grande && q.grande.errore}» (incerto), non un «fatto» vuoto`);
 }
 
+// ===========================================================================
+// (revisione 3.87, P3-9) «fuoriRegola» (battito e tentativi più corti) è dei test: spento nell'estensione,
+// e nessuna pagina dell'estensione lo può chiedere al documento.
+sezione("la regola dei test (fuoriRegola): spenta, e mai da una pagina");
+{
+  await sw.evaluate(() => fuoriApri(true));
+  const daPagina = await pag.evaluate(() => chrome.runtime.sendMessage({ t: "fuoriRegola", battito: 10, prova: true }).catch((e) => String(e)));
+  check(!(daPagina && daPagina.ok), `da una pagina dell'estensione (il portale): rifiutata (${JSON.stringify(daPagina)})`);
+  const grezza = await sw.evaluate(() => fuoriChiedi({ t: "fuoriRegola", battito: 25e3 }));
+  check(!(grezza && grezza.ok), `chiesta senza il segno della prova (come la manderebbe una pagina senza scheda): rifiutata (${JSON.stringify(grezza)})`);
+  const spenta = await sw.evaluate(() => (typeof fuoriRegola === "function" ? fuoriRegola({ battito: 10 }) : "manca"));
+  check(spenta === null, `dal service worker, senza la prova accesa: non parte (${JSON.stringify(spenta)})`);
+  const accesa = await sw.evaluate(async () => { FUORI.prova = true; try { return typeof fuoriRegola === "function" ? await fuoriRegola({ battito: 25e3 }) : "manca"; } finally { FUORI.prova = false; } });
+  check(!!accesa && accesa.ok === true && accesa.regole && accesa.regole.battito === 25e3, `con la prova accesa (solo i test): il documento la applica (${JSON.stringify(accesa && accesa.regole)})`);
+  await sw.evaluate(async () => { FUORI.prova = true; await fuoriRegola({ battito: 30e3 }); FUORI.prova = false; }).catch(() => {});
+}
+
 await ctx.close();
 await relay.chiudi();
 rmSync(PROFILE, { recursive: true, force: true });

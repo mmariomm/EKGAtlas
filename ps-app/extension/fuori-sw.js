@@ -38,6 +38,7 @@ const FUORI = {
   ripiegoDal: 0,           // da quando (0: per sempre — senza chrome.offscreen)
   aperto: false,           // l'ultima volta che si è guardato, c'era (e rispondeva)
   fresco: 60e3,            // lo stato di una presa, dal documento: più vecchio di così, «servi» glielo richiede
+  prova: false,            // solo i test (fuoriRegola): mai acceso nell'estensione
   motivi: new Set(),       // chi tiene il documento oltre le prese: «registra» (uno zip in corso)
   prese: new Map(),        // nome → Presa
   fila: Promise.resolve(), // il documento (aprirlo, chiuderlo) e le richieste alle prese: una cosa alla volta
@@ -144,6 +145,9 @@ const fuoriLascia = (motivo) => {
   if (!FUORI.motivi.size) fuoriChiedi({ t: "fuoriLascia" });
   fuoriForseChiudi(1000);
 };
+// Solo i test: battito e tentativi più corti, nel documento. Spento (FUORI.prova) non parte niente; il
+// documento lo accetta solo da qui e col segno della prova.
+const fuoriRegola = (regole) => (FUORI.prova === true ? fuoriChiedi({ ...regole, t: "fuoriRegola", prova: true }) : Promise.resolve(null));
 
 // ------------------------------------------------------------------ una presa
 class Presa {

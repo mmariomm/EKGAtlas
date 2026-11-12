@@ -103,8 +103,10 @@
       reply({ ok });
       return;
     }
-    // (solo i test: battito e tentativi più corti)
+    // (solo i test: battito e tentativi più corti — e solo dal service worker, che lo manda solo con
+    // FUORI.prova acceso: nessuna pagina dell'estensione lo può chiedere, e così non parte mai)
     if (m.t === "fuoriRegola") {
+      if (m.prova !== true || sender.url !== chrome.runtime.getURL("bg.js")) { reply({ ok: false }); return; }
       for (const k of Object.keys(PRESA)) if (Number.isFinite(m[k]) && m[k] >= 10 && m[k] <= 600e3) PRESA[k] = m[k];
       for (const p of prese.values()) p.ribatti();
       reply({ ok: true, regole: { ...PRESA } });
