@@ -17520,10 +17520,10 @@
     // (non si è ricaricata da sola per non perderlo), e il suo «Conferma» è fermo finché non la si ricarica
     + (PONTE_AGG ? `<div class="pontespia" role="status" title="Anamnesi, farmaci o allergie salvati dall'iPhone: questa pagina mostra ancora i testi di prima, e il suo «Conferma» è fermo">
       ${ICO_TEL}<span>Aggiornato dal telefono</span><button type="button" id="ponterica">Ricarica</button></div>` : "")
-    // (3.87) un avviso del ponte, per mezz'ora: un altro iPhone ha preso il posto, l'iPhone in pausa per un altro utente,
-    // una stazione di stampa da confermare — «Apri» porta alla pagina iPhone, dove si decide
-    + (PONTE_STATO && PONTE_STATO.avviso && Date.now() - PONTE_STATO.avviso.ts < 30 * 60e3 ? `<div class="ponteavv" role="status" title="${esc(PONTE_STATO.avviso.testo)}">
-      ${ICO_TEL}<span>${esc(PONTE_STATO.pausa ? "iPhone in pausa: un altro utente" : /stazione/i.test(PONTE_STATO.avviso.testo) ? "Stazione da confermare" : "iPhone cambiato")}</span><button type="button" id="ponteavv">Apri</button></div>` : "");
+    // (3.87) un avviso del ponte che chiede una decisione sul PC: l'iPhone in pausa per un altro utente, una stazione di stampa
+    // da confermare — «Apri» porta alla pagina iPhone, dove si decide (un iPhone cambiato lo dicono la pagina iPhone e il Registro)
+    + (PONTE_STATO && (PONTE_STATO.pausa || PONTE_STATO.stazioneChiesta) && PONTE_STATO.avviso ? `<div class="ponteavv" role="status" title="${esc(PONTE_STATO.avviso.testo)}">
+      ${ICO_TEL}<span>${esc(PONTE_STATO.pausa ? "iPhone in pausa: un altro utente" : "Stazione da confermare")}</span><button type="button" id="ponteavv">Apri</button></div>` : "");
 
   const pontePaziente = (ep) => tuttiPazienti().find((p) => p.ep === ep) || null;
   // Chi il PC conosce solo dalla lista smart non ha ancora un indirizzo della sua pagina: lo dà la riga
