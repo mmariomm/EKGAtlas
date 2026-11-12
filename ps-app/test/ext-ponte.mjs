@@ -2443,20 +2443,26 @@ sezione("l'app in sottofondo: la presa si chiude, al ritorno si riprende da sola
   const mostra = (t) => t.evaluate(() => { delete document.visibilityState; document.dispatchEvent(new Event("visibilitychange")); window.dispatchEvent(new Event("pageshow")); });
   const usciteTel = (da) => relay.eventi().filter((e) => e.ruolo === "tel" && e.tipo === "esce" && e.ts >= da);
   const eseguiti = () => sw.evaluate(() => self.__cmdPc.slice());
+  // (i tocchi della prova su ROSSI non leggono da sé: gli esiti senza `leggi`. Il «nuovi» al più ogni 10 minuti
+  // per paziente è del telefono, e quando cadono i 10 minuti dipende da quanto è durato il resto della prova —
+  // qui si guarda solo che il ritorno sull'app non faccia partire niente)
   await sw.evaluate(() => {
-    self.__cmdPc = []; self.__ritardoEsiti = 0;
+    self.__cmdPc = []; self.__ritardoEsiti = 0; self.__senzaLeggi = true;
     if (!self.__suSchedaSf) {
       self.__suSchedaSf = ponteSuScheda;
       ponteSuScheda = async (c, ...a) => {
         self.__cmdPc.push(c);
         if (c === "esiti" && self.__ritardoEsiti) { const r = self.__ritardoEsiti; self.__ritardoEsiti = 0; await new Promise((ok) => setTimeout(ok, r)); }
         if (c === "aggiornaValori" && self.__ritardoValori) { const r = self.__ritardoValori; self.__ritardoValori = 0; await new Promise((ok) => setTimeout(ok, r)); }
-        return self.__suSchedaSf(c, ...a);
+        const r = await self.__suSchedaSf(c, ...a);
+        if (c === "esiti" && self.__senzaLeggi && r && r.dati) delete r.dati.leggi;
+        return r;
       };
     }
   });
   const nonRaggiungibile = /non è raggiungibile|Incerto|Sessione chiusa|non ha risposto/;
   await finche(async () => relay.prese().tel === 1, 10000);
+  await finche(async () => await dietroSu("999001") === 0, 60000);   // (una lettura da sé partita prima, finita: le pagine del PC contano da qui)
 
   // 1. con l'app in sottofondo e niente in volo: la presa si chiude pulita (1000) entro un secondo
   let e0 = relay.entrate().tel, t0 = Date.now();
@@ -2539,6 +2545,8 @@ sezione("l'app in sottofondo: la presa si chiude, al ritorno si riprende da sola
   check(await quanteValori() === val0 + 1, `…e il PC l'ha fatto una volta sola: rimandato col suo numero, non riapre la pagina (${await quanteValori() - val0})`);
   await tocca(tel, '[data-a="indietro"]');
   await aspettaTel(tel, /ROSSI MARIO/, 10000);
+
+  await sw.evaluate(() => { self.__senzaLeggi = false; });
 
   // 5. il ponte chiude con 4403: ci si ferma, «Scollegato», nessun tentativo; «Riprova» riparte
   e0 = relay.entrate().tel;
