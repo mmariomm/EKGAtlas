@@ -240,6 +240,24 @@ main { padding: 12px var(--dx) calc(112px + env(safe-area-inset-bottom)) var(--s
 .zip .z3.ko { color: var(--rosso); }
 .zip .zbtn { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .zip a.btnmini { display: inline-flex; align-items: center; text-decoration: none; }
+
+/* --- i dispositivi (⋯ → Dispositivi): i PC associati, una riga ciascuno -- */
+.dsp { padding: 12px 14px; }
+.dsp + .dsp { border-top: 1px solid var(--linea); }
+.dsp .d1 { display: flex; align-items: baseline; gap: 8px; }
+.dsp .d1 .em { flex: none; }
+.dsp .d1 b { font-weight: 650; overflow-wrap: anywhere; }
+.dsp .dtipo { font-size: 13px; font-weight: 600; color: var(--grigio); white-space: nowrap; }
+.dsp .dver { margin-left: auto; font-size: 13px; color: var(--grigio); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.dsp .d2 { display: flex; align-items: center; gap: 7px; margin-top: 4px; font-size: 14px; color: var(--grigio); }
+.dsp .d2 i { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--grigio2); }
+.dsp .d2.ok { color: var(--verde); font-weight: 600; }
+.dsp .d2.warn { color: var(--ambra); font-weight: 600; }
+.dsp .d2.ok i, .dsp .d2.warn i { background: currentColor; }
+.dsp .d3 { margin-top: 6px; font-size: 13.5px; color: var(--testo2); overflow-wrap: anywhere; }
+.dsp .d3 .ok { color: var(--verde); }
+.dsp .d3 .warn { color: var(--ambra); }
+.dsp .d3 .err { color: var(--rosso); font-weight: 600; }
 .btnmini.pri { background: var(--azione); border-color: var(--azione); color: #fff; }
 .btnmini.via { color: var(--rosso); border-color: transparent; background: transparent; font-weight: 500; }
 .btnmini.tutte { display: block; margin: 8px auto 0; }

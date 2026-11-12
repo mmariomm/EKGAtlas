@@ -7,7 +7,9 @@
  * /ponte/ (solo i suoi file) e inoltra i messaggi cifrati fra le due prese di
  * una stanza su /ponte/ws. In più, solo per i test, `osserva` vede ogni
  * messaggio inoltrato: è così che la suite prova che il ripetitore non vede
- * mai niente in chiaro; `entrate` conta le prese aperte, per ruolo.
+ * mai niente in chiaro; `entrate` conta le prese aperte, per ruolo; `eventi`
+ * dice chi è entrato, chi è uscito e chi il ripetitore ha ritirato o chiuso:
+ * ogni entrata e ogni uscita sveglierebbe il Durable Object.
  *
  *   node ponte/relay-node.mjs 8787      → http://localhost:8787/ponte/
  */
@@ -28,15 +30,27 @@ export async function avviaRelay({ porta = 0, osserva = null } = {}) {
   const stanze = new Map();          // stanza → Set di prese
   const stati = new WeakMap();       // presa → stato (come serializeAttachment)
   const battiti = new WeakMap();     // presa → ultimo «ping»
+  const mute = new WeakSet();        // prese morte senza dirlo (solo nei test: `muta`)
   const entrate = { pc: 0, tel: 0, medico: 0, stazione: 0 };
-  const aperte = (nome) => [...(stanze.get(nome) || [])].filter((w) => w.readyState === w.OPEN);
+  // Il registro per i test: ogni presa che entra o esce, e quelle che il
+  // ripetitore ritira o chiude, con il codice — per stanza (le prime 6 cifre) e ruolo.
+  const eventi = [];
+  const nota = (nome, ruolo, tipo, codice) => { eventi.push({ ts: Date.now(), stanza: nome.slice(0, 6), ruolo, tipo, codice }); if (eventi.length > 5000) eventi.splice(0, 1000); };
+  const vive = (nome) => [...(stanze.get(nome) || [])].filter((w) => w.readyState === w.OPEN && !stati.get(w)?.via);
   const logica = (nome) => new Stanza({
-    socket: (ruolo, escluso) => aperte(nome).find((w) => w !== escluso && stati.get(w)?.ruolo === ruolo) || null,
-    invia: (w, d) => { try { w.send(d, { binary: typeof d !== "string" }); } catch { /* chiusa intanto */ } },
-    chiudi: (w, codice, perche) => { try { w.close(codice, perche); } catch { /* già chiusa */ } },
+    tutte: () => [...(stanze.get(nome) || [])],
+    aperta: (w) => w.readyState === w.OPEN,
+    invia: (w, d) => { if (mute.has(w)) return; try { w.send(d, { binary: typeof d !== "string" }); } catch { /* chiusa intanto */ } },
+    chiudi: (w, codice, perche) => {
+      nota(nome, stati.get(w)?.ruolo, "chiusa dal ripetitore", codice);
+      try { w.close(codice, perche); } catch { /* già chiusa */ }
+    },
     leggi: (w) => stati.get(w) || null,
-    scrivi: (w, s) => stati.set(w, s),
-    ultimo: (w) => Math.max(stati.get(w)?.ultimo || 0, battiti.get(w) || 0),
+    scrivi: (w, s) => {
+      if (s.via && !stati.get(w)?.via) nota(nome, s.ruolo, "ritirata", s.via);
+      stati.set(w, s);
+    },
+    battito: (w) => battiti.get(w) || 0,
     osserva: osserva ? (d) => osserva(Buffer.from(d)) : null,
   });
 
@@ -65,42 +79,52 @@ export async function avviaRelay({ porta = 0, osserva = null } = {}) {
       if (!stanze.has(r.stanza)) stanze.set(r.stanza, new Set());
       stanze.get(r.stanza).add(w);
       entrate[r.ruolo]++;
+      nota(r.stanza, r.ruolo, "entra");
       const st = logica(r.stanza);
       st.entra(w, r.ruolo, Date.now());
       w.on("message", (d, bin) => {
+        if (mute.has(w)) return;
         const dati = bin ? d : d.toString();
         // il battito: lo risponde chi sta sotto, come l'auto-risposta di Cloudflare
         if (dati === PING) { battiti.set(w, Date.now()); w.send(PONG); return; }
         st.messaggio(w, dati, Date.now());
       });
-      w.on("close", () => {
-        st.esce(w);
+      w.on("close", (codice) => {
+        nota(r.stanza, r.ruolo, "esce", codice);
+        st.esce(w, Date.now());
         stanze.get(r.stanza)?.delete(w);
         if (!stanze.get(r.stanza)?.size) stanze.delete(r.stanza);
       });
     });
   });
-  const pulizia = setInterval(() => {
-    for (const nome of stanze.keys()) logica(nome).pulisci(aperte(nome), Date.now());
-  }, 30e3);
 
   await new Promise((ok) => server.listen(porta, ok));
   const p = server.address().port;
   return {
     url: `http://localhost:${p}`,
     porta: p,
-    // quante prese aperte, per ruolo (i test guardano chi è collegato)
+    // quante prese aperte e non ritirate, per ruolo (i test guardano chi è collegato)
     prese: () => {
       const conto = { pc: 0, tel: 0 };
-      for (const nome of stanze.keys()) for (const w of aperte(nome)) conto[stati.get(w)?.ruolo] = (conto[stati.get(w)?.ruolo] || 0) + 1;
+      for (const nome of stanze.keys()) for (const w of vive(nome)) conto[stati.get(w)?.ruolo] = (conto[stati.get(w)?.ruolo] || 0) + 1;
       return conto;
     },
     // quante prese si sono aperte in tutto, per ruolo (un telefono che si ricollega)
     entrate: () => ({ ...entrate }),
     // chiude le prese di un ruolo (una rete che cade)
-    taglia: (ruolo) => { for (const nome of stanze.keys()) for (const w of aperte(nome)) if (stati.get(w)?.ruolo === ruolo) w.terminate(); },
+    taglia: (ruolo) => { for (const nome of stanze.keys()) for (const w of vive(nome)) if (stati.get(w)?.ruolo === ruolo) w.terminate(); },
+    // le prese di un ruolo muoiono senza dirlo (un PC spento di colpo, una rete che perde tutto):
+    // il ripetitore non ne sente più niente, nemmeno il battito o la chiusura, e non manda più niente
+    muta: (ruolo) => { for (const nome of stanze.keys()) for (const w of vive(nome)) if (stati.get(w)?.ruolo === ruolo) { mute.add(w); w._socket?.pause(); } },
+    // il registro: [{ ts, stanza, ruolo, tipo: entra|esce|ritirata|chiusa dal ripetitore, codice }]
+    eventi: () => eventi.map((e) => ({ ...e })),
+    // tutte le prese ancora nell'elenco (anche le ritirate), per ruolo
+    tutte: () => {
+      const conto = {};
+      for (const set of stanze.values()) for (const w of set) conto[stati.get(w)?.ruolo] = (conto[stati.get(w)?.ruolo] || 0) + 1;
+      return conto;
+    },
     chiudi: () => new Promise((ok) => {
-      clearInterval(pulizia);
       for (const w of wss.clients) w.terminate();
       server.close(() => ok());
     }),

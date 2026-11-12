@@ -762,6 +762,53 @@ const visti = ["ROSSI", "MARIO", "TROPONINA", "999001", "Infermeria", "%PDF", "J
 check(inoltrati.length > 20 && !visti.length, `il ripetitore ha inoltrato ${inoltrati.length} messaggi: niente in chiaro (trovati: ${visti.join(", ") || "nessuno"})`);
 
 // ===========================================================================
+// Chrome prima della 116 (niente chrome.runtime.getContexts): la stazione sa
+// che la sua pagina è aperta solo se le ha chiesto lo stato da meno di 10
+// minuti. Collegata e ferma (lo stato che mostra non cambia: qui nemmeno il PC
+// del medico che va e viene), la pagina lo chiede lo stesso ogni minuto; se
+// no, passati i 10 minuti la stazione lascerebbe il ponte con la pagina aperta.
+sezione("Chrome senza getContexts (prima della 116): la pagina aperta tiene la stazione sul ponte");
+const senza = await staSw.evaluate(() => {
+  self.__getContexts = chrome.runtime.getContexts;
+  Object.defineProperty(chrome.runtime, "getContexts", { value: undefined, configurable: true, writable: true });
+  self.__ascolta = stz.presa.ascolta;
+  stz.presa.ascolta = { ...stz.presa.ascolta, pari: () => {}, stato: () => {} };
+  self.__t0 = staOra();
+  stzUso.pagina = self.__t0 - 5 * 60e3;   // l'ultima richiesta della pagina: 5 minuti fa
+  return stzPagina();
+});
+check(senza === true, "(senza getContexts: aperta, perché ha chiesto lo stato 5 minuti fa)");
+check(!!(await finche(() => staSw.evaluate(() => stzUso.pagina >= self.__t0), 70000)),
+  "la pagina aperta e ferma lo richiede da sé entro un minuto: per la stazione resta aperta");
+await staSw.evaluate(() => {
+  stz.presa.ascolta = self.__ascolta;
+  Object.defineProperty(chrome.runtime, "getContexts", { value: self.__getContexts, configurable: true, writable: true });
+});
+
+// ===========================================================================
+// Fuori turno: Chrome aperto sul PC delle infermiere, ma né la pagina della
+// stazione né il gestionale. La stazione non tiene la presa (niente
+// connessioni tutta la notte); il PC del medico la vede «non presente».
+// Riaperta la pagina, la presa c'è di nuovo.
+sezione("fuori turno: senza la sua pagina né il gestionale, la stazione non sta sul ponte");
+await pSta.close();
+const vuota = await staCtx.newPage();
+await vuota.goto("about:blank");
+await staSw.evaluate(() => stzAvvia());
+check(!!(await finche(async () => (await pubblicoPc())?.presente === false && !(relay.prese().stazione) && !(await staSw.evaluate(() => !!stz.presa.ws)), 10000))
+  && !!(await staSw.evaluate(() => chrome.storage.local.get("stazione.qui").then((o) => o["stazione.qui"]))),
+  "chiusa la pagina della stazione, nessun gestionale sul suo PC: la presa si chiude (l'abbinamento resta), il PC del medico la vede «non presente»");
+const entrateSta = relay.entrate().stazione;
+await staSw.evaluate(() => stzAvvia());
+await staSw.evaluate(() => stzAvvia());
+await sospendi(1500);
+check(relay.entrate().stazione === entrateSta, "e i risvegli (la sveglia di ogni minuto) non la riaprono");
+pSta = await staCtx.newPage();
+await pSta.goto(EXTURL("stazione.html"));
+check(!!(await finche(async () => (await pubblicoPc())?.presente === true, 20000)) && relay.prese().stazione === 1, "riaperta la sua pagina: di nuovo sul ponte, una presa");
+await vuota.close();
+
+// ===========================================================================
 sezione("«Scollega» dalla stazione, poi dal PC (anche con la stazione spenta)");
 await pSta.locator("#scollega").click();
 check(/Scollego\?/.test(await pSta.locator("#scollega").innerText()), "«Scollega» chiede conferma");
@@ -804,7 +851,12 @@ await imp.locator("#stavia").click();
 check(!!(await finche(async () => !(await pubblicoPc()), 8000)), "la stazione spenta: «Scollega» sul PC vale subito (niente più «Infermeria» sul PC)");
 staCtx = await lancia("sta");
 staSw = await swDi(staCtx);
-check(!!(await finche(async () => !(await quiSta()) && !(await coppiaPc()), 30000)), "riaccesa, la stazione sa di essere scollegata; il PC ha dimenticato tutto");
+// (senza la sua pagina né il gestionale la stazione non sta sul ponte: lo saprà quando c'è)
+await sospendi(3000);
+check(!!(await quiSta()) && !!(await coppiaPc())?.revoca, "riaccesa senza la sua pagina né il gestionale: non sta sul ponte, e non lo sa ancora (il PC tiene la chiave solo per dirglielo)");
+pSta = await staCtx.newPage();
+await pSta.goto(EXTURL("stazione.html"));
+check(!!(await finche(async () => !(await quiSta()) && !(await coppiaPc()), 30000)), "aperta la sua pagina: la stazione sa di essere scollegata; il PC ha dimenticato tutto");
 
 await staCtx.close();
 await telBrowser.close();

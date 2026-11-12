@@ -67,7 +67,7 @@ const quale = (url) => {
 // Ogni pagina del modulo richieste con un RICHIESTA_ID la fa sua; la lista
 // smart la perde; le etichette di una richiesta la spostano su quella. Un
 // inserimento su una richiesta che non è la corrente: ORA-20965.
-const sess = { corrente: null, log: [], ora: 0, forzaOra: null, area: null, dopoConferma: null, smartVera: false, smartLenta: 0 };
+const sess = { corrente: null, log: [], ora: 0, forzaOra: null, area: null, dopoConferma: null, confermaLenta: 0, smartVera: false, smartLenta: 0 };
 // La lista smart vera (sess.smartVera): due schede, Ambulatorio (quella del link) e Triage, ognuna
 // lenta smartLenta ms. Nomi e date inventati.
 const impronta = (d) => { let h = 0x811c9dc5; for (const c of d) h = Math.imul(h ^ c.charCodeAt(0), 0x01000193) >>> 0; return h.toString(36); };
@@ -1462,6 +1462,54 @@ if (prova("un referto preso dal service worker mentre un ordine inserisce: aspet
   check(!!(r && r.ok) && chiesto(), `finito il motore, lo prende e lo tiene (got ${JSON.stringify(r)})`);
   await sw.evaluate(() => Promise.all([chrome.storage.session.set({ ordini: [] }), chrome.storage.local.remove("ref:swattesa1")]));
   await est.close().catch(() => {});
+}
+
+// …e lo stesso quando la Conferma l'ha premuta il gestionale (il medico, sul
+// suo bottone) o la conferma automatica: «Conferma per …» toccato mentre è in
+// volo non ne manda una seconda.
+// (dentro la pagina: alla Conferma che parte, «Conferma per …» toccato poco dopo — il pannello
+// aperto, se era nella pill —; se c'era, lo annota)
+const toccaDopoLaConferma = () => {
+  if (!sessionStorage.getItem("__prova.doppia")) return;
+  document.addEventListener("submit", () => {
+    sessionStorage.removeItem("__prova.doppia");
+    const r = () => document.getElementById("psassist-host")?.shadowRoot;
+    setTimeout(() => { if (!r()?.querySelector("#confirmnow")) r()?.querySelector(".pill")?.click(); }, 300);
+    setTimeout(() => {
+      const b = r()?.querySelector("#confirmnow");
+      sessionStorage.setItem("__prova.toccato", b ? "si" : "manca: " + (r()?.textContent || "").replace(/\s+/g, " ").slice(0, 200));
+      b?.click();
+    }, 900);
+  }, true);
+};
+if (prova("la Conferma del gestionale premuta, poi «Conferma per …» mentre è in volo: una Conferma sola")) {
+  await soloCarrello();
+  check(conferme(A).length === 0, "solo carrello: niente confermato da solo");
+  sess.confermaLenta = 6000;
+  await doc.evaluate(() => sessionStorage.setItem("__prova.doppia", "1"));
+  await doc.evaluate(toccaDopoLaConferma);
+  await doc.evaluate(() => document.querySelector('input[type="submit"][name="Update"], input[type="submit"][name="Update1"]').click());
+  await sospendi(9000);
+  const toccato = await doc.evaluate(() => sessionStorage.getItem("__prova.toccato")).catch(() => null);
+  check(toccato === "si" && conferme(A).length === 1, `la Conferma del gestionale, poi «Conferma per …»: una Conferma sola (got ${conferme(A).length}, il bottone: ${toccato})`);
+  sess.confermaLenta = 0;
+}
+if (prova("la Conferma automatica in volo, poi «Conferma per …»: una Conferma sola")) {
+  await soloCarrello();
+  // il segno della conferma automatica, come lo lascia il motore: la pagina riletta lo trova e preme Conferma
+  await doc.evaluate(() => {
+    const r = JSON.parse(sessionStorage.getItem("psassist:receipt.v1"));
+    const u = r.items[r.items.length - 1];
+    sessionStorage.setItem("psassist:confirm.v1", JSON.stringify({ richiestaId: r.richiestaId, episodeId: r.episodeId, lastCode: u.code, lastLabel: u.label, count: r.items.length, ts: Date.now() }));
+    sessionStorage.setItem("__prova.doppia", "1");
+  });
+  await doc.addInitScript(toccaDopoLaConferma);
+  sess.confermaLenta = 6000;
+  await doc.reload();
+  await sospendi(10000);
+  const toccato = await doc.evaluate(() => sessionStorage.getItem("__prova.toccato")).catch(() => null);
+  check(toccato === "si" && conferme(A).length === 1, `la conferma automatica, poi «Conferma per …»: una Conferma sola (got ${conferme(A).length}, il bottone: ${toccato})`);
+  sess.confermaLenta = 0;
 }
 
 // ---- 8. gli ordini finiti non restano in memoria --------------------------

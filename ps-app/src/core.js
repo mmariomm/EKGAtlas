@@ -69,7 +69,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.85.2";
+  const VERSION = "3.85.3";
   const NS = "psassist:"; // storage namespace
   // La build «mini» (PS Assist · Lettura e stampa): sola lettura. La bandiera
   // la mette sola-lettura.js, caricato prima di content.js (vedi manifest). Qui
@@ -15755,7 +15755,11 @@
         tabStore.set("queue.v1", restano.length ? { ...q, items: restano, ts: Date.now() } : null);
       }
     }
+    // (in volo: i bottoni del pannello di questa pagina non la rimandano — confermaPannello)
+    const quiStessa = doc === document || String(examModel(document, location.href).richiestaId || "") === String(model.richiestaId);
+    if (quiStessa) confermaPannello = "Confermo…";
     model.confirmButton.click(); // native click → server confirm → label print flow
+    if (quiStessa) panel?.render();
     return true;
   }
 

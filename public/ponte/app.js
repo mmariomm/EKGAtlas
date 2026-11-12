@@ -145,7 +145,8 @@
   // dell'ultimo attivo. Ogni PC ha la SUA chiave: una non apre gli altri.
   function salvaPcs() {
     try {
-      const v = S.pcs.map((p) => ({ k: P.b64u(p.k), dev: p.dev, kind: p.kind || "", nome: p.nome || "", id: p.id }));
+      const v = S.pcs.map((p) => ({ k: P.b64u(p.k), dev: p.dev, kind: p.kind || "", nome: p.nome || "", id: p.id,
+        ...(p.ver ? { ver: p.ver } : {}), ...(p.visto ? { visto: p.visto } : {}) }));   // (per ⋯ → Dispositivi: la versione, e quando si è fatto sentire)
       localStorage.setItem(PCS, JSON.stringify({ v, attivo: S.attivo }));
     } catch { /* solo in memoria */ }
   }
@@ -161,7 +162,8 @@
             return { k, dev: /^[\w-]{16,32}$/.test(x.dev || "") ? x.dev : nuovoDev(),
               kind: x.kind === "lettura" || x.kind === "completo" ? x.kind : "",
               nome: typeof x.nome === "string" ? x.nome.slice(0, 40) : "",
-              id: typeof x.id === "string" && x.id ? x.id : nuovoId() };
+              id: typeof x.id === "string" && x.id ? x.id : nuovoId(),
+              ver: verOk(x.ver), visto: Number.isSafeInteger(x.visto) && x.visto > 0 ? x.visto : 0 };
           } catch { return null; }
         }).filter(Boolean);
         out.attivo = typeof o.attivo === "string" ? o.attivo : "";
@@ -193,6 +195,7 @@
     const kind = d && (d.kind === "lettura" || d.kind === "completo") ? d.kind : (S.coppia.kind || "completo");
     const nome = d && typeof d.nome === "string" && d.nome.trim() ? d.nome.trim().slice(0, 40) : (S.coppia.nome || "");
     S.coppia.kind = kind; S.coppia.nome = nome;
+    if (verOk(d && d.versione)) S.coppia.ver = d.versione;   // (la versione di PS Assist sul PC: ⋯ → Dispositivi)
     const altri = S.pcs.filter((p) => p.id !== S.coppia.id);
     if (S.classifica) {
       S.classifica = false;
@@ -374,6 +377,7 @@
     if (h.tipo !== P.TIPO.DATI_PC || !S.canale) return;
     let d;
     try { d = await S.canale.decifra(b); } catch { return; }
+    visto(S.coppia);   // (⋯ → Dispositivi: «visto alle …»)
     if (d.re != null) {
       const a = S.attese.get(d.re);
       if (!a) return;
@@ -943,6 +947,7 @@
     // (la Terapia solo se già letta: senza, il PC aprirebbe la sua pagina senza un tocco — «Tocca per leggere la terapia»)
     if (S.vista.nome === "paziente" && S.scheda === "terapia" && !S.tf && S.terapie.get(S.vista.ep)) caricaTerapie(S.vista.ep, true);
     if (S.vista.nome === "registrazioni") caricaZip(true);
+    if (S.vista.nome === "dispositivi") caricaDispositivi(true);   // (solo il PC attivo, nella sessione: nessuna presa nuova)
   }
   // «↻ Rileggi» (modo ""), o la lettura partita da sé (leggiDaSolo: «auto», «apri»). Quella da sé non
   // tiene aperta la sessione e non grida: se non riesce, una riga piccola lo dice e ↻ resta lì.
@@ -1175,6 +1180,155 @@
     scrivi("registrazioneVia", { zip: "*" }, TEMPO, via, "Cancellate dal PC")
       .then(() => { via(); avviso("Cancellate dal PC"); }, (e) => { if (e.inviata) avviso("Non so se sono cancellate: aspetto il PC", "err", true); else errore(e); })
       .finally(() => { S.occupato.delete("zipvia*"); render(); });
+  }
+
+  // ------------------------------------------------------- i dispositivi
+  // ⋯ → Dispositivi: i PC associati a questo telefono, una riga ciascuno — il
+  // nome e il tipo («PC», o «Lettura e stampa»: la build mini), la versione di
+  // PS Assist, se è raggiungibile adesso, se è collegato a questo iPhone (la
+  // sessione viva) o quando si è fatto sentire l'ultima volta, e la sua
+  // stazione di stampa (il nome, se il PC la raggiunge, l'ultimo foglio). Il PC
+  // attivo lo dice nella sessione (`dispositivo`, una lettura che l'app manda
+  // da sé). Gli altri SOLO quando il medico apre questa pagina: una presa breve
+  // per PC, nella sua stanza — il ripetitore dice se il PC c'è, un saluto
+  // «sonda» (cifrato con la sua chiave come ogni saluto, ma senza una sessione
+  // dopo) porta la stessa risposta — e si chiude subito. Mai in sottofondo, mai
+  // a ripetizione: ogni presa sveglia il ripetitore. Su disco, accanto alla
+  // chiave di ogni PC, solo la sua versione e quando si è fatto sentire.
+  const SONDA_MAX = 6e3;       // la presa, il «c'è?» del ripetitore, la risposta al saluto
+  const SONDA_FRESCA = 20e3;   // la pagina riaperta subito usa la risposta di prima
+  const DISP = new Map();      // id del PC → { stato: "qui" | "controllo" | "su" | "giu" | "muto" | "altro" | "rete", info, ts }
+  function verOk(s) { return typeof s === "string" && /^\d{1,4}(\.\d{1,6}){0,3}$/.test(s) ? s : ""; }
+  // il PC si è fatto sentire: in memoria subito, su disco al più una volta al minuto (e quando l'app va in sottofondo)
+  let vistoSalvato = 0;
+  function visto(p) {
+    if (!p) return;
+    p.visto = Date.now();
+    if (p.visto - vistoSalvato > 60e3) salvaVisto(p);
+  }
+  // (solo quel campo, nella lista su disco: un'altra scheda dell'app può averla cambiata intanto)
+  function salvaVisto(p) {
+    vistoSalvato = p.visto;
+    try {
+      const o = JSON.parse(localStorage.getItem(PCS) || "null");
+      const x = o && Array.isArray(o.v) ? o.v.find((y) => y && y.id === p.id) : null;
+      if (!x || x.visto === p.visto) return;
+      x.visto = p.visto;
+      localStorage.setItem(PCS, JSON.stringify(o));
+    } catch { /* solo in memoria */ }
+  }
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden" && S.coppia && (S.coppia.visto || 0) > vistoSalvato) salvaVisto(S.coppia);
+  });
+  function apriDispositivi() {
+    S.vista = { nome: "dispositivi", ep: "" };
+    S.menu = false;
+    window.scrollTo(0, 0);
+    caricaDispositivi();
+  }
+  // `soloQui`: solo il PC attivo, nella sessione che c'è (tornati sull'app): nessuna presa nuova
+  async function caricaDispositivi(soloQui = false) {
+    const qui = S.coppia, lavori = [];
+    if (qui && S.canale) {
+      lavori.push(chiedi("dispositivo", {}, TEMPO, true).then((d) => {
+        DISP.set(qui.id, { stato: "qui", info: d && typeof d === "object" ? d : null, ts: Date.now() });
+        if (verOk(d && d.versione) && d.versione !== qui.ver) { qui.ver = d.versione; salvaPcs(); }
+      }, () => { /* un PC più vecchio («Comando sconosciuto»), o la rete: resta quello che si sa */ }));
+    }
+    if (!soloQui) for (const p of S.pcs) if (!qui || p.id !== qui.id) lavori.push(controllaPc(p));
+    render();
+    await Promise.all(lavori);
+    render();
+  }
+  async function controllaPc(p) {
+    const x = DISP.get(p.id);
+    if (x && x.stato !== "qui" && (x.stato === "controllo" || Date.now() - x.ts < SONDA_FRESCA)) return;
+    if (!inLinea()) { DISP.set(p.id, { stato: "rete", ts: 0 }); return; }
+    DISP.set(p.id, { stato: "controllo", ts: 0 });
+    render();
+    const r = await sonda(p);
+    DISP.set(p.id, { ...r, ts: Date.now() });
+    if (r.stato === "su") {
+      p.visto = Date.now();
+      if (verOk(r.info && r.info.versione)) p.ver = r.info.versione;
+      salvaPcs();
+    }
+    render();
+  }
+  // Una presa breve nella stanza di un altro PC: c'è? e se c'è, chi è. Si chiude
+  // appena lo si sa, o dopo 6 secondi. (Un PC più vecchio risponde alla sonda come
+  // a un saluto qualunque: c'è, e nient'altro; senza seguito, la sua attesa scade da sola.)
+  async function sonda(p) {
+    let ch;
+    try { ch = await P.chiaviCoppia(p.k); } catch { return { stato: "giu" }; }
+    return new Promise((fine) => {
+      let ws = null, n = "", finito = false;
+      const chiudi = (r) => {
+        if (finito) return;
+        finito = true;
+        clearTimeout(t);
+        if (ws) { ws.onmessage = null; ws.onclose = null; try { ws.close(1000); } catch { /* già chiusa */ } }
+        fine(r);
+      };
+      const t = setTimeout(() => chiudi({ stato: n ? "muto" : "giu" }), SONDA_MAX);
+      try { ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ponte/ws?r=${ch.stanza}&ruolo=tel`); }
+      catch { chiudi({ stato: "giu" }); return; }
+      ws.binaryType = "arraybuffer";
+      ws.onclose = () => chiudi({ stato: n ? "muto" : "giu" });
+      ws.onmessage = async (e) => {
+        if (typeof e.data === "string") {
+          let m = null;
+          try { m = JSON.parse(e.data); } catch { return; }
+          if (!m || typeof m.pari !== "boolean") return;
+          if (!m.pari) { chiudi({ stato: "giu" }); return; }
+          if (n) return;
+          n = P.b64u(P.casuale(16));
+          try { ws.send(await P.sigilla(ch.salutoTel, P.TIPO.SALUTO_TEL, 0, { v: 1, n, dev: p.dev, sonda: true })); } catch { chiudi({ stato: "muto" }); }
+          return;
+        }
+        const b = new Uint8Array(e.data), h = P.leggiTestata(b);
+        if (!n || !h || h.tipo !== P.TIPO.SALUTO_PC) return;
+        let m;
+        try { m = (await P.apri(ch.salutoPc, b, P.TIPO.SALUTO_PC)).dati; } catch { return; }
+        if (!m || m.eco !== n) return;
+        chiudi(m.no ? { stato: "altro" } : { stato: "su", info: m.sonda && typeof m.sonda === "object" ? m.sonda : null });
+      };
+    });
+  }
+  // l'ultimo foglio mandato alla stazione, in parole: «ultimo foglio stampato alle 14:32»
+  function foglioDi(u) {
+    if (!u || !Number.isFinite(u.fa)) return null;
+    const [tono, cosa] = u.esito === "stampato" ? ["ok", "stampato"] : u.esito === "mandato" ? ["warn", "mandato"]
+      : u.esito === "sconosciuto" ? ["warn", "forse stampato"] : u.nonRisponde ? ["err", "non arrivato"] : ["err", "NON stampato"];
+    return { tono, testo: `ultimo foglio ${cosa} ${alle(Date.now() - u.fa)}` };
+  }
+  function rigaDispositivo(p) {
+    const x = DISP.get(p.id) || {}, qui = !!S.coppia && p.id === S.coppia.id;
+    const info = x.info && (qui ? x.stato === "qui" : x.stato === "su") ? x.info : null;
+    const kind = info && (info.kind === "lettura" || info.kind === "completo") ? info.kind : p.kind;
+    const tipo = kind === "lettura" ? "Lettura e stampa" : "PC";
+    const nome = String((info && typeof info.nome === "string" && info.nome) || p.nome || "").trim().slice(0, 40);
+    const suo = nome && !/^(PC completo|Sola lettura)$/.test(nome) ? nome : "";   // (il nome di base dice solo il tipo)
+    const ver = verOk(info && info.versione) || p.ver || "";
+    const quando = p.visto ? ` · visto ${alle(p.visto)}` : "";
+    const [tono, stato] = qui
+      ? (pronto() ? ["ok", "Collegato a questo iPhone"] : S.pari === false ? ["warn", "Non raggiungibile adesso" + quando] : ["", inLinea() ? "Ricollego…" : "Senza rete"])
+      : x.stato === "controllo" ? ["", "Controllo…"]
+      : x.stato === "su" ? ["ok", "Disponibile"]
+      : x.stato === "muto" ? ["warn", "Sul ponte, ma non risponde" + quando]
+      : x.stato === "altro" ? ["warn", "Associato a un altro telefono"]
+      : x.stato === "rete" ? ["", "Senza rete" + quando]
+      : ["", "Non disponibile" + quando];
+    const s = info && info.stazione && typeof info.stazione === "object" ? info.stazione : null, f = s && foglioDi(s.ultimo);
+    const sta = s ? `<div class="d3">🖨️ <b>${esc(String(s.nome || "Stazione di stampa").slice(0, 40))}</b> · <span class="${s.presente ? "ok" : "warn"}">${s.presente ? "raggiungibile" : "non raggiungibile"}</span>${
+      f ? ` · <span class="${f.tono}">${esc(f.testo)}</span>` : ""}</div>` : "";
+    return `<div class="dsp${qui ? " qui" : ""}" data-pc="${esc(p.id)}"><div class="d1"><span class="em" aria-hidden="true">${kind === "lettura" ? "👁️" : "💻"}</span><b>${esc(suo || tipo)}</b>${
+      suo ? `<span class="dtipo">${tipo}</span>` : ""}${ver ? `<span class="dver">v${esc(ver)}</span>` : ""}</div><div class="d2 ${tono}" role="status"><i></i>${esc(stato)}</div>${sta}</div>`;
+  }
+  function vistaDispositivi() {
+    const qui = S.coppia && S.coppia.id;
+    const l = S.pcs.slice().sort((a, b) => (a.id === qui ? -1 : b.id === qui ? 1 : 0));   // l'attivo in cima
+    return `<main>${stampaHtml()}<div class="carta dsps">${l.map(rigaDispositivo).join("")}</div></main>`;
   }
 
   // ------------------------------------------------- il QR, inquadrato qui
@@ -1490,10 +1644,11 @@
   const em = (e) => `<span class="em" aria-hidden="true">${e}</span> `;
   function testata() {
     if (S.fase !== "pronta") return "";
-    const suPaz = S.vista.nome === "paziente", p = suPaz ? paziente(S.vista.ep) : null, suZip = S.vista.nome === "registrazioni";
+    const suPaz = S.vista.nome === "paziente", p = suPaz ? paziente(S.vista.ep) : null;
+    const suZip = { registrazioni: "Registrazioni", dispositivi: "Dispositivi" }[S.vista.nome] || "";   // (una pagina del ⋯: il suo titolo, e «‹»)
     const sx = suPaz || suZip ? `<button class="ico" data-a="indietro" aria-label="Tutti i pazienti">${ICO.indietro}</button>` : "";
     const tit = p ? `<b>${p.omonimo ? '<span class="om">⚠ </span>' : ""}${esc(chi(p))}</b>${p.prec ? "<small>Episodio precedente</small>" : ""}`
-      : suZip ? "<b>Registrazioni</b>" : suPaz ? "" : S.aggiornato ? `<small>Aggiornato alle ${hhmm(S.aggiornato)}</small>` : "";
+      : suZip ? `<b>${suZip}</b>` : suPaz ? "" : S.aggiornato ? `<small>Aggiornato alle ${hhmm(S.aggiornato)}</small>` : "";
     const nome = suPaz ? `<button type="button" class="tit" data-a="indietro" aria-label="Torna alla ${S.modo === "mappa" && S.mappa ? "mappa" : "lista"}">${tit}</button>` : `<div class="tit">${tit}</div>`;
     // più PC in lista (un completo + le porte di sola lettura): si scelgono dal
     // menu. Con un PC solo niente lista: meno è meglio. L'attivo in cima.
@@ -1511,6 +1666,7 @@
         ${listaPc}
         <button data-a="stampaPdf" ${stampaNo() ? "disabled" : ""}>${em("📄")}Stampa PDF${staDi() ? ` · ${esc(doveTel() === "stazione" ? staDi() : "PC")}` : ""}${stampaNo() ? ` <small>${esc(stampaNo())}</small>` : ""}</button>
         <button data-a="scansiona">${em("📷")}Scansiona il QR</button>
+        <button data-a="dispositivi">${em("🖥️")}Dispositivi</button>
         ${solaLettura() ? "" : `<button data-a="registrazioni"><span class="em rec" aria-hidden="true">●</span> Registrazioni</button>`}
         <button class="via" data-a="dimentica">${em("🗑️")}Scollega ${S.pcs.length >= 2 ? "questo PC" : "il PC"}</button>
         ${solaLettura() ? `<div class="info">${esc(testoSola())}</div>` : ""}
@@ -2195,7 +2351,7 @@
     const fuoco = att ? { id: att.id, a: att.selectionStart, b: att.selectionEnd } : null;
     const mp = $app.querySelector(".mappa"), scorri = mp ? { x: mp.scrollLeft, y: mp.scrollTop } : null;
     const fg = $app.querySelector(".foglio .pannello"), fgy = fg ? { k: fg.dataset.k, y: fg.scrollTop } : null;   // (un foglio aperto resta dov'era)
-    const corpo = S.fase === "pronta" ? (S.vista.nome === "paziente" ? vistaPaziente() : S.vista.nome === "registrazioni" ? vistaRegistrazioni() : vistaLista()) : schermata();
+    const corpo = S.fase === "pronta" ? (S.vista.nome === "paziente" ? vistaPaziente() : S.vista.nome === "registrazioni" ? vistaRegistrazioni() : S.vista.nome === "dispositivi" ? vistaDispositivi() : vistaLista()) : schermata();
     disegno = true;   // (un campo tolto dal ridisegno non è un campo lasciato)
     try { $app.innerHTML = testata() + corpo + foglioStazione() + (S.avviso ? `<div class="avviso ${esc(S.avviso.tono)}${S.avviso.alto ? " alto" : ""}" role="alert"><span>${esc(S.avviso.testo)}</span>${S.avviso.azione ? `<button type="button" data-a="avvisoAz">${esc(S.avviso.azione.testo)}</button>` : ""}</div>` : ""); }
     finally { disegno = false; }
@@ -2364,6 +2520,7 @@
     else if (a === "stampaRef") stampaReferto(ep, b.dataset.id);
     else if (a === "stampaVia") { S.stampa = null; render(); }
     else if (a === "registrazioni") apriRegistrazioni();
+    else if (a === "dispositivi") apriDispositivi();
     else if (a === "zipLista") caricaZip();
     else if (a === "zipScarica") scaricaZip(b.dataset.id);
     else if (a === "zipManda") condividiZip(b.dataset.id);

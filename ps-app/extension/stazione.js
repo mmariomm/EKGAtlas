@@ -71,6 +71,9 @@ async function aggiorna() {
 // il conto alla rovescia del QR, e un QR nuovo quando serve
 clearInterval(tQr);
 tQr = setInterval(() => { if (stato && stato.offerta) { if (stato.offerta.scade - Date.now() < 60e3) aggiorna(); else mostra(); } }, 1000);
+// e lo stato ogni minuto, anche se niente cambia: prima di Chrome 116 (niente getContexts) è così che la
+// stazione sa che questa pagina è aperta, e resta sul ponte (stazione-sw.js, stzPagina)
+setInterval(aggiorna, 60e3);
 chrome.storage.onChanged.addListener((ch, area) => {
   if ((area === "session" && ch["stazione.stato"]) || (area === "local" && (ch["stazione.lavori"] || ch["stazione.qui"]))) aggiorna();
 });

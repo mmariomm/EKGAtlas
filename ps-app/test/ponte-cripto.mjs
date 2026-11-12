@@ -98,20 +98,27 @@ const L = await import(join(root, "../worker/ponte-logica.js"));
 const { Stanza, PONTE, leggiStanza, intestazioniApp } = L;
 check(leggiStanza("https://x/ponte/ws?r=" + a.stanza + "&ruolo=pc").ok && !leggiStanza("https://x/ponte/ws?r=zz&ruolo=pc").ok
   && !leggiStanza("https://x/ponte/ws?r=" + a.stanza + "&ruolo=altro").ok, "la stanza è 32 cifre esadecimali, il ruolo pc o tel");
+// Le prese finte: `battito` è l'ultimo «ping» (quello che su Cloudflare dice
+// getWebSocketAutoResponseTimestamp); `chiusi` ogni chiusura che il ripetitore
+// MANDA sulla rete (a una presa morta resterebbe in sospeso).
 const finto = () => {
   const prese = [];
   const io = {
     prese, inviati: [], chiusi: [],
-    socket: (ruolo, escluso) => prese.find((p) => p !== escluso && p.aperta && p.st?.ruolo === ruolo) || null,
+    tutte: () => prese.filter((p) => !p.uscita), aperta: (p) => p.aperta,
     invia: (p, d) => io.inviati.push([p.nome, d]),
     chiudi: (p, c, perche) => { p.aperta = false; io.chiusi.push([p.nome, c, perche]); },
-    leggi: (p) => p.st || null, scrivi: (p, s) => { p.st = s; }, ultimo: (p) => p.st?.ultimo || 0,
+    leggi: (p) => p.st || null, scrivi: (p, s) => { p.st = s; }, battito: (p) => p.battito || 0,
   };
   const nuova = (nome) => { const p = { nome, aperta: true }; prese.push(p); return p; };
-  return { io, nuova, st: new Stanza(io) };
+  // (l'altro capo chiude, o cade: la presa esce dall'elenco)
+  const esce = (st, p, ora) => { p.aperta = false; st.esce(p, ora); p.uscita = true; };
+  return { io, nuova, esce, st: new Stanza(io) };
 };
+check(PONTE.inattivoMs === 75e3 && !("prossimaSveglia" in L) && !/sveglia/i.test(Object.keys(PONTE).join()),
+  "muta da 75 secondi (tre battiti persi: i client battono ogni 20); nessuna sveglia del ripetitore");
 {
-  const { io, nuova, st } = finto();
+  const { io, nuova, esce, st } = finto();
   const pc = nuova("pc"), tel = nuova("tel");
   st.entra(pc, "pc", 0);
   check(JSON.stringify(io.inviati) === JSON.stringify([["pc", '{"pari":false}']]), "il PC entra da solo: «dall'altra parte non c'è nessuno»");
@@ -124,14 +131,46 @@ const finto = () => {
   check(io.inviati.length === 1 && io.inviati[0][0] === "pc" && io.inviati[0][1] === dati, "il binario passa all'altra presa così com'è; il testo non passa");
   const tel2 = nuova("tel2");
   st.entra(tel2, "tel", 3);
-  check(io.chiusi.some(([n, c]) => n === "tel" && c === 4001), "una presa nuova dello stesso ruolo chiude la vecchia (4001)");
+  check(JSON.stringify(io.chiusi) === JSON.stringify([["tel", 4001, "sostituita"]]) && io.inviati.some(([n, d]) => n === "tel2" && d === '{"pari":true}')
+    && !io.inviati.some(([, d]) => d === '{"pari":false}'),
+    "un'altra scheda del telefono entra: la vecchia, che si sentiva, riceve la chiusura subito (4001, «Aperto su un altro dispositivo»); il PC non vede mai «nessuno»");
   io.inviati.length = 0;
-  st.esce(tel);
-  check(io.inviati.length === 0, "…e la vecchia che esce non dice al PC «non c'è più nessuno»");
-  st.messaggio(tel2, new Uint8Array(PONTE.frameMax + 1), 4);
-  check(io.chiusi.some(([n, c]) => n === "tel2" && c === 1009), "un messaggio oltre 1 MB chiude la presa (1009)");
-  st.esce(tel2);
-  check(io.inviati.some(([n, d]) => n === "pc" && d === '{"pari":false}'), "il telefono esce: il PC lo sa");
+  st.messaggio(pc, dati, 4);
+  check(io.inviati.length === 1 && io.inviati[0][0] === "tel2", "il PC parla: arriva alla presa nuova, non alla vecchia");
+  esce(st, tel, 6);
+  check(io.inviati.length === 1, "…e la vecchia che esce non dice al PC «non c'è più nessuno»");
+  // il PC che si rifà (il suo service worker ripartito): la presa vecchia è morta — ritirata, nessuna chiusura sulla rete
+  const pcVecchio = pc, pc2 = nuova("pc2");
+  pcVecchio.battito = 5;
+  io.inviati.length = 0;
+  st.entra(pc2, "pc", 7);
+  check(pcVecchio.st.via === 4001 && io.chiusi.length === 1 && !io.inviati.some(([, d]) => d === '{"pari":false}') && io.inviati.some(([n, d]) => n === "tel2" && d === '{"pari":true}'),
+    "il PC che si rifà ritira la presa vecchia (4001) senza mandarle niente: fuori dai conti; il telefono vede solo «c'è»");
+  st.messaggio(pcVecchio, dati, 8);
+  check(JSON.stringify(io.chiusi.at(-1)) === JSON.stringify(["pc", 4001, "sostituita"]), "se la presa vecchia invece parla (era viva), la chiusura le arriva allora, 4001");
+  st.messaggio(tel2, new Uint8Array(PONTE.frameMax + 1), 7);
+  check(io.chiusi.some(([n, c]) => n === "tel2" && c === 1009) && io.inviati.some(([n, d]) => n === "pc2" && d === '{"pari":false}'),
+    "un messaggio oltre 1 MB chiude la presa (1009), e il PC lo sa subito");
+  io.inviati.length = 0;
+  esce(st, tel2, 8);
+  check(io.inviati.length === 0, "(quando poi la chiusura torna, non lo si ridice)");
+  const tel3 = nuova("tel3");
+  st.entra(tel3, "tel", 9);
+  io.inviati.length = 0;
+  esce(st, tel3, 10);
+  check(JSON.stringify(io.inviati) === JSON.stringify([["pc2", '{"pari":false}']]), "il telefono esce: il PC lo sa");
+}
+// il telefono in sottofondo (zitto da più di 30 s) che un'altra scheda sostituisce: ritirato, senza
+// chiusure (forse è già morto); quando torna e parla, «Aperto su un altro dispositivo» gli arriva allora
+{
+  const { io, nuova, st } = finto();
+  const pc = nuova("pc"), telA = nuova("telA"), telB = nuova("telB"), dati = new Uint8Array([7]);
+  st.entra(pc, "pc", 0); st.entra(telA, "tel", 0);
+  telA.battito = 10e3; pc.battito = 40e3;
+  st.entra(telB, "tel", 10e3 + PONTE.vivoMs + 1);
+  check(telA.st.via === 4001 && !io.chiusi.length, "un telefono zitto da più di 30 s, sostituito da un'altra scheda: ritirato senza chiusure sulla rete");
+  st.messaggio(telA, dati, 10e3 + PONTE.vivoMs + 2);
+  check(JSON.stringify(io.chiusi) === JSON.stringify([["telA", 4001, "sostituita"]]), "…torna e parla: 4001 adesso («Aperto su un altro dispositivo»)");
 }
 // la stazione di stampa: la stessa logica, i ruoli `medico` e `stazione` (fra loro, mai col telefono)
 {
@@ -154,10 +193,76 @@ const finto = () => {
   st.entra(pc, "pc", 0);
   for (let i = 0; i <= PONTE.alMinuto; i++) st.messaggio(pc, new Uint8Array(1), 1000);
   check(io.chiusi.some(([n, c]) => n === "pc" && c === 1008), `più di ${PONTE.alMinuto} messaggi in un minuto: chiusa (1008)`);
-  const p2 = nuova("p2"), p3 = nuova("p3");
-  st.entra(p2, "pc", 0); st.entra(p3, "tel", PONTE.inattivoMs);
-  const vive = st.pulisci([p2, p3], PONTE.inattivoMs + 1000);
-  check(vive === 1 && io.chiusi.some(([n, c]) => n === "p2" && c === 4002), "una presa muta da troppo si chiude (4002), l'altra resta");
+}
+// Prese vecchie dello stesso ruolo ancora aperte per il ripetitore (morte senza
+// dirlo: un service worker fermato, una rete caduta): chi entra le ritira TUTTE,
+// non solo la prima, senza mandare chiusure; l'altra parte vede solo «c'è».
+{
+  const { io, nuova, st } = finto();
+  const tel = nuova("tel");
+  st.entra(tel, "tel", 0);
+  const vecchie = [nuova("pc1"), nuova("pc2"), nuova("pc3")];
+  for (const v of vecchie) { v.st = { ruolo: "pc", inizio: 0, n: 0, ultimo: 0 }; v.battito = 40e3; }   // (entrate senza che nessuna ritirasse l'altra)
+  io.inviati.length = 0;
+  const nuovaPc = nuova("pc4");
+  tel.battito = 50e3;
+  st.entra(nuovaPc, "pc", 60e3);
+  check(vecchie.every((v) => v.st.via === 4001) && !io.chiusi.length && st.presa("pc", null, 60e3) === nuovaPc,
+    "entra un PC con tre prese vecchie del PC ancora aperte: le ritira tutte e tre, nessuna chiusura sulla rete, conta solo la nuova");
+  check(!io.inviati.some(([n, d]) => n === "tel" && d === '{"pari":false}') && io.inviati.some(([n, d]) => n === "tel" && d === '{"pari":true}'),
+    "il telefono non vede mai «non c'è più nessuno»: solo «c'è»");
+}
+// Il telefono muto (iOS che lo sospende, un PC in sospensione): chi entra dall'altra parte
+// NON lo ritira e non gli manda chiusure. Quando batte di nuovo è ancora in stanza, e i
+// messaggi passano (ritirarlo senza dirglielo lo lascerebbe sordo per sempre).
+{
+  const { io, nuova, st } = finto();
+  const tel = nuova("tel"), pc = nuova("pc");
+  st.entra(tel, "tel", 0);
+  tel.battito = 10e3;
+  const dopo = 10e3 + PONTE.inattivoMs + 1;
+  st.entra(pc, "pc", dopo);
+  check(!tel.st.via && !io.chiusi.length && io.inviati.at(-1)[0] === "tel" && io.inviati.at(-1)[1] === '{"pari":true}',
+    "il PC entra 75 s dopo l'ultimo battito del telefono: il telefono resta in stanza (nessuna chiusura), e sa che il PC c'è");
+  io.inviati.length = 0;
+  st.messaggio(tel, new Uint8Array([9]), dopo + 1);
+  check(!io.chiusi.length && io.inviati.some(([n]) => n === "pc"), "il telefono torna e parla: il messaggio arriva al PC, nessuna chiusura");
+}
+// Il client della 3.85.2 sui PC dove Chrome ferma il service worker: si rifà
+// ogni ~85 secondi, e la presa vecchia muore — con la chiusura che arriva, o
+// senza. Un giorno: il ripetitore non manda mai una chiusura a una presa morta
+// (resterebbe in sospeso, fino a 15 minuti, e terrebbe sveglio il Durable
+// Object), non si sveglia da solo, e il PC del medico sente la stazione quando c'è.
+for (const muore of ["con la chiusura", "senza dirlo"]) {
+  const { io, nuova, esce, st } = finto();
+  const med = nuova("medico");
+  st.entra(med, "medico", 0);
+  let risvegli = 1, vista = 0;
+  const giorno = 24 * 3600e3, ciclo = 85e3;
+  let n = 0;
+  for (let t = 0; t < giorno; t += ciclo, n++) {
+    med.battito = t;   // (il PC del medico batte sempre)
+    const p = nuova("sta" + n);
+    st.entra(p, "stazione", t); risvegli++;
+    p.battito = t + 20e3;   // un battito, poi il service worker si ferma (~35 s dopo)
+    med.battito = t + 30e3;
+    if (st.presa("stazione", null, t + 30e3) === p) vista++;
+    if (muore === "con la chiusura") { esce(st, p, t + 35e3); risvegli++; }
+    // senza: Cloudflare le butta quando la connessione cade (su Cloudflare, il P99 delle prese: 2.400 s)
+    else for (const v of io.prese) if (!v.uscita && v !== med && v.st && t - v.st.inizio > 2400e3) { esce(st, v, t); risvegli++; }
+  }
+  const lasciate = io.prese.filter((p) => !p.uscita && p.st?.via).length;
+  check(!io.chiusi.length && risvegli <= 1 + 2 * n && vista === n,
+    `3.85.2 che si rifà ogni 85 s per un giorno, la presa vecchia che muore ${muore}: ${n} entrate, ${risvegli} risvegli del Durable Object (entrate e uscite, nessuna sveglia), 0 chiusure mandate a prese morte (prima: una a ogni entrata), la stazione vista ogni volta che c'è${muore === "senza dirlo" ? `; ritirate in attesa che Cloudflare le butti: ${lasciate}` : ""}`);
+}
+// Se Cloudflare non buttasse mai le prese morte: al più ritirateMax ritirate, le più vecchie si chiudono
+{
+  const { io, nuova, st } = finto();
+  for (let i = 0; i < 100; i++) { const p = nuova("pc" + i); st.entra(p, "pc", i * 85e3); p.battito = i * 85e3 + 20e3; }
+  const ritirate = io.prese.filter((p) => p.st?.via && !p.st.chiusa).length;
+  const tetto = Math.min(99, PONTE.ritirateMax);
+  check(ritirate === tetto && io.chiusi.length === 99 - tetto && PONTE.ritirateMax >= 1000,
+    `100 prese del PC mai buttate: ${ritirate} ritirate al più, le ${io.chiusi.length} più vecchie chiuse davvero`);
 }
 check(!("eco" in L) && !("intestazioniSalute" in L) && !/eco|salute/i.test(Object.keys(PONTE).join()),
   "niente più prova d'eco né «salute»: il ripetitore fa solo il ripetitore");
@@ -203,11 +308,56 @@ check(r.status === 400 && chiamate.length === n0, "/ponte/ws con una stanza non 
 r = await chiedi("/ponte/ws?r=" + a.stanza + "&ruolo=tel", { headers: { upgrade: "websocket" } });
 check(chiamate.at(-1)[0] === "stanza" && chiamate.at(-1)[1] === a.stanza, "/ponte/ws: alla stanza giusta (un Durable Object per stanza)");
 
+// Il Durable Object vero (worker/ponte.js) con un ctx finto: niente sveglie e
+// niente disco, nessuna chiusura mandata dopo una presa caduta o sostituita.
+await blocco(async () => {
+  const { PonteStanza } = await import(join(root, "../worker/ponte.js"));
+  const g = globalThis, prima = { R: g.Response, P: g.WebSocketPair, Q: g.WebSocketRequestResponsePair };
+  const disco = [], prese = [], battiti = new Map();
+  const presaFinta = (nome) => ({ nome, readyState: 1, att: null, mandati: [], chiusa: null,
+    send(d) { this.mandati.push(d); }, close(c, r) { this.chiusa = [c, r]; this.readyState = 2; },
+    serializeAttachment(s) { this.att = structuredClone(s); }, deserializeAttachment() { return this.att; } });
+  g.WebSocketPair = function () { return { 0: presaFinta("client"), 1: presaFinta("server" + prese.length) }; };
+  g.WebSocketRequestResponsePair = function (q, r) { this.q = q; this.r = r; };
+  g.Response = class { constructor(b, i = {}) { this.status = i.status; this.webSocket = i.webSocket; } };
+  const ctx = {
+    auto: null, setWebSocketAutoResponse(p) { this.auto = p; },
+    acceptWebSocket(w, tags) { w.tags = tags; prese.push(w); },
+    getWebSockets(tag) { return prese.filter((w) => !w.uscita && (!tag || w.tags.includes(tag))); },
+    getWebSocketAutoResponseTimestamp(w) { return battiti.has(w) ? new Date(battiti.get(w)) : null; },
+    storage: new Proxy({}, { get: (_, k) => async () => { disco.push(String(k)); return null; } }),
+  };
+  try {
+    const d = new PonteStanza(ctx, {});
+    const entra = (ruolo) => d.fetch(new Request(`https://x/ponte/ws?r=${a.stanza}&ruolo=${ruolo}`));
+    const r1 = await entra("pc");
+    check(r1.status === 101 && ctx.auto && ctx.auto.q === "ping" && ctx.auto.r === "pong" && prese[0].att?.ruolo === "pc" && prese[0].mandati[0] === '{"pari":false}',
+      "il Durable Object: la presa entra (101), il battito lo risponde Cloudflare («ping» → «pong»)");
+    battiti.set(prese[0], Date.now());
+    await entra("pc");   // il service worker del PC è ripartito: la presa vecchia è morta, e nessuno l'ha detto
+    check(prese[0].att.via === 4001 && prese[0].chiusa === null && prese[1].att.ruolo === "pc", "un PC che si rifà: la presa vecchia ritirata, nessuna chiusura mandata");
+    const tel = await entra("tel");
+    check(tel.status === 101 && prese[2].mandati[0] === '{"pari":true}' && prese[1].mandati.at(-1) === '{"pari":true}' && !prese[0].mandati.includes('{"pari":true}'),
+      "entra il telefono: lui e il PC nuovo lo sanno; la presa ritirata non riceve niente");
+    prese[1].uscita = true;
+    d.webSocketClose(prese[1], 1006, "", false);
+    check(prese[1].chiusa === null && prese[2].mandati.at(-1) === '{"pari":false}', "la presa del PC cade (1006): il telefono lo sa, e nessuna chiusura mandata a chi non c'è più");
+    d.webSocketClose(prese[2], 1001, "", true);
+    check(prese[2].chiusa === null, "un service worker fermato da Chrome chiude con 1001: nessuna chiusura mandata indietro (la risposta la dà Cloudflare, web_socket_auto_reply_to_close)");
+    // il telefono addormentato da 10 minuti (in tasca): la sveglia rimasta da prima non lo tocca
+    prese[2].att = { ...prese[2].att, ultimo: Date.now() - 10 * 60e3 }; battiti.set(prese[2], Date.now() - 10 * 60e3);
+    await d.alarm();
+    check(!prese[2].att.via && prese[2].chiusa === null, "la sveglia rimasta dalla versione di prima non ritira e non chiude niente (un telefono addormentato resta in stanza)");
+    check(disco.length === 0, `niente sveglie e niente disco: nessuna chiamata a storage (${disco.join(", ") || "nessuna"})`);
+  } finally { g.Response = prima.R; g.WebSocketPair = prima.P; g.WebSocketRequestResponsePair = prima.Q; }
+});
+
 console.log("\nponte: la configurazione di Cloudflare");
 const jsonc = (t) => JSON.parse(t.replace(/^\s*\/\/.*$/gm, "").replace(/\s\/\/ .*$/gm, ""));
 const cfg = jsonc(readFileSync(join(root, "../wrangler.jsonc"), "utf8"));
 check(cfg.main === "worker/index.js" && cfg.migrations.some((m) => (m.new_sqlite_classes || []).includes("PonteStanza"))
   && cfg.assets.not_found_handling === "single-page-application", "wrangler.jsonc: il Worker, il Durable Object su SQLite, il sito resta una SPA");
+check(String(cfg.compatibility_date) >= "2026-04-07", `compatibility_date ${cfg.compatibility_date}: dal 2026-04-07 Cloudflare risponde da sé alle chiusure (web_socket_auto_reply_to_close), e il Durable Object non manda ws.close()`);
 check(cfg.observability.logs && cfg.observability.logs.invocation_logs === false, "nessuna riga di log per richiesta: l'indirizzo della presa porta la stanza");
 check(JSON.stringify(cfg.assets.run_worker_first) === '["/ponte/*","/api/*"]',
   "il Worker si sveglia solo per /ponte/ e /api/: le pagine del sito arrivano dai file statici");
@@ -471,6 +621,56 @@ await blocco(async () => {
   const t5 = await telFinto(pc, k, DEV);
   check((await t5.manda({ id: 1, cmd: "ciao" })).some((x) => x.re === 1 && x.ok), "rientrati nel gestionale, lo stesso telefono riapre: la stessa associazione, niente QR nuovo");
 });
+// Un PC lasciato acceso senza il gestionale (la notte, il PC delle infermiere):
+// non sta sul ponte, e non ci torna a ogni risveglio del service worker. Con
+// la 3.85.2 ogni avvio apriva una presa: con Chrome che lo ferma ogni ~85 s,
+// 42 all'ora. Il gestionale aperto lo riporta sul ponte; chiuso, ci resta 10 minuti.
+await blocco(async () => {
+  const sessione = {}, gest = [];
+  const pc = await pcFinto({ sessione, gest });
+  const k = kDalQr((await pc.pagina({ t: "ponteAssocia" })).qr);
+  await sospendi(30);
+  check(pc.prese.length === 1 && pc.presa().readyState === 1, "«Associa» senza gestionale aperto: il PC sta sul ponte per il QR");
+  const t = await telFinto(pc, k, DEV);
+  await t.manda({ id: 1, cmd: "ciao" });
+  check(!!pc.pt().sessione, "(il telefono entra: una sessione)");
+  pc.salta(4 * 60e3);
+  await pc.ev("ponteControlla()");
+  check(!pc.pt().sessione && pc.presa().readyState === 3 && pc.pt().relay === "riposo" && !!pc.locale["ponte.coppia"],
+    "3 minuti senza comandi, nessuna scheda del gestionale: la sessione si chiude e il PC lascia il ponte (ws.close); l'associazione resta");
+  check(/lascia il ponte/.test(pc.pt().registro.map((x) => x.testo).join("\n")), "il registro del ponte lo dice");
+  // un'ora: il service worker riparte ogni 85 s (Chrome che lo ferma), senza gestionale
+  let aperte = 0;
+  for (let i = 0; i < 42; i++) {
+    const pcI = await pcFinto({ sessione, gest, locale: pc.locale });
+    pcI.salta(4 * 60e3 + i * 85e3);
+    await pcI.ev("ponteControlla()");
+    aperte += pcI.prese.length;
+  }
+  check(aperte === 0, `un'ora di risvegli del service worker (42, uno ogni 85 s) senza gestionale: ${aperte} prese aperte (3.85.2: 42)`);
+  // il medico apre il gestionale: il PC torna sul ponte (la scheda lo sveglia)
+  gest.push({ id: 7, url: GEST + "menuPsoEpisodio.do?EPISODIO_ID=1", active: true, windowId: 1, index: 0 });
+  const pcG = await pcFinto({ sessione, gest, locale: pc.locale });
+  await sospendi(30);
+  check(pcG.prese.length === 1 && pcG.presa().readyState === 1, "una scheda del gestionale aperta: il PC sta sul ponte");
+  await pcG.pagina({ t: "ponteSveglia" }, { url: GEST + "x", tab: { id: 7 } });
+  check(pcG.prese.length === 1, "le schede che svegliano non aprono prese in più (una sola, sempre)");
+  // chiusa: resta 10 minuti, poi lascia il ponte
+  gest.length = 0;
+  pcG.salta(9 * 60e3);
+  await pcG.ev("ponteControlla()");
+  check(pcG.presa().readyState === 1, "chiuso il gestionale, il PC resta sul ponte ancora per un po' (9 minuti: sì)");
+  pcG.salta(2 * 60e3);
+  await pcG.ev("ponteControlla()");
+  check(pcG.presa().readyState === 3 && pcG.prese.length === 1, "…e dopo 10 minuti lo lascia, senza riprovare");
+  // il ponte giù col gestionale aperto: i tentativi si diradano fino a minuti, e una presa che cade
+  // subito dopo essersi aperta non fa ripartire il conto
+  const b = await pcG.ev(`(() => { pt.tentativi = 0; const v = []; const s = setTimeout; const m = Math.random;
+    Math.random = () => 1; globalThis.setTimeout = (f, ms) => { v.push(ms); return 0; };
+    try { for (let i = 0; i < 12; i++) ponteRiprova(); } finally { globalThis.setTimeout = s; Math.random = m; pt.tentativi = 0; pt.tRiprova = 0; }
+    return v; })()`);
+  check(b[0] === 1000 && b[4] === 16000 && Math.max(...b) === 300000, `senza sessione i tentativi arrivano a 5 minuti (${b.map((x) => Math.round(x / 1000) + " s").join(", ")})`);
+});
 await blocco(async () => {
   // «Aggiorna i valori»: la scheda annotata in storage.session; il service
   // worker riparte a metà, e lei si chiude lo stesso, alla sua ora
@@ -611,6 +811,28 @@ await blocco(async () => {
   await t.manda({ id: 4, cmd: "nota", ep: "1", testo: "x" });
   await sospendi(400);
   check(JSON.stringify(a("nota")) === "[7,8]", `una nota sì, alla scheda dopo (${JSON.stringify(a("nota"))})`);
+});
+await blocco(async () => {
+  // PS Assist si è aggiornato da sé: le schede del gestionale aperte prima hanno
+  // il pannello vecchio, che non risponde più (chrome.tabs.sendMessage: «Receiving
+  // end does not exist»). Il telefono dice che cosa fare, non «non risponde».
+  const orfana = () => { throw new Error("Could not establish connection. Receiving end does not exist."); };
+  const prova = async (locale, solaLettura = false) => {
+    const pc = await pcFinto({ scheda: orfana, locale, solaLettura });
+    const k = kDalQr((await pc.pagina({ t: "ponteAssocia" })).qr);
+    await sospendi(30);
+    const t = await telFinto(pc, k, DEV);
+    await t.manda({ id: 1, cmd: "ciao" });
+    return ((await t.manda({ id: 2, cmd: "pazienti" })).find((x) => x.re === 2) || {}).errore || "";
+  };
+  let e = await prova({ aggiornaUltima: { v: "3.85.3", quando: Date.now() - 20 * 60e3 } });
+  check(e === "PS Assist si è aggiornato: sul PC tocca «Ricarica la pagina»", `aggiornata 20 minuti fa, nessuna scheda risponde: «sul PC tocca Ricarica la pagina» (${e})`);
+  e = await prova({ aggiornaUltima: { v: "3.85.3", quando: Date.now() - 20 * 60e3 } }, true);
+  check(e === "PS Assist si è aggiornato: sul PC ricarica la pagina del gestionale", `la build mini (niente pillola): «ricarica la pagina del gestionale» (${e})`);
+  e = await prova({ aggiornaUltima: { v: "3.85.3", quando: Date.now() - 2 * 864e5 } });
+  check(e === "Il gestionale sul PC non risponde: ricarica la sua pagina", `aggiornata due giorni fa: «non risponde», come sempre (${e})`);
+  e = await prova({});
+  check(e === "Il gestionale sul PC non risponde: ricarica la sua pagina", `mai aggiornata: lo stesso (${e})`);
 });
 await blocco(async () => {
   // Una scrittura rimandata dopo una presa caduta (stesso rq, messaggio nuovo):
@@ -840,6 +1062,75 @@ await blocco(async () => {
   pc.comandi.length = 0;
   const nota = await t.manda({ id: 2, cmd: "nota", ep: "1", testo: "x", rq: "rqnota01" });
   check(!nota.some((x) => x.re === 2 && x.solaLettura), "sul PC normale una scrittura (nota) non è bloccata da «sola lettura»");
+});
+
+// ⋯ → Dispositivi sul telefono: chi è questo PC (il tipo, il nome, la versione) e la sua stazione di
+// stampa (il nome, se c'è adesso, l'ultimo foglio). Nella sessione con `dispositivo` (una lettura, che
+// non tiene aperta la sessione), e — per un PC che non è quello attivo — al saluto «sonda» del telefono
+// dell'associazione: la stessa risposta, senza una sessione dopo, e qui non cambia niente.
+await blocco(async () => {
+  const ora = Date.now();
+  const pc = await pcFinto({
+    locale: { "stazione.coppia": { k: "x", nome: "Infermeria", dal: ora - 864e5, via: "telefono", codice: "123 456" } },
+    sessione: {
+      stazione: { nome: "Infermeria", presente: true },
+      "ponte.operatore": { nome: "DOTT. CHIARA NERI", ts: ora },
+      // il giornale delle stampe (bg.js): l'ultimo foglio FINITO mandato alla stazione è quello di 4 minuti fa
+      ordini: [
+        { id: "telAAAA1111l", fogli: [{ stato: "stampato", stazione: true, ts: ora - 9 * 60e3 }, { stato: "fallito", stazione: true, nonRisponde: true, ts: ora - 4 * 60e3 }] },
+        { id: "telBBBB2222l", fogli: [{ stato: "stampato", ts: ora - 60e3 }, { stato: "attesa", stazione: true, ts: ora - 30e3 }] },
+      ],
+    },
+  });
+  pc.ctx.chrome.runtime.getManifest = () => ({ version: "3.85.3" });
+  const r1 = await pc.pagina({ t: "ponteAssocia" });
+  await sospendi(30);
+  const k = kDalQr(r1.qr);
+  const t = await telFinto(pc, k, DEV);
+  const ciao = (await t.manda({ id: 1, cmd: "ciao" })).find((x) => x.re === 1);
+  check(ciao && ciao.ok && ciao.dati.versione === "3.85.3", `il saluto «ciao» dice anche la versione di PS Assist sul PC (${ciao && ciao.dati && ciao.dati.versione})`);
+  pc.pt().sessione.ultimo = Date.now() - 2 * 60e3;
+  const d = (await t.manda({ id: 2, cmd: "dispositivo" })).find((x) => x.re === 2);
+  const dd = d && d.ok && d.dati;
+  check(dd && dd.kind === "completo" && dd.nome === "PC completo" && dd.versione === "3.85.3" && dd.stazione && dd.stazione.nome === "Infermeria" && dd.stazione.presente === true
+    && dd.stazione.ultimo.esito === "fallito" && dd.stazione.ultimo.nonRisponde === true && Math.abs(dd.stazione.ultimo.fa - 4 * 60e3) < 5000,
+    `«dispositivo»: il tipo, il nome, la versione, e la stazione col suo ultimo foglio finito (non quello che aspetta, non uno del PC) (${JSON.stringify(dd)})`);
+  check(dd && !("operatore" in dd) && !/NERI|CHIARA/.test(JSON.stringify(dd)), "…e niente di chi è loggato nel gestionale: lì non serve");
+  check(Date.now() - pc.pt().sessione.ultimo > 100e3, "«dispositivo» non tiene aperta la sessione (lo manda l'app da sé)");
+
+  // il saluto «sonda»: la stessa risposta, e nessuna sessione — né nuova, né al posto di quella che c'è
+  const sonda = async (dev) => {
+    const n = P.b64u(P.casuale(16));
+    pc.tira();
+    await pc.consegna(await P.sigilla(t.ch.salutoTel, P.TIPO.SALUTO_TEL, 0, { v: 1, n, dev, sonda: true }));
+    for (const f of pc.tira()) { try { const x = (await P.apri(t.ch.salutoPc, f, P.TIPO.SALUTO_PC)).dati; if (x.eco === n) return x; } catch { /* altro */ } }
+    return null;
+  };
+  const sessione = pc.pt().sessione, registro = pc.pt().registro.length, coppia = JSON.stringify(pc.locale["ponte.coppia"]);
+  const s1 = await sonda(DEV);
+  const senzaFa = (x) => JSON.stringify(x, (k, v) => (k === "fa" ? Math.round(v / 60e3) : v));   // (i millisecondi passati intanto)
+  check(s1 && s1.sonda && !s1.n && !s1.no && senzaFa(s1.sonda) === senzaFa(dd),
+    `la sonda del telefono dell'associazione: la stessa risposta di «dispositivo», e niente numero di sessione (${JSON.stringify(s1)})`);
+  check(pc.pt().sessione === sessione && !pc.pt().attesa && pc.pt().registro.length === registro && JSON.stringify(pc.locale["ponte.coppia"]) === coppia,
+    "…e sul PC non cambia niente: la sessione di prima resta, nessuna attesa, niente nel registro, l'associazione com'era");
+  check((await t.manda({ id: 3, cmd: "pazienti" })).some((x) => x.re === 3 && x.ok), "la sessione di prima risponde ancora");
+  const s2 = await sonda(DEV2);
+  check(s2 && s2.no && !s2.sonda, "la sonda di un altro telefono, anche con la chiave: «no», e niente di questo PC");
+  // la stazione scollegata (o mai collegata): niente stazione
+  pc.locale["stazione.coppia"].revoca = Date.now();
+  const d2 = (await t.manda({ id: 4, cmd: "dispositivo" })).find((x) => x.re === 4);
+  check(d2 && d2.ok && d2.dati.stazione === null, "con la stazione scollegata: «stazione: null»");
+});
+// La build mini: «dispositivo» è una lettura e passa il muro della sola lettura; la sonda pure
+await blocco(async () => {
+  const pc = await pcFinto({ solaLettura: true });
+  const r1 = await pc.pagina({ t: "ponteAssocia" });
+  await sospendi(30);
+  const t = await telFinto(pc, kDalQr(r1.qr), DEV);
+  await t.manda({ id: 1, cmd: "ciao" });
+  const d = (await t.manda({ id: 2, cmd: "dispositivo" })).find((x) => x.re === 2);
+  check(d && d.ok && d.dati.kind === "lettura" && d.dati.nome === "Sola lettura" && d.dati.stazione === null && !("versione" in d.dati),
+    `sul PC di sola lettura «dispositivo» risponde (kind: lettura; senza manifest, niente versione) (${JSON.stringify(d)})`);
 });
 
 console.log(fail ? `\nPONTE-CRIPTO: ${fail} CHECK FALLITI\n` : "\nPONTE-CRIPTO: TUTTO OK\n");

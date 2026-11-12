@@ -7,12 +7,16 @@
  *
  * Il Durable Object usa l'ibernazione delle WebSocket: fra un messaggio e
  * l'altro non resta niente in memoria, e il battito («ping» → «pong») lo
- * risponde Cloudflare senza svegliarlo. Non c'è niente su disco (solo la
- * sveglia che chiude le prese mute) e niente nei log: i messaggi sono cifrati
- * da un capo all'altro e qui passano come byte.
+ * risponde Cloudflare senza svegliarlo. Non c'è niente su disco e niente nei
+ * log: i messaggi sono cifrati da un capo all'altro e qui passano come byte.
+ *
+ * Quello che costa è il Durable Object sveglio: lo svegliano solo una presa
+ * che entra, una che esce e un messaggio cifrato — nessuna sveglia sua, e
+ * nessuna chiusura mandata a chi non può rispondere (ponte-logica.js), che lo
+ * terrebbe sveglio fino a 15 minuti.
  */
 import { DurableObject } from "cloudflare:workers";
-import { Stanza, PONTE, PING, PONG, FILE_APP, leggiStanza, intestazioniApp } from "./ponte-logica.js";
+import { Stanza, PING, PONG, FILE_APP, leggiStanza, intestazioniApp } from "./ponte-logica.js";
 
 const APERTA = 1;   // WebSocket.OPEN
 
@@ -21,12 +25,13 @@ export class PonteStanza extends DurableObject {
     super(ctx, env);
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair(PING, PONG));
     this.stanza = new Stanza({
-      socket: (ruolo, escluso) => ctx.getWebSockets(ruolo).find((w) => w !== escluso && w.readyState === APERTA) || null,
+      tutte: () => ctx.getWebSockets(),
+      aperta: (w) => w.readyState === APERTA,
       invia: (w, d) => { try { w.send(d); } catch { /* chiusa intanto */ } },
       chiudi: (w, codice, perche) => { try { w.close(codice, perche); } catch { /* già chiusa */ } },
-      leggi: (w) => w.deserializeAttachment(),
+      leggi: (w) => { try { return w.deserializeAttachment(); } catch { return null; } },
       scrivi: (w, s) => w.serializeAttachment(s),
-      ultimo: (w) => Math.max(w.deserializeAttachment()?.ultimo || 0, ctx.getWebSocketAutoResponseTimestamp(w)?.getTime() || 0),
+      battito: (w) => ctx.getWebSocketAutoResponseTimestamp(w)?.getTime() || 0,
     });
   }
 
@@ -36,21 +41,20 @@ export class PonteStanza extends DurableObject {
     const { 0: client, 1: server } = new WebSocketPair();
     this.ctx.acceptWebSocket(server, [r.ruolo]);
     this.stanza.entra(server, r.ruolo, Date.now());
-    if (!(await this.ctx.storage.getAlarm())) await this.ctx.storage.setAlarm(Date.now() + PONTE.inattivoMs / 3);
     return new Response(null, { status: 101, webSocket: client });
   }
 
   webSocketMessage(ws, dati) { this.stanza.messaggio(ws, dati, Date.now()); }
-  webSocketClose(ws, codice) {
-    this.stanza.esce(ws);
-    try { ws.close(codice === 1005 || codice === 1006 ? 1000 : codice, "chiusa"); } catch { /* già chiusa */ }
-  }
-  webSocketError(ws) { this.stanza.esce(ws); }
+  // La risposta alla chiusura la dà Cloudflare (web_socket_auto_reply_to_close: compatibility_date dal
+  // 2026-04-07, qui 2026-06-07). Qui niente ws.close(): chi chiude è quasi sempre un service worker che
+  // Chrome ha appena fermato (1001) o una presa caduta (1006) — dall'altra parte non c'è più nessuno, e
+  // una chiusura mandata lì può restare in sospeso e tenere sveglio il Durable Object.
+  webSocketClose(ws) { this.stanza.esce(ws, Date.now()); }
+  webSocketError(ws) { this.stanza.esce(ws, Date.now()); }
 
-  async alarm() {
-    const vive = this.stanza.pulisci(this.ctx.getWebSockets(), Date.now());
-    if (vive) await this.ctx.storage.setAlarm(Date.now() + PONTE.inattivoMs / 3);
-  }
+  // Una sveglia rimasta dalla versione di prima: suona una volta, non tocca niente e non si
+  // rimette. (Ritirare lì le prese mute toglierebbe di mezzo anche un PC solo addormentato.)
+  alarm() {}
 }
 
 export async function ponteFetch(request, env) {

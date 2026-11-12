@@ -28,6 +28,14 @@
  * telefono ne apre una nuova: lo sveglia la prima pagina del gestionale che
  * chiede (ponteSveglia).
  *
+ * La presa c'è solo quando il PC può servire: una scheda del gestionale aperta
+ * (o chiusa da meno di 10 minuti), una sessione col telefono, un QR appena
+ * mostrato, la pagina del ponte aperta. Se no si chiude e l'associazione resta:
+ * per il telefono il PC «non c'è». Un PC lasciato acceso, a gestionale chiuso,
+ * non apre connessioni — né tutta la notte, né a ogni risveglio del service
+ * worker. Caduta, la presa si riprova sempre più di rado: fino a 15 secondi
+ * durante una sessione, fino a 5 minuti se no.
+ *
  * La sessione finisce dopo 3 minuti senza comandi del medico, con «Scollega»
  * sul PC, con la revoca, col riavvio
  * dell'estensione, o quando una scheda del gestionale torna alla pagina
@@ -81,7 +89,7 @@ const ponteFrase = (perche) => PONTE_PERCHE[perche] || corto(perche, 80) || "Ses
 
 const pt = {
   host: "", coppia: null, k: null, chiavi: null, codice: "", chiaviDi: "",
-  ws: null, wsUrl: "", relay: "spento", pari: false, tentativi: 0, tRiprova: 0, tPong: 0,
+  ws: null, wsUrl: "", relay: "spento", pari: false, tentativi: 0, tRiprova: 0, tPong: 0, aperta: 0,
   attesa: null,        // { canale, ts, dev, nTel }: un saluto ricevuto, la sessione nuova che aspetta il primo messaggio
   sessione: null,      // { canale, dal, ultimo, n }
   ripartito: 0, rifiuto: 0, fine: null, registro: [],
@@ -158,9 +166,41 @@ async function ponteAvviaOra() {
   }
   if (!c) { pt.coppia = null; pt.k = null; pt.chiavi = null; pt.codice = ""; pt.chiaviDi = ""; }
   else pt.coppia = c;
-  if (pt.host && pt.coppia) ponteConnetti();
-  else ponteStacca();
+  if (!pt.host || !pt.coppia) ponteStacca();
+  else if (!(await ponteUtile())) { if (pt.ws) ponteNota("Nessuna scheda del gestionale da 10 minuti: il PC lascia il ponte (l'iPhone resta associato)"); ponteStacca(true); }
+  // (un nuovo tentativo già in programma: si aspetta lui — le schede che svegliano non fanno ressa)
+  else if (!pt.tRiprova || pt.ws) ponteConnetti();
   await ponteScriviStato();
+}
+
+// ------------------------------------------------------------ quando serve
+// Il PC sta sul ponte solo quando può servire: una scheda del gestionale
+// aperta (o chiusa da meno di 10 minuti), una sessione col telefono, un QR
+// appena mostrato, la pagina del ponte aperta. Se no chiude la presa e tiene
+// l'associazione: per il telefono il PC «non c'è», ed è vero — senza il
+// gestionale non può fare niente. Un PC lasciato acceso non tiene connessioni
+// aperte tutta la notte, e non le riapre a ogni risveglio del service worker.
+const PONTE_USO_MS = 10 * 60e3;
+const PONTE_USO = "uso.gestionale";          // storage.session: l'ultima volta che c'era una scheda del gestionale
+const ponteUso = { gestionale: 0, letto: false, scritto: 0, pagina: 0 };
+function ponteVistoGestionale(ora = ponteOra()) {
+  ponteUso.gestionale = Math.max(ponteUso.gestionale, ora);
+  if (ora - ponteUso.scritto >= 60e3) { ponteUso.scritto = ora; chrome.storage.session.set({ [PONTE_USO]: ora }).catch(() => {}); }
+}
+// (anche per la stazione di stampa: stazione-sw.js)
+async function psaGestionale() {
+  const ora = ponteOra();
+  if (!ponteUso.letto) {
+    ponteUso.letto = true;
+    ponteUso.gestionale = Math.max(ponteUso.gestionale, Number((await chrome.storage.session.get(PONTE_USO).catch(() => ({})))[PONTE_USO]) || 0);
+  }
+  const schede = await chrome.tabs.query({}).catch(() => []);
+  if (schede.some((t) => sulGestionale(t.url) && !t.discarded)) ponteVistoGestionale(ora);
+  return ora - ponteUso.gestionale < PONTE_USO_MS;
+}
+const ponteAttivo = () => !!(pt.sessione || pt.attesa || (pt.coppia && !pt.coppia.usata && ponteOra() - pt.coppia.creata < PONTE_QR_PRIMO + 60e3));
+async function ponteUtile() {
+  return ponteAttivo() || ponteOra() - ponteUso.pagina < 60e3 || psaGestionale();
 }
 function ponteUrlPresa() {
   const u = new URL(pt.host);
@@ -169,13 +209,14 @@ function ponteUrlPresa() {
 function ponteConnetti() {
   const url = ponteUrlPresa();
   if (pt.ws && pt.wsUrl === url && pt.ws.readyState <= 1) return;
+  // (la presa di prima si chiude PRIMA di aprirne un'altra: mai due)
   ponteStacca();
-  clearTimeout(pt.tRiprova);
+  clearTimeout(pt.tRiprova); pt.tRiprova = 0;
   let ws;
   try { ws = new WebSocket(url); } catch { pt.relay = "giu"; ponteRiprova(); return; }
   ws.binaryType = "arraybuffer";
-  pt.ws = ws; pt.wsUrl = url; pt.relay = "collego";
-  ws.onopen = () => { if (pt.ws !== ws) return; pt.relay = "su"; pt.tentativi = 0; ponteScriviStato(); };
+  pt.ws = ws; pt.wsUrl = url; pt.relay = "collego"; pt.aperta = 0;
+  ws.onopen = () => { if (pt.ws !== ws) return; pt.relay = "su"; pt.aperta = ponteOra(); ponteScriviStato(); };
   ws.onmessage = (ev) => {
     if (pt.ws !== ws) return;
     if (ev.data === "pong") { clearTimeout(pt.tPong); pt.tPong = 0; return; }
@@ -185,25 +226,34 @@ function ponteConnetti() {
     if (pt.ws !== ws) return;
     pt.ws = null; pt.relay = "giu"; pt.pari = false;
     clearTimeout(pt.tPong); pt.tPong = 0;
+    // (i tentativi ricominciano da capo solo dopo una presa che ha tenuto: una che cade
+    // ogni minuto non fa ripartire il conto da 1 secondo)
+    if (pt.aperta && ponteOra() - pt.aperta >= PONTE_TENUTA) pt.tentativi = 0;
     ponteScriviStato();
     // (un'altra presa del PC ha preso il posto di questa: non si fa a gara ogni secondo)
     ponteRiprova(ev && ev.code === 4001);
   };
 }
-function ponteStacca() {
+function ponteStacca(riposo = false) {
   const ws = pt.ws;
   pt.ws = null; pt.wsUrl = ""; pt.pari = false;
   clearTimeout(pt.tPong); pt.tPong = 0;
-  pt.relay = pt.host && pt.coppia ? "giu" : "spento";
+  pt.relay = !pt.host || !pt.coppia ? "spento" : riposo ? "riposo" : "giu";
+  if (riposo) { clearTimeout(pt.tRiprova); pt.tRiprova = 0; }
   if (ws) try { ws.close(1000, "fine"); } catch { /* già chiusa */ }
 }
-// Presto la prima volta, poi sempre più di rado fino a 15 secondi (col caso
-// dentro: un ripetitore che torna non si vede arrivare tutti insieme).
+// Presto la prima volta, poi sempre più di rado: fino a 15 secondi mentre
+// c'è una sessione col telefono (o un QR da inquadrare), fino a 5 minuti se
+// no — un PC con il gestionale aperto e il ponte giù non bussa ogni 15
+// secondi tutto il giorno. Col caso dentro: un ripetitore che torna non si
+// vede arrivare tutti insieme. Quando il PC non serve, non riprova affatto.
+const PONTE_TENUTA = 2 * 60e3;
 function ponteRiprova(altrove = false) {
-  clearTimeout(pt.tRiprova);
+  clearTimeout(pt.tRiprova); pt.tRiprova = 0;
   if (!pt.host || !pt.coppia) return;
-  const b = altrove ? 30e3 : Math.min(15e3, 1e3 * 2 ** Math.min(pt.tentativi++, 4));
-  pt.tRiprova = setTimeout(() => ponteAvvia().catch(() => {}), Math.round(b / 2 + Math.random() * b / 2));
+  const max = Math.max(ponteAttivo() ? 15e3 : 5 * 60e3, altrove ? 30e3 : 0);
+  const b = Math.min(max, (altrove ? 30e3 : 1e3) * 2 ** Math.min(pt.tentativi++, 9));
+  pt.tRiprova = setTimeout(() => { pt.tRiprova = 0; ponteAvvia().catch(() => {}); }, Math.round(b / 2 + Math.random() * b / 2));
 }
 function ponteManda(frame) {
   if (pt.ws && pt.ws.readyState === 1) { pt.ws.send(frame); return true; }
@@ -247,6 +297,12 @@ async function ponteControlla() {
   }
   if (pt.sessione && ora - pt.sessione.ultimo >= PONTE_INATTIVO) await ponteFine("inattivo");
   if (pt.attesa && ora - pt.attesa.ts > PONTE_SALUTO_MAX) pt.attesa = null;
+  // Il PC serve ancora? Se no, via dal ponte (l'associazione resta); se sì e la presa non c'è
+  // (né un tentativo in programma), la si riapre.
+  if (pt.host && pt.coppia) {
+    const serve = await ponteUtile();
+    if (serve ? !pt.ws && !pt.tRiprova : !!pt.ws) await ponteAvvia();
+  }
 }
 
 // ------------------------------------------------------- i messaggi in arrivo
@@ -292,6 +348,7 @@ async function ponteSaluto(b) {
       return;
     }
   }
+  if (m.sonda === true) return ponteSonda(m);   // ⋯ → Dispositivi sul telefono: chi è questo PC, e nessuna sessione
   const nPc = PonteCripto.casuale(16);
   pt.attesa = { canale: PonteCripto.canalePc(await PonteCripto.chiaviSessione(pt.k, nTel, nPc)), ts: ponteOra(), dev: m.dev, nTel: m.n };
   // (con l'ora del PC: il telefono ne tiene lo scarto, e un ordine porta l'ora del tocco sull'orologio del PC)
@@ -415,7 +472,7 @@ function ponteArgomenti(d) {
   return a;
 }
 // quelli che l'app manda da sé: non sono il medico, non tengono aperta la sessione
-const PONTE_DA_SE = new Set(["ciao", "ordini"]);
+const PONTE_DA_SE = new Set(["ciao", "ordini", "dispositivo"]);
 // La build mini (PS Assist · Lettura e stampa) è di SOLA LETTURA: il ponte
 // risponde solo ai comandi di lettura e alla ristampa (legge la pagina aperta e
 // stampa, non scrive niente nel gestionale). Elenco a consenso esplicito: tutto
@@ -430,6 +487,7 @@ const PONTE_LETTURA = new Set([
   "pdf", "ristampe", "ristampa", "stampa",   // «stampa»: un PDF del telefono sull'A4 di QUESTO PC (non scrive nel gestionale)
   "stampaReferto",                            // un referto già salvato su questo PC, stampato (non scrive nel gestionale)
   "visto",                                    // referti ed esiti visti sul telefono: solo la memoria dell'estensione
+  "dispositivo",                              // chi è questo PC e la sua stazione di stampa (⋯ → Dispositivi): legge e basta
 ]);
 const ponteSolaLettura = () => typeof self !== "undefined" && self.PSA_SOLA_LETTURA === true;
 // Chi è questo PC, per il menu del telefono (nel saluto `ciao`): il tipo
@@ -444,7 +502,46 @@ async function ponteChiSono() {
   const nome = typeof n === "string" && n.trim() ? n.trim().slice(0, 40) : (ponteSolaLettura() ? "Sola lettura" : "PC completo");
   const s = (await chrome.storage.session.get(PONTE_OPERATORE).catch(() => ({})))[PONTE_OPERATORE];
   const operatore = s && typeof s.nome === "string" && Date.now() - (s.ts || 0) < 36e5 ? s.nome.slice(0, 60) : "";
-  return { kind: ponteSolaLettura() ? "lettura" : "completo", nome, ...(operatore ? { operatore } : {}) };
+  const versione = ponteVersione();
+  return { kind: ponteSolaLettura() ? "lettura" : "completo", nome, ...(versione ? { versione } : {}), ...(operatore ? { operatore } : {}) };
+}
+
+// ------------------------------------------- i dispositivi, per il telefono
+// ⋯ → Dispositivi sul telefono: chi è questo PC (il tipo, il nome, la versione
+// di PS Assist) e la sua stazione di stampa, se ne ha una — il nome, se il PC
+// la raggiunge adesso, e com'è andato l'ultimo foglio mandato lì. Solo
+// lettura: niente pazienti, niente chiavi, niente da scrivere. Il PC attivo lo
+// dà nella sessione (`dispositivo`). Un altro PC della lista lo dà al saluto
+// «sonda» di una presa breve, che il telefono apre solo quando il medico apre
+// quella pagina: lo stesso saluto cifrato con la chiave dell'associazione (e
+// solo del telefono dell'associazione), ma senza una sessione dopo — qui non
+// cambia niente: né l'attesa, né il telefono legato, né il registro.
+const PONTE_FOGLIO_FINITO = new Set(["stampato", "mandato", "fallito", "sconosciuto"]);
+function ponteVersione() {
+  try { return String(chrome.runtime.getManifest().version || "").slice(0, 20); } catch { return ""; }
+}
+async function ponteStazioneDi() {
+  const c = (await chrome.storage.local.get("stazione.coppia").catch(() => ({})))["stazione.coppia"];
+  if (!c || c.revoca) return null;
+  // (quello che stazione-sw.js scrive per le pagine del PC: `presente` = la stazione è nella sua stanza adesso)
+  const pub = (await chrome.storage.session.get("stazione").catch(() => ({}))).stazione;
+  // l'ultimo foglio mandato alla stazione (un ordine, una ristampa, un PDF dal telefono), dal giornale delle stampe di bg.js
+  let u = null;
+  for (const r of await ordLeggi().catch(() => [])) {
+    for (const f of Array.isArray(r && r.fogli) ? r.fogli : []) {
+      if (f && f.stazione && PONTE_FOGLIO_FINITO.has(f.stato) && Number(f.ts) > (u ? Number(u.ts) : 0)) u = f;
+    }
+  }
+  // (`fa`, non l'ora: l'orologio del telefono non è questo)
+  const ultimo = u ? { esito: u.stato, fa: Math.max(0, ponteOra() - Number(u.ts)), ...(u.nonRisponde ? { nonRisponde: true } : {}) } : null;
+  return { nome: corto(c.nome || "Infermeria", 40), presente: !!(pub && pub.presente), ...(ultimo ? { ultimo } : {}) };
+}
+async function ponteDispositivo() {
+  const { kind, nome, versione } = await ponteChiSono();   // (chi è loggato nel gestionale qui non serve)
+  return { kind, nome, ...(versione ? { versione } : {}), stazione: await ponteStazioneDi() };
+}
+async function ponteSonda(m) {
+  ponteManda(await PonteCripto.sigilla(pt.chiavi.salutoPc, PonteCripto.TIPO.SALUTO_PC, 0, { v: 1, eco: m.n, sonda: await ponteDispositivo() }));
 }
 const PONTE_RQ_MAX = 40;   // le scritture ricordate per sessione (in memoria, solo qui)
 async function ponteComando(s, d) {
@@ -480,6 +577,7 @@ async function ponteRisposta(s, d) {
     // minuti si è già spostato qui sopra (ponteComando) — e basta
     if (d.cmd === "tocco") return { ok: true };
     if (d.cmd === "ordini") return { ok: true, dati: await ponteOrdiniTel() };
+    if (d.cmd === "dispositivo") return { ok: true, dati: await ponteDispositivo() };
     if (d.cmd === "aggiornaValori") { const a = ponteArgomenti(d); return await ponteOffriPdf(s, await ponteAggiornaValori(a), a.ep); }
     if (d.cmd === "ordina") {
       // Un ordine arrivato più di 30 secondi dopo il tocco (rimasto in una presa
@@ -811,6 +909,7 @@ async function ponteSchede() {
 // un promemoria non si rimanda alla scheda dopo: quella di prima può averlo
 // fatto, e sarebbero due.
 const PONTE_UNA_VOLTA = new Set(["ordina", "ristampa", "promemoria", "dfAggiungi"]);
+const PONTE_AGGIORNATA_MS = 12 * 3600e3;   // dopo un aggiornamento, le schede ancora da ricaricare (un turno)
 async function ponteSuScheda(cmd, args) {
   const tempo = PONTE_ATTESA[cmd] || PONTE_ATTESA.altro;
   const schede = await ponteSchede();
@@ -826,6 +925,14 @@ async function ponteSuScheda(cmd, args) {
   if (incerto.incerto && (cmd === "promemoria" || cmd === "dfAggiungi")) return { ok: false, errore: "Il gestionale sul PC tarda: guarda i promemoria prima di rifarlo", incerto: true };
   if (no.has("login")) return { ok: false, errore: "Gestionale da riaprire: sul PC la sessione è scaduta", sessione: true, ...incerto };
   if (no.has("pannello") && !incerto.incerto) return { ok: false, errore: "Sul PC apri la lista del pronto soccorso o un paziente, nel gestionale" };
+  // Nessuna scheda risponde, e PS Assist si è aggiornato da poco (aggiorna.js): nelle schede aperte
+  // prima c'è il pannello vecchio, che non parla più con l'estensione finché la pagina non si ricarica.
+  if ([...no].every((x) => x === "assente")) {
+    const u = (await chrome.storage.local.get("aggiornaUltima").catch(() => ({}))).aggiornaUltima;
+    if (u && ponteOra() - (u.quando || 0) < PONTE_AGGIORNATA_MS) {
+      return { ok: false, errore: ponteSolaLettura() ? "PS Assist si è aggiornato: sul PC ricarica la pagina del gestionale" : "PS Assist si è aggiornato: sul PC tocca «Ricarica la pagina»" };
+    }
+  }
   return { ok: false, errore: "Il gestionale sul PC non risponde: ricarica la sua pagina", ...incerto };
 }
 
@@ -1660,6 +1767,8 @@ function ponteDaPagina(msg, sender, reply) {
     ponteCaricato.then(fn).then(reply, (e) => reply({ ok: false, why: corto(e && e.message || e, 80) }));
     return true;
   };
+  // (una scheda del gestionale che parla: il PC serve — quando serve)
+  if (gestionale) ponteVistoGestionale();
   if (msg.t === "ponteSveglia" && (estensione || gestionale)) return fai(async () => { await ponteAvvia(); return { ok: true }; });
   if (msg.t === "ponteScollega" && (estensione || gestionale)) return fai(async () => { await ponteFine("scollegata dal PC"); return { ok: true }; });
   // Una scheda del gestionale è sulla pagina d'accesso: senza il gestionale
@@ -1854,7 +1963,14 @@ function ponteDaPagina(msg, sender, reply) {
   }
   // da qui, solo le pagine dell'estensione: la chiave (nel QR) non va mai a una pagina web
   if (!estensione) return reply({ ok: false, why: "non da qui" }), undefined;
-  if (msg.t === "ponteStato") return fai(async () => ({ ok: true, stato: pontePubblico(), qr: ponteQr(), codice: pt.codice }));
+  // la pagina del ponte aperta (chiede lo stato ogni 15 secondi): il PC sta sul ponte finché c'è
+  if (msg.t === "ponteStato") {
+    return fai(async () => {
+      ponteUso.pagina = ponteOra();
+      if (pt.coppia && !pt.ws && !pt.tRiprova) await ponteAvvia();
+      return { ok: true, stato: pontePubblico(), qr: ponteQr(), codice: pt.codice };
+    });
+  }
   if (msg.t === "ponteAssocia") {
     return fai(async () => {
       if (!pt.host) return { ok: false, why: "Ponte da configurare: in questa versione di PS Assist manca il suo indirizzo." };
@@ -1863,6 +1979,7 @@ function ponteDaPagina(msg, sender, reply) {
       const ora = ponteOra();
       await ponteScriviCoppia({ k: PonteCripto.b64u(k), creata: ora, usata: false, dev: "", nTel: "" });
       ponteNota(`Nuovo QR: vale per il primo scambio fino alle ${hhmmPonte(ora + PONTE_QR_PRIMO)}`);
+      clearTimeout(pt.tRiprova); pt.tRiprova = 0; pt.tentativi = 0;   // (un QR nuovo: sul ponte adesso)
       await ponteAvvia();
       return { ok: true, qr: ponteQr(), codice: pt.codice, stato: pontePubblico() };
     });

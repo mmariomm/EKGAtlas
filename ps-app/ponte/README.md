@@ -183,6 +183,16 @@ sessione. Vedi:
   PC»). **Cancella** chiede «Cancello dal PC? Tocca di nuovo» e la toglie dal PC. Il PC dà e
   cancella solo quelle elencate nella sessione; il registro del ponte annota elenco, scarico e
   cancellazione.
+- **Dispositivi** (⋯) — i PC associati a questo telefono, una riga ciascuno, l'attivo in cima: il nome e
+  il tipo (**PC**, o **Lettura e stampa**: la build mini), la versione di PS Assist, e com'è adesso —
+  «Collegato a questo iPhone» (la sessione viva), «Disponibile», o «Non disponibile · visto alle 14:32»
+  (l'ultima volta che il telefono l'ha sentito) —; sotto, la sua **stazione di stampa**, se ne ha una: il
+  nome, se il PC la raggiunge, e l'ultimo foglio mandato lì («stampato alle 14:32», «mandato», «forse
+  stampato», «non arrivato», «NON stampato»). Si guarda e basta. Il PC della sessione lo dice nella
+  sessione; gli altri il telefono li prova **solo quando si apre questa pagina**, con una presa breve
+  per PC che si chiude subito (riaperta entro 20 secondi, la risposta di prima): mai in sottofondo,
+  perché ogni presa sveglia il ripetitore. Un PC che in quel momento non è sul ponte (spento, il browser
+  chiuso, il ponte a riposo) è «Non disponibile».
 
 Il **⋯** tiene solo quello che non c'è altrove: i PC (con due o più), **Stampa PDF**, **Scansiona il
 QR**, **Registrazioni** e **Scollega** (la chiave di questo PC via dal telefono: servirà un QR nuovo).
@@ -283,9 +293,11 @@ blocco **«Per l'IT»**, da mandare così com'è.
 
 Dal Chrome del PC esce **una** connessione (due con una [stazione di stampa](#la-stazione-di-stampa) collegata, e una dal PC della stazione, uguali): una WebSocket su HTTPS, `wss://ekg-atlas.whirly.workers.dev/ponte/ws`,
 **TCP 443**, solo in uscita, che deve passare il proxy (l'upgrade a WebSocket). È un indirizzo
-`*.workers.dev` (Cloudflare): molti filtri web lo bloccano per categoria, e va consentito questo nome. È lunga — fino a 14
-ore — con un battito ogni **20 secondi** (un piccolo «ping»): non va chiusa per inattività né per
-durata. Nessuna porta in entrata, nessun UDP, nessun altro host. Dentro il TLS i messaggi sono cifrati
+`*.workers.dev` (Cloudflare): molti filtri web lo bloccano per categoria, e va consentito questo nome. C'è solo
+**mentre il gestionale è aperto** su quel PC (e per 10 minuti dopo), o durante una sessione col telefono: a
+gestionale chiuso nessun PC tiene connessioni verso il ponte. Mentre c'è è una sola, lunga, con un battito
+ogni **20 secondi** (un piccolo «ping»): non va chiusa per inattività né per durata; caduta, si riprova
+sempre più di rado (fino a 5 minuti fra un tentativo e l'altro, senza una sessione). Nessuna porta in entrata, nessun UDP, nessun altro host. Dentro il TLS i messaggi sono cifrati
 una seconda volta, da un capo all'altro (AES-256-GCM): si può **escludere dall'ispezione TLS** senza
 esporre niente, e né l'IT né Cloudflare possono leggerli. Il gestionale non vede niente di nuovo: le
 pagine che l'estensione apre o legge per un comando sono le stesse, con le stesse richieste, di quando
@@ -347,6 +359,16 @@ della *sua* sessione (ripetuto più tardi non chiude niente) e chiude; se il per
 (`riavvio`), si ricollega da solo — nessuno l'ha chiusa —, se no offre «Riapri». La fine di una
 sessione porta la sua frase («Chiusa dal PC con «Scollega»»): il telefono la mostra così com'è.
 
+**La sonda** (⋯ → Dispositivi, per un PC della lista che non è quello della sessione). Il telefono entra
+nella stanza di quel PC con una presa sua, breve: se il ripetitore dice `{"pari": false}` il PC non c'è,
+e la presa si chiude. Se c'è, il telefono manda un saluto come gli altri, con la chiave di quel PC e il
+suo `dev`, più `sonda: true`; il PC risponde `{v, eco, sonda: {kind, nome, versione, stazione}}` — quello
+che dà il comando `dispositivo` — e nient'altro: niente `n`, quindi nessuna sessione, e sul PC non cambia
+niente (né l'attesa di un saluto, né il telefono dell'associazione, né il registro). A un altro
+telefono, `{v, eco, no}` come sempre. Avuta la risposta (o dopo 6 secondi) la presa si chiude
+(`close(1000)`). Un PC più vecchio risponde alla sonda come a un saluto qualunque: c'è, e il telefono
+non ne sa di più (l'attesa del saluto, sul PC, scade da sola).
+
 **Vivi o morti.** Tutte e due le parti battono: il PC ogni 20 secondi, il telefono ogni 20 secondi
 mentre l'app è davanti e subito quando ci torna. Se il `pong` non torna entro 10 secondi la presa è
 morta anche se sembra aperta (un proxy che la lascia cadere senza dirlo), e se ne apre un'altra; il
@@ -367,7 +389,7 @@ Senza rete la testata dice «Senza rete», quello che il telefono ha in memoria 
 chiesto al PC è in grigio, finché il collegamento non torna. L'app stessa si apre dalla sua copia se la
 rete non risponde in 3 secondi. Sul telefono non resta niente di più.
 
-**I 3 minuti** contano solo i comandi del medico: quelli che l'app manda da sé (`auto`, e `ciao`,
+**I 3 minuti** contano solo i comandi del medico: quelli che l'app manda da sé (`auto`, e `ciao`, `dispositivo`,
 `ordini`) non tengono aperta la sessione, né sul PC né sul telefono.
 
 **Dove gira.** La presa sta nel **service worker** dell'estensione (`extension/ponte-sw.js`,
@@ -391,7 +413,10 @@ ordine o un promemoria non passa poi alla scheda dopo (sarebbero due). Mai un si
 aperti ed esiti guardati sul telefono: solo la memoria dell'estensione, anche sul PC di sola lettura), `richieste` (il catalogo, con `ultimi`: per paziente ed esame quello che il PC scrive accanto al nome — ore tornate, in attesa da quando, rosso da quando; con una stazione di stampa collegata, `stampa: {stazione, dove}`), `ordina(ep, oid, esami, quesito, mio, nato, dest?)`, `nota(ep,
 testo)`, `promemoria(ep, testo)`, `fatto(ep, id)`, `cartella(ep, rileggi?)`, `cartellaSalva(ep, campi: {NOME:
 {prima, dopo}})`, `terapie(ep, rileggi?)`, `terapiaCerca(ep, q)`, `terapiaAggiungi(ep, rq, voce, visti)`, `terapiaFine` (il foglio «＋ Farmaco» chiuso), `accetta(k | ep, rq)`, `ristampe(ep)` (per richiesta anche `et` e `fo`: quante etichette e quanti fogli), `ristampa(ep, rid, oid, dest?, quali?)` (`quali`: `etichette` | `foglio` | `tutto`), `pdf(ep, ref, i)`, `stampa(rid, i, n, size, b)`, `stampaReferto(ep, ref, rid, dest?)`, `stazioneCollega(sta, nome)`,
-più `ciao`/`esci`/`tocco`/`ordini` per la sessione e lo stato degli ordini. Niente navigazione libera, niente script, niente appunti. L'ordine passa per
+più `ciao`/`esci`/`tocco`/`ordini` per la sessione e lo stato degli ordini, e `dispositivo` (⋯ → Dispositivi: `{kind, nome,
+versione, stazione: {nome, presente, ultimo: {esito, fa}} | null}` — `presente` è la stazione nella sua stanza adesso,
+`ultimo` l'ultimo foglio finito mandato lì, dal giornale delle stampe, `fa` i millisecondi da allora —; una lettura, anche
+sulla build mini; `ciao` dice anche `versione`). Niente navigazione libera, niente script, niente appunti. L'ordine passa per
 `ordineNuovo` come «Conferma e stampa», col numero `"tel" + oid` (l'`oid` lo fa il telefono quando
 arma «Conferma», `^[\w-]{8,24}$`: chiesto due volte, è un ordine solo — `ordiniVisti` in `bg.js`),
 con tutti i controlli del motore — episodio, richiesta, presidio, carrello identico alla ricevuta,
@@ -512,11 +537,16 @@ controllare».
 
 **Il ripetitore** (`worker/ponte-logica.js`): al massimo due prese per stanza, una del PC e una del
 telefono — o, nella stanza di una stazione di stampa, una del PC del medico e una della stazione (`medico`,
-`stazione`): ognuno parla solo col suo pari — (una nuova dello stesso ruolo chiude la vecchia, 4001); inoltra solo il binario, così com'è;
-messaggi oltre 1 MB o più di 1200 al minuto chiudono la presa; una presa muta da 15 minuti si chiude.
-Serve dell'app del telefono solo i suoi file (`FILE_APP`). Niente su disco (solo la sveglia di quella
-pulizia), niente nei log: il Durable Object usa l'ibernazione delle WebSocket e il battito lo risponde
-Cloudflare senza svegliarlo.
+`stazione`): ognuno parla solo col suo pari — (una nuova dello stesso ruolo prende il posto di **tutte** le
+vecchie, 4001); inoltra solo il binario, così com'è; messaggi oltre 1 MB o più di 1200 al minuto chiudono la
+presa; una presa muta da 75 secondi (tre battiti persi) non conta più. Serve dell'app del telefono solo i suoi
+file (`FILE_APP`). Niente su disco, niente sveglie, niente nei log: il Durable Object usa l'ibernazione delle
+WebSocket, il battito lo risponde Cloudflare senza svegliarlo, e lo svegliano solo una presa che entra, una che
+esce e un messaggio cifrato. **Nessuna chiusura a chi non può rispondere**: una presa sostituita (di un PC il
+cui service worker è ripartito) o muta si *ritira* — fuori dai conti subito, senza scrivere niente sulla rete —
+perché una chiusura mandata a un capo morto resta in sospeso (Cloudflare la tiene fino a 15 minuti) e tiene
+sveglio il Durable Object. Se una presa ritirata parla (era viva: un telefono rimasto in sottofondo), la
+chiusura le arriva allora; il telefono ancora vivo che un'altra scheda sostituisce la riceve subito.
 
 **L'app del telefono** (`public/ponte/`): meno è meglio (Jakub Krehel). Un elemento resta solo se
 migliora quello che il medico fa: chi è il paziente, quando il PC ha letto i valori, a che punto è un
@@ -528,7 +558,8 @@ in `localStorage`, IndexedDB o nelle cache; il suo service worker tiene solo i f
 manifest ha `display: "standalone"`: l'icona della schermata Home apre l'app a tutto schermo, con una
 memoria sua, separata da Safari. Per questo il QR si inquadra **dentro l'app** («Scansiona il QR»):
 la chiave resta lì, e l'icona si ricollega da sola, senza scadenza. La chiave di ogni PC sta nella
-**lista** (`psassist.ponte.pcs.v1`): un QR nuovo **aggiunge** quel PC e ci passa (non tocca gli altri),
+**lista** (`psassist.ponte.pcs.v1`, con il tipo e il nome che il PC ha detto, la sua versione e quando si è fatto sentire
+l'ultima volta, per ⋯ → Dispositivi: niente pazienti): un QR nuovo **aggiunge** quel PC e ci passa (non tocca gli altri),
 e si cambia PC dal menu; lo stesso PC riscansionato aggiorna la sua riga, non ne fa una nuova.
 
 **«Scansiona il QR»** apre la fotocamera nella pagina (`getUserMedia`, la fotocamera posteriore; la
@@ -574,8 +605,12 @@ arrivato (la stazione assente, nessuna risposta al saluto o a un pezzo) → «no
 stampato; l'ultimo pezzo senza risposta → `esito` su una sessione nuova; non si sa → «forse
 stampato». La stazione non manda mai niente per prima, se non i saluti e «scollegata»: tutto il resto,
 sul PC, si scarta (`stm.ignorati`). Un service worker ripartito sulla stazione dice «riparti», e il PC
-risaluta. Le due prese restano aperte (battito ogni 20 secondi; una sveglia di Chrome ogni minuto le
-riapre: la stazione non ha schede del gestionale che la svegliano).
+risaluta. Le due prese ci sono solo quando servono: sul PC del medico con una scheda del gestionale
+aperta (o chiusa da meno di 10 minuti) o un foglio in viaggio — il PC la apre lui per stampare —; sulla
+stazione con il gestionale aperto, la sua pagina aperta o un foglio in arrivo. Fuori turno, a gestionale
+chiuso, niente presa: il PC del medico dice «Infermeria non risponde» e stampa da sé, o lo propone. Battito
+ogni 20 secondi; caduta, si riprova sempre più di rado (fino a 15 secondi con un foglio in viaggio, fino a 5
+minuti se no); una sveglia di Chrome ogni minuto ricontrolla se serve.
 
 **Scollegare**: da tutte e due le parti, due tocchi. Chi scollega non usa più K da subito; l'altro lo
 sa adesso (un saluto «revoca» con K), o appena si ricollega: per dirglielo chi ha scollegato tiene K,

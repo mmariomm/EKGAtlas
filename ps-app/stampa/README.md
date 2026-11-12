@@ -137,9 +137,11 @@ caricala di nuovo con **Carica estensione non pacchettizzata**, scegliendo la ca
 - **L'aggiornamento da sé**: dice che versione c'è in `%LOCALAPPDATA%\PSAssist\estensione`, e riceve
   lo zip nuovo, che ha scaricato **Chrome** (l'aiutante non usa la rete). Lo apre in
   `%TEMP%\psassist-agg-*`, controlla che sia di PS Assist (la stessa chiave nel manifest) e più
-  nuovo, mette la cartella vecchia in `estensione.prima` (una sola) e la nuova al suo posto, e
+  nuovo, mette la cartella vecchia in `estensione.prima` (una sola) e la nuova al suo posto
+  (`manifest.json` per ultimo: a metà copia la versione detta è ancora la vecchia), e
   rinnova i suoi file (SumatraPDF solo se l'impronta è quella attesa). Se la versione nuova non
-  parte: doppio clic su **`ripristina.cmd`**, poi ⟳ su PS Assist in `chrome://extensions`.
+  parte: doppio clic su **`ripristina.cmd`**, poi ⟳ su PS Assist in `chrome://extensions`: quella
+  versione non torna da sé, una più nuova sì.
 - **Dove scrive, e basta:** in `%LOCALAPPDATA%\PSAssist` (`estensione`, `estensione.prima`,
   `stampa`, il registro delle stampe), in `%TEMP%` (`psassist-*`, tolti sempre, anche quando va
   storto) e le due chiavi HKCU qui sotto.

@@ -57,17 +57,19 @@ stesso paziente, nella stessa scheda), quindi in pratica non te ne accorgi.
   controlla (stessa versione, stessa chiave) e lo tiene sul PC;
 - **applica** (ci prova ogni quarto d'ora): l'aiutante di Windows mette la cartella nuova al posto
   della vecchia (che resta in `estensione.prima`) e l'estensione si ricarica, senza riavviare Chrome
-  e senza amministratore. Sulla build completa solo **a gestionale chiuso** (nessuna scheda aperta:
-  se no il pannello resterebbe orfano a metà turno), o **all'avvio di Chrome**, nel primo minuto,
-  con lo zip già scaricato (le schede ripristinate mostrano al massimo la pillola). La mini non
-  aspetta le schede;
+  e senza amministratore. **Anche con il gestionale aperto**: le schede già aperte mostrano
+  **«Ricarica la pagina»**, un tocco quando vuoi (la pagina non si ricarica mai da sola: lì può
+  esserci un testo non mandato). Fino a quel tocco quelle schede non rispondono al telefono, che lo
+  dice: «PS Assist si è aggiornato: sul PC tocca «Ricarica la pagina»»;
 - **la ferma** un ordine in corso o in coda (anche dal telefono), una stampa o un foglio che arriva
-  sulla stazione di stampa, una registrazione (anche quella automatica che sta per salvarsi), un
-  **testo non salvato** in una scheda del gestionale (una cartella, una dimissione riscritta, la
-  terapia a metà, il pannello). Nel dubbio (una scheda non risponde) aspetta. Un ordine premuto
-  mentre l'aiutante scambia la cartella non parte: **«Non partita»**, si rifà dopo la ricarica;
-  intanto non partono nemmeno «Conferma di nuovo», una stampa o un PDF dal telefono, e un giro
-  nella scheda aspetta;
+  sulla stazione di stampa, un comando del telefono che lavora in una scheda (valori, cartella,
+  terapia, accettazione), il **telefono in uso** (una sessione aperta o finita da meno di 10
+  minuti), una registrazione (anche quella automatica che sta per salvarsi), un **testo non
+  salvato** in una scheda del gestionale (una cartella, una dimissione riscritta, la terapia a metà,
+  il pannello). Nel dubbio (una scheda non risponde) aspetta; una scheda dove PS Assist non entra
+  (la pagina d'errore di Chrome, un PDF) non la ferma. Un ordine premuto mentre l'aiutante scambia
+  la cartella non parte: **«Non partita»**, si rifà dopo la ricarica; intanto non partono nemmeno
+  «Conferma di nuovo», una stampa o un PDF dal telefono, e un giro nella scheda aspetta;
 - **subito prima dello scambio** rilegge `VERSION.txt`: se lì c'è ormai un'altra versione (quella di
   prima ritirata, una correzione) non scambia, butta lo zip e scarica quella al giro dopo;
 - **se va storto** (lo zip sbagliato, l'aiutante che dice di no o non risponde) quella versione
@@ -75,10 +77,10 @@ stesso paziente, nella stessa scheda), quindi in pratica non te ne accorgi.
   (potrebbe essere a metà della copia): dopo, gli chiede che cosa c'è nella cartella, e se è già la
   nuova si ricarica e basta.
 
-Non c'è né un puntino né «Aggiorna app» né «Ricarica»: niente da toccare. Le schede già aperte mostrano **«Ricarica la
-pagina»**: un tocco, quando vuoi (la pagina non si ricarica mai da sola: lì può esserci un testo non
-mandato). Se la versione nuova non parte, doppio clic su `ripristina.cmd` in
-`%LOCALAPPDATA%\PSAssist\stampa` e ⟳ in `chrome://extensions`. Senza aiutante, o caricata da
+Non c'è né un puntino né «Aggiorna app» né «Ricarica»: niente da toccare. Se la versione nuova non
+parte, doppio clic su `ripristina.cmd` in `%LOCALAPPDATA%\PSAssist\stampa` e ⟳ in
+`chrome://extensions`: quella versione non torna da sé (`aggiornaApplicata` ricorda l'ultima messa),
+una più nuova sì. Senza aiutante, o caricata da
 un'altra cartella, non si aggiorna da sé: il ⋯ lo dice, in fondo, e come rimediare (sostituire i file
 nella STESSA cartella e ⟳ in `chrome://extensions`).
 Per sapere se c'è una versione nuova PS Assist legge, al più ogni sei ore, `VERSION.txt` da
@@ -2479,7 +2481,8 @@ nella tendina del gestionale») — poi **Prepara nel gestionale** (o Ctrl+Invio
    per ogni versione nuova, `ps-assist-latest.zip` — due GET senza cookie, senza
    referrer e senza niente dell'ospedale (`aggiorna.js`). Lo zip va all'aiutante su questo PC, che
    controlla chiave e versione del manifest e scambia la cartella dell'estensione; mai con un
-   ordine, una stampa, una registrazione o un testo non salvato in corso.
+   ordine, una stampa, un comando o una sessione del telefono, una registrazione o un testo non
+   salvato in corso.
 10. **Due schede, due pazienti, zero interferenze**: i passaggi di consegna tra pagina e pagina
    (ricevuta e conferma automatica) vivono nella singola scheda (sessionStorage).
    **La scheda dell'ordine.** Con l'estensione il giro lo fa una scheda di sottofondo, e tutti
