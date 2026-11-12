@@ -401,7 +401,11 @@ const GEST = "https://smarthealth.multimedica.it/sa4pso/";
 // schede del gestionale che rispondono come dice `scheda`. `sessione` è
 // storage.session: lo stesso oggetto dato a un secondo PC finto è il service
 // worker che riparte.
-async function pcFinto({ sessione = {}, locale = {}, scheda = null, gest = null, solaLettura = false } = {}) {
+// (la cassa delle chiavi, cassa.js: l'IndexedDB del service worker; qui una mappa, la stessa per lo stesso «disco»)
+const cassaDel = new WeakMap();
+async function pcFinto({ sessione = {}, locale = {}, scheda = null, gest = null, solaLettura = false, cassa = null } = {}) {
+  if (!cassa) cassa = cassaDel.get(locale) || new Map();
+  cassaDel.set(locale, cassa);
   const prese = [], comandi = [], schede = [], tolte = [], ascolta = { msg: [], cambi: [], via: [] };
   class Presa {
     constructor(url) { this.url = url; this.readyState = 0; this.inviati = []; prese.push(this); setTimeout(() => { if (this.readyState === 0) { this.readyState = 1; this.onopen?.(); } }, 0); }
@@ -438,6 +442,7 @@ async function pcFinto({ sessione = {}, locale = {}, scheda = null, gest = null,
   const ctx = vm.createContext({
     chrome, WebSocket: Presa, crypto: webcrypto, TextEncoder, TextDecoder, btoa, atob, URL, URLSearchParams, console, structuredClone,
     self: { PSA_SOLA_LETTURA: !!solaLettura },   // la build mini (sola lettura): il ponte rifiuta le scritture
+    PSA_CASSA: cassa,
     setTimeout, clearTimeout, setInterval: () => 0, __salto: 0,
     ordLeggi: async () => sessione.ordini || [], sulGestionale: (u) => String(u || "").startsWith(GEST), leggibileOrd: () => true,
     corto: (s, n = 160) => String(s == null ? "" : s).slice(0, n),
@@ -460,13 +465,14 @@ async function pcFinto({ sessione = {}, locale = {}, scheda = null, gest = null,
   // (la presa: senza chrome.offscreen qui, nel ripiego — la presa sta nel service worker, la stessa di presa.js)
   vm.runInContext(EXT("presa.js"), ctx);
   vm.runInContext(EXT("fuori-sw.js"), ctx);
+  vm.runInContext(EXT("cassa.js"), ctx);
   vm.runInContext(EXT("ponte-sw.js"), ctx);
   const ev = (codice) => vm.runInContext(codice, ctx);
   await ev("ponteCaricato");
   await sospendi(20);
   const presa = () => prese.at(-1);
   const pc = {
-    ctx, ev, prese, presa, comandi, schede, tolte, sessione, locale, stampate,
+    ctx, ev, prese, presa, comandi, schede, tolte, sessione, locale, stampate, cassa,
     pt: () => ev("pt"),
     chiudiScheda: (id) => { for (const f of ascolta.via) f(id); },
     salta: (ms) => { ctx.__salto += ms; },
@@ -552,7 +558,7 @@ await blocco(async () => {
   check(/altro telefono/.test(pc.pt().registro.map((x) => x.testo).join("\n")), "e il registro del ponte lo dice");
 
   // il browser si chiude e si riapre: storage.session è vuoto, storage.local (il disco) no
-  const pcR = await pcFinto({ locale: structuredClone(pc.locale) });
+  const pcR = await pcFinto({ locale: structuredClone(pc.locale), cassa: pc.cassa });
   await sospendi(30);
   check(!!pcR.pt().coppia && pcR.presa()?.url === pc.presa().url, "il browser chiuso e riaperto: l'associazione c'è ancora (storage.local), e il PC rientra nella sua stanza");
   const tR = await telFinto(pcR, k, DEV);
@@ -639,7 +645,8 @@ await blocco(async () => {
   await fineL;
   await sospendi(30);
   const evL = await t4.leggi(pc.tira());
-  check(!pc.pt().sessione && pc.locale["ponte.coppia"]?.k === P.b64u(k) && !!pc.pt().coppia, "una scheda del gestionale alla pagina d'accesso: la sessione si chiude, l'associazione resta");
+  check(!pc.pt().sessione && pc.locale["ponte.coppia"]?.stanza === (await P.chiaviCoppia(k)).stanza && !("k" in pc.locale["ponte.coppia"]) && !!pc.pt().coppia,
+    "una scheda del gestionale alla pagina d'accesso: la sessione si chiude, l'associazione resta (la chiave nella cassa, non su storage.local)");
   check(evL.some((x) => x.evento === "fine" && x.perche === "login" && /pagina d'accesso/.test(x.testo)), "e il telefono lo sa, con la frase");
   const t5 = await telFinto(pc, k, DEV);
   check((await t5.manda({ id: 1, cmd: "ciao" })).some((x) => x.re === 1 && x.ok), "rientrati nel gestionale, lo stesso telefono riapre: la stessa associazione, niente QR nuovo");

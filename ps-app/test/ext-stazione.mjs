@@ -283,12 +283,16 @@ await shot(tel, "stazione-2-telefono-carta");
 await tocca('[data-a="stacollega"]');
 const fatta = await aspettaTel(/Collegata al PC/, 40000);
 const cPc = await coppiaPc(), qSta = await quiSta(), pubPc = await pubblicoPc();
-check(/Collegata al PC/.test(fatta) && !!cPc && !!qSta && cPc.k === qSta.k && cPc.nome === "Infermeria" && cPc.via === "telefono" && qSta.conferma === true,
-  "«Collega»: il PC e la stazione hanno la stessa chiave (nata fra loro), il telefono dice «Collegata al PC»");
+// (3.87) la chiave sta nella cassa di ognuno (IndexedDB del service worker, non estraibile): la stessa chiave si vede dal codice
+const cassaDi = (w, nome) => w.evaluate((n) => cassaLeggi(n).then((x) => (x && x.k ? { estraibile: x.k.extractable, id: x.id } : null)), nome);
+const kPc = await cassaDi(sw, "stazione.coppia"), kSta = await cassaDi(staSw, "stazione.qui");
+check(/Collegata al PC/.test(fatta) && !!cPc && !!qSta && !("k" in cPc) && !("k" in qSta) && kPc && kSta && kPc.estraibile === false && kSta.estraibile === false
+  && kPc.id === cPc.id && kSta.id === qSta.id && cPc.codice === qSta.codice && cPc.nome === "Infermeria" && cPc.via === "telefono" && qSta.conferma === true,
+  "«Collega»: il PC e la stazione hanno la stessa chiave (nata fra loro: lo stesso codice), nella cassa di ognuno e non su disco; il telefono dice «Collegata al PC»");
 check(!!pubPc && pubPc.codice === qSta.codice && fatta.includes(qSta.codice) && /^\d{3} \d{3}$/.test(qSta.codice) && !("k" in pubPc),
   `lo stesso codice sul telefono, sul PC e sulla stazione (${qSta.codice}); quello che le pagine del PC vedono non ha la chiave`);
 const telTutto = await tel.evaluate(() => JSON.stringify({ ...localStorage, ...sessionStorage }));
-check(!telTutto.includes(cPc.k) && await tel.evaluate(() => localStorage.getItem("psassist.ponte.v1")) === chiaveTel, "il telefono non ha la chiave della stazione: solo la sua di sempre");
+check(!telTutto.includes("\"k\":") && await tel.evaluate(() => localStorage.getItem("psassist.ponte.v1")) === chiaveTel, "il telefono non ha la chiave della stazione: solo la sua di sempre");
 const statoS = await finche(async () => { const t = await testoSta(); return /Collegata al PC del medico/.test(t) ? t : ""; }, 10000);
 check(!!statoS && statoS.includes(qSta.codice) && /Il PC del medico è collegato adesso/.test(statoS) && await pSta.locator("#qrsec").isHidden(),
   "la stazione: «Collegata al PC del medico», dalle …, lo stesso codice, il PC collegato adesso; il QR non c'è più");
