@@ -864,6 +864,19 @@ try {
   await tel.locator('[data-a="trileggi"]').click();
   check(await finche(async () => (await righeTel()).length > 0, 60000) && srv.pagineTer.length === p25 + 1, "…e il tocco la legge: una pagina, le terapie");
   await finche(async () => schede().length === n25, 10000);
+  // ---- 27. la navigazione della scheda di sottofondo che si perde (il primo `tabs.update` verso il paziente
+  // inghiottito: la scheda resta vuota, nessuna pagina chiede «chi sono?»): la si rifà UNA volta, prima di ogni clic
+  const n21 = schede().length, p21 = srv.pagineTer.length, z21 = srv.pazienti, c21b = conferme(), t21 = Date.now();
+  const persaT = await sw.evaluate(async () => {
+    const vero = chrome.tabs.update.bind(chrome.tabs), prima = chrome.tabs.update;
+    self.__perdiT = 1;
+    chrome.tabs.update = (id, p, ...resto) => (self.__perdiT > 0 && p && /EPISODIO_ID=700001/.test(p.url || "") ? (self.__perdiT--, Promise.resolve({ id })) : vero(id, p, ...resto));
+    try { const r = await ponteTerapie({ ep: "700001", rileggi: true }); return { ok: r.ok, righe: r.dati?.righe?.length || 0, perso: self.__perdiT === 0 }; }
+    finally { chrome.tabs.update = prima; }
+  });
+  check(persaT.ok && persaT.perso && persaT.righe > 0 && srv.pazienti === z21 + 1 && srv.pagineTer.length === p21 + 1 && conferme() === c21b,
+    `la scheda della Terapia la cui navigazione si perde: si rifà una volta, e la lettura arriva (${((Date.now() - t21) / 1000).toFixed(1)} s, ${JSON.stringify(persaT)}, ${srv.pazienti - z21} pagine del paziente)`);
+  check(await finche(async () => schede().length === n21, 8000), "…e la scheda di sottofondo si chiude");
   await pc2.close();
 } catch (e) {
   console.error(e);

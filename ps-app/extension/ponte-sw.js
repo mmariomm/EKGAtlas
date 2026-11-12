@@ -1583,6 +1583,7 @@ async function ponteLavoroDi(tabId) {
   if (a) return { ponteCartella: { ep: a.ep, fase: "perso" } };
   // la scheda della Terapia: che cosa fare, e a che punto (dopo «Conferma» si guarda e basta; tenuta, aspetta)
   const w = pt.terapie.get(tabId);
+  if (w) w.chiesto = true;   // (la pagina è arrivata: non è una navigazione persa)
   if (w) return { ponteTerapia: w.fermo ? { ep: w.ep, fase: "fermo" } : ponteTerapiaLavoro(w) };
   const b = (await ponteTerapieTutte())[tabId];
   if (b) return { ponteTerapia: { ep: b.ep, fase: "perso" } };
@@ -2022,12 +2023,23 @@ async function ponteTerapiaSottoOra(url, ep, nome, job) {
   const promessa = new Promise((r) => { risolvi = r; });
   pt.terapie.set(t.id, { ep, nome, fase: "apro", job, prima: [], risolvi });
   await ponteTerapieCambia((v) => { v[t.id] = { ep, ts: ponteOra() }; });
+  // la scheda vuota finisce di nascere prima di partire, come quelle dei valori e della cartella
+  await ponteSchedaNata(t.id, () => pt.terapie.has(t.id));
+  if (!pt.terapie.has(t.id)) return promessa;   // (chiusa mentre nasceva: niente pagina)
   const tempo = setTimeout(() => ponteTerapiaFine(t.id, { ok: false, incerto: pt.terapie.get(t.id)?.fase === "inviato", testo: "la scheda non ha finito in tempo" }), PONTE_TERAPIA_MAX);
   try {
     await chrome.tabs.update(t.id, { url: u.href, autoDiscardable: false });
   } catch {
     ponteTerapiaFine(t.id, { ok: false, testo: "la pagina del paziente sul PC non si apre" });
   }
+  // La navigazione persa per strada (la scheda è ancora vuota, nessuna pagina ha chiesto «chi sono?»): si
+  // rifà una volta, come per i valori e la cartella. Niente è stato cliccato: la pagina non è mai arrivata.
+  const w = pt.terapie.get(t.id);
+  if (w) w.persa = setTimeout(async () => {
+    const x = await chrome.tabs.get(t.id).catch(() => null);
+    if (pt.terapie.get(t.id) !== w || w.chiesto || w.fase !== "apro" || !x || x.status === "loading" || sulGestionale(x.url) || sulGestionale(x.pendingUrl)) return;
+    chrome.tabs.update(t.id, { url: u.href }).catch(() => {});
+  }, PONTE_PERSA_MS);
   const esito = await promessa;
   clearTimeout(tempo);
   return esito;
@@ -2037,6 +2049,7 @@ async function ponteTerapiaSottoOra(url, ep, nome, job) {
 // chiude: torna una pagina come le altre (`ponteTerapiaLasciata`, core.js), con quello che c'è scritto.
 async function ponteTerapiaFine(id, esito, tieni = false) {
   const w = pt.terapie.get(id);
+  if (w) clearTimeout(w.persa);
   if (tieni && w && !w.basta && !w.vista) {
     const risolvi = w.risolvi;
     Object.assign(w, { fase: "fermo", fermo: true, job: null, risolvi: null, prima: [] });
