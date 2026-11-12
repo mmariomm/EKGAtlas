@@ -17851,7 +17851,7 @@
       jobs: jobs.map(({ name, printer, url, breve }) => ({ name, printer, url, ...(breve ? { breve } : {}) })) };
     let r = { ok: false };
     for (let k = 0; k < 3 && !r.ok && !r.no; k++) r = await ask({ t: "ordineFogli", job });
-    if (r.no) return { ok: false, errore: "Ristampa non partita: la stampa automatica non è impostata sul PC" };
+    if (r.no) return { ok: false, errore: r.aggiorna ? "Ristampa non partita: PS Assist si sta aggiornando, riprova fra un minuto" : "Ristampa non partita: la stampa automatica non è impostata sul PC" };
     if (!r.ok) return { ok: false, incerto: true, errore: "Non so se la stampa è partita: guarda la stampante prima di rifarla" };
     return { ok: true, dati: { ordini: [{ id: r.id || a.id, ep: p.ep, paziente: p.name, n: jobs.length }] }, registro: "ristampa di una richiesta di " + p.name };
   }

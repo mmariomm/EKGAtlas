@@ -66,6 +66,8 @@ stesso paziente, nella stessa scheda), quindi in pratica non te ne accorgi.
   **testo non salvato** in una scheda del gestionale (una cartella, una dimissione riscritta, la
   terapia a metà, il pannello). Nel dubbio (una scheda non risponde) aspetta. Un ordine premuto
   mentre l'aiutante scambia la cartella non parte: **«Non partita»**, si rifà dopo la ricarica;
+  intanto non partono nemmeno «Conferma di nuovo», una stampa o un PDF dal telefono, e un giro
+  nella scheda aspetta;
 - **subito prima dello scambio** rilegge `VERSION.txt`: se lì c'è ormai un'altra versione (quella di
   prima ritirata, una correzione) non scambia, butta lo zip e scarica quella al giro dopo;
 - **se va storto** (lo zip sbagliato, l'aiutante che dice di no o non risponde) quella versione

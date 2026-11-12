@@ -665,6 +665,37 @@ console.log("\naggiorna: un ordine premuto mentre l'aiutante scambia la cartella
   comportati();
 }
 
+console.log("\naggiorna: a scambio deciso non parte niente — né il motore, né «Conferma di nuovo», né i fogli, né un PDF dal telefono");
+{
+  // Lo scambio deciso (aggScambio) e la ricarica che arriva svuota storage.session: quello che partisse
+  // adesso sparirebbe senza dirlo. Il motore non si dà (la scheda aspetta, «occupato»), «Conferma di
+  // nuovo» non parte e resta lì, i fogli di una stampa e un PDF dal telefono non partono e lo dicono.
+  const tab = await sw.evaluate((u) => chrome.tabs.query({}).then((l) => l.find((t) => t.url === u) || l.find((t) => /\/sa4pso\//.test(t.url || "")) || null), doc.url());
+  const r = await sw.evaluate(async (tab) => {
+    const manda = (msg) => new Promise((res) => ordMessaggio(msg, { tab, url: tab.url }, res));
+    const finto = { id: "aggriconf01", ep: "999001", paziente: "ROSSI MARIO", stato: "avviso", ts: Date.now(), agg: Date.now(),
+      vista: { tag: "Non partita", testo: "Conferma di nuovo", tono: "err", riconferma: true, premuta: 0 }, consegna: { url: tab.url, receipt: {} } };
+    await ordScrivi([...(await ordLeggi()), finto]);
+    aggScambio = true;
+    try {
+      const fogli = await manda({ t: "ordineFogli", job: { id: "aggfogli01", ep: "999001", url: tab.url, jobs: [{ name: "Etichette", printer: "etichettatrice", url: tab.url }] } });
+      const riconf = await manda({ t: "ordineRiconferma", id: finto.id });
+      const tel = await stampaDalTel("aggtel0001", "JVBERi0=");
+      const motore = await manda({ t: "ordineMotore", id: "aggmotore01" });
+      const resta = !!((await ordLeggi()).find((x) => x.id === finto.id) || {}).vista?.riconferma;
+      return { fogli, riconf: { ok: riconf.ok, aggiorna: riconf.aggiorna }, tel, motore: { ok: motore.ok, occupato: motore.occupato }, resta };
+    } finally {
+      aggScambio = false;
+      if ((motoreDiScheda() || {}).id === "aggmotore01") await motoreScrivi(null);
+      await ordScrivi((await ordLeggi()).filter((x) => x.id !== "aggriconf01"));
+    }
+  }, tab);
+  check(!!tab && !r.motore.ok && r.motore.occupato, `il motore non si dà: la scheda aspetta (got ${JSON.stringify(r.motore)})`);
+  check(!r.riconf.ok && r.resta, `«Conferma di nuovo» non parte, e il bottone resta (got ${JSON.stringify(r.riconf)} · ${r.resta})`);
+  check(!r.fogli.ok && r.fogli.no && r.fogli.aggiorna, `i fogli non partono, e si dice perché (got ${JSON.stringify(r.fogli)})`);
+  check(!r.tel.ok && /aggiornando/.test(r.tel.why || ""), `un PDF dal telefono non parte, e si dice perché (got ${JSON.stringify(r.tel)})`);
+}
+
 check(fuori.length === 0, `nessun'altra richiesta fuori dall'ospedale (got ${fuori.slice(0, 3).join(", ")})`);
 await ctx.close();
 for (const d of [BASE, PROFILE, FINTO]) rmSync(d, { recursive: true, force: true });
