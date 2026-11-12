@@ -369,15 +369,28 @@ telefono, `{v, eco, no}` come sempre. Avuta la risposta (o dopo 6 secondi) la pr
 (`close(1000)`). Un PC più vecchio risponde alla sonda come a un saluto qualunque: c'è, e il telefono
 non ne sa di più (l'attesa del saluto, sul PC, scade da sola).
 
-**Vivi o morti.** Tutte e due le parti battono: il PC ogni 20 secondi, il telefono ogni 20 secondi
-mentre l'app è davanti e subito quando ci torna. Se il `pong` non torna entro 10 secondi la presa è
-morta anche se sembra aperta (un proxy che la lascia cadere senza dirlo), e se ne apre un'altra; il
-telefono la rifà anche quando una risposta non arriva in tempo. Una presa chiusa dal ripetitore perché
-un'altra dello stesso ruolo ha preso il suo posto (codice 4001) non si riapre da sola.
+**Vivi o morti.** Tutte e due le parti battono: il PC ogni 20 secondi, il telefono ogni 30 secondi
+mentre l'app è davanti e subito quando ci torna. Se il `pong` non torna entro 15 secondi (il telefono)
+la presa è morta anche se sembra aperta (un proxy che la lascia cadere senza dirlo), e se ne apre
+un'altra; il telefono la rifà anche quando una risposta non arriva in tempo. Una presa chiusa dal
+ripetitore perché un'altra dello stesso ruolo ha preso il suo posto (codice 4001) non si riapre da sola;
+una chiusa con 4403 (il ponte non riconosce più il telefono) ferma l'app su «Scollegato», con «Riprova».
+
+**Il telefono tiene la presa solo con l'app davanti.** La apre quando l'app torna visibile
+(`visibilitychange`, `pageshow`) o quando torna la rete (`online`); la chiude, pulita (`close(1000)`),
+quando va in sottofondo (`visibilitychange` → nascosta) o la pagina se ne va (`pagehide`: subito, la
+pagina sta per congelarsi). Con un comando che aspetta ancora la sua risposta (un ordine, una stampa, un
+salvataggio, «accetta») la chiusura aspetta quella risposta, al più 20 secondi: la risposta che il medico
+aspetta non si perde. Quello che resta senza risposta si rimanda al ritorno con lo stesso numero
+(`rimanda`, vedi sotto), e la sessione riprende da sola sul paziente dov'era, senza «Sessione chiusa»: il
+ritorno non apre niente sul PC (niente «apri», nessuna pagina). Nessun tentativo parte da solo con l'app
+in sottofondo. Il protocollo sul filo non cambia: un PC 3.86 e il ripetitore di prima vanno come prima.
 
 **Una rete che va e viene** (ascensore, 5G, wifi↔5G, rete lenta). Il telefono tiene una presa sola:
-caduta, la riapre dopo mezzo secondo e poi sempre più di rado, fino a 15 secondi (con un po' di
-caso); subito quando torna la rete (`online`) o l'app (`visibilitychange`, `pageshow`). Una presa che
+caduta, la riapre dopo circa 1 secondo e poi raddoppia, fino a 300 secondi (±50 % di caso: tanti
+telefoni non tornano tutti insieme); la rincorsa riparte da 1 secondo solo dopo 2 minuti di presa
+tenuta. Subito (senza aspettare) quando torna la rete (`online`) o l'app (`visibilitychange`,
+`pageshow`). Una presa che
 non si apre in 12 secondi si rifà; il «pong» aspetta anche i byte già per strada, contati a 50 kbit/s,
 come le attese dei pezzi di PDF. Quello che resta senza risposta si rimanda da solo sulla presa nuova:
 le letture si rifanno, le scritture (ordine, nota, promemoria, «Fatto», cartella, i pezzi di «Stampa

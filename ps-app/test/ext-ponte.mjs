@@ -222,6 +222,9 @@ const telCtx = await telBrowser.newContext(IPHONE);
 // l'orologio del telefono avanti o indietro, quando una prova lo chiede (sessionStorage «__salto», in ms)
 const salto = () => { try { const x = Number(sessionStorage.getItem("__salto") || 0); if (x) { const v = Date.now; Date.now = () => v() + x; } } catch { /* about:blank */ } };
 await telCtx.addInitScript(salto);
+// i «2 minuti di presa tenuta» dopo i quali la rincorsa riparte da 1 s (SU_STABILE = 120 s) qui durano 2 s: si prova la regola, non l'attesa
+const stabile = () => { const st = window.setTimeout; window.setTimeout = (f, ms, ...a) => st(f, ms === 120e3 ? 2e3 : ms, ...a); };
+await telCtx.addInitScript(stabile);
 // La rete del telefono: ogni presa passa di qui. `perdi` = il numero di una
 // presa di cui si perdono i messaggi cifrati dal PC (le risposte); `muta` =
 // una presa che non porta più niente in nessun verso, nemmeno il «pong»;
@@ -2368,7 +2371,7 @@ sezione("il battito: una presa che sembra aperta ma non porta niente");
 const prese1 = relay.entrate().tel;
 rete.muta = rete.ultima;
 await tel.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));   // tornati sull'app: si prova subito la presa
-check(await finche(async () => relay.entrate().tel > prese1, 14000), "nessun «pong» entro 10 secondi: il telefono rifà la presa");
+check(await finche(async () => relay.entrate().tel > prese1, 22000), "nessun «pong» entro 15 secondi: il telefono rifà la presa");
 check(/ROSSI MARIO/.test(await aspettaTel(tel, /ROSSI MARIO/, 10000)), "e l'elenco resta");
 // tornati sull'app: l'elenco si rilegge da solo (contato sul PC, al comando: il Registro del pannello tiene le
 // ultime 200 righe, e pieno non cresce più — contarci le righe non dice se ne è arrivata una nuova)
@@ -2389,6 +2392,105 @@ check(await finche(async () => righeDopo(esiti0, await registroRighe(doc)).some(
 check(await sw.evaluate(() => pt.sessione && pt.sessione.ultimo) === ultimo0, "e non tengono aperta la sessione: li chiede l'app, non il medico");
 await tocca(tel, '[data-a="indietro"]');
 await aspettaTel(tel, /ROSSI MARIO/, 10000);
+
+// ===========================================================================
+sezione("l'app in sottofondo: la presa si chiude, al ritorno si riprende da sola");
+{
+  // «in sottofondo» come lo vede la pagina: visibilityState "hidden" e l'evento (la pagina di prova resta davanti per Playwright)
+  const nascondi = (t) => t.evaluate(() => { Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "hidden" }); document.dispatchEvent(new Event("visibilitychange")); });
+  const mostra = (t) => t.evaluate(() => { delete document.visibilityState; document.dispatchEvent(new Event("visibilitychange")); window.dispatchEvent(new Event("pageshow")); });
+  const usciteTel = (da) => relay.eventi().filter((e) => e.ruolo === "tel" && e.tipo === "esce" && e.ts >= da);
+  const eseguiti = () => sw.evaluate(() => self.__cmdPc.slice());
+  await sw.evaluate(() => {
+    self.__cmdPc = []; self.__ritardoEsiti = 0;
+    if (!self.__suSchedaSf) {
+      self.__suSchedaSf = ponteSuScheda;
+      ponteSuScheda = async (c, ...a) => {
+        self.__cmdPc.push(c);
+        if (c === "esiti" && self.__ritardoEsiti) { const r = self.__ritardoEsiti; self.__ritardoEsiti = 0; await new Promise((ok) => setTimeout(ok, r)); }
+        return self.__suSchedaSf(c, ...a);
+      };
+    }
+  });
+  const nonRaggiungibile = /non è raggiungibile|Incerto|Sessione chiusa|non ha risposto/;
+  await finche(async () => relay.prese().tel === 1, 10000);
+
+  // 1. con l'app in sottofondo e niente in volo: la presa si chiude pulita (1000) entro un secondo
+  let e0 = relay.entrate().tel, t0 = Date.now();
+  await nascondi(tel);
+  check(await finche(async () => relay.prese().tel === 0, 1000), `app in sottofondo: il ripetitore non ha più la presa del telefono (${Date.now() - t0} ms)`);
+  const u1 = usciteTel(t0);
+  check(u1.length === 1 && u1[0].codice === 1000, `…e l'ha vista chiudersi pulita, codice 1000 (${JSON.stringify(u1.map((x) => x.codice))})`);
+  await sospendi(2500);
+  check(relay.entrate().tel === e0 && relay.prese().tel === 0, "in sottofondo nessuna presa nuova (né battito né tentativi)");
+
+  // 2. di nuovo davanti: una presa sola, la sessione riprende, sul PC non si apre niente
+  const cmd0 = (await eseguiti()).length, pagine0 = ctx.pages().length;
+  await mostra(tel);
+  check(await finche(async () => relay.prese().tel === 1, 5000), "di nuovo davanti: la presa si riapre");
+  await sospendi(2500);
+  const dopo = await testoTel(tel);
+  check(relay.entrate().tel === e0 + 1, `…una presa sola, non di più (${relay.entrate().tel - e0})`);
+  check(/ROSSI MARIO/.test(dopo) && !nonRaggiungibile.test(dopo), "…la sessione riprende da sola, senza «Sessione chiusa» né schermate in mezzo");
+  const nuovi = (await eseguiti()).slice(cmd0);
+  check(!nuovi.includes("aggiornaValori") && ctx.pages().length === pagine0, `…e sul PC non si apre nessuna pagina (comandi: ${[...new Set(nuovi)].join(", ") || "—"})`);
+
+  // 3. un comando che aspetta la risposta (gli esiti di ROSSI, 6 s sul PC): la presa resta fino alla risposta, poi si chiude
+  await sw.evaluate(() => { self.__ritardoEsiti = 6000; });
+  await tocca(tel, '.paz[data-ep="999001"]');
+  await sospendi(700);
+  const dal0 = rete.dalPc.length;
+  e0 = relay.entrate().tel; t0 = Date.now();
+  await nascondi(tel);
+  await sospendi(2500);
+  check(relay.prese().tel === 1, "in sottofondo con un comando in volo: la presa resta (grazia di 20 s)");
+  check(await finche(async () => relay.prese().tel === 0, 12000), `…e si chiude appena la risposta è arrivata (${Date.now() - t0} ms)`);
+  const u3 = usciteTel(t0);
+  check(Date.now() - t0 > 4000 && u3.length === 1 && u3[0].codice === 1000 && rete.dalPc.length > dal0,
+    `…con la risposta già passata (${rete.dalPc.length - dal0} messaggi dal PC prima della chiusura), codice 1000`);
+  await mostra(tel);
+  check(await finche(async () => relay.prese().tel === 1, 5000) && /Rileggi/.test(await aspettaTel(tel, /Rileggi/, 5000)) && !nonRaggiungibile.test(await testoTel(tel)),
+    "tornati: gli esiti ci sono, nessun errore");
+  await tocca(tel, '[data-a="indietro"]');
+  await aspettaTel(tel, /ROSSI MARIO/, 10000);
+
+  // 4. la risposta arriva dopo i 20 s di grazia (25 s sul PC): la presa si chiude a 20 s, e al ritorno il comando riparte
+  //    con lo stesso numero — la risposta arriva lo stesso, nessun errore
+  await sw.evaluate(() => { self.__ritardoEsiti = 25000; });
+  await tocca(tel, '.paz[data-ep="999001"]');
+  await sospendi(700);
+  t0 = Date.now();
+  await nascondi(tel);
+  await sospendi(15000);
+  check(relay.prese().tel === 1, "con la risposta che tarda: dopo 15 s la presa c'è ancora");
+  check(await finche(async () => relay.prese().tel === 0, 8000), `…e si chiude entro i 20 s di grazia (${((Date.now() - t0) / 1000).toFixed(1)} s)`);
+  const u4 = usciteTel(t0);
+  check(Date.now() - t0 >= 19000 && Date.now() - t0 <= 24000 && u4.length === 1 && u4[0].codice === 1000, `…con codice 1000 (${JSON.stringify(u4.map((x) => x.codice))})`);
+  const esiti0 = (await eseguiti()).filter((c) => c === "esiti").length, dal1 = rete.dalPc.length;
+  await mostra(tel);
+  check(await finche(async () => relay.prese().tel === 1, 5000), "tornati: una presa nuova");
+  check(await finche(async () => rete.dalPc.length > dal1, 30000), "…e il risultato del comando partito prima arriva lo stesso");
+  const t4 = await aspettaTel(tel, /Rileggi/, 10000);
+  check(!!t4 && !nonRaggiungibile.test(t4), "…senza errori sul telefono");
+  check(!(await eseguiti()).slice(cmd0).includes("aggiornaValori") && ctx.pages().length === pagine0 && (await eseguiti()).filter((c) => c === "esiti").length >= esiti0,
+    "…e anche qui sul PC non si apre nessuna pagina");
+  await tocca(tel, '[data-a="indietro"]');
+  await aspettaTel(tel, /ROSSI MARIO/, 10000);
+
+  // 5. il ponte chiude con 4403: ci si ferma, «Scollegato», nessun tentativo; «Riprova» riparte
+  e0 = relay.entrate().tel;
+  { const p4 = rete.prese.get(rete.ultima); p4.ws.close({ code: 4403, reason: "scollegato" }); p4.server.close(); }
+  check(/Scollegato/.test(await aspettaTel(tel, /Scollegato/, 5000)), "chiusura 4403: «Scollegato»");
+  await sospendi(3000);
+  check(relay.entrate().tel === e0, "…e nessun tentativo da sé");
+  await mostra(tel);
+  await sospendi(1500);
+  check(relay.entrate().tel === e0 && /Scollegato/.test(await testoTel(tel)), "…nemmeno al ritorno dell'app");
+  if (SHOTS) await shot(tel, "tel-scollegato");
+  await tocca(tel, '[data-a="riapri"]');
+  check(/ROSSI MARIO/.test(await aspettaTel(tel, /ROSSI MARIO/, 20000)), "«Riprova»: di nuovo dentro");
+  await sw.evaluate(() => { ponteSuScheda = self.__suSchedaSf; self.__suSchedaSf = null; });
+}
 
 // ===========================================================================
 sezione("3 minuti senza comandi");
@@ -2986,6 +3088,7 @@ sezione("la rete del telefono: ascensore, 5G, presa tagliata, rete lenta");
   const chiave = await chiaveTel(tel);
   const vCtx = await telBrowser.newContext(IPHONE);
   await vCtx.addInitScript(salto);
+  await vCtx.addInitScript(stabile);
   await vCtx.addInitScript(() => {
     const W = window.WebSocket;
     window.__prese = [];
@@ -3015,8 +3118,8 @@ sezione("la rete del telefono: ascensore, 5G, presa tagliata, rete lenta");
   await sospendi(40000);
   const ore = (await v.evaluate(() => window.__prese)).slice(p0);
   const passi = ore.slice(1).map((t, i) => t - ore[i]);
-  check(ore.length >= 4 && ore.length <= 12 && passi[0] < 1500 && Math.max(...passi) <= 15500 && Math.max(...passi) >= 6000,
-    `senza rete i tentativi si diradano: il primo subito, poi sempre più radi, mai oltre 15 s (${ore.length} prese in 40 s; ${passi.map((x) => (x / 1000).toFixed(1)).join(" · ")} s)`);
+  check(ore.length >= 3 && ore.length <= 9 && passi[0] < 2500 && passi.at(-1) >= 2 * passi[0] && Math.max(...passi) <= 40000,
+    `senza rete i tentativi si diradano: da 1 s (±50 %), poi sempre più radi, raddoppiando (${ore.length} prese in 40 s; ${passi.map((x) => (x / 1000).toFixed(1)).join(" · ")} s)`);
   // 2. fuori dall'ascensore: la rete torna, la presa si rifà subito, i bottoni tornano da soli
   let t0 = Date.now();
   await reteV();
@@ -3024,7 +3127,9 @@ sezione("la rete del telefono: ascensore, 5G, presa tagliata, rete lenta");
   const dt = Date.now() - t0;
   check(tornata && dt < 3000, `tornata la rete, il telefono si ricollega subito, senza aspettare il prossimo tentativo (${dt} ms)`);
   check(await finche(async () => (await grigi()) === 0, 5000), "e quello che era in grigio torna da solo");
-  // 3. la presa tagliata (il ripetitore, un proxy, il passaggio dal wifi al 5G)
+  // 3. la presa tagliata (il ripetitore, un proxy, il passaggio dal wifi al 5G) — dopo i «2 minuti» di presa
+  // tenuta (qui 2 secondi): la rincorsa del buio di prima è finita, e si riparte da 1 s
+  await sospendi(2600);
   const e0 = relay.entrate().tel;
   t0 = Date.now();
   relay.taglia("tel");
