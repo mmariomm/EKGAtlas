@@ -688,6 +688,18 @@ async function ponteComandoOra(s, d) {
   // riavvio del service worker (ponteRqSegna): fatta, la sua risposta; a metà,
   // «non si sa» — mai una seconda volta.
   const rq = typeof d.rq === "string" && /^[\w-]{8,40}$/.test(d.rq) ? d.rq : "";
+  // «Aggiorna i valori» è una lettura, ma apre la pagina del paziente dietro: rimandata col suo numero (la
+  // presa caduta in sottofondo, e di nuovo davanti) non la riapre — la stessa risposta, quando arriva
+  if (!rq && d.cmd === "aggiornaValori") {
+    s.valori = s.valori || new Map();
+    let r = s.valori.get(d.id);
+    if (!r) {
+      r = ponteRisposta(s, d);
+      s.valori.set(d.id, r);
+      if (s.valori.size > 8) s.valori.delete(s.valori.keys().next().value);
+    }
+    return rispondi(await r);
+  }
   if (!rq) return rispondi(await ponteRisposta(s, d));
   s.rq = s.rq || new Map();
   let r = s.rq.get(rq);

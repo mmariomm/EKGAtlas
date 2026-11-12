@@ -2432,6 +2432,7 @@ sezione("l'app in sottofondo: la presa si chiude, al ritorno si riprende da sola
       ponteSuScheda = async (c, ...a) => {
         self.__cmdPc.push(c);
         if (c === "esiti" && self.__ritardoEsiti) { const r = self.__ritardoEsiti; self.__ritardoEsiti = 0; await new Promise((ok) => setTimeout(ok, r)); }
+        if (c === "aggiornaValori" && self.__ritardoValori) { const r = self.__ritardoValori; self.__ritardoValori = 0; await new Promise((ok) => setTimeout(ok, r)); }
         return self.__suSchedaSf(c, ...a);
       };
     }
@@ -2498,6 +2499,26 @@ sezione("l'app in sottofondo: la presa si chiude, al ritorno si riprende da sola
   check(!!t4 && !nonRaggiungibile.test(t4), "…senza errori sul telefono");
   check(!(await eseguiti()).slice(cmd0).includes("aggiornaValori") && ctx.pages().length === pagine0 && (await eseguiti()).filter((c) => c === "esiti").length >= esiti0,
     "…e anche qui sul PC non si apre nessuna pagina");
+  await tocca(tel, '[data-a="indietro"]');
+  await aspettaTel(tel, /ROSSI MARIO/, 10000);
+
+  // 4b. «↻ Rileggi» (apre la pagina del paziente dietro) con la risposta oltre i 20 s di grazia: al ritorno il telefono
+  //     lo rimanda col suo numero, e il PC non lo rifà — nessuna pagina in più, la stessa risposta
+  await tocca(tel, '.paz[data-ep="999001"]');
+  await aspettaTel(tel, /Rileggi/, 10000);
+  await finche(() => tel.locator('[data-a="valori"]:not([disabled])').count().then((n) => n === 1), 150000);
+  const quanteValori = async () => (await eseguiti()).filter((c) => c === "aggiornaValori").length;
+  await sw.evaluate(() => { self.__ritardoValori = 25000; });
+  const val0 = await quanteValori();
+  await tocca(tel, '[data-a="valori"]');
+  await sospendi(700);
+  t0 = Date.now();
+  await nascondi(tel);
+  check(await finche(async () => relay.prese().tel === 0, 25000) && await quanteValori() === val0 + 1, `«↻ Rileggi» in volo in sottofondo: la presa si chiude coi 20 s di grazia (${((Date.now() - t0) / 1000).toFixed(1)} s)`);
+  await mostra(tel);
+  check(await finche(async () => relay.prese().tel === 1, 5000) && await finche(() => tel.locator('[data-a="valori"]:not([disabled])').count().then((n) => n === 1), 150000)
+    && !nonRaggiungibile.test(await testoTel(tel)), "…tornati: la risposta arriva, nessun errore");
+  check(await quanteValori() === val0 + 1, `…e il PC l'ha fatto una volta sola: rimandato col suo numero, non riapre la pagina (${await quanteValori() - val0})`);
   await tocca(tel, '[data-a="indietro"]');
   await aspettaTel(tel, /ROSSI MARIO/, 10000);
 
