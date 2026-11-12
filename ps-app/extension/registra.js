@@ -20,8 +20,9 @@
  *     nello zip, testi/registro.txt e testi/diagnosi-N.txt, anonimizzati come
  *     le pagine (raccolta.testi di registra-anonimo.js).
  * Tutto resta nella memoria dell'estensione, su questo PC, finché il medico non
- * preme «Ferma e salva»: allora un documento fuori schermo (registra-esporta.html,
- * chrome.offscreen — nessuna scheda, nessuno scarico) anonimizza
+ * preme «Ferma e salva»: allora il documento fuori schermo (fuori.html, lo
+ * stesso delle prese del ponte: fuori-sw.js; chrome.offscreen — nessuna scheda,
+ * nessuno scarico) anonimizza
  * (registra-anonimo.js), controlla e salva lo zip nel database dell'estensione
  * (registra-db.js), e il grezzo se ne va nella stessa transazione. Gli zip li
  * guarda, scarica e cancella il pannello (⋯ → Registrazioni) e l'iPhone
@@ -378,17 +379,15 @@ const regFermaESalva = (come) => regFermando || (regFermando = (async () => {
 })());
 
 // ------------------------------------------------------------- salvare
-// Uno zip alla volta, in un documento fuori schermo (registra-esporta.html):
-// aperto per lo zip, poi chiuso. Il service worker resta sveglio intanto.
+// Uno zip alla volta, nel documento fuori schermo dell'estensione (fuori.html,
+// fuori-sw.js): uno solo, lo stesso delle prese del ponte. Aperto per lo zip se
+// non c'è, poi lasciato: si chiude solo se nessuno lo usa più (mai sotto una
+// presa del ponte, che resta col telefono). Il service worker resta sveglio intanto.
 let regFilaSalva = Promise.resolve();
 const regInFila = (fn) => (regFilaSalva = regFilaSalva.then(fn, fn));
 let REG_PROVA = null;   // (solo i test: opzioni dell'anonimizzazione, p.es. uno sfasamento fisso)
 async function regFuori(m) {
-  const c = chrome.runtime.getContexts ? await chrome.runtime.getContexts({ contextTypes: ["OFFSCREEN_DOCUMENT"] }).catch(() => []) : [];
-  if (!c.length) {
-    await chrome.offscreen.createDocument({ url: "registra-esporta.html?fuori=1", reasons: ["DOM_PARSER", "BLOBS"],
-      justification: "Anonimizza la registrazione (il testo dei PDF con pdf.js) e salva lo zip nella memoria dell'estensione, senza aprire schede" });
-  }
+  if (!(await fuoriPrendi("registra"))) { fuoriLascia("registra"); throw new Error("il documento che salva non si apre"); }
   const sveglio = setInterval(() => { chrome.runtime.getPlatformInfo().catch(() => {}); }, 20e3);
   try {
     for (let k = 0; ; k++) {
@@ -399,7 +398,7 @@ async function regFuori(m) {
     }
   } finally {
     clearInterval(sveglio);
-    await chrome.offscreen.closeDocument().catch(() => {});
+    fuoriLascia("registra");
   }
 }
 const regNomeZip = (ts, auto) => {

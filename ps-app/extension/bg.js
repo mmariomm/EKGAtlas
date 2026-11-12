@@ -2562,6 +2562,13 @@ const riallinea = () => { riallineaPortale().catch(() => {}); };
 chrome.runtime.onStartup?.addListener(riallinea);
 chrome.runtime.onInstalled?.addListener(riallinea);
 
+// Il documento fuori schermo (fuori-sw.js, fuori.html): uno solo per
+// l'estensione, di tutti — le prese verso il ripetitore del ponte (presa.js),
+// che lì sopravvivono ai riavvii del service worker, e lo zip del registratore.
+// Prima del registratore, del ponte e della stazione, che lo usano.
+try { importScripts("presa.js", "fuori-sw.js"); }
+catch (e) { console.error("PS Assist: il documento fuori schermo non parte", e); }
+
 // Il registratore (⋯ → Registrazioni, registra.js): osserva e basta — mentre
 // il medico registra, e gli ultimi 3 minuti per la registrazione automatica.
 // Sta in un file suo; un errore lì non tocca il resto.
