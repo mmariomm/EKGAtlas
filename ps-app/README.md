@@ -77,7 +77,8 @@ aggiornato: sul PC tocca «Ricarica la pagina»».
 A mano, subito: il puntino sul **⋯** e **Aggiorna app** (la versione nel suggerimento), con gli
 stessi controlli («Dopo l'ordine in corso»). Un PC ancora sulla 3.85.2 arriva alla 3.85.3 così, una
 volta; da lì in poi da sé. Se la versione nuova non parte, doppio clic su `ripristina.cmd` in
-`%LOCALAPPDATA%\PSAssist\stampa` e ⟳ in `chrome://extensions`. Senza aiutante, o caricata da
+`%LOCALAPPDATA%\PSAssist\stampa` e ⟳ in `chrome://extensions`: da sé quella versione non torna
+(`aggiornaApplicata` ricorda l'ultima messa), una più nuova sì; a mano «Aggiorna app» la rimette. Senza aiutante, o caricata da
 un'altra cartella, non si aggiorna da sé e il ⋯ dice come fare; a mano resta il modo di sempre:
 sostituisci i file nella STESSA cartella e **Ricarica** (in fondo al ⋯, accanto alla versione), che
 non c'è mentre un giro di esami sta mandando.

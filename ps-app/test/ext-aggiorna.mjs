@@ -27,7 +27,8 @@
  * tocca Ricarica la pagina»); un ordine premuto mentre
  * l'aiutante scambia la cartella: «Non partita · niente inviato», mai perso in
  * silenzio né mandato due volte; una scheda del gestionale con la pagina
- * d'errore di Chrome (lo script non entra) non la ferma per sempre.
+ * d'errore di Chrome (lo script non entra) non la ferma per sempre; dopo
+ * ripristina.cmd la versione tolta non torna da sé (a mano sì).
  *   node test/ext-aggiorna.mjs
  */
 import { chromium } from "playwright";
@@ -36,7 +37,7 @@ import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
-import { rmSync, existsSync, statSync, mkdirSync, writeFileSync, readFileSync, chmodSync, cpSync, readdirSync } from "node:fs";
+import { rmSync, existsSync, statSync, mkdirSync, writeFileSync, readFileSync, chmodSync, cpSync, readdirSync, renameSync } from "node:fs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const BASE = join("/tmp", "psa-agg-" + process.pid);
@@ -542,6 +543,38 @@ console.log("\naggiorna: una scheda del gestionale dove lo script non entra (la 
   const r = await sw.evaluate(() => aggOccupato());
   check(r === "", `la pagina d'errore di Chrome (lì il pannello non c'è): non tiene fermo l'aggiornamento per sempre (got «${r}»)`);
   await rotta.close();
+}
+
+console.log("\naggiorna: ripristina.cmd — da sé, la versione tolta non torna");
+{
+  // ripristina.cmd: estensione.prima torna estensione; poi ⟳ in chrome://extensions
+  const da = await versioneSw(), PRIMA = join(CASA, "estensione.prima"), TOLTA = join(CASA, "estensione.tolta");
+  const prima = JSON.parse(readFileSync(join(PRIMA, "manifest.json"), "utf8")).version;
+  renameSync(EST, TOLTA);
+  renameSync(PRIMA, EST);
+  let nasce = ctx.waitForEvent("serviceworker", { timeout: 30000 }).catch(() => null);
+  await sw.evaluate(() => chrome.runtime.reload()).catch(() => {});
+  let nuovo = await nasce;
+  if (nuovo) { sw = nuovo; await svegliaLontana(); }
+  check(da === NUOVA4 && prima === NUOVA3 && (await versioneSw()) === NUOVA3, `rimessa la versione di prima (${da} → ${await versioneSw()})`);
+  gh.versione = NUOVA4;
+  gh.zip = zipDi(NUOVA4);
+  azzeraLavori();
+  await dimentica();
+  await togliPausa();
+  const z0 = zipChiesti();
+  const r = await daSe();
+  check(r === null && zipChiesti() === z0 && !scambi() && (await versioneSw()) === NUOVA3,
+    `da sé la ${NUOVA4}, tolta con ripristina.cmd, non torna: niente zip, niente all'aiutante (got ${JSON.stringify(r)})`);
+  const m = await memoria();
+  check(!!m && m.nuova === NUOVA4 && m.puo === true, `a mano resta: il puntino e «Aggiorna app» (got ${JSON.stringify(m)})`);
+  nasce = ctx.waitForEvent("serviceworker", { timeout: 30000 }).catch(() => null);
+  await sw.evaluate(() => { aggiorna(); });
+  nuovo = await nasce;
+  const v = nuovo ? await nuovo.evaluate(() => chrome.runtime.getManifest().version).catch(() => "") : "";
+  check(v === NUOVA4, `«Aggiorna app», a mano, la rimette (got ${v || "nessun service worker nuovo"})`);
+  if (nuovo) { sw = nuovo; await svegliaLontana(); }
+  rmSync(TOLTA, { recursive: true, force: true });
 }
 
 check(fuori.length === 0, `nessun'altra richiesta fuori dall'ospedale (got ${fuori.slice(0, 3).join(", ")})`);

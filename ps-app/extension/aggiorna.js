@@ -22,7 +22,8 @@
  * telefono in uso (dopo la ricarica le schede aperte non gli rispondono più,
  * finché il medico non le ricarica). Andata male (lo zip, l'aiutante che dice di no o non
  * risponde): da sé quella versione aspetta sei ore (`aggiornaPausa`), mai un
- * giro dopo l'altro. In storage.local, `aggiorna` = { ts, nuova, puo, come }:
+ * giro dopo l'altro. Tolta con ripristina.cmd: da sé non torna più
+ * (`aggiornaApplicata`, l'ultima versione messa qui), a mano sì. In storage.local, `aggiorna` = { ts, nuova, puo, come }:
  * lo legge il pannello.
  */
 /* global SA4, ordLeggi, inFilaOrd, ospite, corto, b64, motoreDiScheda, stz, regPronto, regAttiva, regStato, regSalvando, REG_INC, pt, ponteValoriTutti, ponteCartelleTutte, ponteTerapieTutte, ponteAccetteTutte */
@@ -32,6 +33,7 @@ const AGG_GIORNO = 24 * 3600e3;
 const AGG_DI_NUOVO = 60e3;               // ⋯ aperto e richiuso: non una lettura a ogni tocco
 const AGG_ORE = 6 * 3600e3;              // da sé: ogni quanto si guarda; e la pausa dopo un tentativo andato male
 const AGG_PAUSA = "aggiornaPausa";       // storage.local: { v, ts, why } — la versione andata male, e quando
+const AGG_APPLICATA = "aggiornaApplicata"; // storage.local: l'ultima versione messa qui (ne gira una più vecchia: tolta con ripristina.cmd)
 const AGG_ZIP_MAX = 28 * 1024 * 1024;   // in base64 resta sotto i 40 MB che l'aiutante accetta
 const AGG_ATTESA = 180e3;                // l'aiutante apre lo zip e scambia la cartella
 const AGG_APERTO = new Set(["coda", "avvio", "corre", "stampo", "stampa"]);   // come ORDINE_APERTO nel pannello
@@ -236,7 +238,7 @@ async function aggiorna(auto = false) {
         if (!h.ok) return aggNo(v, `Aggiornamento non riuscito: ${corto(h.why || "l'aiutante ha detto di no", 160)}`);
       }
       await chrome.storage.local.remove(AGG_PAUSA).catch(() => {});
-      await chrome.storage.local.set({ aggiorna: { ts: 0, nuova: "", puo: false, come: "", fatto: v, quando: Date.now() } }).catch(() => {});
+      await chrome.storage.local.set({ aggiorna: { ts: 0, nuova: "", puo: false, come: "", fatto: v, quando: Date.now() }, [AGG_APPLICATA]: v }).catch(() => {});
       fatto = true;
       setTimeout(() => chrome.runtime.reload(), 400);
       return { ok: true, versione: v, ricarica: true };
@@ -305,8 +307,10 @@ async function aggAuto(avvio = false) {
   try {
     const rec = await aggControlla(true).catch(() => null);
     if (!rec || !rec.nuova || !rec.puo) return null;   // niente di nuovo, o non si aggiorna da qui (il ⋯ lo dice)
-    const p = (await chrome.storage.local.get(AGG_PAUSA))[AGG_PAUSA];
+    const o = await chrome.storage.local.get([AGG_PAUSA, AGG_APPLICATA]), p = o[AGG_PAUSA];
     if (p && p.v === rec.nuova && aggDaPoco(p.ts)) return null;   // andata male da poco: sei ore
+    // già messa qui, e gira una più vecchia: tolta con ripristina.cmd — da sé non torna, a mano sì
+    if (o[AGG_APPLICATA] === rec.nuova) return null;
     let r = await aggiorna(true);
     while (avvio && r && r.why === AGG_OCCUPATO && !r.scaricato && performance.now() < AGG_AVVIO - 10e3) {
       await new Promise((res) => setTimeout(res, 10e3));
