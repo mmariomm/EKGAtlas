@@ -129,11 +129,11 @@ check(["nuovo", "parto", "riconferma"].every((k) => muro[k] && muro[k].ok === fa
 // nell'eViewer o in un riquadro (null: forse il portale aggiunto dal medico, che si guarda in storage)
 const mitt = await sw.evaluate(() => {
   const s = (url, frameId = 0, tab = { id: 7 }) => ({ id: chrome.runtime.id, url, frameId, tab });
-  return [bgMittente(s("https://smarthealth.multimedica.it/sa4pso/x.do")), bgMittente(s("http://10.11.0.151/clin-port/x.jsp")), bgMittente(s(chrome.runtime.getURL("tabellone.html"), 0, undefined)),
+  return [bgMittente(s("https://smarthealth.multimedica.it/sa4pso/x.do")), bgMittente(s("http://10.11.0.151/clin-port/x.jsp")), bgMittente(s("http://10.11.0.151:9080/clin-port/x.jsp")), bgMittente(s(chrome.runtime.getURL("tabellone.html"), 0, undefined)),
     bgMittente(s("https://smarthealth.multimedica.it/sa4pso/x.do", 3)), bgMittente(s("https://dcss.cgi.crs.lombardia.it/menusiss/")), bgMittente(s("chrome://settings/")),
     bgDaEstensione(s("https://smarthealth.multimedica.it/x")), bgDaEstensione(s(chrome.runtime.getURL("portale.html")))];
 });
-check(JSON.stringify(mitt) === JSON.stringify([true, true, true, false, null, false, false, true]),
+check(JSON.stringify(mitt) === JSON.stringify([true, true, true, true, false, null, false, false, true]),
   `i comandi del service worker: dal pannello in alto e dall'estensione sì, da un riquadro no, dal SISS solo se fosse il portale aggiunto; il portale si aggiunge solo dall'estensione (${JSON.stringify(mitt)})`);
 
 // ---- il telefono associato al PC mini -------------------------------------

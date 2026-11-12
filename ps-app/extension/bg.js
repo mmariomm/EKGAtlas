@@ -420,10 +420,11 @@ const bgDaEstensione = (s) => !!s && s.id === chrome.runtime.id && String(s.url 
 function bgMittente(s) {
   if (bgDaEstensione(s)) return true;
   if (!s || s.id !== chrome.runtime.id || !s.tab || s.frameId) return false;
-  let o;
-  try { o = new URL(String(s.url || "")).origin; } catch { return false; }
-  if (o === "https://smarthealth.multimedica.it" || o === "http://10.11.0.151") return true;
-  return /^https?:\/\//.test(o) ? null : false;
+  let u;
+  try { u = new URL(String(s.url || "")); } catch { return false; }
+  // (il portale clinico: content.js ci gira su ogni porta, come dice il suo modello nel manifest)
+  if (u.origin === "https://smarthealth.multimedica.it" || (/^https?:$/.test(u.protocol) && u.hostname === "10.11.0.151")) return true;
+  return /^https?:$/.test(u.protocol) ? null : false;
 }
 chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
   if (!msg || typeof msg !== "object" || !BG_TIPI.has(msg.t)) return;
