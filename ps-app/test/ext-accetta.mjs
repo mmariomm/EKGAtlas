@@ -280,6 +280,13 @@ try {
     "tornati sulla lista del triage senza di lui: «In ambulatorio: BIANCO PIO»");
   check(/PsoPazientiTriage,PsoEpisodioTriageToAmbulatorio:710005,PsoPazientiTriage,PsoPazientiAmbulatorio/.test(srv.pagine.slice(p7).join()),
     `…verificato sulla lista dell'ambulatorio, aperta dal suo link (${srv.pagine.slice(p7).join(" → ")})`);
+  // poi il telefono apre BIANCO: il PC, che in questo turno non l'ha mai aperto (lo sa dalla lista), apre la
+  // sua pagina in una scheda dietro («apri»), lo ricorda e la chiude. Si aspetta che abbia finito: quella
+  // scheda riscrive l'elenco dei pazienti del PC (patients.v1) da un altro processo, e una pagina aperta
+  // sul PC nello stesso istante (la 8) ci finirebbe sotto — la sua visita persa, «Al triage» mai detto.
+  const b7 = async () => (await ls("patients.v1")).find((p) => p.ep === BIANCO.ep) || {};
+  check(await finche(async () => (await b7()).ts > 0 && /MVPG=PsoEpisodioClinicoAmbulatorio&EPISODIO_ID=710005$/.test((await b7()).url), 30000)
+    && await finche(async () => schedeGest().length === 1, 15000), `poi il telefono apre BIANCO PIO: il PC apre la sua pagina dietro, lo ricorda e la chiude (${(await b7()).url})`);
   srv.dopo = "episodio";
   await tornaAllElenco();
 
