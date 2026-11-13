@@ -13,7 +13,7 @@
 import metrics from './metrics.js'
 import { ponteFetch } from './ponte.js'
 
-export { PonteStanza } from './ponte.js'
+export { PonteStanza, PonteRegistro } from './ponte.js'
 
 export default {
   fetch(request, env, ctx) {

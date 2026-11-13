@@ -400,7 +400,7 @@ check(await ponte.evaluate(() => document.documentElement.classList.contains("co
   "dentro il pannello la pagina è compatta: niente testata, niente margini di pagina");
 check(/\(ekg-atlas\.whirly\.workers\.dev\)/.test(await ponte.locator("#dove").innerText()) && !(await ponte.locator("#associa").isDisabled()) && /Nessun iPhone associato/.test(await ponte.locator("#stato").innerText()),
   `l'indirizzo del ponte è quello fissato nella build (ponte/host.txt): ekg-atlas.whirly.workers.dev (${await ponte.locator("#dove").innerText()})`);
-check(await ponte.locator("input").count() === 0, "l'indirizzo del ponte non si scrive in nessuna pagina: niente campo");
+check(await ponte.locator("input:not(#nomepc):not(#nolista)").count() === 0, "l'indirizzo del ponte non si scrive in nessuna pagina: niente campo (solo il nome del PC e «Non comparire nella lista»)");
 // (per le prove, e solo verso questo PC: il ripetitore locale)
 await sw.evaluate((u) => chrome.storage.local.set({ "ponte.host": u }).then(() => ponteAvvia()), relay.url);
 // via dalla vista, la cornice se ne va; ⋯ → iPhone di nuovo, una cornice nuova (che legge il ripetitore locale)
@@ -3196,14 +3196,14 @@ sezione("⋯ → Dispositivi: i PC associati, chi c'è, chi è collegato a quest
   check(await tel.locator('.menu [data-a="dispositivi"]').count() === 1 && /Dispositivi$/.test((await tel.locator('.menu [data-a="dispositivi"]').innerText()).trim()), "nel ⋯ c'è «Dispositivi»");
   await tocca(tel, '[data-a="dispositivi"]');
   const pronta = await finche(async () => { const t = await testoTel(tel); return /Collegato a questo iPhone/.test(t) && /Disponibile/.test(t) && /Non disponibile/.test(t) && /stampato alle/.test(t); }, 15000);
-  const righe = await tel.locator(".dsp").evaluateAll((l) => l.map((x) => ({ id: x.dataset.pc, t: x.innerText.replace(/\s+/g, " ").trim() })));
+  const righe = await tel.locator(".dsp[data-pc]").evaluateAll((l) => l.map((x) => ({ id: x.dataset.pc, t: x.innerText.replace(/\s+/g, " ").trim() })));
   check(pronta && /Dispositivi/.test(await tel.locator("header").innerText()) && righe.map((r) => r.id).join() === [vero.id, mini.id, spento.id].join(),
     `una riga per PC associato, l'attivo in cima (${righe.map((r) => r.t).join(" | ")})`);
   const [r0 = "", r1 = "", r2 = ""] = righe.map((r) => r.t);
-  check(new RegExp(`^💻 PC v${versionePc.replace(/\./g, "\\.")} Collegato a questo iPhone .{1,3} Infermeria · raggiungibile · ultimo foglio stampato alle \\d\\d:\\d\\d$`).test(r0),
+  check(new RegExp(`^💻 PC v${versionePc.replace(/\./g, "\\.")} Associato a questo iPhone Collegato a questo iPhone .{1,3} Infermeria · raggiungibile · ultimo foglio stampato alle \\d\\d:\\d\\d$`).test(r0),
     `il PC attivo: «PC», la sua versione, «Collegato a questo iPhone», e la sua stazione con l'ultimo foglio (${r0})`);
-  check(/^👁.{0,2} Infermeria Lettura e stampa v3\.85\.3 Disponibile$/.test(r1), `l'altro PC acceso: il suo nome, «Lettura e stampa», la versione che dice adesso, «Disponibile» (${r1})`);
-  check(/^👁.{0,2} Studio medici Lettura e stampa v3\.84\.0 Non disponibile · visto ieri alle 18:40$/.test(r2), `quello spento: «Non disponibile», e quando si è fatto sentire (${r2})`);
+  check(/^👁.{0,2} Infermeria Lettura e stampa v3\.85\.3 Associato a questo iPhone Disponibile$/.test(r1), `l'altro PC acceso: il suo nome, «Lettura e stampa», la versione che dice adesso, «Disponibile» (${r1})`);
+  check(/^👁.{0,2} Studio medici Lettura e stampa v3\.84\.0 Associato a questo iPhone Non disponibile · visto ieri alle 18:40$/.test(r2), `quello spento: «Non disponibile», e quando si è fatto sentire (${r2})`);
   check(await finche(async () => relay.entrate().tel - e0 === 2 && relay.prese().tel === aperte0, 10000),
     `una presa breve per ognuno degli altri due PC, chiusa subito: resta aperta solo quella della sessione (${relay.entrate().tel - e0} nuove, ${relay.prese().tel} aperte)`);
   check(await finche(async () => sentito.slice(s0).join() === '{"pari":true},sonda,{"pari":false}', 8000),

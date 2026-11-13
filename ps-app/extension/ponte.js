@@ -162,6 +162,25 @@ $("revoca").addEventListener("click", async () => {
   aggiorna();
 });
 
+// «Questo PC»: il nome che il telefono vede (nel saluto e in ⋯ → Dispositivi) e «Non comparire nella lista»
+// (il registro dei PC: registro-sw.js). Scritti qui, in storage.local: l'annuncio parte da sé quando cambiano.
+(async () => {
+  const o = await chrome.storage.local.get(["ponte.nomePc", "registro.no", "registro.id"]).catch(() => ({}));
+  $("nomepc").value = typeof o["ponte.nomePc"] === "string" ? o["ponte.nomePc"] : "";
+  const s = String(o["registro.id"] || "").replace(/[^A-Za-z0-9]/g, "").toUpperCase().slice(0, 4);
+  $("nomepc").placeholder = `${/lettura/i.test(chrome.runtime.getManifest().name || "") ? "Lettura e stampa" : "PC"} ${s}`.trim();
+  $("nolista").checked = o["registro.no"] === true;
+})();
+$("nomepc").addEventListener("change", async () => {
+  const n = $("nomepc").value.replace(/\s+/g, " ").trim().slice(0, 40);
+  if (n) await chrome.storage.local.set({ "ponte.nomePc": n }); else await chrome.storage.local.remove("ponte.nomePc");
+  dice(n ? `Il telefono vedrà «${n}».` : "Il telefono vedrà il nome di base.", true);
+});
+$("nolista").addEventListener("change", async () => {
+  await chrome.storage.local.set({ "registro.no": $("nolista").checked });
+  dice($("nolista").checked ? "Questo PC esce dalla lista degli altri telefoni." : "Questo PC torna nella lista.", true);
+});
+
 chrome.storage.onChanged.addListener((ch, area) => { if (area === "session" && (ch.ponte || ch.stazione)) aggiorna(); });
 setInterval(aggiorna, 15000);
 aggiorna();

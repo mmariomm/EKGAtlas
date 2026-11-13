@@ -25,6 +25,11 @@
       {
         "name": "PONTE",
         "class_name": "PonteStanza"
+      },
+      {
+        // the PS Assist PC registry (⋯ → Dispositivi): one object, «registro»
+        "name": "REGISTRO",
+        "class_name": "PonteRegistro"
       }
     ]
   },
@@ -33,6 +38,12 @@
       "tag": "ponte-v1",
       "new_sqlite_classes": [
         "PonteStanza"
+      ]
+    },
+    {
+      "tag": "registro-v1",
+      "new_sqlite_classes": [
+        "PonteRegistro"
       ]
     }
   ],

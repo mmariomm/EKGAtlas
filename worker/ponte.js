@@ -16,7 +16,7 @@
  * terrebbe sveglio fino a 15 minuti.
  */
 import { DurableObject } from "cloudflare:workers";
-import { Stanza, PING, PONG, FILE_APP, leggiStanza, intestazioniApp } from "./ponte-logica.js";
+import { Stanza, Registro, PING, PONG, FILE_APP, leggiStanza, intestazioniApp, leggiProvaRegistro, INTESTAZIONI_ANNUNCIO } from "./ponte-logica.js";
 
 const APERTA = 1;   // WebSocket.OPEN
 
@@ -53,6 +53,11 @@ export class PonteStanza extends DurableObject {
   }
 
   async fetch(request) {
+    // (il registro dei PC: la prova di lettura del telefono, controllata con le chiavi d'entrata di questa stanza)
+    if (new URL(request.url).pathname === "/ponte/registro/prova") {
+      const r = this.stanza.provaRegistro(leggiProvaRegistro(await request.text()), Date.now());
+      return new Response(r.ok ? "ok" : "no", { status: r.ok ? 200 : r.stato });
+    }
     const r = leggiStanza(new URL(request.url));
     if (!r.ok) return new Response(r.perche, { status: r.stato });
     const { 0: client, 1: server } = new WebSocketPair();
@@ -74,9 +79,56 @@ export class PonteStanza extends DurableObject {
   alarm() {}
 }
 
+// Il registro dei PC con PS Assist (ponte-logica.js, «il registro»): un Durable Object solo, «registro», con
+// l'elenco in un valore del suo SQLite. Nessuna presa e nessuna sveglia: si sveglia a un annuncio (al più uno
+// ogni 30 minuti per PC col gestionale aperto) o a una lettura (il medico che apre ⋯ → Dispositivi), risponde
+// in qualche millisecondo e torna a dormire. Senza SQLite: 503, mai una memoria al suo posto.
+export class PonteRegistro extends DurableObject {
+  constructor(ctx, env) {
+    super(ctx, env);
+    const kv = ctx.storage && ctx.storage.kv && typeof ctx.storage.kv.get === "function" ? ctx.storage.kv : null;
+    this.registro = kv ? new Registro({ leggi: () => kv.get("elenco") ?? null, scrivi: (v) => kv.put("elenco", v), ip: new Map() }) : null;
+  }
+  async fetch(request) {
+    if (!this.registro) return new Response("archivio", { status: 503 });
+    const ip = request.headers.get("x-ip") || "";
+    const r = new URL(request.url).pathname === "/elenco" ? this.registro.elencoPer(ip, Date.now()) : this.registro.annuncia(await request.text(), ip, Date.now());
+    return new Response(r.corpo, { status: r.stato });
+  }
+}
+// il corpo di un POST, al più `max` caratteri (null se di più)
+async function corpoBreve(request, max) {
+  if (Number(request.headers.get("content-length") || 0) > max) return null;
+  const t = await request.text();
+  return t.length > max ? null : t;
+}
+async function registroFetch(request, env, p) {
+  const h = INTESTAZIONI_ANNUNCIO;
+  if (request.method !== "POST") return new Response("solo POST", { status: 405, headers: h });
+  if (!env.REGISTRO) return new Response("registro non configurato", { status: 503, headers: h });
+  const ip = request.headers.get("cf-connecting-ip") || "";
+  const reg = env.REGISTRO.get(env.REGISTRO.idFromName("registro"));
+  const fuori = { method: "POST", headers: { "x-ip": ip } };
+  if (p === "/ponte/registro") {
+    const testo = await corpoBreve(request, 2000);
+    if (testo == null) return new Response("troppo grande", { status: 413, headers: h });
+    const r = await reg.fetch("https://registro/annuncia", { ...fuori, body: testo });
+    return new Response(await r.text(), { status: r.status, headers: h });
+  }
+  // l'elenco: prima la stanza dice se la prova è buona, poi il registro (solo dallo stesso sito: niente CORS)
+  const testo = await corpoBreve(request, 1000);
+  const m = testo == null ? null : leggiProvaRegistro(testo);
+  if (!m) return new Response("prova non valida", { status: 400 });
+  const pr = await env.PONTE.get(env.PONTE.idFromName(m.r)).fetch("https://stanza/ponte/registro/prova", { method: "POST", body: testo });
+  if (!pr.ok) return new Response("no", { status: pr.status === 429 || pr.status === 503 ? pr.status : 403 });
+  const r = await reg.fetch("https://registro/elenco", fuori);
+  return new Response(await r.text(), { status: r.status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
+}
+
 export async function ponteFetch(request, env) {
   const url = new URL(request.url);
   const p = url.pathname;
+  if (p === "/ponte/registro" || p === "/ponte/registro/elenco") return registroFetch(request, env, p);
   if (p === "/ponte/ws") {
     if ((request.headers.get("upgrade") || "").toLowerCase() !== "websocket") return new Response("serve una WebSocket", { status: 426 });
     // una stanza che non può esistere non sveglia nessun Durable Object
