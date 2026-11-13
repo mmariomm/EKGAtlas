@@ -2671,6 +2671,11 @@ catch (e) { console.error("PS Assist: il ponte verso l'iPhone non parte", e); }
 // lì spegne la stazione, non il resto.
 try { importScripts("stazione-sw.js"); }
 catch (e) { console.error("PS Assist: la stazione di stampa non parte", e); }
+// La build «Stampa Infermeria» (solo stazione): il suo poco in più (infermeria-sw.js).
+if (self.PSA_SOLO_STAZIONE === true) {
+  try { importScripts("infermeria-sw.js"); }
+  catch (e) { console.error("PS Assist: la stazione dell'infermeria non parte", e); }
+}
 
 // «Ricetta SISS» (ricetta-sw.js): la ricetta del pannello consegnata a una
 // scheda del Prescrittivo, che la compila e si ferma sull'Anteprima. È una

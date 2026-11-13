@@ -19,6 +19,7 @@
   .stato .riga { display: block; margin-top: 3px; font-size: 13px; opacity: .85; }
   .qrsec { margin-top: 16px; display: grid; grid-template-columns: auto 1fr; gap: 20px; align-items: center; border: 1px solid var(--bordo); border-radius: 12px; padding: 16px; }
   .qrsec[hidden] { display: none; }
+  .solo .extra { display: none; }
   #qr { width: 220px; height: 220px; }
   #qr svg { width: 100%; height: 100%; display: block; }
   .qrsec p { margin: 0 0 8px; }
@@ -49,7 +50,7 @@
   @media (max-width: 560px) { body { padding: 16px; } .box { padding: 18px 16px 22px; } .qrsec { grid-template-columns: 1fr; justify-items: center; text-align: center; } .riga2 { grid-template-columns: 1fr; } }
 </style></head><body>
 <div class="box">
-  <h1><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9V3h12v6"/><rect x="3" y="9" width="18" height="8" rx="2"/><path d="M6 14h12v7H6z"/></svg>PS Assist <small>· Stazione di stampa</small></h1>
+  <h1><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9V3h12v6"/><rect x="3" y="9" width="18" height="8" rx="2"/><path d="M6 14h12v7H6z"/></svg>PS Assist <small id="sottotitolo">· Stazione di stampa</small></h1>
   <div id="stato" class="stato"><b>…</b></div>
   <div id="qrsec" class="qrsec" hidden>
     <div id="qr" role="img" aria-label="Il QR della stazione"></div>
@@ -61,8 +62,8 @@
     </div>
   </div>
 
-  <h2>Nome</h2>
-  <div class="campo"><div style="flex:1"><label for="nome">Il PC del medico la chiama così</label><input id="nome" maxlength="40" autocomplete="off" spellcheck="false"></div></div>
+  <h2 class="extra">Nome</h2>
+  <div class="campo extra"><div style="flex:1"><label for="nome">Il PC del medico la chiama così</label><input id="nome" maxlength="40" autocomplete="off" spellcheck="false"></div></div>
 
   <h2>Stampanti</h2>
   <div id="sst" class="stato" hidden></div>
@@ -76,14 +77,15 @@
   </div>
   <div id="sm" class="msg"></div>
 
-  <h2>Ultimi fogli</h2>
-  <ul id="lavori"></ul>
+  <h2 class="extra">Ultimi fogli</h2>
+  <ul id="lavori" class="extra"></ul>
 
   <div class="piede">
-    <span class="piano">Tieni Chrome aperto su questo PC: la pagina può restare chiusa.</span>
+    <span class="piano" id="piede">Tieni Chrome aperto su questo PC: la pagina può restare chiusa.</span>
     <button class="via" id="scollega" hidden>Scollega</button>
   </div>
 </div>
+<script src="sola-lettura.js"></script>
 <script src="qr.js"></script>
 <script src="stazione.js"></script>
 </body></html>

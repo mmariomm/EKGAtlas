@@ -5,3 +5,6 @@
 // (tools/dist.mjs, nella copia dell'estensione dello zip «Lettura e stampa»);
 // qui, nella sorgente, resta `false`. Non si modifica a mano.
 self.PSA_SOLA_LETTURA = false;
+// La build «Stampa Infermeria» (tools/lettura.mjs) è anche SOLO STAZIONE: la
+// stazione di stampa sempre sul ponte, niente iPhone associato a questo PC.
+self.PSA_SOLO_STAZIONE = false;

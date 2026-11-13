@@ -124,45 +124,48 @@ Assist e caricala di nuovo («Carica estensione non pacchettizzata»).
 
 ---
 
-## PS Assist · Lettura e stampa: la build mini di sola lettura
+## Installare la stampa in Infermeria
 
-Oltre all'estensione completa c'è una **seconda build**, «**PS Assist · Lettura e stampa**», per un
-altro PC: una **porta d'ingresso in sola lettura** per l'iPhone del medico, e una stazione di stampa.
-Dal telefono, su un PC così, si **vede tutto** (pazienti, esiti, valori e referti, cartella, terapie)
-e si **stampa** (un PDF, la ristampa di una richiesta), ma **non si scrive**: niente ordini, niente
-terapie, niente cartella salvata, niente «Accetta». Serve dove il medico vuole poter guardare e
-stampare da un secondo computer — per esempio quello dell'infermeria — senza portarci l'estensione
-intera.
+Sul PC dell'infermeria non serve PS Assist intera: basta la **stazione di stampa**, una build a
+parte, «**PS Assist · Stampa Infermeria**». Riceve dal PC del medico le etichette e i fogli A4
+degli ordini e li stampa sulle stampanti dell'infermeria, da sola, **finché Chrome è aperto**:
+nessuna pagina da tenere aperta, niente nel gestionale. Niente all'avvio di Windows, nessun
+collegamento sul desktop.
 
-**Com'è fatta.** Stesse sorgenti della build completa, con una **bandiera** (`extension/sola-lettura.js`
-a `true`) e un **manifest a parte** (`tools/lettura.mjs`): un nome suo, una **chiave fissa diversa**
-(quindi un'estensione separata, con il suo id e la sua associazione dell'iPhone), e la ricetta SISS
-(una scrittura) tolta. Sulle pagine del gestionale non compare il pannello degli ordini, solo un
-piccolo distintivo **«👁️ PS Assist · sola lettura»** (diventa «iPhone collegato · Scollega» quando una
-sessione del telefono è aperta, così chi è al PC lo vede e la può chiudere). Le letture per il telefono
-si fanno lo stesso. Ogni comando di scrittura è rifiutato **sul PC**, «Questo PC è in sola lettura».
+1. **Installa.** Scarica `ps-app/dist/ps-assist-lettura.zip` (o solo
+   `ps-app/infermeria/Installa Stampa Infermeria.cmd`, tasto destro → «Salva link con nome») e fai
+   doppio clic su **«Installa Stampa Infermeria.cmd»**: anche da dentro lo zip, senza
+   amministratore. Mette l'aiutante di stampa e SumatraPDF (come `stampa\installa.cmd`) e
+   l'estensione in `%LOCALAPPDATA%\PSAssist\estensione`; quello che non trova accanto lo scarica
+   da GitHub.
+2. **Caricala in Chrome, una volta.** Alla fine si apre `chrome://extensions` e il percorso è già
+   copiato: «Modalità sviluppatore» → «Carica estensione non pacchettizzata» → Ctrl+V → «Seleziona
+   cartella». (È il solo passo a mano: senza amministratore Chrome non lascia caricare un'estensione
+   da uno script.) Si apre da sola la pagina della stazione.
+3. **Collegala e scegli le stampanti.** Sull'iPhone: **⋯ → Scansiona il QR** sul QR della pagina, e
+   «Collega». Poi Etichette e A4, con **Prova**. La pagina si chiude: si riapre dall'icona di PS
+   Assist.
+4. **Togliere:** doppio clic su **«Disinstalla Stampa Infermeria.cmd»**, poi «Rimuovi» in
+   `chrome://extensions` (si apre da sola).
 
-**Si prepara con `npm run dist`**, che accanto a `dist/ps-assist-latest.zip` scrive anche
-`dist/ps-assist-lettura.zip` (stessa versione: le due build escono insieme).
+Gli stessi passi, per chi apre lo zip, sono in `LEGGIMI.txt` in cima allo zip.
 
-**Installarla sull'altro PC** (una volta): come l'estensione normale (vedi «Installazione» qui sopra),
-ma con lo zip **`ps-assist-lettura.zip`**:
+**Com'è fatta.** Stesse sorgenti della build completa, con una **bandiera** (`extension/sola-lettura.js`:
+`PSA_SOLA_LETTURA` e `PSA_SOLO_STAZIONE` a `true`) e un **manifest a parte** (`tools/lettura.mjs`):
+un nome suo, la **chiave fissa della mini** (id `afheakecoidbgjomgfnjmnkblgfhehbl`), nessun content
+script, nessun permesso sugli indirizzi; l'icona e le Opzioni aprono `stazione.html`. Nella copia
+non ci sono le pagine del telefono (`ponte.html`, `azione.html`). La pagina mostra solo il QR, le
+due stampanti con la prova e lo stato (collegata dalle…, in linea, il PC del medico collegato,
+l'ultimo foglio). La stazione sta sul ripetitore **sempre**, finché Chrome è aperto e lei è
+collegata (`staSempre` in `stazione-sw.js`): una presa sola nel documento fuori schermo, col
+battito a cui risponde il ripetitore da sé — nessuna riconnessione a vuoto. Si prepara con
+`npm run dist`: `dist/ps-assist-lettura.zip` (il nome di sempre), con in cima i due `.cmd` e
+`LEGGIMI.txt` (da `infermeria/`).
 
-1. Scarica e scompatta `ps-assist-lettura.zip`; esegui `stampa\installa.cmd` (mette l'estensione in
-   `%LOCALAPPDATA%\PSAssist\estensione`, l'aiutante di stampa e il suo manifest, e autorizza **l'id di
-   questa build** per il native messaging — l'id è diverso da quello della build completa).
-2. In `chrome://extensions` (Modalità sviluppatore) → «Carica estensione non pacchettizzata» → la
-   cartella `%LOCALAPPDATA%\PSAssist\estensione`.
-3. Apri la sua pagina (⋮ → Opzioni, cioè `ponte.html`): dice che il PC è di sola lettura, con un
-   **QR**. Dall'iPhone, nell'app PS Assist, **⋯ → Scansiona il QR**: il PC si aggiunge alla lista dei
-   PC del telefono (💻 completo / 👁️ sola lettura), e si sceglie dal menu. Si scansiona **una volta
-   sola**: l'associazione non scade e regge riavvii, logout e aggiornamenti.
-4. Per farlo anche stazione di stampa dell'infermeria, la sua pagina «Stazione di stampa»
-   (`stazione.html`): come per la build completa (vedi «Stazione di stampa»).
-
-**Si aggiorna da sola**, come la build completa (vedi «Si aggiorna da sola»): scarica il **suo** zip, con
-tutti i controlli di sicurezza (versione, **stessa chiave**, cartella installata, host fisso) e mai
-a metà di una stampa o di un foglio per la stazione. La sua pagina mostra «Aggiornato alla versione X · data».
+**Fino alla 3.87 era la mini «Lettura e stampa»**, anche un PC di sola lettura per l'iPhone. Quel
+ruolo non c'è più. Una mini già installata **si aggiorna da sola** in questa (stessa chiave, stesso
+zip): il collegamento della stazione e le stampanti restano; l'iPhone associato a quel PC come
+«sola lettura» si scollega, una volta.
 
 ---
 
@@ -1855,8 +1858,10 @@ medico non si vedono. Su quel PC c'è la stessa PS Assist, installata come sempr
 **stazione di stampa**: riceve i fogli degli ordini dal PC del medico (anche quelli partiti dal
 telefono), li stampa sulle sue stampanti e dice com'è andata.
 
-- **Una volta, sul PC dell'infermeria** (il medico entra col suo account di Windows): l'estensione
-  e la stampa automatica come in [Installazione](#installazione-chrome--edge-pc-ospedale)
+- **Una volta, sul PC dell'infermeria**: la build «Stampa Infermeria», come in
+  [Installare la stampa in Infermeria](#installare-la-stampa-in-infermeria) (l'icona apre la
+  pagina «Stampa Infermeria»: il QR e le stampanti). Oppure, se lì serve anche la build completa:
+  l'estensione e la stampa automatica come in [Installazione](#installazione-chrome--edge-pc-ospedale)
   (`stampa\installa.cmd`). Poi le Opzioni dell'estensione (`chrome://extensions` → PS Assist →
   Dettagli → Opzioni) → **«Questo PC fa da stazione di stampa →»**: la pagina **«PS Assist ·
   Stazione di stampa»**. Lì le due stampanti, **Etichette** e **A4**, con **Prova**, e il nome

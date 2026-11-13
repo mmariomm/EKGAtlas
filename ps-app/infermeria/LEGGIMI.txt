@@ -1,0 +1,57 @@
+﻿PS Assist · Stampa Infermeria
+==============================
+
+Questo PC diventa la stazione di stampa dell'infermeria: le etichette e i fogli A4
+degli ordini del medico escono qui, da soli, senza dialogo di stampa. Le etichette
+vanno all'etichettatrice, i fogli A4 alla stampante A4.
+Funziona finché Chrome è aperto su questo PC. Non serve tenere aperta nessuna
+pagina, e PS Assist qui non entra nel gestionale.
+
+Prima di installare: avvisa l'IT (stampa\README.md, «Che cosa vede l'IT»).
+
+
+INSTALLARE (una volta, senza amministratore)
+--------------------------------------------
+1. Doppio clic su «Installa Stampa Infermeria.cmd».
+   Se Windows dice «Windows ha protetto il PC»: «Ulteriori informazioni» → «Esegui comunque».
+   Va bene anche da dentro lo zip: quello che manca lo scarica da GitHub.
+2. Alla fine si apre Chrome sulla pagina delle estensioni (chrome://extensions).
+   Accendi «Modalità sviluppatore» (in alto a destra).
+3. Premi «Carica estensione non pacchettizzata». Nella casella «Cartella» incolla
+   (Ctrl+V: il percorso è già copiato) %LOCALAPPDATA%\PSAssist\estensione
+   e premi «Seleziona cartella».
+4. Si apre da sola la pagina «PS Assist · Stampa Infermeria». Fatto.
+   (Si aggiorna da sola: non c'è altro da fare, mai.)
+
+
+COLLEGARE AL PC DEL MEDICO (una volta)
+--------------------------------------
+1. Sulla pagina della stazione c'è un QR (se l'hai chiusa: clic sull'icona di
+   PS Assist in alto a destra in Chrome; se non la vedi, nel puzzle 🧩).
+2. Il medico, sull'iPhone, nell'app PS Assist: ⋯ → Scansiona il QR, e inquadra il QR.
+3. Sul telefono tocca «Collega». La pagina dice «Collegata al PC del medico», con lo
+   stesso codice di sei cifre del telefono.
+4. Sul PC del medico, nel menu ⋯ del pannello: «Stampa su: Infermeria».
+
+
+SCEGLIERE LE STAMPANTI (una volta)
+----------------------------------
+1. Nella pagina della stazione, sotto «Stampanti»: in «Etichette» scegli l'etichettatrice.
+2. In «A4» scegli la stampante dei fogli (di partenza c'è quella predefinita di Windows).
+3. Premi «Prova» accanto a ognuna: esce una pagina di prova. Controlla che l'etichetta
+   esca dritta e intera.
+4. Chiudi la pagina: la stazione lavora lo stesso.
+
+
+TOGLIERE
+--------
+1. Doppio clic su «Disinstalla Stampa Infermeria.cmd» (questo zip), oppure su
+   %LOCALAPPDATA%\PSAssist\stampa\disinstalla.cmd.
+2. Toglie l'aiutante di stampa, SumatraPDF, le chiavi del registro dell'utente,
+   la cartella dell'estensione e i file temporanei, e controlla: dice «Fatto».
+3. Si apre chrome://extensions: su «PS Assist · Stampa Infermeria» premi «Rimuovi».
+4. Puoi cancellare questo zip e la cartella estratta.
+
+
+Se qualcosa non va: la pagina della stazione dice che cosa manca (l'aiutante di
+stampa, una stampante, il collegamento). I dettagli, per l'IT: stampa\README.md.

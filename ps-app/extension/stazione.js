@@ -8,7 +8,23 @@ const $ = (id) => document.getElementById(id);
 const hhmm = (ts) => { const d = new Date(ts); return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
 const chiedi = (m) => chrome.runtime.sendMessage(m).catch(() => null);
 const el = (tag, props = {}, ...figli) => { const x = Object.assign(document.createElement(tag), props); x.append(...figli); return x; };
-let stato = null, armata = false, tArmata = 0, qrDi = "", tQr = 0;
+let stato = null, armata = false, tArmata = 0, qrDi = "", tQr = 0, ultimo = null;
+// La build «Stampa Infermeria» (solo stazione): la pagina è solo il QR, le stampanti e lo stato
+// (con l'ultimo foglio): niente nome, niente elenco. Serve a collegarla; la stazione lavora senza.
+const SOLO = self.PSA_SOLO_STAZIONE === true;
+if (SOLO) {
+  document.documentElement.classList.add("solo");
+  document.title = "PS Assist · Stampa Infermeria";
+  $("sottotitolo").textContent = "· Stampa Infermeria";
+  $("piede").textContent = "Questa pagina serve solo a collegarla e a scegliere le stampanti: puoi chiuderla. La stazione stampa da sola, finché Chrome è aperto.";
+}
+const frase = (x) => {
+  const cosa = x.tipo === "etichette" ? "Etichette" : "A4";
+  const pag = x.pagine ? ` · ${x.pagine === 1 ? "1 pagina" : `${x.pagine} pagine`}` : "";
+  const copie = x.copie > 1 ? ` ×${x.copie}` : "";
+  const esito = { stampato: `Stampato su ${x.stampante}`, mandato: `Mandato a ${x.stampante}`, fallito: "Non stampato", sconosciuto: "Esito sconosciuto" }[x.esito] || x.esito;
+  return `${cosa}${pag}${copie} · ${esito}`;
+};
 
 function disegnaQr(url) {
   if (qrDi === url) return;
@@ -30,7 +46,9 @@ function mostra() {
   const q = s.qui, o = s.offerta;
   const [cls, testa, ...righe] = !s.host ? ["warn", "Ponte da configurare", "In questa versione di PS Assist manca l'indirizzo del ponte (ponte/host.txt): la stazione non si può collegare."]
     : q && q.conferma ? ["ok", "Collegata al PC del medico", `Dalle ${hhmm(q.dal)} · codice ${q.codice}, lo stesso sul PC del medico`,
-      q.pc ? "Il PC del medico è collegato adesso: i fogli dei suoi ordini escono qui." : "Il PC del medico adesso non è collegato: i fogli arrivano quando c'è."]
+      ...(SOLO ? [q.su ? "In linea: pronta a ricevere i fogli." : "Non in linea: riprovo da sola (la rete, o il ripetitore)."] : []),
+      q.pc ? "Il PC del medico è collegato adesso: i fogli dei suoi ordini escono qui." : "Il PC del medico adesso non è collegato: i fogli arrivano quando c'è.",
+      ...(SOLO ? [ultimo ? `Ultimo foglio: ${hhmm(ultimo.ts)} · ${frase(ultimo)}` : "Ultimo foglio: ancora niente."] : [])]
     : q ? ["", "Mi collego al PC del medico…", ""]
     : ["", "Non collegata", o ? "" : "Preparo il QR…"];
   $("stato").className = "stato " + cls;
@@ -48,12 +66,9 @@ function mostra() {
 }
 function mostraLavori(l) {
   const r = [...(l || [])].reverse();
+  ultimo = r[0] || null;
   $("lavori").replaceChildren(...(r.length ? r.map((x) => {
-    const cosa = x.tipo === "etichette" ? "Etichette" : "A4";
-    const pag = x.pagine ? ` · ${x.pagine === 1 ? "1 pagina" : `${x.pagine} pagine`}` : "";
-    const copie = x.copie > 1 ? ` ×${x.copie}` : "";
-    const esito = { stampato: `Stampato su ${x.stampante}`, mandato: `Mandato a ${x.stampante}`, fallito: "Non stampato", sconosciuto: "Esito sconosciuto" }[x.esito] || x.esito;
-    return el("li", { className: x.esito === "fallito" ? "ko" : x.esito === "stampato" ? "" : "warn" }, el("time", { textContent: hhmm(x.ts) }), el("span", { textContent: `${cosa}${pag}${copie} · ${esito}` }));
+    return el("li", { className: x.esito === "fallito" ? "ko" : x.esito === "stampato" ? "" : "warn" }, el("time", { textContent: hhmm(x.ts) }), el("span", { textContent: frase(x) }));
   }) : [el("li", { className: "vuoto", textContent: "Ancora niente." })]));
 }
 async function aggiorna() {
@@ -64,8 +79,8 @@ async function aggiorna() {
     const o = await chiedi({ t: "stazioneOfferta" });
     if (o && o.ok) stato = o.stazione;
   }
-  mostra();
   if (r && r.ok) mostraLavori(r.lavori);
+  mostra();
   if (!document.hidden) chiedi({ t: "stazioneVisto" });   // guardata: il puntino sull'icona si spegne
 }
 // il conto alla rovescia del QR, e un QR nuovo quando serve
@@ -117,7 +132,7 @@ async function stampanti() {
     : !scelte.etichette || !scelte.a4 ? "Scegli le due stampanti: i fogli arrivano qui e vanno a quella del loro tipo." : "";
   $("sst").hidden = !manca;
   $("sst").className = "stato warn";
-  $("sst").textContent = !nomi.length ? `Stampa automatica non installata su questo PC: ${manca}. Installala dalla cartella «stampa» dello zip (installa.cmd), poi riapri questa pagina.` : manca;
+  $("sst").textContent = !nomi.length ? `Stampa automatica non installata su questo PC: ${manca}. ${SOLO ? "Installala con «Installa Stampa Infermeria.cmd» (vedi LEGGIMI.txt)" : "Installala dalla cartella «stampa» dello zip (installa.cmd)"}, poi riapri questa pagina.` : manca;
 }
 for (const [tipo, x] of Object.entries(sel)) x.addEventListener("change", async () => { await chrome.storage.local.set({ stampa: { ...(await leggiScelte()), [tipo]: x.value } }); stampanti(); });
 for (const b of document.querySelectorAll("[data-prova]")) {
