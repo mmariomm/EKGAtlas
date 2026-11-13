@@ -2672,6 +2672,11 @@ catch (e) { console.error("PS Assist: il ponte verso l'iPhone non parte", e); }
 try { importScripts("stazione-sw.js"); }
 catch (e) { console.error("PS Assist: la stazione di stampa non parte", e); }
 
+// L'annuncio al registro dei PC (registro-sw.js: ⋯ → Dispositivi sul telefono): un POST piccolo, al più
+// ogni 30 minuti col gestionale aperto. Nessuna presa. Un errore lì non tocca il resto.
+try { importScripts("registro-sw.js"); }
+catch (e) { console.error("PS Assist: l'annuncio al registro non parte", e); }
+
 // «Ricetta SISS» (ricetta-sw.js): la ricetta del pannello consegnata a una
 // scheda del Prescrittivo, che la compila e si ferma sull'Anteprima. È una
 // SCRITTURA: nella build mini (sola lettura) non si carica nemmeno (niente

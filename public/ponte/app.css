@@ -258,6 +258,16 @@ main { padding: 12px var(--dx) calc(112px + env(safe-area-inset-bottom)) var(--s
 .dsp .d3 .ok { color: var(--verde); }
 .dsp .d3 .warn { color: var(--ambra); }
 .dsp .d3 .err { color: var(--rosso); font-weight: 600; }
+/* lo stato dell'associazione: la prima cosa di ogni riga */
+.dsp .d2:has(.dpar) { flex-wrap: wrap; row-gap: 4px; }
+.dsp .dpar { flex: none; margin-right: 2px; font-size: 12.5px; font-weight: 700; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+.dsp .dpar.qui { background: var(--verde); color: #fff; }
+.dsp .dpar.altro { background: var(--pill); color: var(--ambra); }
+.dsp .dpar.no { background: var(--pill); color: var(--grigio); }
+.dsp .dvisto { font-variant-numeric: tabular-nums; }
+.dsp.tocca { cursor: pointer; }
+.dgruppo { padding: 12px 14px 4px; font-size: 12px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--grigio); }
+.dgruppo + .dsp { border-top: 0; }
 .btnmini.pri { background: var(--azione); border-color: var(--azione); color: #fff; }
 .btnmini.via { color: var(--rosso); border-color: transparent; background: transparent; font-weight: 500; }
 .btnmini.tutte { display: block; margin: 8px auto 0; }

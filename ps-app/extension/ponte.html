@@ -41,6 +41,9 @@
   ol li { display: flex; gap: 10px; padding: 4px 0; border-bottom: 1px solid #F0F3F6; }
   ol li time { color: var(--grigio); font-variant-numeric: tabular-nums; flex: none; }
   .vuoto { color: var(--grigio); font-size: 12.5px; }
+  .pcnome { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+  .pcnome input[type=text] { font: inherit; padding: 7px 10px; border: 1px solid #C4D0DC; border-radius: 8px; width: 220px; }
+  .spunta { display: flex; align-items: center; gap: 6px; color: var(--grigio); font-size: 13px; }
   @media (max-width: 560px) { .qrsec { grid-template-columns: 1fr; justify-items: center; } }
   /* dentro il pannello (⋯ → iPhone, in una cornice): niente testata né bordi di pagina, scorre da sé */
   .cornice body { background: #fff; padding: 14px 24px 18px; }
@@ -82,6 +85,14 @@
   <p class="hint" style="margin-top:18px"><a href="stazione.html">Questo PC fa da stazione di stampa →</a> — le stampanti dell'infermeria (etichettatrice e A4) per i fogli del medico.</p>
 
   <p class="hint" style="margin-top:8px"><a href="ponte-prova.html" target="_blank" rel="noopener">Prova la rete</a> — controlla da questo PC che il ponte si raggiunge e regge. <span id="dove"></span></p>
+
+  <h2>Questo PC</h2>
+  <div class="pcnome">
+    <label for="nomepc">Nome sul telefono</label>
+    <input id="nomepc" type="text" maxlength="40" autocomplete="off" spellcheck="false">
+    <label class="spunta"><input id="nolista" type="checkbox"> Non comparire nella lista</label>
+  </div>
+  <p class="hint" id="nomehint">Il telefono lo vede in ⋯ → Dispositivi, con la versione e se è associato. Niente pazienti, niente nomi del gestionale.</p>
 
   <h2>Registro del ponte</h2>
   <ol id="registro"></ol>

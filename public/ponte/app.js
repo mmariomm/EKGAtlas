@@ -1563,6 +1563,7 @@
       }, () => { /* un PC più vecchio («Comando sconosciuto»), o la rete: resta quello che si sa */ }));
     }
     if (!soloQui) for (const p of S.pcs) if (!qui || p.id !== qui.id) lavori.push(controllaPc(p));
+    if (!soloQui) lavori.push(caricaRegistro());
     render();
     await Promise.all(lavori);
     render();
@@ -1628,6 +1629,66 @@
       };
     });
   }
+  // Il registro dei PC con PS Assist (worker/ponte-logica.js, «il registro»): tutti quelli che si sono
+  // annunciati negli ultimi 7 giorni, associati o no. Si legge solo provando un'associazione di questo
+  // telefono (l'HMAC con la sua chiave d'entrata, sull'ora: una richiesta HTTPS, nessuna presa), e solo
+  // quando il medico apre Dispositivi. Ogni riga porta l'impronta della stanza del telefono associato
+  // (`tel`): quelle dei PC di questo telefono si riconoscono, le altre dicono solo «un altro telefono».
+  const REG = { l: null, ts: 0, stato: "" };   // stato: "" | "controllo" | "ok" | "no"
+  const REG_FRESCO = 20e3;
+  async function impronta(etichetta, s) {
+    const h = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`ps-registro/${etichetta}|${s}`)));
+    return P.b64u(h.subarray(0, 16));
+  }
+  // le impronte di un PC di questo telefono (la stanza salvata, e quella della chiave: dopo un rinnovo possono differire)
+  async function impronteDi(p) {
+    const st = new Set([p.stanza]);
+    try { st.add((await P.chiaviCoppia(p.k)).stanza); } catch { /* niente */ }
+    return Promise.all([...st].filter((x) => /^[0-9a-f]{32}$/.test(x || "")).map((x) => impronta("tel", x)));
+  }
+  async function caricaRegistro() {
+    if (REG.stato === "controllo" || (REG.l && Date.now() - REG.ts < REG_FRESCO) || !inLinea() || !S.pcs.length) return;
+    REG.stato = "controllo";
+    try {
+      for (const p of S.pcs.slice().sort((a, b) => (S.coppia && a.id === S.coppia.id ? -1 : S.coppia && b.id === S.coppia.id ? 1 : 0))) {
+        p.impronte = await impronteDi(p);
+        const entra = [(await P.chiaviEntra(p.k)).tel, p.prossima ? (await P.chiaviEntra(p.prossima)).tel : "", p.jkVecchia && p.jkVecchia.fino > Date.now() ? p.jkVecchia.tel : ""].filter(Boolean);
+        for (const r of stanzeDi(p, (await P.chiaviCoppia(p.k)).stanza)) {
+          const t = REG.t = Math.max(Date.now(), (REG.t || 0) + 1);   // (la stanza non accetta due volte la stessa ora)
+          const prova = await Promise.all(entra.map((c) => P.provaEntra(c, "registro." + t)));
+          const risp = await fetch("/ponte/registro/elenco", { method: "POST", body: JSON.stringify({ r, t, prova }), headers: { "content-type": "text/plain" }, cache: "no-store" });
+          if (risp.ok) {
+            const d = await risp.json();
+            REG.l = (Array.isArray(d && d.pc) ? d.pc : []).filter((x) => x && typeof x.h === "string" && typeof x.nome === "string").slice(0, 500);
+            REG.ts = Date.now(); REG.stato = "ok";
+            for (const q of S.pcs) if (!q.impronte) q.impronte = await impronteDi(q);
+            return;
+          }
+          if (risp.status === 429) { REG.stato = "no"; return; }
+        }
+      }
+      REG.stato = "no";
+    } catch { REG.stato = "no"; } finally { if (REG.stato === "controllo") REG.stato = "no"; render(); }
+  }
+  const regDi = (p) => (REG.l && p.impronte ? REG.l.find((x) => x.tel && p.impronte.includes(x.tel)) : null);
+  const TIPO_REG = { pc: "PC", lettura: "Lettura e stampa", stazione: "Stazione" };
+  const adesso = (fa) => (fa < 30 * 60e3 ? "adesso" : `visto ${alle(Date.now() - fa)}`);
+  // lo stato dell'associazione: la prima cosa che si vede di ogni riga
+  const pillola = (cl, t) => `<span class="dpar ${cl}">${esc(t)}</span>`;
+  // una riga del registro che non è di questo telefono
+  function rigaRegistro(x) {
+    const tipo = TIPO_REG[x.kind] || "PC", nome = String(x.nome || "").slice(0, 40);
+    const par = x.tel ? pillola("altro", "Associato a un altro telefono") : x.kind === "stazione" ? "" : pillola("no", "Non associato");
+    const ver = verOk(x.ver);
+    const stampa = (s, chi) => `<div class="d3">🖨️ ${chi}<b>${esc(String(s.nome || "Stazione di stampa").slice(0, 40))}</b></div>`;
+    const pcDi = (tag) => tag && REG.l.find((y) => y !== x && y.sta && y.sta.tag === tag);
+    const sta = x.sta ? stampa(x.sta, "Stampa su ") : "";
+    const stz = x.stz ? (() => { const pc = pcDi(x.stz.tag); return `<div class="d3">🖨️ Stazione di stampa${x.stz.tag ? ` · <span class="ok">collegata${pc ? ` a <b>${esc(String(pc.nome).slice(0, 40))}</b>` : " a un PC"}</span>` : ` · <span class="warn">non collegata</span>`}</div>`; })() : "";
+    const tocco = !x.tel && x.kind !== "stazione" ? ` data-a="regpc" data-id="${esc(x.h)}"` : "";
+    const aiuto = S.regAiuto === x.h ? `<div class="d3">Per collegarlo: ⋯ → Scansiona il QR sul PC (PS Assist → iPhone → Associa).</div>` : "";
+    return `<div class="dsp${tocco ? " tocca" : ""}"${tocco}><div class="d1"><span class="em" aria-hidden="true">${x.kind === "lettura" ? "👁️" : x.kind === "stazione" ? "🖨️" : "💻"}</span><b>${esc(nome || tipo)}</b><span class="dtipo">${tipo}</span>${
+      ver ? `<span class="dver">v${esc(ver)}</span>` : ""}</div><div class="d2">${par}<span class="dvisto">${esc(adesso(Number(x.fa) || 0))}</span></div>${sta}${stz}${aiuto}</div>`;
+  }
   // l'ultimo foglio mandato alla stazione, in parole: «ultimo foglio stampato alle 14:32»
   function foglioDi(u) {
     if (!u || !Number.isFinite(u.fa)) return null;
@@ -1653,15 +1714,27 @@
       : x.stato === "rete" ? ["", "Senza rete" + quando]
       : ["", "Non disponibile" + quando];
     const s = info && info.stazione && typeof info.stazione === "object" ? info.stazione : null, f = s && foglioDi(s.ultimo);
+    const r = regDi(p);   // (la sua riga del registro: la stazione e quando si è annunciato, se il PC adesso non risponde)
     const sta = s ? `<div class="d3">🖨️ <b>${esc(String(s.nome || "Stazione di stampa").slice(0, 40))}</b> · <span class="${s.presente ? "ok" : "warn"}">${s.presente ? "raggiungibile" : "non raggiungibile"}</span>${
-      f ? ` · <span class="${f.tono}">${esc(f.testo)}</span>` : ""}</div>` : "";
+      f ? ` · <span class="${f.tono}">${esc(f.testo)}</span>` : ""}</div>` : r && r.sta ? `<div class="d3">🖨️ Stampa su <b>${esc(String(r.sta.nome).slice(0, 40))}</b></div>` : "";
+    // lo stato dell'associazione per primo: di questo iPhone (e se è collegato adesso), o ormai di un altro
+    const par = x.stato === "altro" ? pillola("altro", "Associato a un altro telefono") : pillola("qui", "Associato a questo iPhone");
     return `<div class="dsp${qui ? " qui" : ""}" data-pc="${esc(p.id)}"><div class="d1"><span class="em" aria-hidden="true">${kind === "lettura" ? "👁️" : "💻"}</span><b>${esc(suo || tipo)}</b>${
-      suo ? `<span class="dtipo">${tipo}</span>` : ""}${ver ? `<span class="dver">v${esc(ver)}</span>` : ""}</div><div class="d2 ${tono}" role="status"><i></i>${esc(stato)}</div>${sta}</div>`;
+      suo ? `<span class="dtipo">${tipo}</span>` : ""}${ver ? `<span class="dver">v${esc(ver)}</span>` : ""}</div><div class="d2 ${tono}" role="status">${par}<i></i>${esc(stato)}</div>${sta}</div>`;
   }
   function vistaDispositivi() {
     const qui = S.coppia && S.coppia.id;
     const l = S.pcs.slice().sort((a, b) => (a.id === qui ? -1 : b.id === qui ? 1 : 0));   // l'attivo in cima
-    return `<main>${stampaHtml()}<div class="carta dsps">${l.map(rigaDispositivo).join("")}</div></main>`;
+    // gli altri PC con PS Assist: quelli del registro che non sono di questo telefono
+    const miei = new Set(S.pcs.flatMap((p) => p.impronte || []));
+    const altri = (REG.l || []).filter((x) => !(x.tel && miei.has(x.tel)));
+    const titolo = (t) => `<div class="dgruppo">${esc(t)}</div>`;
+    const sotto = REG.stato === "controllo" && !REG.l ? `<div class="dsp"><div class="d2"><i></i>Controllo…</div></div>`
+      : REG.stato === "no" && !REG.l ? `<div class="dsp"><div class="d2"><i></i>Elenco non disponibile adesso</div></div>`
+      : altri.length ? altri.map(rigaRegistro).join("") : REG.l ? `<div class="dsp"><div class="d2"><i></i>Nessun altro PC negli ultimi 7 giorni</div></div>` : "";
+    const indietro = S.fase !== "pronta" ? `<button class="grande quiet" data-a="dispvia">‹ Indietro</button>` : "";
+    return `<main>${indietro}${stampaHtml()}<div class="carta dsps">${titolo("Collegati a questo iPhone")}${l.map(rigaDispositivo).join("")}${
+      sotto ? titolo("Altri PC con PS Assist") + sotto : ""}</div></main>`;
   }
 
   // ------------------------------------------------- il QR, inquadrato qui
@@ -2010,6 +2083,8 @@
   // lo mostra) sta nel suo nome e in fondo al ⋯.
   const testoSola = () => `Sola lettura${S.pcOperatore ? ` · gestionale di ${S.pcOperatore}` : ""}`;
   const segnoSola = () => `<span class="sola" role="img" title="${esc(testoSola())}" aria-label="${esc(testoSola())}">👁️</span>`;
+  // (le schermate senza sessione: «Dispositivi» apre la stessa lista — il registro e le sonde, una volta, al tocco)
+  const DISP_BTN = `<button class="grande quiet" data-a="dispositivi">Dispositivi</button>`;
   function piena(icona, titolo, testo, extra = "", amb = false) {
     return `<main><div class="piena"><div class="tondo${amb ? " amb" : ""}">${icona}</div><h1>${esc(titolo)}</h1>${testo}${extra}</div></main>`;
   }
@@ -2052,21 +2127,21 @@
       }
       case "avvio":
       case "collego":
-        return `<main><div class="piena"><div class="giro"></div><h1>Mi collego al PC…</h1>${S.coppia ? `<button class="grande quiet" data-a="scansiona">Annulla e scansiona il QR</button>` : ""}</div></main>`;
+        return `<main><div class="piena"><div class="giro"></div><h1>Mi collego al PC…</h1>${S.coppia ? `<button class="grande quiet" data-a="scansiona">Annulla e scansiona il QR</button>${DISP_BTN}` : ""}</div></main>`;
       case "pc":
         if (S.pari === null && !(S.ws && S.ws.readyState === 1)) {
           return piena(ICO.pc, "Non raggiungo il ponte", "<p>Controlla la connessione del telefono: riprovo da solo.</p>",
-            `<button class="grande" data-a="riapri">Riprova</button>${scansiona()}`, true);
+            `<button class="grande" data-a="riapri">Riprova</button>${DISP_BTN}${scansiona()}`, true);
         }
         return piena(ICO.pc, "Il PC non risponde", `<p>${S.pari ? "Il PC è sul ponte ma non risponde: riprovo da solo." : "Sul PC dell'ospedale deve essere aperto Chrome col pannello: lo aspetto, e riprovo da solo."}</p>
           <p>Se sul PC c'è un QR nuovo, inquadra quello.</p>`,
-          `<button class="grande" data-a="riapri">Riprova</button>${scansiona()}`, true);
+          `<button class="grande" data-a="riapri">Riprova</button>${DISP_BTN}${scansiona()}`, true);
       case "altrove":
         return piena(ICO.pc, "Aperto su un altro dispositivo", "<p>Il pannello è aperto su un altro telefono o in un'altra scheda: qui si è fermato.</p>",
           `<button class="grande" data-a="riapri">Riprendi qui</button>${scansiona(true)}`);
       case "scollegato":
         return piena(ICO.pc, "Scollegato", "<p>Il ponte non riconosce più questo telefono: qui ci si è fermati.</p>",
-          `<button class="grande" data-a="riapri">Riprova</button>${scansiona(true)}`);
+          `<button class="grande" data-a="riapri">Riprova</button>${DISP_BTN}${scansiona(true)}`);
       case "chiusa":
         // (chiusa per i 3 minuti, con l'app in sottofondo: al ritorno si riapre da sola, e
         // questa schermata non si vede nemmeno per un attimo)
@@ -2753,7 +2828,7 @@
     const fuoco = att ? { id: att.id, a: att.selectionStart, b: att.selectionEnd } : null;
     const mp = $app.querySelector(".mappa"), scorri = mp ? { x: mp.scrollLeft, y: mp.scrollTop } : null;
     const fg = $app.querySelector(".foglio .pannello"), fgy = fg ? { k: fg.dataset.k, y: fg.scrollTop } : null;   // (un foglio aperto resta dov'era)
-    const corpo = S.fase === "pronta" ? (S.vista.nome === "paziente" ? vistaPaziente() : S.vista.nome === "registrazioni" ? vistaRegistrazioni() : S.vista.nome === "dispositivi" ? vistaDispositivi() : vistaLista()) : schermata();
+    const corpo = S.fase === "pronta" ? (S.vista.nome === "paziente" ? vistaPaziente() : S.vista.nome === "registrazioni" ? vistaRegistrazioni() : S.vista.nome === "dispositivi" ? vistaDispositivi() : vistaLista()) : S.vista.nome === "dispositivi" ? vistaDispositivi() : schermata();
     disegno = true;   // (un campo tolto dal ridisegno non è un campo lasciato)
     try { $app.innerHTML = testata() + corpo + foglioStazione() + (S.avviso ? `<div class="avviso ${esc(S.avviso.tono)}${S.avviso.alto ? " alto" : ""}" role="alert"><span>${esc(S.avviso.testo)}</span>${S.avviso.azione ? `<button type="button" data-a="avvisoAz">${esc(S.avviso.azione.testo)}</button>` : ""}</div>` : ""); }
     finally { disegno = false; }
@@ -2912,6 +2987,7 @@
     else if (a === "riapri") riapri();
     else if (a === "pc") attivaPc(b.dataset.id);                 // passa a un altro PC della lista
     else if (a === "pcvia") dimenticaPcId(b.dataset.id);          // «Scollega» un PC della lista
+    else if (a === "regpc") { S.regAiuto = S.regAiuto === b.dataset.id ? "" : b.dataset.id; render(); }   // un PC non associato: come si collega
     else if (a === "cambia") cambia();
     else if (a === "scansiona") apriScan();
     else if (a === "stacollega") collegaStazione();
@@ -2923,6 +2999,7 @@
     else if (a === "stampaVia") { S.stampa = null; render(); }
     else if (a === "registrazioni") apriRegistrazioni();
     else if (a === "dispositivi") apriDispositivi();
+    else if (a === "dispvia") { S.vista = { nome: "lista", ep: "" }; render(); }   // (dalle schermate senza sessione: si torna lì)
     else if (a === "zipLista") caricaZip();
     else if (a === "zipScarica") scaricaZip(b.dataset.id);
     else if (a === "zipManda") condividiZip(b.dataset.id);
