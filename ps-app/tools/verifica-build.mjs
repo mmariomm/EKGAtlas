@@ -19,7 +19,7 @@ import { fileURLToPath } from "node:url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const guai = [];
 execFileSync("node", ["tools/build.mjs"], { cwd: root, stdio: "ignore" });
-const BUILD = ["extension/content.js", "extension/ponte-cripto.js", "bookmarklet"];
+const BUILD = ["extension/content.js", "extension/ponte-cripto.js", "extension/etichetta.js", "bookmarklet"];
 try { execFileSync("git", ["diff", "--quiet", "HEAD", "--", ...BUILD], { cwd: root }); }
 catch { guai.push(`la build committata è vecchia (${BUILD.join(", ")}): npm run dist, e committa anche quelli`); }
 

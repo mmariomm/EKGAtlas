@@ -1086,6 +1086,8 @@ async function ponteRisposta(s, d) {
     if (d.cmd === "pdf") return await ponteDaiPdf(s, d);
     if (d.cmd === "stampa") return await ponteStampa(s, d);
     if (d.cmd === "stampaReferto") return await ponteStampaReferto(s, d);
+    // l'etichetta libera (etichetta-sw.js): stampa, quindi una scrittura — mai in PONTE_LETTURA
+    if (d.cmd === "etichetta") return typeof ponteEtichetta === "function" ? await ponteEtichetta(d) : { ok: false, errore: "Etichetta non disponibile su questo PC" };
     if (d.cmd === "registrazioni") return await ponteRegistrazioni(s, d);
     if (d.cmd === "registrazione") return await ponteDaiRegistrazione(s, d);
     if (d.cmd === "registrazioneVia") return await ponteViaRegistrazione(s, d);
@@ -1317,8 +1319,10 @@ async function ponteStampaDove() {
   const o = await chrome.storage.local.get(["stampa", "stazione.coppia"]);
   const c = o["stazione.coppia"];
   const auto = !!(await stampaScelte().catch(() => null));
-  if (!c || c.revoca) return { stazione: "", auto };
-  return { stazione: corto(c.nome || "Infermeria", 40), dove: (o.stampa || {}).dove === "stazione" ? "stazione" : "qui", auto };
+  // (la misura dell'etichetta libera: il telefono impagina l'anteprima su questa, il PC il PDF)
+  const eti = typeof etichettaMisura === "function" ? { eti: await etichettaMisura().catch(() => null) } : {};
+  if (!c || c.revoca) return { stazione: "", auto, ...eti };
+  return { stazione: corto(c.nome || "Infermeria", 40), dove: (o.stampa || {}).dove === "stazione" ? "stazione" : "qui", auto, ...eti };
 }
 
 // L'ordine. Il numero lo fa il telefono quando arma «Conferma» (oid): la

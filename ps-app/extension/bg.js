@@ -1487,6 +1487,8 @@ const usciti = (f) => f.stato === "stampato" || f.stato === "mandato";
 // fra le etichette di un ordine che sta stampando le sue: aspetta che escano.
 const braccialeUrl = (u) => { try { const x = new URL(u); return x.origin === SA4 && x.searchParams.get("REPORT") === "PsoBraccialettoHMIMU"; } catch { return false; } };
 const soloBracciale = (rec) => !!rec.stampa && Array.isArray(rec.stampa.jobs) && rec.stampa.jobs.length > 0 && rec.stampa.jobs.every((j) => braccialeUrl(j.url));
+// (le copie in un lavoro solo: l'etichetta anagrafica, e l'etichetta libera ×N)
+const copieUnite = (rec) => soloBracciale(rec) || (!!rec.libera && !!rec.stampa && Array.isArray(rec.stampa.jobs) && rec.stampa.jobs.length > 0);
 const etichetteInCorso = (l, rec) => l.find((x) => x !== rec && x.stato === "stampo" && !x.interrotta && !x.ferma && !soloBracciale(x)
   && (x.fogli || []).some((f) => f.tipo === "etichette" && ["attesa", "prendo", "invio"].includes(f.stato)));
 // Com'è finito un ordine, in tre parole sole — le stesse sulla striscia, sul
@@ -1760,7 +1762,9 @@ const pdfTelId = (rid) => "pdftel" + rid;
 const daTelPdf = (rec) => String(rec.id).startsWith("pdftel");
 const pdfDalTel = (u) => { const b = PDF_TEL.get(PDF_TEL_URL.exec(u)[1]); return b ? { ok: true, pdf: b } : { ok: false, why: "non è più in memoria" }; };
 const stampaTelVista = async (rid) => ((await chrome.storage.session.get(ORD_VISTI))[ORD_VISTI] || []).includes(pdfTelId(rid));
-function stampaDalTel(rid, pdf, dest = "qui", nome = "PDF dall'iPhone") {
+// (`et`: un'etichetta libera — all'etichettatrice, ×copie: un foglio per copia, le copie in un lavoro solo come
+// l'etichetta anagrafica, copieUnite)
+function stampaDalTel(rid, pdf, dest = "qui", nome = "PDF dall'iPhone", et = null) {
   return inFilaOrd(async () => {
     const id = pdfTelId(rid);
     const visti = (await chrome.storage.session.get(ORD_VISTI))[ORD_VISTI] || [];
@@ -1774,9 +1778,10 @@ function stampaDalTel(rid, pdf, dest = "qui", nome = "PDF dall'iPhone") {
     if (!auto) return { ok: false, why: "Sul PC la stampa automatica non è impostata" };
     // (vista PRIMA di esistere: se qui qualcosa muore, rimandata non stampa)
     await chrome.storage.session.set({ [ORD_VISTI]: [...visti, id].slice(-100) });
-    const jobs = [{ name: nome, printer: "a4", url: "psassist-tel:" + id, diretto: true }];
+    const copie = et ? Math.min(10, Math.max(1, Math.trunc(et.copie) || 1)) : 1;
+    const jobs = Array.from({ length: copie }, () => ({ name: nome, printer: et ? "etichettatrice" : "a4", url: "psassist-tel:" + id, diretto: true }));
     const l = await ordLeggi();
-    l.push({ id, ep: "", paziente: nome, n: 0, url: null, opener: null, worker: null, stato: "stampo", pronta: true, ts: Date.now(), agg: Date.now(),
+    l.push({ id, ep: "", paziente: nome, n: 0, ...(et ? { libera: true } : {}), url: null, opener: null, worker: null, stato: "stampo", pronta: true, ts: Date.now(), agg: Date.now(),
       ...(verso.dest === "stazione" ? { dest: "stazione", destNome: verso.destNome } : {}),
       vista: null, resto: { mancano: [], controllare: [], nel: [] }, stampa: { jobs, tag: "Stampa", fine: null, riassunto: "", quesito: "" }, fogli: fogliNuovi(jobs, auto) });
     PDF_TEL.set(id, pdf);
@@ -1821,7 +1826,7 @@ async function ordStampaFogli(id) {
         else if (f.stato === "prendo") { f.stato = "attesa"; cambiato = true; }
       }
       if (cambiato) await ordScrivi(l);
-      copie = soloBracciale(rec) && rec.fogli.filter((f) => f.stato === "attesa").length > 1;
+      copie = copieUnite(rec) && rec.fogli.filter((f) => f.stato === "attesa").length > 1;
       return [...new Set(rec.fogli.filter((f) => f.stato === "attesa").map((f) => f.tipo))];
     });
     if (!tipi) return;
@@ -1855,7 +1860,7 @@ async function ordStampaFogli(id) {
           }
           // (l'etichetta anagrafica ×N con un aiutante che sa fare le copie: tutte
           // quelle che aspettano, un foglio all'aiutante con «copie: N»)
-          const is = copie && soloBracciale(rec) ? rec.fogli.map((_, k) => k).filter((k) => rec.fogli[k].stato === "attesa" && (rec.stampa.jobs[k] || {}).url === job.url) : [i];
+          const is = copie && copieUnite(rec) ? rec.fogli.map((_, k) => k).filter((k) => rec.fogli[k].stato === "attesa" && (rec.stampa.jobs[k] || {}).url === job.url) : [i];
           for (const k of is) rec.fogli[k].stato = "prendo";
           rec.agg = Date.now();
           await ordScrivi(l);
@@ -2671,6 +2676,10 @@ catch (e) { console.error("PS Assist: il ponte verso l'iPhone non parte", e); }
 // lì spegne la stazione, non il resto.
 try { importScripts("stazione-sw.js"); }
 catch (e) { console.error("PS Assist: la stazione di stampa non parte", e); }
+
+// L'etichetta libera (etichetta-sw.js, con l'impaginazione di etichetta.js): dal pannello e dall'iPhone
+try { importScripts("etichetta.js", "etichetta-sw.js"); }
+catch (e) { console.error("PS Assist: l'etichetta libera non parte", e); }
 
 // «Ricetta SISS» (ricetta-sw.js): la ricetta del pannello consegnata a una
 // scheda del Prescrittivo, che la compila e si ferma sull'Anteprima. È una

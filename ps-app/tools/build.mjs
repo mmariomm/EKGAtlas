@@ -4,6 +4,7 @@
  *   extension/content.js               (MV3 content script)
  *   bookmarklet/…bookmarklet.txt       (same core as a javascript: URL)
  *   extension/ponte-cripto.js          (copy of ../public/ponte/cripto.js)
+ *   extension/etichetta.js             (copy of ../public/ponte/etichetta.js)
  *   extension/ponte-host.js            (the bridge's address, from ponte/host.txt)
  * The userscript vehicle was retired in 3.2: extension (primary) plus
  * bookmarklet (locked-down PCs) cover every machine with one build less
@@ -41,6 +42,8 @@ writeFileSync(join(root, "extension/content.js"), built);
 // Il ponte verso l'iPhone: la cifratura è UNA, servita al telefono dal sito
 // (public/ponte/cripto.js) e copiata qui tale e quale per il service worker.
 copyFileSync(join(root, "../public/ponte/cripto.js"), join(root, "extension/ponte-cripto.js"));
+// (l'etichetta libera: la stessa impaginazione per l'anteprima del telefono e per il PDF del PC)
+copyFileSync(join(root, "../public/ponte/etichetta.js"), join(root, "extension/etichetta.js"));
 // …e il suo indirizzo, fissato qui una volta per tutte: nessuna pagina lo può
 // cambiare. ponte/host.txt vuoto = ponte da configurare (lo dice la pagina iPhone).
 let ponteHost;

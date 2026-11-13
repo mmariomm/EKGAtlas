@@ -2084,6 +2084,64 @@ if (await prova("doppio clic sulle icone di stampa del gestionale: uno apre il P
   await scelte(ATTIVA);   // (le stampanti di prima: com'era)
 }
 
+// ---- l'etichetta libera (⋯ → Etichetta): anteprima, PDF uguale, copie, una volta sola ----------------
+if (await prova("l'etichetta libera dal pannello: l'anteprima alla misura vera, il PDF uguale, ×3 in un lavoro, rimandata non si ristampa")) {
+  installa(true);
+  await scelte(ATTIVA);
+  // (i PDF che arrivano all'aiutante, per guardarli: il finto annota solo la misura)
+  await sw.evaluate(() => {
+    self.__ospiteEti = self.__ospiteEti || ospite;
+    self.__pdfEti = [];
+    ospite = (m, t) => { if (m && m.t === "stampa") self.__pdfEti.push(m.pdf); return self.__ospiteEti(m, t); };
+  });
+  await suPagina(doc, A.patientUrl);
+  await menu(doc);
+  await $panel(doc, "#etimenu").click();
+  await $panel(doc, "#etitesto").waitFor({ timeout: 8000 });
+  const TESTO = "ROSSI MARIO 01/02/1950\nProvetta extra · ore 14:30\nàèìòù °C";
+  await $panel(doc, "#etitesto").fill(TESTO);
+  await finche(async () => (await $panel(doc, "#etiant svg text").count()) === 3, 8000);
+  await $panel(doc, "#eticopie").fill("3");
+  await $panel(doc, "#eticopie").dispatchEvent("change");
+  const ant = await doc.evaluate(() => {
+    const s = document.getElementById("psassist-host").shadowRoot.querySelector("#etiant svg");
+    const r = s.getBoundingClientRect();
+    return { w: s.getAttribute("width"), h: s.getAttribute("height"), vb: s.getAttribute("viewBox"), px: [r.width, r.height],
+      righe: [...s.querySelectorAll("text")].map((t) => ({ x: +t.getAttribute("x"), y: +t.getAttribute("y"), c: +t.getAttribute("font-size"), l: +t.getAttribute("textLength"), t: t.textContent })) };
+  });
+  check(ant.w === "50.09mm" && ant.h === "25.05mm" && ant.vb === "0 0 142 71" && Math.abs(ant.px[0] - 142 * 96 / 72) < 2,
+    `l'anteprima ha la misura vera dell'etichetta: 50×25 mm (got ${ant.w}×${ant.h}, ${ant.px.map(Math.round)} px)`);
+  await shot(doc, "etichetta-pannello");
+  const prima = lavori().length;
+  await $panel(doc, "#etistampa").click();
+  const esito = await finche(async () => { const t = await $panel(doc, "#etiesito").innerText().catch(() => ""); return /Stampato|NON|Mandat|sconosciuto/.test(t) ? t : ""; }, 40000) || "";
+  const nuovi = lavori().slice(prima);
+  check(/Stampato su Zebra ZD421/.test(esito) && nuovi.length === 1 && nuovi[0].tipo === "etichette" && nuovi[0].stampante === "Zebra ZD421" && nuovi[0].copie === 3 && nuovi[0].ruota === "no"
+    && JSON.stringify(nuovi[0].pagina) === "[142,71]",
+    `«Stampa»: un lavoro all'etichettatrice, 3 copie, 142×71 pt, non girata, e il pannello dice com'è andata (got «${esito}»; ${JSON.stringify(nuovi)})`);
+  const pdf = Buffer.from((await sw.evaluate(() => self.__pdfEti))[0] || "", "base64").toString("latin1");
+  const pr = [...pdf.matchAll(/BT \/F1 ([\d.]+) Tf ([\d.]+) ([\d.]+) Td \(((?:\\.|[^\\)])*)\) Tj ET/g)].map((x) => ({ c: +x[1], x: +x[2], y: 71 - x[3], t: x[4].replace(/\\(.)/g, "$1") }));
+  const dec = (s) => Buffer.from(s, "latin1").toString("latin1");
+  check(/\/MediaBox \[0 0 142 71\]/.test(pdf) && /\/BaseFont \/Helvetica \/Encoding \/WinAnsiEncoding/.test(pdf) && !/FontFile|\/URI|http/.test(pdf)
+    && pr.length === 3 && pr.every((p, i) => p.c === ant.righe[i].c && p.x === ant.righe[i].x && Math.abs(p.y - ant.righe[i].y) < 0.011 && dec(p.t) === ant.righe[i].t)
+    && ant.righe.map((r) => r.t).join("\n") === TESTO,
+    `il PDF è l'anteprima: stessa pagina, stesse righe, stesso corpo, stessi punti; Helvetica di base, niente incorporato né da fuori (got ${JSON.stringify(pr)} vs ${JSON.stringify(ant.righe)})`);
+  const log = await doc.evaluate(() => document.getElementById("psassist-host").shadowRoot.querySelector(".log")?.textContent || "").catch(() => "");
+  const stato = await sw.evaluate(() => chrome.storage.session.get(null).then((o) => JSON.stringify(o)));
+  check(!stato.includes("ROSSI MARIO 01/02") && !stato.includes("Provetta extra"), "il testo non resta nella memoria dell'estensione (né nel giornale delle stampe)");
+  // rimandata (la risposta persa): lo stesso numero non stampa una seconda volta, e dice com'è andata
+  const r1 = await sw.evaluate(() => etichettaStampa({ testo: "PROVA", copie: 1, dest: "qui", rid: "etprova00001" }).then((s) => etichettaEsito(s)));
+  await finche(() => lavori().length > prima + 1, 15000);
+  const r2 = await sw.evaluate(() => etichettaStampa({ testo: "PROVA", copie: 1, dest: "qui", rid: "etprova00001" }).then((s) => ({ s, e: null })));
+  await sospendi(1500);
+  check(r1.tono === "ok" && r2.s.ok && r2.s.fogli[0].gia && lavori().length === prima + 2, `lo stesso numero rimandato: nessuna seconda stampa (got ${JSON.stringify(r2.s.fogli)}; ${lavori().length - prima} lavori)`);
+  // la misura cambiata dopo l'anteprima: niente stampa
+  const r3 = await sw.evaluate(() => etichettaStampa({ testo: "PROVA", copie: 1, dest: "qui", rid: "etprova00002", misura: [100, 50] }));
+  check(!r3.ok && /misura/.test(r3.errore) && lavori().length === prima + 2, `l'anteprima guardata su un'altra misura: non stampa (${r3.errore})`);
+  void log;
+  await sw.evaluate(() => { if (self.__ospiteEti) ospite = self.__ospiteEti; });
+}
+
 await ctx.close();
 rmSync(PROFILE, { recursive: true, force: true });
 rmSync(FINTO, { recursive: true, force: true });
