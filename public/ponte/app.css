@@ -530,5 +530,20 @@ main { padding: 12px var(--dx) calc(112px + env(safe-area-inset-bottom)) var(--s
 .rist.apri { flex-wrap: wrap; }
 .rist .quali { flex: 1 1 100%; display: flex; gap: 6px; }
 .rist .quali .btnmini { flex: 1; min-height: 44px; }
+/* ⋯ → Etichetta: il testo, l'anteprima alla misura vera (la stessa impaginazione del PDF), copie e dove */
+.eti { padding: 14px 16px 28px; }
+.eti .etilbl { display: block; font-size: 13px; font-weight: 650; color: var(--grigio); margin: 4px 0 6px; }
+.eti textarea { width: 100%; box-sizing: border-box; font: 17px/1.35 ui-monospace, Menlo, monospace; padding: 10px 12px; border: 1px solid var(--campo); border-radius: 12px; background: var(--carta); color: inherit; resize: vertical; }
+.etiant { margin: 12px 0; padding: 14px; background: var(--linea); border-radius: 14px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.etiant svg { max-width: 100%; height: auto; box-shadow: 0 0 0 1px var(--campo), 0 1px 4px rgba(0,0,0,.18); border-radius: 2px; }
+.etiant small { color: var(--grigio); font-size: 12px; }
+.etierr { color: #B3261E; font-weight: 650; font-size: 14px; margin: 0; }
+.etirow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 15px; }
+.etirow input { width: 64px; min-height: 40px; font-size: 17px; padding: 4px 8px; border: 1px solid var(--campo); border-radius: 10px; background: var(--carta); color: inherit; }
+.etirow button { min-height: 40px; border: 1px solid var(--campo); background: var(--carta); color: inherit; font-size: 15px; font-weight: 650; padding: 6px 12px; border-radius: 10px; }
+.etirow button.on { background: var(--azione); border-color: var(--azione); color: #fff; }
+.etiaz { display: flex; gap: 10px; flex-wrap: wrap; }
+.etiaz .grande { min-width: 0; flex: 1; padding: 13px 16px; margin-top: 12px; }
+.eti .ord { margin-top: 14px; }
 /* (3.87) in sottofondo l'app è coperta: l'istantanea di iOS (il selettore delle app) non mostra pazienti */
 .coperto #app, .coperto #pdfin { visibility: hidden !important; }

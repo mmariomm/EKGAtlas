@@ -707,7 +707,8 @@
   // nemmeno dal telefono (il PC li rifiuterebbe comunque: «Questo PC è in sola
   // lettura»). «stampa»/«ristampa» no: stampano, non scrivono.
   // («areaApri» cambia l'area della sessione del gestionale: anche lei)
-  const SCRITTURE_TEL = new Set(["ordina", "cartellaSalva", "terapiaAggiungi", "accetta", "areaApri", "registrazioneVia", "dfAggiungi", "dfSpunta", "dfTogli", "posto", "stazioneCollega"]);
+  const SCRITTURE_TEL = new Set(["ordina", "cartellaSalva", "terapiaAggiungi", "accetta", "areaApri", "registrazioneVia", "dfAggiungi", "dfSpunta", "dfTogli", "posto", "stazioneCollega",
+    "etichetta"]);   // (l'etichetta libera stampa: un tocco del medico, mai su un PC di sola lettura)
   function chiedi(cmd, args = {}, tempo = TEMPO, auto = false, o = {}) {
     return new Promise((si, no) => {
       if (solaLettura() && SCRITTURE_TEL.has(cmd)) { no(Object.assign(new Error("Sola lettura: su questo PC non si scrive"), { solaLettura: true })); return; }
@@ -1978,7 +1979,7 @@
   function testata() {
     if (S.fase !== "pronta") return "";
     const suPaz = S.vista.nome === "paziente", p = suPaz ? paziente(S.vista.ep) : null;
-    const suZip = { registrazioni: "Registrazioni", dispositivi: "Dispositivi" }[S.vista.nome] || "";   // (una pagina del ⋯: il suo titolo, e «‹»)
+    const suZip = { registrazioni: "Registrazioni", dispositivi: "Dispositivi", etichetta: "Etichetta" }[S.vista.nome] || "";   // (una pagina del ⋯: il suo titolo, e «‹»)
     const sx = suPaz || suZip ? `<button class="ico" data-a="indietro" aria-label="Tutti i pazienti">${ICO.indietro}</button>` : "";
     const tit = p ? `<b>${p.omonimo ? '<span class="om">⚠ </span>' : ""}${esc(chi(p))}</b>${p.prec ? "<small>Episodio precedente</small>" : ""}`
       : suZip ? `<b>${suZip}</b>` : suPaz ? "" : S.aggiornato ? `<small>Aggiornato alle ${hhmm(S.aggiornato)}</small>` : "";
@@ -1998,6 +1999,7 @@
       ${S.menu ? `<div class="menu" role="menu">
         ${listaPc}
         <button data-a="stampaPdf" ${stampaNo() ? "disabled" : ""}>${em("📄")}Stampa PDF${staDi() ? ` · ${esc(doveTel() === "stazione" ? staDi() : "PC")}` : ""}${stampaNo() ? ` <small>${esc(stampaNo())}</small>` : ""}</button>
+        ${solaLettura() ? "" : `<button data-a="etichetta">${em("🏷️")}Etichetta</button>`}
         <button data-a="scansiona">${em("📷")}Scansiona il QR</button>
         <button data-a="dispositivi">${em("🖥️")}Dispositivi</button>
         ${solaLettura() ? "" : `<button data-a="registrazioni"><span class="em rec" aria-hidden="true">●</span> Registrazioni</button>`}
@@ -2284,6 +2286,70 @@
         tardi: (d) => { if (d.ok) si(d.dati); else no(errDa(d)); render(); } }));
     } catch (e) {
       no(e.inviata ? Object.assign(new Error("Incerto: il PC non ha ancora risposto — guarda sul PC su che area è"), { incerto: true }) : e);
+    }
+    render();
+  }
+  // ------------------------------------------------------ l'etichetta libera
+  // ⋯ → Etichetta: poche righe, sull'etichettatrice del PC e/o in Infermeria. L'anteprima si fa QUI, con
+  // l'impaginazione che fa il PDF sul PC (etichetta.js, lo stesso file) e la misura che il PC dice (il
+  // catalogo: stampa.eti); il PC rifà la stessa impaginazione, e se la sua misura intanto è cambiata non
+  // stampa. «Stampa» è una scrittura: un tocco, un numero (rq, e rid per i fogli), 30 secondi per partire.
+  // Il testo resta in questa pagina, mai in memoria.
+  const ETI_DOVE = { qui: "PC", stazione: "", entrambi: "Tutt'e due" };
+  const etiMisura = () => (S.catalogo && S.catalogo.stampa && Array.isArray(S.catalogo.stampa.eti) ? S.catalogo.stampa.eti : null);
+  const etiDisponibili = () => {
+    const st = (S.catalogo && S.catalogo.stampa) || {}, l = [];
+    if (st.auto !== false) l.push("qui");
+    if (st.stazione) l.push("stazione");
+    if (l.length === 2) l.push("entrambi");
+    return l;
+  };
+  function apriEtichetta() {
+    S.eti = S.eti || { testo: "", copie: 1, dest: "", rq: "", rid: "", stato: "", esito: null };
+    S.vista = { nome: "etichetta", ep: "" };
+    S.menu = false;
+    window.scrollTo(0, 0);
+    render();
+  }
+  function vistaEtichetta() {
+    const e = S.eti, mis = etiMisura(), ds = etiDisponibili();
+    if (!ds.includes(e.dest)) e.dest = ds[0] || "";
+    const imp = mis && typeof PSEtichetta !== "undefined" ? PSEtichetta.impagina(e.testo, mis) : null;
+    const ant = !mis ? `<p class="etierr">Il PC non sa ancora fare le etichette: aggiorna PS Assist sul PC</p>`
+      : !imp ? `<p class="etierr">Anteprima non disponibile: ricarica l'app</p>`
+      : !imp.ok ? `<p class="etierr">${esc(imp.errore)}</p>`
+      : `${PSEtichetta.svg(imp)}<small>${Math.round(PSEtichetta.mm(imp.w))}×${Math.round(PSEtichetta.mm(imp.h))} mm · ${imp.righe.length} ${imp.righe.length === 1 ? "riga" : "righe"} · così esce</small>`;
+    const pronta = !!(imp && imp.ok && e.dest && !e.stato && pronto());
+    const x = e.esito;
+    return `<main class="eti">${stampaHtml()}
+      <label class="etilbl" for="etitesto">Testo · al massimo ${typeof PSEtichetta !== "undefined" ? PSEtichetta.MAX_RIGHE : 4} righe da ${typeof PSEtichetta !== "undefined" ? PSEtichetta.MAX_CAR : 32}</label>
+      <textarea id="etitesto" rows="4" maxlength="200" autocomplete="off" autocapitalize="characters" spellcheck="false">${esc(e.testo)}</textarea>
+      <div class="etiant" aria-live="polite">${ant}</div>
+      <div class="etirow"><label for="eticopie">Copie</label><input id="eticopie" type="number" inputmode="numeric" min="1" max="10" value="${e.copie}">
+        ${ds.length ? ds.map((k) => `<button type="button" data-a="etidove" data-d="${k}" class="${e.dest === k ? "on" : ""}" aria-pressed="${e.dest === k}">${esc(k === "stazione" ? staDi() : ETI_DOVE[k])}</button>`).join("")
+          : `<span class="etierr">${esc(STAMPA_NO)}</span>`}</div>
+      <div class="etiaz"><button class="grande" data-a="etistampa" ${pronta ? "" : "disabled"}>${e.stato ? "Stampo…" : "Stampa"}</button><button class="grande quiet" data-a="etiannulla">Annulla</button></div>
+      ${x ? `<div class="ord ${esc(x.tono)} stampa" role="status"><span class="seg-o">${x.tono === "ok" ? "✓" : x.tono === "run" ? "" : "!"}</span><span class="c"><b>${esc(x.titolo)}</b>${x.testo ? `<span>${esc(x.testo)}</span>` : ""}</span></div>` : ""}
+    </main>`;
+  }
+  async function etiStampa() {
+    const e = S.eti, mis = etiMisura();
+    if (!e || e.stato || !mis || typeof PSEtichetta === "undefined" || !PSEtichetta.impagina(e.testo, mis).ok) return;
+    if (!e.rq) { e.rq = nuovoRq(); e.rid = P.b64u(P.casuale(9)); }
+    e.stato = "invio"; e.esito = { tono: "run", titolo: e.dest === "stazione" ? `Stampo in ${staDi() || "Infermeria"}…` : "Stampo…", testo: "" };
+    render();
+    const si = (d) => { e.stato = ""; e.rq = ""; e.esito = d || { tono: "warn", titolo: "Mandata al PC", testo: "" }; };
+    const no = (err) => {
+      e.stato = "";
+      if (err.incerto) e.esito = { tono: "warn", titolo: "Non so se è stampata", testo: "guarda la stampante prima di rifarla" };
+      else { e.esito = { tono: "err", titolo: err.message || "Etichetta NON stampata", testo: "" }; e.rq = ""; }
+    };
+    try {
+      const quando = Date.now();
+      si(await chiedi("etichetta", { testo: e.testo, copie: e.copie, dest: e.dest, rid: e.rid, misura: mis, nato: Math.round(quando + S.scarto) }, ATTESA_STAMPA, false,
+        { rq: e.rq, scade: quando + 30e3, tardi: (d) => { if (d.ok) si(d.dati); else no(errDa(d)); render(); } }));
+    } catch (err) {
+      no(err.inviata ? Object.assign(new Error("Incerto"), { incerto: true }) : err);
     }
     render();
   }
@@ -2745,7 +2811,7 @@
   // le azioni che senza il PC non vanno
   // (l'ordine no: senza collegamento va in coda)
   const SERVE_PC = new Set(["valori", "pdf", "aggiornaLista", "stampaPdf", "stampaRef", "ordQui", "dfck", "dftogli", "csalva", "cricarica", "crileggi", "registrazioni", "zipLista", "zipScarica", "zipVia",
-    "trileggi", "tconferma", "accetta", "areaApri"]);
+    "trileggi", "tconferma", "accetta", "areaApri", "etistampa"]);
   function render() {
     if (premuto || trascino) { rinviato = true; return; }
     // il cursore resta dov'era: un ridisegno non deve rubare il campo a chi scrive
@@ -2753,7 +2819,7 @@
     const fuoco = att ? { id: att.id, a: att.selectionStart, b: att.selectionEnd } : null;
     const mp = $app.querySelector(".mappa"), scorri = mp ? { x: mp.scrollLeft, y: mp.scrollTop } : null;
     const fg = $app.querySelector(".foglio .pannello"), fgy = fg ? { k: fg.dataset.k, y: fg.scrollTop } : null;   // (un foglio aperto resta dov'era)
-    const corpo = S.fase === "pronta" ? (S.vista.nome === "paziente" ? vistaPaziente() : S.vista.nome === "registrazioni" ? vistaRegistrazioni() : S.vista.nome === "dispositivi" ? vistaDispositivi() : vistaLista()) : schermata();
+    const corpo = S.fase === "pronta" ? (S.vista.nome === "paziente" ? vistaPaziente() : S.vista.nome === "registrazioni" ? vistaRegistrazioni() : S.vista.nome === "dispositivi" ? vistaDispositivi() : S.vista.nome === "etichetta" && S.eti ? vistaEtichetta() : vistaLista()) : schermata();
     disegno = true;   // (un campo tolto dal ridisegno non è un campo lasciato)
     try { $app.innerHTML = testata() + corpo + foglioStazione() + (S.avviso ? `<div class="avviso ${esc(S.avviso.tono)}${S.avviso.alto ? " alto" : ""}" role="alert"><span>${esc(S.avviso.testo)}</span>${S.avviso.azione ? `<button type="button" data-a="avvisoAz">${esc(S.avviso.azione.testo)}</button>` : ""}</div>` : ""); }
     finally { disegno = false; }
@@ -2923,6 +2989,10 @@
     else if (a === "stampaVia") { S.stampa = null; render(); }
     else if (a === "registrazioni") apriRegistrazioni();
     else if (a === "dispositivi") apriDispositivi();
+    else if (a === "etichetta") apriEtichetta();
+    else if (a === "etidove") { S.eti.dest = b.dataset.d; S.eti.rq = ""; render(); }
+    else if (a === "etistampa") etiStampa();
+    else if (a === "etiannulla") { S.eti = null; S.vista = { nome: "lista", ep: "" }; render(); }
     else if (a === "zipLista") caricaZip();
     else if (a === "zipScarica") scaricaZip(b.dataset.id);
     else if (a === "zipManda") condividiZip(b.dataset.id);
@@ -2937,7 +3007,7 @@
     else if (a === "areaApri") areaApri(b.dataset.ep);
     else if (a === "modo") { S.modo = b.dataset.m === "mappa" ? "mappa" : b.dataset.m === "dafare" ? "dafare" : "lista"; try { localStorage.setItem(MODO, S.modo); } catch { /* solo in memoria */ } render(); }
     else if (a === "mappasel") { S.mappaSel = b.dataset.k; render(); }
-    else if (a === "indietro") { S.vista = { nome: "lista", ep: "" }; S.arma = null; render(); aggiornaLista(); }
+    else if (a === "indietro") { S.vista = { nome: "lista", ep: "" }; S.arma = null; S.eti = null; render(); aggiornaLista(); }
     else if (a === "aggiornaLista") aggiornaLista(false, true);
     else if (a === "dimentica") {
       if (b.dataset.sicuro !== "1") { b.dataset.sicuro = "1"; b.textContent = "Scollego? Servirà un QR nuovo"; return; }
@@ -3024,6 +3094,8 @@
       alza(t);
       ritoccaCta();
     } else if (t.id === "eocerca") { S.eoQ = t.value; render(); }
+    else if (t.id === "etitesto" && S.eti) { S.eti.testo = t.value; S.eti.rq = ""; S.eti.esito = null; render(); }
+    else if (t.id === "eticopie" && S.eti) { const n = Math.trunc(Number(t.value)); if (n >= 1 && n <= 10) { S.eti.copie = n; S.eti.rq = ""; } }
     else if (t.id === "tq" && S.tf) {
       S.tf.q = t.value;
       if (t.value.trim().length < 3) Object.assign(S.tf, { voci: null, qVoci: "", errVoci: "" });   // (le voci di prima non sono di queste lettere)
