@@ -68,7 +68,7 @@ const CAPO = new Set(["pc", "medico"]);   // chi può dire alla stanza anche la 
 
 // I file dell'app del telefono, e solo questi: un altro indirizzo sotto
 // /ponte/ è un 404, mai la pagina del sito. (Gli stessi del suo sw.js.)
-export const FILE_APP = new Set(["", "app.js", "app.css", "cripto.js", "jsqr.min.js", "sw.js", "manifest.webmanifest",
+export const FILE_APP = new Set(["", "app.js", "app.css", "cripto.js", "etichetta.js", "jsqr.min.js", "sw.js", "manifest.webmanifest",
   "icona.svg", "icona-180.png", "icona-192.png", "icona-512.png"].map((f) => "/ponte/" + f));
 
 // /ponte/ws?r=<stanza>&ruolo=pc|tel|medico|stazione

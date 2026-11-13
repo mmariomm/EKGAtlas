@@ -531,6 +531,59 @@ sezione("dal telefono, in Infermeria: un referto con 🖨️, e «Ristampa» sol
 }
 
 // ===========================================================================
+sezione("l'etichetta libera: dal telefono (anteprima, poi Stampa) e dal pannello, in Infermeria — una volta");
+{
+  await tel.reload();
+  await aspettaTel(/ROSSI MARIO/, 30000);
+  await tocca('[data-a="menu"]');
+  await tocca('.menu [data-a="etichetta"]');
+  await tel.locator("#etitesto").waitFor({ timeout: 8000 });
+  const TESTO = "BIANCHI ANNA\nUrine · ore 15:10";
+  await tel.locator("#etitesto").fill(TESTO);
+  await finche(async () => (await tel.locator(".etiant svg text").count()) === 2, 8000);
+  await tel.locator("#eticopie").fill("2");
+  await tocca('[data-a="etidove"][data-d="stazione"]');
+  // l'anteprima del telefono è quella che il PC impagina (la stessa misura, dal PC; lo stesso file)
+  const antPc = await sw.evaluate((t) => etichettaAnteprima(t), TESTO);
+  // (lo stesso serializzatore per tutt'e due: quella del PC messa in una pagina, accanto a quella che il telefono mostra)
+  const [antTel, antDaPc] = await tel.evaluate((s) => { const d = document.createElement("div"); d.innerHTML = s; return [document.querySelector(".etiant svg").outerHTML, d.firstElementChild.outerHTML]; }, antPc.svg);
+  check(antTel === antDaPc && /<text /.test(antTel), `l'anteprima sul telefono è identica, carattere per carattere, a quella da cui il PC fa il PDF (${antPc.misura} pt, l'ultima etichetta vera)`);
+  await shot(tel, "etichetta-iphone");
+  const staE = lavori("sta").length, pcE = lavori("pc").length;
+  await tocca('[data-a="etistampa"]');
+  const carta = await finche(async () => { const t = await tel.locator(".eti .ord").innerText().catch(() => ""); return /Stampat|NON|Non so/.test(t) ? t : ""; }, 60000) || "";
+  await finche(() => lavori("sta").length > staE, 10000);
+  await sospendi(1500);
+  const nuovi = lavori("sta").slice(staE);
+  check(/Stampato in Infermeria/.test(carta) && nuovi.length === 1 && nuovi[0].tipo === "etichette" && nuovi[0].stampante === "Zebra Infermeria" && nuovi[0].copie === 2
+    && JSON.stringify(nuovi[0].pagina) === JSON.stringify(antPc.misura.map(Math.round)) && lavori("pc").length === pcE,
+    `dal telefono, in Infermeria: un lavoro sull'etichettatrice della stazione, 2 copie, nella misura dell'anteprima, niente sul PC, e il telefono lo dice (got «${carta.replace(/\n+/g, " · ")}»; ${JSON.stringify(nuovi)})`);
+  const reg = await sw.evaluate(() => chrome.storage.session.get(null).then((o) => JSON.stringify(o)));
+  check(/Etichetta libera, 2 righe ×2/.test(reg) && !reg.includes("BIANCHI ANNA") && !reg.includes("Urine"), "nel Registro del ponte «Etichetta libera, 2 righe ×2», mai il testo");
+  // dal pannello del PC, in Infermeria
+  await suPagina(doc, A.patientUrl);
+  await apriPannello(doc);
+  await $panel(doc, "#menubtn").click();
+  await $panel(doc, "#etimenu").click();
+  await $panel(doc, "#etitesto").fill("LETTO 4");
+  await finche(async () => (await $panel(doc, '[data-etidove="stazione"]').count()) === 1 && (await $panel(doc, "#etiant svg").count()) === 1, 8000);
+  await $panel(doc, '[data-etidove="stazione"]').click();
+  const staP = lavori("sta").length, pcP = lavori("pc").length;
+  await $panel(doc, "#etistampa").click();
+  const esito = await finche(async () => { const t = await $panel(doc, "#etiesito").innerText().catch(() => ""); return /Stampat|NON|Mandat|sconosciuto/.test(t) ? t : ""; }, 60000) || "";
+  await sospendi(1500);
+  const nuoviP = lavori("sta").slice(staP);
+  check(/Stampato in Infermeria/.test(esito) && nuoviP.length === 1 && nuoviP[0].tipo === "etichette" && nuoviP[0].stampante === "Zebra Infermeria" && lavori("pc").length === pcP,
+    `dal pannello, in Infermeria: un'etichetta sull'etichettatrice della stazione, niente sul PC (got «${esito}»; ${JSON.stringify(nuoviP.map((x) => `${x.tipo}→${x.stampante}`))})`);
+  await $panel(doc, "#etiannulla").click();
+  // (il telefono torna dov'era: sulla pagina di ROSSI, alle Richieste)
+  await tocca('[data-a="etiannulla"]');
+  await tocca('[data-a="paz"]:has-text("ROSSI MARIO")');
+  await aspettaTel(/Richieste/, 10000);
+  await tocca('[data-a="scheda"][data-s="richieste"]');
+}
+
+// ===========================================================================
 sezione("la risposta della stazione che non arriva: «forse stampate», mai due volte");
 comportati("sta", { lento: 5000 });
 await sw.evaluate(() => { STA_ATTESA.ultimo = 2000; STA_ATTESA.esito = 1500; });

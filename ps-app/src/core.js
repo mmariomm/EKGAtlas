@@ -6446,6 +6446,16 @@
     .ttot { float: right; font-size: 11px; color: var(--neutro); font-weight: 600; }
     /* CONSEGNE: una riga per paziente, il nome in grassetto */
     .consegne .mini + .mini { margin-right: 6px; }
+    /* ⋯ → ETICHETTA: il testo, l'anteprima alla misura vera, copie e dove, Stampa · Annulla */
+    .eti textarea { width: 100%; box-sizing: border-box; font: 14px/1.4 ui-monospace, Consolas, monospace; padding: 6px 8px; border: 1px solid #C6D4E4; border-radius: 8px; resize: vertical; }
+    .etiant { margin: 10px 0; padding: 10px; background: #EEF2F6; border-radius: 8px; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+    .etiant svg { background: #fff; box-shadow: 0 0 0 1px #9FB3C8, 0 1px 4px rgba(11,44,80,.18); border-radius: 2px; }
+    .etiant small { color: var(--neutro); font-size: 11px; }
+    .etierr { color: #8C1D18; font-size: 12.5px; font-weight: 600; }
+    .etirow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 6px 0; font-size: 12.5px; }
+    .etirow input { width: 52px; padding: 3px 6px; border: 1px solid #C6D4E4; border-radius: 6px; font: inherit; }
+    .etirow .mini.on { background: var(--azione); color: #fff; border-color: var(--azione); }
+    .etiaz { display: flex; gap: 8px; margin-top: 8px; }
     .consr { padding: 6px 2px; border-bottom: 1px solid #EDF1F6; font-size: 12.5px; line-height: 1.45; color: #35506B; overflow-wrap: anywhere; }
     .consr b { color: var(--testo); }
     /* DA FARE. L'icona: le spunte tonde e quante voci sono aperte. Tranquilla;
@@ -7232,7 +7242,8 @@
   // Le schermate che si aprono dal menu ⋯: il nome e l'icona della loro voce,
   // in testa al posto delle schede. E il nome delle schede, per il ‹ che ci torna.
   const VISTE_MENU = { registrazioni: ["Registrazioni", "rec"],
-    iphone: ["iPhone", "tel"], ricetta: ["Ricetta SISS", "ricetta"], terapia: ["Terapia", "terapia"], consegne: ["Consegne", "dafare"] };
+    iphone: ["iPhone", "tel"], ricetta: ["Ricetta SISS", "ricetta"], terapia: ["Terapia", "terapia"], consegne: ["Consegne", "dafare"],
+    etichetta: ["Etichetta", "etichetta"] };
   const NOME_SCHEDA = { richieste: "Richieste", esiti: "Esiti", referto: "Esiti", eo: "EO", eotesto: "EO",
     dimissioni: "Dimissioni", dimtesto: "Dimissioni", dimimport: "Dimissioni", home: "Pazienti" };
 
@@ -9789,6 +9800,7 @@
       else if (this.view === "ricetta" && this.ricettaPossibile()) body = this.viewRicetta();
       else if (this.view === "terapia" && this.terapiaPossibile()) body = this.viewTerapia();
       else if (this.view === "consegne") body = this.viewConsegne();
+      else if (this.view === "etichetta" && hasExt()) body = this.viewEtichetta();
       else if (this.view === "iphone" && hasExt()) body = this.viewIphone();
       else if (this.view === "stampa") body = this.viewStampa();
       else if (this.view === "richieste") body = this.viewIdle(patientName, ep);
@@ -9820,7 +9832,7 @@
       // whose data is on screen must be answerable at a glance, always:
       // patient in the title, episode always next to the section name.
       const inHome = (!this.runState || resoTab) && this.view === "home";
-      const section = this.runState && !resoTab ? "" : { richieste: "Richieste", esiti: "Esiti", referto: "Referto", dimissioni: "Dimissioni", dimtesto: "Dimissioni", dimimport: "Dimissioni", eo: "EO", eotesto: "EO", registrazioni: "Registrazioni", consegne: "Consegne", iphone: "iPhone", ricetta: "Ricetta", terapia: "Terapia" }[this.view] || "";
+      const section = this.runState && !resoTab ? "" : { richieste: "Richieste", esiti: "Esiti", referto: "Referto", dimissioni: "Dimissioni", dimtesto: "Dimissioni", dimimport: "Dimissioni", eo: "EO", eotesto: "EO", registrazioni: "Registrazioni", consegne: "Consegne", etichetta: "Etichetta", iphone: "iPhone", ricetta: "Ricetta", terapia: "Terapia" }[this.view] || "";
       // (i fogli di dimissione sono modelli, ma chi va a casa è questo paziente:
       // l'intestazione lo dice anche lì)
       const inDim = this.view === "dimissioni" || this.view === "dimtesto" || this.view === "dimimport";
@@ -9929,6 +9941,7 @@
                     ${this.menuSez("Strumenti", [
                       hasExt() ? `<button role="menuitem" id="tabmenu" title="Il tabellone dei Pazienti in una scheda sua: da fissare, o sul secondo schermo">${mico("tabellone")}Tabellone</button>` : "",
                       hasExt() ? `<button role="menuitem" id="pontemenu" title="Il pannello sull'iPhone: associa il telefono, prova la rete">${memo("📱")}iPhone</button>` : "",
+                      hasExt() ? `<button role="menuitem" id="etimenu" title="Poche righe scritte da te, sull'etichettatrice di questo PC o in Infermeria: prima l'anteprima, poi Stampa">${mico("etichetta")}Etichetta</button>` : "",
                       `<button role="menuitem" id="consmenu" title="Al cambio turno: una riga per paziente — posto, nome, età, da quanto è in PS, cosa aspetta, cosa c'è da fare — da copiare o stampare">${mico("dafare")}Consegne</button>`,
                       // (quelle della stanza ci sono solo sulla mappa: in fondo, così le altre non cambiano posto)
                       inStanza && !this.stanzaEdit ? `<button role="menuitem" id="stmodmenu" title="Ritocca la stanza: aggiungi, sposta e rinomina letti, sedie e aree">${mico("matita")}Modifica la stanza</button>` : ""])}
@@ -10508,7 +10521,7 @@
     }
     // la schermata dei Pazienti: quella che non è nessun'altra
     inPazienti() {
-      return !this.runState && !["esiti", "referto", "dimissioni", "dimtesto", "dimimport", "eo", "eotesto", "registrazioni", "consegne", "iphone", "richieste", "stampa", "ricetta", "terapia"].includes(this.view);
+      return !this.runState && !["esiti", "referto", "dimissioni", "dimtesto", "dimimport", "eo", "eotesto", "registrazioni", "consegne", "etichetta", "iphone", "richieste", "stampa", "ricetta", "terapia"].includes(this.view);
     }
     // In fondo alla fila delle schede, solo in Modifica: + Letto, + Sedia,
     // + Area e Fine. Si entra in Modifica dal menu «⋯».
@@ -13646,6 +13659,103 @@
         return { parti, chi: 1, testo: parti.filter(Boolean).join(" · ") };
       });
     }
+    // ⋯ → Etichetta: poche righe scritte dal medico, sull'etichettatrice di
+    // questo PC e/o in Infermeria (la stazione collegata). L'anteprima e il PDF
+    // li fa l'estensione dalla stessa impaginazione (etichetta.js): l'anteprima
+    // è alla misura vera, e il PDF è lei. «Stampa» manda, «Annulla» no. Un
+    // numero (rid) per stampa: rimandata (la risposta persa), non stampa due
+    // volte. Il testo resta solo qui, finché la schermata è aperta.
+    apriEtichetta() {
+      if (!this._eti) this._eti = { testo: "", copie: 1, dest: "", ant: null, occ: false, esito: null, rid: "" };
+      this.setView("etichetta");
+      this.etiAnteprima();
+    }
+    etiAnteprima() {
+      const e = this._eti;
+      if (!e) return;
+      const testo = e.testo, n = (e.nAnt = (e.nAnt || 0) + 1);
+      ask({ t: "etichettaAnteprima", testo }).then((r) => {
+        if (this._eti !== e || e.nAnt !== n) return;
+        e.ant = r && (r.ok || r.errore) ? r : { ok: false, errore: "L'estensione non risponde: ricarica la pagina" };
+        const d = (r && r.dove) || {};
+        if (!e.dest || (e.dest !== "stazione" && !d.qui) || (e.dest !== "qui" && !d.stazione)) e.dest = d.qui ? "qui" : d.stazione ? "stazione" : "";
+        if (this.view !== "etichetta") return;
+        // (mentre si scrive: solo l'anteprima e Stampa, il campo non si ridisegna)
+        const box = this.root.getElementById("etiant");
+        if (box && this.root.activeElement && this.root.activeElement.id === "etitesto") {
+          box.innerHTML = this.etiAntHtml();
+          const b = this.root.getElementById("etistampa");
+          if (b) b.disabled = !this.etiPronta();
+        } else this.render();
+      });
+    }
+    etiPronta() { const e = this._eti; return !!(e && e.ant && e.ant.ok && e.dest && !e.occ); }
+    etiAntHtml() {
+      const e = this._eti, a = e && e.ant;
+      if (!a) return `<small>Preparo l'anteprima…</small>`;
+      if (!a.ok) return `<div class="etierr" role="alert">${esc(a.errore || "Anteprima non disponibile")}</div>`;
+      const mm = (pt) => Math.round(pt * 25.4 / 72);
+      return `${a.svg}<small>${mm(a.misura[0])}×${mm(a.misura[1])} mm · ${a.righe} ${a.righe === 1 ? "riga" : "righe"} · corpo ${String(a.corpo).replace(".", ",")} pt · così esce</small>`;
+    }
+    viewEtichetta() {
+      const e = this._eti || (this._eti = { testo: "", copie: 1, dest: "", ant: null, occ: false, esito: null, rid: "" });
+      const d = (e.ant && e.ant.dove) || {};
+      const dove = [d.qui ? ["qui", `Questo PC (${d.qui})`] : null, d.stazione ? ["stazione", d.stazione] : null, d.qui && d.stazione ? ["entrambi", "Tutt'e due"] : null].filter(Boolean);
+      const x = e.esito;
+      return `
+        <div class="sec eti">
+          <div class="lbl">Testo · al massimo 4 righe da 32 caratteri</div>
+          <textarea id="etitesto" rows="4" maxlength="200" spellcheck="false" autocomplete="off" placeholder="Scrivi qui: ogni riga va a capo così">${esc(e.testo)}</textarea>
+          <div class="etiant" id="etiant" aria-live="polite">${this.etiAntHtml()}</div>
+          <div class="etirow"><label for="eticopie">Copie</label><input id="eticopie" type="number" min="1" max="10" step="1" value="${e.copie}">
+            ${dove.length ? `<span>Su</span>${dove.map(([k, t]) => `<button type="button" class="mini${e.dest === k ? " on" : ""}" data-etidove="${k}" aria-pressed="${e.dest === k}">${esc(t)}</button>`).join("")}`
+              : e.ant ? `<span class="etierr">Nessuna etichettatrice: impostala in ⋯ → Impostazioni, o collega una stazione di stampa</span>` : ""}</div>
+          <div class="etiaz"><button class="btn primary" id="etistampa"${this.etiPronta() ? "" : " disabled"}>${e.occ ? "Stampo…" : "Stampa"}</button><button class="btn" id="etiannulla">Annulla</button></div>
+          ${x ? `<div class="ricstato ${esc(x.tono === "run" ? "" : x.tono)}" id="etiesito" role="status"><b>${esc(x.titolo)}</b>${x.testo ? ` · ${esc(x.testo)}` : ""}</div>` : ""}
+        </div>`;
+    }
+    legaEtichetta($) {
+      const e = this._eti;
+      if (!e) return;
+      const t = $("#etitesto");
+      if (t) {
+        t.addEventListener("input", () => {
+          e.testo = t.value; e.sel = [t.selectionStart, t.selectionEnd]; e.rid = ""; e.esito = null;
+          clearTimeout(this._etiT); this._etiT = setTimeout(() => this.etiAnteprima(), 120);
+        });
+        t.addEventListener("focus", () => { e.fuoco = true; });
+        // (un ridisegno toglie il campo e lo rimette, col cursore: lì il fuoco non si è perso)
+        t.addEventListener("blur", () => setTimeout(() => { e.fuoco = !!(this.root.activeElement && this.root.activeElement.id === "etitesto"); }, 0));
+        if (e.fuoco) { t.focus(); if (e.sel) try { t.setSelectionRange(e.sel[0], e.sel[1]); } catch { /* ignore */ } }
+      }
+      $("#eticopie")?.addEventListener("change", (ev) => {
+        const n = Math.trunc(Number(ev.target.value));
+        e.copie = n >= 1 && n <= 10 ? n : Math.min(10, Math.max(1, n || 1)); e.rid = "";
+        this.render();
+      });
+      for (const b of this.root.querySelectorAll("[data-etidove]")) b.addEventListener("click", () => { e.dest = b.dataset.etidove; e.rid = ""; this.render(); });
+      $("#etiannulla")?.addEventListener("click", () => { this._eti = null; this.tornaDaVista(); });
+      $("#etistampa")?.addEventListener("click", () => this.etiStampa());
+    }
+    async etiStampa() {
+      const e = this._eti;
+      if (!this.etiPronta()) return;
+      // (un numero per stampa: lo stesso se la risposta di prima si era persa — il PC non la rifà)
+      if (!e.rid) e.rid = "et" + [...crypto.getRandomValues(new Uint8Array(8))].map((b) => b.toString(16).padStart(2, "0")).join("");
+      e.occ = true; e.esito = { tono: "run", titolo: e.dest === "stazione" ? `Stampo in ${(e.ant.dove || {}).stazione || "Infermeria"}…` : "Stampo…", testo: "" };
+      this.render();
+      const r = await ask({ t: "etichettaStampa", testo: e.testo, copie: e.copie, dest: e.dest, rid: e.rid, misura: e.ant.misura });
+      e.occ = false;
+      if (this._eti !== e) return;
+      if (r.perso) e.esito = { tono: "warn", titolo: "Non so se è stampata", testo: "guarda la stampante; Stampa di nuovo non la rifà se è già partita" };
+      else if (!r.ok) { e.esito = { tono: "err", titolo: r.errore || "Etichetta NON stampata", testo: "" }; e.rid = ""; if (r.misura) this.etiAnteprima(); }
+      else {
+        e.esito = r.dati;
+        if (!r.gia && r.nota) this.log(`${now()}  ${r.nota}`);
+        e.rid = "";   // (finita: un altro Stampa è un'altra etichetta)
+      }
+      this.render();
+    }
     viewConsegne() {
       const righe = this.consegne();
       if (!righe.length) return `<div class="sec"><div class="hint">Nessun paziente nel tabellone.</div></div>`;
@@ -15120,6 +15230,8 @@
       $("#termenu")?.addEventListener("click", () => { this.menuAperto = false; this.setView("terapia"); });
       if (this.view === "terapia") this.legaTerapia($);
       $("#consmenu")?.addEventListener("click", () => { this.menuAperto = false; this.setView("consegne"); });
+      $("#etimenu")?.addEventListener("click", () => { this.menuAperto = false; this.apriEtichetta(); });
+      if (this.view === "etichetta") this.legaEtichetta($);
       $("#conscopia")?.addEventListener("click", async (e) => {
         const b = e.currentTarget;
         segnaCopia(b, await copiaTesto(this.consegne().map((r) => r.testo).join("\n")));

@@ -1033,6 +1033,8 @@ await blocco(async () => {
     { cmd: "dfTogli", ep: "1", pid: "p1" },
     { cmd: "posto", ep: "1", dove: "letto:obi2" },
     { cmd: "stazioneCollega", sta: "x", nome: "Inf" },
+    // (l'etichetta libera stampa: il mini la rifiuta, anche con rq e fresca)
+    { cmd: "etichetta", rq: "rq-etichetta-prova-01", testo: "x", copie: 1, dest: "qui", rid: "etprova00001", nato: Date.now() },
   ];
   pc.comandi.length = 0;
   let tutte = true, id = 10;
@@ -1198,6 +1200,44 @@ await blocco(async () => {
   check(/e\.code === 4001\) return altrove\(\)/.test(app) && /e\.code === 4403\) return scollegato\(\)/.test(app) && /case "scollegato":[\s\S]{0,120}"Scollegato"/.test(app),
     "4001: nessun tentativo da sé; 4403: ci si ferma e si legge «Scollegato»");
   check(/const BATTITO = 30e3, PONG = 15e3;/.test(app), "il battito: ogni 30 s, morta dopo 15 s senza «pong» (come nel progetto)");
+});
+
+// L'etichetta libera: una scrittura (stampa) — mai fra le letture del mini, fra le scritture del telefono —, e
+// l'impaginazione UNA (lo stesso file sui due lati): l'anteprima (SVG) e il PDF hanno la stessa misura, le stesse
+// righe, lo stesso corpo e gli stessi punti; il testo sta sempre dentro i margini.
+await blocco(async () => {
+  console.log("\nponte: l'etichetta libera");
+  const sw = leggi("extension/ponte-sw.js"), app = leggi("../public/ponte/app.js");
+  const lettura = /const PONTE_LETTURA = new Set\(\[([\s\S]*?)\]\);/.exec(sw)[1];
+  check(!/"etichetta"/.test(lettura), "«etichetta» NON è in PONTE_LETTURA: il mini la rifiuta");
+  check(/"etichetta"/.test(/const SCRITTURE_TEL = new Set\(\[([\s\S]*?)\]\);/.exec(app)[1]), "…e il telefono la tiene fra le scritture (SCRITTURE_TEL): su un PC di sola lettura non parte");
+  check(!/"etichetta"/.test(/const PONTE_RQ_PROPRI = new Set\(\[([^\]]*)\]\)/.exec(sw)[1]), "…col suo rq nel giro comune: rimandata dopo un riavvio, «non si sa», mai rifatta");
+  check(leggi("extension/etichetta.js") === leggi("../public/ponte/etichetta.js"), "l'estensione e il telefono impaginano con lo stesso file (extension/etichetta.js = public/ponte/etichetta.js)");
+  await import(join(root, "../public/ponte/etichetta.js"));
+  const E = globalThis.PSEtichetta;
+  const testi = ["X", "ROSSI MARIO", "ROSSI MARIO 01/02/1950\nProvetta extra · ore 14:30\nàèìòù °C (urg.)\nWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW", "iiiiiiiiiiiiiiii\n\n  rientro  "];
+  let tutte = true;
+  for (const m of [[142, 71], [283, 142], [113, 57]]) for (const t of testi) {
+    const imp = E.impagina(t, m);
+    // (su un'etichetta piccola, troppo testo: si dice, non si stampa piccolissimo né tagliato)
+    if (!imp.ok) { if (!/Troppo testo/.test(imp.errore) || m[0] > 142) { tutte = false; console.log(`    (${m}: ${imp.errore})`); } continue; }
+    const pdf = Buffer.from(E.pdf(imp), "base64").toString("latin1"), svg = E.svg(imp);
+    const box = /\/MediaBox \[0 0 ([\d.]+) ([\d.]+)\]/.exec(pdf), vb = /viewBox="0 0 ([\d.]+) ([\d.]+)"/.exec(svg);
+    const pr = [...pdf.matchAll(/BT \/F1 ([\d.]+) Tf ([\d.]+) ([\d.]+) Td \(((?:\\.|[^\\)])*)\) Tj ET/g)].map((x) => ({ c: +x[1], x: +x[2], y: +x[3], t: x[4].replace(/\\(.)/g, "$1") }));
+    const sr = [...svg.matchAll(/<text x="([\d.]+)" y="([\d.]+)"[^>]*font-size="([\d.]+)"[^>]*textLength="([\d.]+)"[^>]*>([^<]*)<\/text>/g)]
+      .map((x) => ({ x: +x[1], y: +x[2], c: +x[3], l: +x[4], t: x[5].replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&amp;/g, "&") }));
+    const piene = imp.righe.filter((r) => r.t.trim());
+    const ok = imp.ok && box && vb && +box[1] === imp.w && +box[2] === imp.h && +vb[1] === imp.w && +vb[2] === imp.h
+      && pr.length === piene.length && sr.length === piene.length
+      && pr.every((p, i) => p.c === imp.corpo && sr[i].c === imp.corpo && p.x === sr[i].x && Math.abs(imp.h - p.y - sr[i].y) < 0.011 && p.t === sr[i].t && p.t === piene[i].t
+        && p.x >= imp.margine - 0.01 && p.x + sr[i].l <= imp.w - imp.margine + 0.02 && p.y - 0.25 * imp.corpo >= imp.margine - 0.2 && p.y + 0.75 * imp.corpo <= imp.h - imp.margine + 0.2);
+    if (!ok) { tutte = false; console.log(`    (${m} «${t.replace(/\n/g, "⏎")}»: ${JSON.stringify({ imp, pr, sr })})`); }
+  }
+  check(tutte, "per ogni misura e testo: il PDF e l'anteprima hanno la stessa pagina, le stesse righe, lo stesso corpo e gli stessi punti, e niente esce dai margini");
+  const lungo = E.impagina("x".repeat(E.MAX_CAR + 1)), tante = E.impagina("a\nb\nc\nd\ne"), vuoto = E.impagina(" \n "), strano = E.impagina("€ ☃ ñ");
+  check(!lungo.ok && /32 caratteri/.test(lungo.errore) && !tante.ok && /4 righe/.test(tante.errore) && !vuoto.ok && strano.ok && strano.righe[0].t === "? ? ñ",
+    `i limiti: ${E.MAX_RIGHE} righe da ${E.MAX_CAR}, niente vuoto; quello che Helvetica non sa scrivere diventa «?» (anche nell'anteprima) (got «${strano.righe && strano.righe[0].t}»)`);
+  check(E.impagina("ROSSI").corpo > E.impagina("ROSSI MARIO 01/02/1950 PROVETTA").corpo && E.impagina("A").corpo <= 28, "il testo si adatta: corto, grande (al più 28 pt); lungo, più piccolo — mai tagliato");
 });
 
 console.log(fail ? `\nPONTE-CRIPTO: ${fail} CHECK FALLITI\n` : "\nPONTE-CRIPTO: TUTTO OK\n");
