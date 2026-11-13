@@ -15,12 +15,14 @@
  * (`compilato`). La stessa domanda due volte (stesso id) è la stessa ricetta.
  * Nessuna richiesta al SISS da qui: solo messaggi alle schede.
  *
- * I preferiti (storage.local «ricetta.preferiti.v1»): gli ultimi farmaci visti
- * davvero in un'Anteprima del SISS — codice, descrizione, quantità. Niente del
- * paziente.
+ * I «Farmaci frequenti» (storage.local «ricetta.preferiti.v1», per PC): i
+ * farmaci visti davvero in un'Anteprima del SISS — codice, descrizione,
+ * quantità, «non sostituibile», i campi della riga che il medico ha scritto a
+ * mano (posologia, note: `campi`), quante volte (`n`) e l'ultima (`ts`), al più
+ * 50. Niente del paziente: né nome, né codice fiscale, né diagnosi, né esenzione.
  */
 
-const RIC = "ricetta", RIC_PREF = "ricetta.preferiti.v1", RIC_PREF_MAX = 12;
+const RIC = "ricetta", RIC_PREF = "ricetta.preferiti.v1", RIC_PREF_MAX = 50;
 const RIC_PR = "https://operatorisiss.servizirl.it";
 const RIC_PR_URL = RIC_PR + "/prescrittivoRegionale/*";
 const RIC_MENU = "https://dcss.cgi.crs.lombardia.it/menusiss/";
@@ -60,13 +62,28 @@ function ricVoci(l) {
     if (!ricCodiceBuono(codice) || out.some((x) => x.codice === codice)) continue;
     const tipo = ricTipo(codice);
     out.push(tipo === "farmaco"
-      ? { codice, tipo, descr: ricCorto(v.descr, 90), cerca: ricCorto(v.cerca, 40), qta: Math.max(1, Math.min(99, Math.round(Number(v.qta) || 1))), ns: !!v.ns }
+      ? { codice, tipo, descr: ricCorto(v.descr, 90), cerca: ricCorto(v.cerca, 40), qta: Math.max(1, Math.min(99, Math.round(Number(v.qta) || 1))), ns: !!v.ns,
+        ...(ricCampi(v.campi) ? { campi: ricCampi(v.campi) } : {}), ...(Number(v.n) > 0 ? { n: Math.min(9999, Math.round(Number(v.n))) } : {}) }
       : { codice, tipo, descr: ricCorto(v.descr, 90), cerca: ricCorto(v.cerca, 40) });
   }
   if (new Set(out.map((x) => x.tipo)).size > 1) out.misto = true;
   return out;
 }
 const RIC_MISTO = "Una ricetta alla volta: farmaci o visite";
+// I campi della riga di un farmaco (posologia, note…), per nome del campo nel
+// SISS: solo testo corto, mai un campo che parla del paziente.
+const RIC_CAMPO_NO = /cf|fiscal|patient|paziente|assistit|esenz|exempt|diagnos|quesit|nome|name|tessera|card/i;
+function ricCampi(o) {
+  if (!o || typeof o !== "object" || Array.isArray(o)) return null;
+  const out = {};
+  for (const [k, v] of Object.entries(o).slice(0, 8)) {
+    if (!/^[A-Za-z][\w.-]{0,40}$/.test(k) || RIC_CAMPO_NO.test(k) || /^(quantity|substitutability)$/.test(k)) continue;
+    const t = ricCorto(v, 120).replace(/\s+/g, " ").trim();
+    if (!t || RIC_CF.test(t.toUpperCase()) || /[A-Z]{6}\d{2}[A-Z]\d{2}[A-Z]\d{3}[A-Z]/i.test(t)) continue;
+    out[k] = t;
+  }
+  return Object.keys(out).length ? out : null;
+}
 
 // Le schede del Prescrittivo, una per una: entrata? ha già una ricetta? il
 // medico ci sta scrivendo? La prima libera vince.
@@ -89,7 +106,63 @@ async function ricMenuDavanti(j) {
   const t = m ? await chrome.tabs.update(m.id, { active: true }).catch(() => null) : await chrome.tabs.create({ url: RIC_MENU, active: true }).catch(() => null);
   if (t && t.windowId != null) chrome.windows.update(t.windowId, { focused: true }).catch(() => {});
   j.menu = t ? t.id : null;
+  j.menuVoce = 0;
+  if (t && m) setTimeout(() => ricMenuPremi(t.id), 0);   // (già aperto: forse già entrato)
 }
+// «Prescrittivo Regionale» nel menu del SISS, premuto da sé: solo per la
+// ricetta che aspetta il login e solo nel menu che ha aperto lei, una volta.
+// La voce la si trova dal testo che il medico vede; se il menu c'è (il medico
+// è entrato) ma la voce no, entro pochi secondi: non si indovina, lo si dice
+// e la preme lui. Il link si apre com'è scritto nella pagina (mai un indirizzo
+// fatto da noi), e solo se porta al Prescrittivo; altrimenti un clic sulla voce.
+function ricMenuVoce(premi) {
+  const norm = (x) => String(x || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().replace(/\s+/g, " ").trim();
+  const voci = () => [...document.querySelectorAll("a, button, [role=button], [role=menuitem]")]
+    .filter((el) => /^PRESCRITTIVO REGIONALE\b/.test(norm(el.textContent)));
+  const menu = () => !!document.querySelector("a.list-item") || voci().length > 0;
+  return new Promise((ok) => {
+    const t0 = Date.now();
+    const giro = () => {
+      const l = voci();
+      if (l.length === 1) {
+        const a = l[0];
+        let href = "";
+        try { const u = new URL(a.href || "", location.href); if (u.origin === "https://operatorisiss.servizirl.it" && u.pathname.startsWith("/prescrittivoRegionale/")) href = u.href; } catch { /* niente */ }
+        if (premi && !href) a.click();
+        return ok({ menu: true, trovata: true, href, premuta: premi && !href });
+      }
+      if (!menu() && Date.now() - t0 > 1500) return ok({ menu: false });
+      if (Date.now() - t0 > 5000) return ok({ menu: true, trovata: false, doppie: l.length > 1 });
+      setTimeout(giro, 250);
+    };
+    giro();
+  });
+}
+function ricMenuPremi(tabId) {
+  return ricInFila(async () => {
+    const j = await ricLeggi();
+    if (!j || j.stato !== "login" || j.menu !== tabId || j.menuVoce || ricScaduta(j)) return;
+    // una scheda del Prescrittivo c'è già (il medico ci sta entrando): niente
+    if ((await chrome.tabs.query({ url: RIC_PR_URL }).catch(() => [])).length) return;
+    const [r] = await chrome.scripting.executeScript({ target: { tabId }, func: ricMenuVoce, args: [false] }).catch(() => []);
+    const x = r && r.result;
+    if (!x || !x.menu) return;   // ancora l'accesso: si riprova al prossimo caricamento
+    if (!x.trovata) {
+      j.menuVoce = -1; j.agg = Date.now();
+      j.vista = { testo: "Nel menu del SISS non trovo «Prescrittivo Regionale»: aprilo tu, poi continuo da solo", tono: "warn" };
+      await ricScrivi(j);
+      return;
+    }
+    j.menuVoce = Date.now();
+    j.vista = { testo: "Apro il Prescrittivo Regionale dal menu del SISS…", tono: "run" };
+    await ricScrivi(j);
+    if (x.href) await chrome.tabs.create({ url: x.href, active: true, openerTabId: tabId }).catch(() => null);
+    else await chrome.scripting.executeScript({ target: { tabId }, func: ricMenuVoce, args: [true] }).catch(() => null);
+  });
+}
+chrome.tabs.onUpdated.addListener((id, info, tab) => {
+  if ((info.status === "complete" || info.url) && String((tab && tab.url) || "").startsWith(RIC_MENU)) ricMenuPremi(id).catch(() => {});
+});
 // Cerca la scheda e le dà la ricetta; se non c'è, il menu del SISS e si
 // aspetta (riprovo da solo: una scheda del Prescrittivo che entra lo dice).
 async function ricAvvia(j) {
@@ -110,9 +183,12 @@ async function ricAvvia(j) {
   }
   await ricScrivi(j);
 }
-// I preferiti: il più recente davanti, uno per codice, al più 12.
-// (un farmaco: codice, descrizione, quantità, dall'Anteprima; una visita:
-// codice, descrizione e tipo, quando la ricetta l'ha inserita davvero)
+// I farmaci frequenti: uno per codice, quante volte e l'ultima, al più 50
+// (via i meno usati, poi i più vecchi). Quelli fissati dal medico (`pin`: il
+// suo ordine, 1, 2, …) stanno davanti e non se ne vanno mai. Un farmaco: codice, descrizione,
+// quantità, «non sostituibile» e i campi scritti a mano, dall'Anteprima; una
+// visita: codice, descrizione e tipo, quando la ricetta l'ha inserita davvero.
+// I campi che non arrivano (una ricetta fatta da noi) restano quelli imparati.
 async function ricImpara(voci) {
   const l = ((await chrome.storage.local.get(RIC_PREF))[RIC_PREF]) || [];
   let pref = Array.isArray(l) ? l.filter((x) => x && ricCodiceBuono(String(x.codice || ""))) : [];
@@ -121,12 +197,39 @@ async function ricImpara(voci) {
     if (!ricCodiceBuono(codice)) continue;
     const descr = ricCorto(v.descr, 90).replace(/\s+/g, " ").trim();
     if (!descr) continue;
+    const prima = pref.find((x) => x.codice === codice) || {};
+    const n = Math.min(9999, (Number(prima.n) || (prima.codice ? 1 : 0)) + 1);
+    const campi = ricCampi(v.campi) || ricCampi(prima.campi);
+    const pin = Number(prima.pin) > 0 ? { pin: Number(prima.pin) } : {};
     const voce = ricTipo(codice) === "farmaco"
-      ? { codice, descr, tipo: "farmaco", qta: Math.max(1, Math.min(99, Math.round(Number(v.qta) || 1))), ts: Date.now() }
-      : { codice, descr, tipo: "visita", ts: Date.now() };
+      ? { codice, descr, tipo: "farmaco", qta: Math.max(1, Math.min(99, Math.round(Number(v.qta) || 1))), ns: !!v.ns, ...(campi ? { campi } : {}), n, ts: Date.now(), ...pin }
+      : { codice, descr, tipo: "visita", n, ts: Date.now(), ...pin };
     pref = [voce, ...pref.filter((x) => x.codice !== codice)];
   }
-  await chrome.storage.local.set({ [RIC_PREF]: pref.slice(0, RIC_PREF_MAX) });
+  await ricPrefSalva(pref);
+}
+// in ordine: i fissati nel loro ordine (rinumerati 1, 2, …), poi gli altri per
+// uso; il tetto dei 50 tocca solo i non fissati
+function ricPrefSalva(pref) {
+  const fissi = pref.filter((x) => Number(x.pin) > 0).sort((a, b) => a.pin - b.pin).map((x, i) => ({ ...x, pin: i + 1 }));
+  const altri = pref.filter((x) => !(Number(x.pin) > 0)).map(({ pin, ...x }) => x)
+    .sort((a, b) => (Number(b.n) || 1) - (Number(a.n) || 1) || (b.ts || 0) - (a.ts || 0));
+  return chrome.storage.local.set({ [RIC_PREF]: [...fissi, ...altri.slice(0, Math.max(0, RIC_PREF_MAX - fissi.length))] });
+}
+// 📌 dal pannello: fissa/togli (`pin`), o il nuovo ordine dei fissati (`ordine`: i codici)
+async function ricPrefFissa(msg) {
+  const l = ((await chrome.storage.local.get(RIC_PREF))[RIC_PREF]) || [];
+  const pref = Array.isArray(l) ? l.filter((x) => x && ricCodiceBuono(String(x.codice || ""))) : [];
+  if (Array.isArray(msg.ordine)) {
+    msg.ordine.slice(0, RIC_PREF_MAX).forEach((c, i) => { const x = pref.find((y) => y.codice === c && Number(y.pin) > 0); if (x) x.pin = i + 1; });
+  } else {
+    const x = pref.find((y) => y.codice === msg.codice);
+    if (!x) return false;
+    if (msg.pin) { if (!(Number(x.pin) > 0)) x.pin = 1 + Math.max(0, ...pref.map((y) => Number(y.pin) || 0)); }
+    else delete x.pin;
+  }
+  await ricPrefSalva(pref);
+  return true;
 }
 
 // La scheda del SISS davanti (e la sua finestra).
@@ -152,7 +255,8 @@ function ricMessaggio(msg, sender, reply) {
   const daSiss = !!tab && dalPrescrittivo(sender.url);
 
   // ---- dal pannello (la pagina del paziente) ------------------------------
-  if (["ricettaNuova", "ricettaCerca", "ricettaPrepara", "ricettaFerma", "ricettaApri"].includes(msg.t) && !daGestionale) return reply({ ok: false, why: "non dal gestionale" }), true;
+  if (["ricettaNuova", "ricettaCerca", "ricettaPrepara", "ricettaFerma", "ricettaApri", "ricettaFissa"].includes(msg.t) && !daGestionale) return reply({ ok: false, why: "non dal gestionale" }), true;
+  if (msg.t === "ricettaFissa") return fai(async () => reply({ ok: await ricPrefFissa(msg) }));
   // «apri il SISS» dalla striscia: la scheda del SISS di questa ricetta, davanti (un tocco del medico)
   if (msg.t === "ricettaApri") return fai(async () => {
     const j = await ricLeggi();
