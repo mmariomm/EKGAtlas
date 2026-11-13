@@ -235,7 +235,9 @@ async function ponteMigra(c) {
   // (P2-5) `k` esce da storage.local solo quando la cassa, riletta, ce l'ha davvero
   const y = await cassaLeggi(PONTE_CASSA);
   if (!y || y.id !== id || !y.k) throw new Error("cassa: la chiave non si rilegge");
-  const nuova = { ...resto, id, gen: 0, stanza, migrata: true, rinnovaOk: true };
+  // (la chiave è quella del QR solo se il QR della 3.86 è ancora nella sua finestra: un `suQr` rimasto da prima non
+  // vale — farebbe dare alla stanza la chiave del telefono con la scadenza del QR, e poi non più)
+  const nuova = { ...resto, id, gen: 0, stanza, migrata: true, rinnovaOk: true, suQr: quiQr };
   await chrome.storage.local.set({ [PONTE_COPPIA]: nuova });
   return nuova;
 }

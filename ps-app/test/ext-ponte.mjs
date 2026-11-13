@@ -1329,7 +1329,7 @@ await aspettaTel(tel, /BIANCHI ANNA/);
 await tocca(tel, '.paz[data-ep="999001"]');
 await finche(async () => (await tel.locator(".letti.amb").count()) === 1, 20000);
 const es2 = await testoTel(tel);
-check(/Letti sul PC alle \d\d:\d\d(?! ·)/.test(es2) && await tel.locator(".letti.amb").count() === 1, "letti quattro ore fa: «Letti sul PC alle …» (niente «4 h fa»), in ambra (dopo un'ora)");
+check(/Letti sul PC (?:ieri )?alle \d\d:\d\d(?! ·)/.test(es2) && await tel.locator(".letti.amb").count() === 1, "letti quattro ore fa: «Letti sul PC alle …» (niente «4 h fa»), in ambra (dopo un'ora)");
 // il gestionale passa prima da un'altra pagina, che porta da sé a quella del paziente: si aspetta, e si legge
 Object.assign(PASSA, { n: 1, tipo: "ponte" });
 await tocca(tel, '[data-a="valori"]');

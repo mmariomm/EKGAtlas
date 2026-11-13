@@ -238,6 +238,7 @@ const taglio = (fn) => { const prima = L.PONTE.senzaProva; L.PONTE.senzaProva = 
   const prima = entra("tel", t); prova(prima, [tq], {}, t);
   const dopo = entra("tel", t + 61e3); prova(dopo, [tq], {}, t + 61e3);
   check(prima.st.provata && !dopo.st.provata && !msg(dopo).some((m) => "entrato" in m), "P2-8. la chiave del QR entra nella sua finestra; dopo la scadenza (scritta nella stanza) non entra più — anche se il PC è spento");
+  check(dopo.chiusa === 4403 && !dopo.st.aspetta, "P2-8. …e il telefono con la chiave scaduta esce con 4403 («Scollegato»: serve un QR nuovo), non aspetta muto per sempre");
 }
 {
   // P2-9: senza archivio (o con l'archivio che non risponde) la stanza non accetta nessuno — mai «nessuna chiave»
@@ -589,6 +590,20 @@ await blocco(async () => {
   const chi = await pc.ev("ponteChiSono()");
   pc.ev("pt.coppia = null");
   check(!!chi.pausa && !("operatore" in chi), "P3. il «ciao» del PC in pausa: nessun nome al telefono (né di chi è entrato, né di prima)");
+});
+await blocco(async () => {
+  // una coppia della 3.86 che prende il posto di una del QR (la stessa coppia su disco, con la chiave della 3.86): la sua
+  // chiave non è quella del QR — il PC dà alla stanza la chiave del telefono senza scadenza (prima restava suQr)
+  const pc = await pcVero();
+  await pc.pagina({ t: "ponteAssocia" });
+  await finche(() => pc.ev("pt.presa.su"));
+  const kb = P.b64u(P.casuale(32)), telKb = (await P.chiaviEntra(P.daB64u(kb))).tel;
+  await pc.ev(`(async () => { const c = (await chrome.storage.local.get("ponte.coppia"))["ponte.coppia"]; const { id, gen, stanza, ...resto } = c; await chrome.storage.local.set({ "ponte.coppia": { ...resto, usata: true, k: "${kb}" } }); await ponteAvvia(); })()`);
+  pc.salta(10 * 60e3);
+  await pc.ev("ponteAvvia()");
+  check(pc.locale["ponte.coppia"].suQr === false && new RegExp(`[=,]${telKb}(&|$)`).test(pc.ev("ponteUrlPresa()")),
+    "una coppia migrata dalla 3.86 sopra una del QR: la chiave del telefono va alla stanza senza scadenza, anche dopo la finestra");
+  await pc.ev("pt.presa.ferma()");
 });
 sezione("il taglio (P1): le coppie di prima e le stazioni non restano fuori");
 await blocco(async () => {

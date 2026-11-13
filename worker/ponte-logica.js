@@ -328,7 +328,8 @@ export class Stanza {
   prova(presa, st, m, ora) {
     const prove = (Array.isArray(m.prova) ? m.prova : [m.prova]).filter((x) => typeof x === "string").slice(0, 4);
     let note;
-    try { note = this.chiavi(st.ruolo, ora); } catch { this.guasto(presa, st.ruolo, ora); return; }
+    let mai;   // (il ruolo non ha mai avuto una chiave qui: nemmeno una scaduta)
+    try { note = this.chiavi(st.ruolo, ora); mai = !this.chiavi(st.ruolo, ora, true).length; } catch { this.guasto(presa, st.ruolo, ora); return; }
     // (la propria chiave la registra solo il PC — o il PC del medico —: quella del telefono, o della
     // stazione, gliela dà lui, così chi sa solo il numero della stanza non può prenotarsi il posto)
     const nuova = CAPO.has(st.ruolo) && chiaveValida(m.chiave) ? m.chiave : "";
@@ -340,7 +341,9 @@ export class Stanza {
       // (P1) dopo il taglio, il telefono o la stazione di una stanza dove il PC non ha ancora dato la loro
       // chiave: non esce — aspetta (senza ricevere niente, senza scadenza) che il PC la dia, e allora ha
       // una sfida nuova (risfida). Quante ne aspettano: al più PONTE.inAttesaMax (pulisci).
-      if (st.attende && !note.length && !CAPO.has(st.ruolo)) { this.io.scrivi(presa, { ...st, sfida: "", aspetta: true }); return; }
+      // Solo se il ruolo non ha MAI avuto una chiave qui: con chiavi soltanto scadute (quelle del QR, mai rinnovate) il
+      // PC non ne darà altre — 4403, «Scollegato» (serve un QR nuovo), non un'attesa muta per sempre.
+      if (st.attende && mai && !CAPO.has(st.ruolo)) { this.io.scrivi(presa, { ...st, sfida: "", aspetta: true }); return; }
       // (la prova della sfida di prima, arrivata dopo quella nuova: si aspetta quella giusta — una volta)
       if (st.attende && st.risfidata) { this.io.scrivi(presa, { ...st, risfidata: false }); return; }
       if (st.attende) this.chiudi(presa, st, 4403, "prova sbagliata", false, ora);
