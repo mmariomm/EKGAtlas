@@ -521,6 +521,10 @@ stz.abbina = new Presa("abbina", { dati: (b) => { stz.fila = stz.fila.then(() =>
 // questo PC (non sulla pagina d'accesso), con la sua pagina aperta, o con un
 // foglio in arrivo; e due minuti dopo. Fuori turno, a gestionale chiuso, niente
 // presa: il PC del medico dice «Infermeria non risponde» e stampa da sé, o lo propone.
+// Nella build «Stampa Infermeria» (solo stazione) invece SEMPRE, finché Chrome è aperto e la stazione è
+// collegata: è il suo lavoro. Una presa sola e lunga, nel documento fuori schermo; il battito lo risponde
+// il ripetitore da sé (niente risvegli), e un service worker che riparte la ritrova com'è (Presa.servi).
+const staSempre = () => typeof self !== "undefined" && self.PSA_SOLO_STAZIONE === true;
 const stzUso = { pagina: 0 };
 async function stzPagina() {
   const url = chrome.runtime.getURL("stazione.html");
@@ -540,7 +544,7 @@ const stzLavora = () => stz.inCorso.size > 0 || stz.stampa.size > 0;
 const stzFilaServe = { p: Promise.resolve() };
 const stzAssicura = (subito = false) => staInFila(stzFilaServe, async () => {
   if (!stz.qui || !stz.host || !stz.chiavi) return stz.presa.ferma();
-  const fine = await stzPagina() || await staGestionale() ? Infinity : stzLavora() ? staOra() + STA_LAVORO_MAX : 0;
+  const fine = staSempre() || await stzPagina() || await staGestionale() ? Infinity : stzLavora() ? staOra() + STA_LAVORO_MAX : 0;
   await stz.presa.servi(staUrl(stz.host, stz.chiavi.stanza, "stazione", stz.entra), fine, subito);
 });
 // l'offerta del QR, via dalla cassa (e da storage.session, dove la teneva la 3.86 con la chiave privata in JWK)
@@ -552,7 +556,7 @@ async function stzScriviStato() {
   const q = stzAttiva() ? stz.qui : null, o = stz.offerta;
   const offerta = !q && o && !o.usata && o.scade > staOra() && stz.host
     ? { qr: `${stz.host}/ponte/#sta=${PonteCripto.b64u(o.pub)}.${PonteCripto.b64u(o.s)}.${o.scade}&nome=${encodeURIComponent(await stzNome())}`, codice: o.codice, scade: o.scade } : null;
-  const s = { qui: q ? { dal: q.dal, codice: q.codice, conferma: !!q.conferma, pc: stz.presa.pari } : null, offerta, host: !!stz.host, nome: await stzNome() };
+  const s = { qui: q ? { dal: q.dal, codice: q.codice, conferma: !!q.conferma, pc: stz.presa.pari, su: !!stz.presa.su } : null, offerta, host: !!stz.host, nome: await stzNome() };
   const firma = JSON.stringify(s);
   if (firma !== stzScritto) { stzScritto = firma; await chrome.storage.session.set({ [STA.stato]: s }).catch(() => { stzScritto = ""; }); }
   return s;
@@ -587,7 +591,7 @@ async function stzAvviaOra(serve = true) {
   }
   stz.qui = q;
   if (!q) { stz.k = null; stz.chiavi = null; stz.chiaviDi = ""; stz.entra = null; stz.sessione = null; stz.attesa = null; }
-  const vale = serve || fuoriRipiego();
+  const vale = serve || fuoriRipiego() || staSempre();
   if (!q || !stz.host) await stz.presa.ferma();
   else if (vale) await stzAssicura();
   // l'offerta: finché vale e nessun PC l'ha presa, la sua stanza resta aperta (fino alla sua scadenza: la chiude la presa)
@@ -740,7 +744,7 @@ async function stzEsito(d) {
 }
 async function stzStampa(d) {
   const male = { ok: false, errore: "il foglio non è arrivato bene" };
-  const rq = stzRqValido(d.rq), tipo = d.tipo === "etichette" ? "etichette" : "a4";
+  const rq = stzRqValido(d.rq), tipo = d.tipo === "etichette" || d.tipo === "etichetta" ? "etichette" : "a4";   // (un'etichetta qualunque: all'etichettatrice)
   const copie = Number.isInteger(d.copie) && d.copie >= 1 && d.copie <= 10 ? d.copie : 1;
   const { i, n, size, b } = d;
   if (!rq || ![i, n, size].every(Number.isSafeInteger) || i < 0 || n < 1 || n > 80 || i >= n || size < 1 || size > STAMPA_PDF_MAX || typeof b !== "string") return male;

@@ -23,6 +23,8 @@ $NOME = 'it.psassist.stampa'
 # un unico installa.cmd: la completa e la «Lettura e stampa» (sola lettura).
 $ID = 'jhhlgabilanhhnncahahclcjbefaofij'           # PS Assist (completa)
 $ID_LETTURA = 'afheakecoidbgjomgfnjmnkblgfhehbl'   # PS Assist · Lettura e stampa (sola lettura)
+# La chiave della build «Stampa Infermeria» (tools/lettura.mjs): con lei, il passo guidato in fondo.
+$KEY_INFERMERIA = 'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAytiHbR7RsveimO0o29OJhpUmE25bk0Zt0PWqQl0RJmuKf6vmBsZVMTzB4pd6rCJaSIOQjXj45Q7UcsHvv4KEybD/HSkwIKhdlVUuCJXdwymp7DQf6Ez5vP0QwjkjiI0JinWicVYWJbzDbkN+Xtj7ANugrFpNkcoDXYFwxjzZ1myt4iQ31YftT0oKeC7laW2i20cYt4Ial4e3OcNgHu+Pa8uPFDdLx2zcA4Xv0QXKh7VICL0DJPQL15/Oobp3kRzc05AhJGSa9sLUH5934bkKfkWOyto7QbgU5kcWqgEE17gWfc/JnueFXYo5XTK6R7RiiIZ4z5Tw1lVsOicZ2w5GgwIDAQAB'
 $CASA = Join-Path $env:LOCALAPPDATA 'PSAssist'
 $DOVE = Join-Path $CASA 'stampa'
 $EST = Join-Path $CASA 'estensione'
@@ -57,11 +59,17 @@ if ($Togli) {
   foreach ($k in $CHIAVI) { try { if (Test-Path -Path $k) { Remove-Item -Path $k -Recurse -Force } } catch { } }
   # l'aiutante, SumatraPDF e le sue impostazioni, il registro delle stampe
   if (Test-Path -LiteralPath $CASA) { Remove-Item -LiteralPath $CASA -Recurse -Force -ErrorAction SilentlyContinue }
-  # i fogli temporanei di una stampa interrotta (etichette di pazienti)
+  # i fogli temporanei di una stampa interrotta (etichette di pazienti), e quello che resta di un aggiornamento fermato a metà
   Get-ChildItem -LiteralPath ([IO.Path]::GetTempPath()) -Filter 'psassist-*.pdf' -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
+  Get-ChildItem -LiteralPath ([IO.Path]::GetTempPath()) -Filter 'psassist-agg-*' -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
   $resta = @($CHIAVI | Where-Object { Test-Path -Path $_ }) + @(if (Test-Path -LiteralPath $CASA) { $CASA }) +
     @(Get-ChildItem -LiteralPath ([IO.Path]::GetTempPath()) -Filter 'psassist-*.pdf' -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName })
   if ($resta.Count) { Fine $false ("resta ancora: {0}. Chiudi Chrome e Edge e rilancia disinstalla.cmd." -f ($resta -join ', ')) }
+  # L'estensione caricata in Chrome (o Edge) da uno script non si toglie: si apre la pagina, e lo si dice.
+  try { Start-Process -FilePath 'chrome' -ArgumentList 'chrome://extensions' -ErrorAction Stop } catch { }
+  Write-Host ''
+  Write-Host "Ultimo passo, in Chrome (si è aperta la pagina chrome://extensions; se no, scrivila nella barra degli indirizzi):" -ForegroundColor Yellow
+  Write-Host "  su «PS Assist · Stampa Infermeria» (o «PS Assist») premi Rimuovi. In Edge: edge://extensions."
   Fine $true "La stampa automatica è tolta: PS Assist torna al dialogo di stampa. Ora puoi cancellare la cartella dello zip. (Se caricavi l'estensione da $EST, toglila anche da chrome://extensions.)"
 }
 
@@ -193,7 +201,20 @@ if (Giusto $exe $EXE_SHA256) {
   foreach ($k in $CHIAVI) { $null = New-Item -Path $k -Value $json -Force }
 }
 
-if (VersioneIn $EST) {
+# La build «Stampa Infermeria» (la chiave della mini): il passo che resta, guidato. Chrome non lascia
+# caricare un'estensione da uno script senza amministratore: la si carica una volta, a mano.
+$infermeria = $false
+try { $infermeria = [string](Get-Content -LiteralPath (Join-Path $EST 'manifest.json') -Raw -Encoding UTF8 | ConvertFrom-Json).key -eq $KEY_INFERMERIA } catch { }
+if ($infermeria -and -not $blocchi.Count) {
+  try { Set-Clipboard -Value $EST } catch { }
+  try { Start-Process -FilePath 'chrome' -ArgumentList 'chrome://extensions' -ErrorAction Stop } catch { }
+  Write-Host ''
+  Write-Host 'Ultimo passo, una volta sola, in Chrome (si è aperta la pagina chrome://extensions; se no, scrivila nella barra degli indirizzi):' -ForegroundColor Yellow
+  Write-Host '  1. in alto a destra accendi «Modalità sviluppatore»;'
+  Write-Host '  2. premi «Carica estensione non pacchettizzata»;'
+  Write-Host "  3. nella casella in basso «Cartella» incolla (Ctrl+V) $EST e premi «Seleziona cartella»."
+  Write-Host '  Si apre da sola la pagina «PS Assist · Stampa Infermeria»: il QR da inquadrare col telefono del medico e le due stampanti.'
+} elseif (VersioneIn $EST) {
   Write-Host ''
   Write-Host "Una volta sola: in chrome://extensions «Carica estensione non pacchettizzata» → $EST (non la cartella dello zip). Da lì si aggiorna da sola."
 }
@@ -203,4 +224,5 @@ if ($blocchi.Count) {
   foreach ($x in $blocchi) { Write-Host "- $($x.cosa)."; Write-Host "  Da chiedere all'IT: $($x.it)." }
   Fine $false ('{0} da togliere (qui sopra). PS Assist intanto usa il dialogo di stampa.' -f $(if ($blocchi.Count -eq 1) { '1 blocco' } else { "$($blocchi.Count) blocchi" }))
 }
+if ($infermeria) { Fine $true 'Poi, nella pagina della stazione: collegala (il QR, dal telefono del medico: ⋯ → Scansiona il QR) e scegli le due stampanti, con la prova.' }
 Fine $true "Torna su PS Assist: menu ⋯ → Stampanti, scegli l'etichettatrice e l'A4, e stampa una pagina di prova."

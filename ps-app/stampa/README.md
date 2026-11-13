@@ -188,6 +188,14 @@ cosa resta. Dopo puoi cancellare la cartella dello zip. PS Assist torna al dialo
   `files.sumatrapdfreader.org`) e lo estrae (`Expand-Archive`), e fa partire una volta
   SumatraPDF su un file che non c'è (`-print-to "PS Assist prova" -silent
   "%TEMP%\psassist-nessuno.pdf"`: esce subito, non stampa niente).
+- **Sul PC dell'infermeria** («Installa Stampa Infermeria.cmd», in cima a `ps-assist-lettura.zip`):
+  prima lo stesso controllo dei criteri, poi `powershell.exe -NoLogo -NoProfile -ExecutionPolicy
+  Bypass -Command` che legge il resto dello stesso file (il testo PowerShell in fondo al `.cmd`). Se
+  accanto non c'è il pacchetto, `Invoke-WebRequest` di
+  `https://raw.githubusercontent.com/mmariomm/EKGAtlas/main/ps-app/dist/ps-assist-lettura.zip` in
+  `%TEMP%\psassist-inf-<guid>` (controllata la chiave del manifest), `Unblock-File`, poi
+  `installa.ps1` come sopra; la cartella temporanea si toglie. Alla fine `chrome://extensions`, per
+  caricare l'estensione a mano. Niente all'avvio di Windows, nessun collegamento.
 - **I file**, tutti in `%LOCALAPPDATA%\PSAssist\stampa`: `host.cmd`, `host.ps1` (lo script,
   leggibile in pochi minuti), `installa.ps1`, `disinstalla.cmd`, `it.psassist.stampa.json` e
   **`SumatraPDF.exe`** portable 3.6.1, 64 bit:

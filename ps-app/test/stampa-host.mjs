@@ -49,6 +49,39 @@ const check = (c, m) => { console.log((c ? "  ✓ " : "  ✗ ") + m); if (!c) fa
     "aggiorna: prima tutto tranne manifest.json, poi installata.json, manifest.json per ultimo");
 }
 
+// La Stampa Infermeria: l'installazione e la disinstallazione con un doppio clic, e il LEGGIMI, in cima
+// allo zip (infermeria/). Senza Windows: il testo — righe di Windows, la parte di cmd in ASCII, la
+// chiave della build Infermeria, solo GitHub, niente all'avvio di Windows né collegamenti.
+{
+  console.log("\nStampa Infermeria (infermeria/), senza PowerShell: installa, disinstalla, LEGGIMI");
+  const { LETTURA_KEY } = await import("../tools/lettura.mjs");
+  const ins = readFileSync(join(root, "infermeria/Installa Stampa Infermeria.cmd"), "utf8");
+  const dis = readFileSync(join(root, "infermeria/Disinstalla Stampa Infermeria.cmd"), "utf8");
+  const leggi = readFileSync(join(root, "infermeria/LEGGIMI.txt"), "utf8");
+  const ips = readFileSync(join(root, "stampa/installa.ps1"), "utf8");
+  const solo = (t) => t.split("\n").every((l) => l.endsWith("\r") || l === "");
+  const cmdParte = ins.slice(0, ins.indexOf("#PSA-INIZIO"));
+  check(solo(ins) && solo(dis) && solo(leggi) && /^[\x00-\x7F]*$/.test(cmdParte) && /^[\x00-\x7F]*$/.test(dis) && ins.charCodeAt(0) !== 0xfeff && leggi.charCodeAt(0) === 0xfeff,
+    "righe di Windows (CRLF); la parte letta da cmd in ASCII, senza BOM; LEGGIMI in UTF-8 col BOM (il Blocco note)");
+  const marca = ins.indexOf("#PSA-INIZIO"), comando = ins.indexOf("Invoke-Expression"), uscita = ins.indexOf("exit /b");
+  check(comando > 0 && uscita > comando && marca > uscita && ins.indexOf("#PSA-INIZIO") === ins.lastIndexOf("#PSA-INIZIO") && /'#PSA' \+ '-INIZIO'/.test(cmdParte),
+    "cmd esce prima del testo di PowerShell, che parte dal segno (scritto spezzato nel comando: si trova una volta sola)");
+  check(ins.includes(`$CHIAVE = '${LETTURA_KEY}'`) && ips.includes(`$KEY_INFERMERIA = '${LETTURA_KEY}'`), "la chiave della build Infermeria, la stessa in tools/lettura.mjs, nell'installazione e in installa.ps1");
+  const host = [...ins.matchAll(/https?:\/\/([^/'"\s]+)/g)].map((m) => m[1]);
+  check(host.length && host.every((h) => h === "raw.githubusercontent.com") && /ps-app\/dist\/ps-assist-lettura\.zip/.test(ins), `scarica solo da GitHub raw, lo zip della build (got ${[...new Set(host)].join(", ")})`);
+  check(/Test-Path -LiteralPath \(Join-Path \$qui 'stampa\\installa\.ps1'\)/.test(ins) && /-ne 0x50 -or \$b\[1\] -ne 0x4B/.test(ins) && /\$chiave -ne \$CHIAVE/.test(ins) && /Unblock-File/.test(ins)
+    && /-File \(Join-Path \$pacco 'stampa\\installa\.ps1'\)/.test(ins) && /AllSigned/.test(ins),
+    "il pacchetto accanto, se no da GitHub (uno zip, con la chiave giusta), sbloccato; poi installa.ps1 del pacchetto");
+  const tutto = ins + dis + ips;
+  check(!/Startup|\.lnk|WScript\.Shell|CurrentVersion\\Run|"background"|Desktop/i.test(tutto), "niente all'avvio di Windows, nessun collegamento sul desktop");
+  check(/LOCALAPPDATA%\\PSAssist\\stampa\\installa\.ps1/.test(dis) && /%~dp0stampa\\installa\.ps1/.test(dis) && /cd \/d "%TEMP%" & .*-File "%PSA_I%" -Togli/.test(dis),
+    "la disinstallazione: installa.ps1 -Togli (quello installato, se no quello dello zip), da %TEMP%");
+  check(/'psassist-agg-\*'/.test(ips.slice(ips.indexOf("if ($Togli)"), ips.indexOf("function Versione"))) && /chrome:\/\/extensions/.test(ips.slice(ips.indexOf("if ($Togli)"), ips.indexOf("function Versione"))),
+    "-Togli toglie anche i resti di un aggiornamento, e apre chrome://extensions per togliere l'estensione");
+  check(["INSTALLARE", "COLLEGARE", "SCEGLIERE LE STAMPANTI", "TOGLIERE"].every((t) => leggi.includes(t)) && (leggi.match(/^\d\. /gm) || []).length === 16,
+    "LEGGIMI: installare, collegare, scegliere le stampanti, togliere — quattro passi ciascuno");
+}
+
 const PWSH = process.env.PWSH || "pwsh";
 if (spawnSync(PWSH, ["-NoProfile", "-Command", "exit 0"], { stdio: ["ignore", "ignore", "ignore"] }).status !== 0) {
   console.log(fail ? `\nSTAMPA-HOST: ${fail} CHECK FALLITI (e PowerShell non trovato: il resto saltato)\n` : "\nSTAMPA-HOST: PowerShell non trovato (PWSH o pwsh): il resto della prova saltato\n");

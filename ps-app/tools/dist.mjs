@@ -7,9 +7,10 @@
  */
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync, rmSync, mkdirSync, cpSync } from "node:fs";
+import * as fs from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { manifestLettura, LETTURA_BANDIERA } from "./lettura.mjs";
+import { preparaLettura } from "./lettura.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const version = /"version":\s*"([^"]+)"/.exec(readFileSync(join(root, "extension/manifest.json"), "utf8"))?.[1] ?? "0.0.0";
@@ -26,24 +27,20 @@ execFileSync("zip", ["-q", "-r", "dist/ps-assist-latest.zip",
   "-x", "stampa/.*", "stampa/SumatraPDF-settings.txt", "stampa/it.psassist.stampa.json", "extension/installata.json"], { cwd: root });
 writeFileSync(join(root, "dist/VERSION.txt"), version + "\n");
 
-// --- la build mini «PS Assist · Lettura e stampa» (sola lettura) ---------
-// Stesse sorgenti, un manifest e una bandiera a parte (tools/lettura.mjs). Si
-// prepara una copia dell'estensione con il manifest mini e sola-lettura.js a
-// `true`, e si zippa come la normale (extension + stampa + README). La versione
-// è la stessa (VERSION.txt è unico: le due build escono insieme).
+// --- la build «PS Assist · Stampa Infermeria» (fino alla 3.87 la mini «Lettura e stampa») ---
+// Stesse sorgenti, un manifest e una bandiera a parte (tools/lettura.mjs). Lo zip ha lo
+// stesso nome di prima (le mini installate scaricano quello). In cima, per chi lo apre:
+// «Installa Stampa Infermeria.cmd», «Disinstalla Stampa Infermeria.cmd» e LEGGIMI.txt
+// (infermeria/); poi l'estensione preparata, e l'aiutante di stampa dalla radice.
 const stage = join(root, "dist/.lettura");
 rmSync(stage, { recursive: true, force: true });
 cpSync(join(root, "extension"), join(stage, "extension"), { recursive: true });
-rmSync(join(stage, "extension/installata.json"), { force: true });   // mai nello zip (come la normale)
-const baseMan = JSON.parse(readFileSync(join(root, "extension/manifest.json"), "utf8"));
-writeFileSync(join(stage, "extension/manifest.json"), JSON.stringify(manifestLettura(baseMan), null, 2) + "\n");
-writeFileSync(join(stage, "extension/sola-lettura.js"), LETTURA_BANDIERA);
+preparaLettura(join(stage, "extension"), fs, join);
+for (const f of ["Installa Stampa Infermeria.cmd", "Disinstalla Stampa Infermeria.cmd", "LEGGIMI.txt"]) cpSync(join(root, "infermeria", f), join(stage, f));
 const zipL = join(root, "dist/ps-assist-lettura.zip");
 rmSync(zipL, { force: true });
-// l'estensione (mini) dalla copia preparata…
-execFileSync("zip", ["-q", "-r", zipL, "extension"], { cwd: stage });
-// …e l'aiutante di stampa e il README dalla radice, come la build normale
-// (niente bookmarklet né dimissioni.html: sono per gli ordini, non per un PC di sola lettura)
+execFileSync("zip", ["-q", "-r", zipL, "LEGGIMI.txt", "Installa Stampa Infermeria.cmd", "Disinstalla Stampa Infermeria.cmd", "extension"], { cwd: stage });
+// (niente bookmarklet né dimissioni.html: sono per gli ordini)
 execFileSync("zip", ["-q", "-r", zipL, "stampa", "README.md",
   "-x", "stampa/.*", "stampa/SumatraPDF-settings.txt", "stampa/it.psassist.stampa.json"], { cwd: root });
 rmSync(stage, { recursive: true, force: true });

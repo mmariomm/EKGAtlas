@@ -1,213 +1,254 @@
 #!/usr/bin/env node
 /*
- * La build mini «PS Assist · Lettura e stampa» (sola lettura), tutto vero:
- * l'estensione mini caricata in Chromium (il manifest e la bandiera a parte,
- * come nello zip), il gestionale simulato, il ripetitore Node e l'app del
- * telefono in un secondo browser. Si controlla che:
- *  - la build mini si carica, col suo manifest (nome, chiave a parte, sola
- *    lettura, niente ricetta SISS);
- *  - sulla pagina del gestionale non c'è il pannello degli ordini, solo il
- *    distintivo «sola lettura»; ma le LETTURE per il telefono si fanno lo stesso;
- *  - il telefono associato al PC mini legge (elenco, esiti, cartella) e NON
- *    scrive: la testata dice «Sola lettura», e i controlli di scrittura (ordine,
- *    Salva cartella, ＋ Farmaco, Accetta) non ci sono;
- *  - la sua pagina (ponte.html) dice che è di sola lettura, con la versione.
- * Il rifiuto delle scritture mandate GREZZE nel canale è in ponte-cripto.mjs
- * (il service worker in una vm, sola lettura): qui si guarda il lato telefono.
+ * La build «PS Assist · Stampa Infermeria» (dalla 3.88; fino alla 3.87 la mini
+ * «Lettura e stampa»), tutto vero: il PC del medico (la build normale, il
+ * gestionale simulato), la stazione dell'infermeria (la build Infermeria, come
+ * nello zip), ognuno col suo finto aiutante di stampa; il ripetitore Node e
+ * l'app del telefono in un terzo browser. Le prove:
+ *  - una mini 3.87 (il suo manifest e la sua bandiera) collegata come stazione,
+ *    con le stampanti scelte e un iPhone associato, si aggiorna nella build
+ *    Infermeria (la stessa cartella, lo stesso id): il collegamento e le
+ *    stampanti restano, l'iPhone associato a quel PC no;
+ *  - il manifest: niente content script, niente permessi sugli indirizzi, la
+ *    pagina della stazione dall'icona e dalle Opzioni; niente pagine del telefono;
+ *  - SENZA nessuna pagina aperta sulla stazione: è sul ponte, e un foglio dal PC
+ *    del medico (etichette, «etichetta», A4) esce sulla stampante giusta;
+ *  - un'ora di battiti simulata: la presa resta quella, nessuna riconnessione;
+ *  - installata da zero: la pagina si apre da sola, e mostra solo il QR, le
+ *    stampanti (con la prova) e lo stato.
  *   node test/ext-mini.mjs
  */
 import { chromium } from "playwright";
 import { createMock } from "./gestionale-vero.mjs";
 import { avviaRelay } from "../ponte/relay-node.mjs";
-import { manifestLettura, LETTURA_KEY } from "../tools/lettura.mjs";
+import { preparaLettura, LETTURA_KEY, LETTURA_VIA } from "../tools/lettura.mjs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { existsSync, statSync, mkdirSync, cpSync, rmSync, writeFileSync, readFileSync } from "node:fs";
+import * as fs from "node:fs";
+import { existsSync, statSync, mkdirSync, cpSync, rmSync, writeFileSync, readFileSync, chmodSync } from "node:fs";
 
-// (mai la rete vera: nessun proxy, ogni nome risolto in locale — il gestionale finto passa dalle route di Playwright)
 const RETE_CHIUSA = ["--proxy-server=direct://", "--host-resolver-rules=MAP * 127.0.0.1"];
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-await import(join(root, "../public/ponte/cripto.js"));
-const P = globalThis.PonteCripto;
-const PROFILE = join("/tmp", "psa-mini-" + process.pid);
-const MINI = join("/tmp", "psa-mini-ext-" + process.pid);   // la copia «sola lettura» dell'estensione
+const EXT = join(root, "extension");
+const T = (n) => join("/tmp", `psa-inf-${n}-${process.pid}`);
+const PROF = { pc: T("pc"), sta: T("sta"), nuova: T("nuova") };
+const FINTO = { pc: T("pc-ospite"), sta: T("sta-ospite") };
+const MINI = T("ext");          // la cartella della stazione: prima la mini 3.87, poi la build Infermeria
+const MINI2 = T("ext2");        // un'installazione da zero
+const ID = "jhhlgabilanhhnncahahclcjbefaofij", ID_INF = "afheakecoidbgjomgfnjmnkblgfhehbl";
 function chromiumPath() {
-  for (const p of ["/opt/pw-browsers/chromium-1194/chrome-linux/chrome", "/opt/pw-browsers/chromium"]) {
-    if (existsSync(p) && statSync(p).isFile()) return p;
-  }
+  for (const p of ["/opt/pw-browsers/chromium-1194/chrome-linux/chrome", "/opt/pw-browsers/chromium"]) if (existsSync(p) && statSync(p).isFile()) return p;
   return undefined;
 }
 let fail = 0;
 const check = (c, m) => { console.log((c ? "  ✓ " : "  ✗ ") + m); if (!c) fail++; };
-const sezione = (t) => console.log("\nmini: " + t);
+const sezione = (t) => console.log("\ninfermeria: " + t);
 const sospendi = (ms) => new Promise((r) => setTimeout(r, ms));
 async function finche(fn, timeout = 20000) {
-  for (const t0 = Date.now(); Date.now() - t0 < timeout; await sospendi(150)) if (await fn()) return true;
-  return false;
+  for (const t0 = Date.now(); Date.now() - t0 < timeout; await sospendi(150)) { const v = await fn(); if (v) return v; }
+  return null;
 }
 
-// ---- la copia «sola lettura» dell'estensione (come la prepara tools/dist.mjs) ----
-rmSync(MINI, { recursive: true, force: true });
-cpSync(join(root, "extension"), MINI, { recursive: true });
-rmSync(join(MINI, "installata.json"), { force: true });
-const baseMan = JSON.parse(readFileSync(join(root, "extension/manifest.json"), "utf8"));
-writeFileSync(join(MINI, "manifest.json"), JSON.stringify(manifestLettura(baseMan), null, 2) + "\n");
-writeFileSync(join(MINI, "sola-lettura.js"), "self.PSA_SOLA_LETTURA = true;\n");
+// ---- le due copie: la mini 3.87 (com'era tools/lettura.mjs fino alla 3.87) e la build Infermeria ----
+function mini387(dir) {
+  rmSync(dir, { recursive: true, force: true });
+  cpSync(EXT, dir, { recursive: true });
+  rmSync(join(dir, "installata.json"), { force: true });
+  const m = JSON.parse(readFileSync(join(dir, "manifest.json"), "utf8"));
+  Object.assign(m, { name: "PS Assist · Lettura e stampa", short_name: "PS Assist Lettura", key: LETTURA_KEY,
+    options_ui: { page: "ponte.html", open_in_tab: true }, action: { default_popup: "azione.html", default_title: "PS Assist · Lettura e stampa" } });
+  m.content_scripts = m.content_scripts.filter((cs) => !(cs.js || []).includes("ricetta-siss.js"));
+  writeFileSync(join(dir, "manifest.json"), JSON.stringify(m, null, 2) + "\n");
+  writeFileSync(join(dir, "sola-lettura.js"), "self.PSA_SOLA_LETTURA = true;\n");
+}
+// (`dopo`: una versione più nuova, come in un aggiornamento vero — con la stessa, Chrome terrebbe gli script del
+// service worker di prima)
+function infermeria(dir, dopo = false) {
+  rmSync(dir, { recursive: true, force: true });
+  cpSync(EXT, dir, { recursive: true });
+  preparaLettura(dir, fs, join);
+  if (dopo) {
+    const m = JSON.parse(readFileSync(join(dir, "manifest.json"), "utf8"));
+    m.version = m.version.replace(/\d+$/, (x) => String(Number(x) + 1));
+    writeFileSync(join(dir, "manifest.json"), JSON.stringify(m, null, 2) + "\n");
+  }
+}
 
-sezione("il manifest della build mini");
-const man = JSON.parse(readFileSync(join(MINI, "manifest.json"), "utf8"));
-check(man.name === "PS Assist · Lettura e stampa", `il nome: «${man.name}»`);
-check(man.key === LETTURA_KEY && man.key !== baseMan.key, "una chiave fissa, distinta da quella della build normale");
-check(man.content_scripts[0].js[0] === "sola-lettura.js" && man.content_scripts[0].js[1] === "content.js", "sola-lettura.js è il primo content script, davanti a content.js");
-check(!JSON.stringify(man.content_scripts).includes("ricetta-siss"), "la ricetta SISS (scrittura) è tolta dai content script");
-check(man.action && man.action.default_popup === "azione.html" && !/●/.test(readFileSync(join(MINI, "azione.html"), "utf8")), "il popup dell'icona (azione.html) c'è, e la stazione non ha un ● rosso (dice «registra»)");
-check(man.options_ui && man.options_ui.page === "ponte.html", "la sua pagina è ponte.html (stato dell'associazione e aggiornamento)");
-
-// ---- il ripetitore e il gestionale simulato -------------------------------
+// ---- i finti aiutanti di stampa ----
+const STAMPANTI = { pc: ["Zebra Medico", "HP Medico A4"], sta: ["Zebra Infermeria", "HP Infermeria A4"] };
+const lavori = (chi) => (existsSync(join(FINTO[chi], "lavori.jsonl")) ? readFileSync(join(FINTO[chi], "lavori.jsonl"), "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l)) : []).filter((x) => x.tipo);
+for (const chi of ["pc", "sta"]) {
+  mkdirSync(FINTO[chi], { recursive: true });
+  const l = join(FINTO[chi], "ospite.sh");
+  writeFileSync(l, `#!/bin/sh\nPSA_FINTO='${FINTO[chi]}' exec '${process.execPath}' '${join(root, "test/ospite-finto.mjs")}' "$@"\n`);
+  chmodSync(l, 0o755);
+  writeFileSync(join(FINTO[chi], "config.json"), JSON.stringify({ stampanti: STAMPANTI[chi], predefinita: STAMPANTI[chi][1] }));
+}
+for (const [p, chi] of [[PROF.pc, "pc"], [PROF.sta, "sta"], [PROF.nuova, "sta"]]) {
+  rmSync(p, { recursive: true, force: true });
+  mkdirSync(join(p, "NativeMessagingHosts"), { recursive: true });
+  // (la Modalità sviluppatore accesa, come sul PC: senza, chrome.runtime.reload() scarica l'estensione e basta)
+  mkdirSync(join(p, "Default"), { recursive: true });
+  writeFileSync(join(p, "Default", "Preferences"), JSON.stringify({ extensions: { ui: { developer_mode: true } } }));
+  writeFileSync(join(p, "NativeMessagingHosts", "it.psassist.stampa.json"), JSON.stringify({ name: "it.psassist.stampa", description: "finto",
+    path: join(FINTO[chi], "ospite.sh"), type: "stdio", allowed_origins: [`chrome-extension://${ID}/`, `chrome-extension://${ID_INF}/`] }));
+}
+const lancia = (profilo, ext) => chromium.launchPersistentContext(profilo, {
+  headless: true, executablePath: process.env.CHROMIUM_PATH || chromiumPath(), viewport: { width: 1200, height: 820 },
+  args: [`--disable-extensions-except=${ext}`, `--load-extension=${ext}`, ...(process.env.PSA_CHROMIUM_ARGS || "").split(/\s+/).filter(Boolean), ...RETE_CHIUSA],
+});
+const swDi = async (c) => c.serviceWorkers().find((w) => w.url().endsWith("bg.js")) || c.waitForEvent("serviceworker", { timeout: 15000 });
 const relay = await avviaRelay({});
-const CF_A = "RSSMRA60A01F205Z";
-let A = createMock({ withResults: true, cf: CF_A });
-const riquadro = (nome, ep, cf) => `<table><tr><td title="ARANCIONE"><font style="font-size: 120%; font-weight: bolder; ">${ep}</font><br><font style="font-size: 150%; font-weight: bolder; ">${nome}</font><br><font style="font-size: 120%; font-weight: bolder; ">17/05/1949 (77) M</font><br><font style="font-size: 120%; font-weight: bolder; ">${cf}</font></td></tr></table>`;
-// chi è loggato nel gestionale (per la testata «Sola lettura · gestionale di …»)
-const OPERATORE = "Salve! Sei connesso come Utente Medico: UTENTE1";
+const versoRelay = (w) => w.evaluate((u) => chrome.storage.local.set({ "ponte.host": u }).then(() => Promise.all([ponteAvvia(), stmAvvia(), stzAvvia()])), relay.url);
 
-async function apriBrowser() {
-  const ctx = await chromium.launchPersistentContext(PROFILE, {
-    headless: true,
-    executablePath: process.env.CHROMIUM_PATH || chromiumPath(),
-    viewport: { width: 1366, height: 768 },
-    args: [`--disable-extensions-except=${MINI}`, `--load-extension=${MINI}`, ...(process.env.PSA_CHROMIUM_ARGS || "").split(/\s+/).filter(Boolean), ...RETE_CHIUSA],
-  });
-  await ctx.route("https://smarthealth.multimedica.it/**", async (r) => {
-    const req = r.request();
-    let out = A.handle({ method: req.method(), url: req.url(), bodyBuffer: req.postDataBuffer() });
-    let h = 0;
-    while (out.status === 302 && h++ < 5) out = A.handle({ method: "GET", url: new URL(out.headers.location, req.url()).href });
-    if (/html/.test(out.headers["content-type"] || "") && /MVPG=PsoEpisodioClinicoAmbulatorio|^[^?]*\?EPISODIO_ID/.test(req.url())) {
-      let html = Buffer.from(out.body).toString("latin1");
-      html = html.replace("<body>", `<body><b>${OPERATORE}</b>` + riquadro("ROSSI MARIO", A.state.episodeId, CF_A));
-      out = { ...out, body: Buffer.from(html, "latin1") };
-    }
-    try { await r.fulfill({ status: out.status, headers: out.headers, body: out.body }); } catch { /* scheda chiusa */ }
-  });
-  return ctx;
-}
-const ctx = await apriBrowser();
-const sw = await (async () => ctx.serviceWorkers().find((w) => w.url().endsWith("bg.js")) || ctx.waitForEvent("serviceworker", { timeout: 15000 }))();
-const extId = new URL(sw.url()).host;
-const EXTURL = (f) => `chrome-extension://${extId}/${f}`;
-const statoPonte = () => sw.evaluate(() => chrome.storage.session.get("ponte").then((o) => o.ponte || null));
-const qrUrl = () => sw.evaluate(() => ponteQr());
-
-// ---- la pagina del gestionale: niente pannello, solo il distintivo ---------
-sezione("sulla pagina del gestionale: niente pannello degli ordini, solo il distintivo");
+// ---- il PC del medico, col gestionale ----
+const A = createMock({ seedConfirmed: true });
+const ctx = await lancia(PROF.pc, EXT);
+await ctx.route("https://smarthealth.multimedica.it/**", async (r) => {
+  const req = r.request();
+  let out = A.handle({ method: req.method(), url: req.url(), bodyBuffer: req.postDataBuffer() });
+  let h = 0;
+  while (out.status === 302 && h++ < 5) out = A.handle({ method: "GET", url: new URL(out.headers.location, req.url()).href });
+  try { await r.fulfill({ status: out.status, headers: out.headers, body: out.body }); } catch { /* chiusa */ }
+});
+const sw = await swDi(ctx);
+await versoRelay(sw);
 const doc = await ctx.newPage();
 await doc.goto(A.patientUrl);
 await doc.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
-await sospendi(500);
-const badge = await doc.evaluate(() => {
-  const r = document.getElementById("psassist-host")?.shadowRoot;
-  if (!r) return { testo: "", card: 0, exp: 0 };
-  return { testo: (r.querySelector(".b")?.textContent || "").replace(/\s+/g, " ").trim(), card: r.querySelectorAll(".card").length, exp: r.querySelectorAll("#expand, #menubtn, #ordina").length };
-});
-check(/sola lettura/i.test(badge.testo), `il distintivo dice «sola lettura» (${badge.testo})`);
-check(badge.card === 0 && badge.exp === 0, "niente pannello degli ordini: nessuna finestra, nessun bottone «ordina»");
-// la lettura per il telefono: aperta la pagina, il paziente è nell'elenco del PC
-check(await finche(async () => {
-  const p = await doc.evaluate(() => JSON.parse(localStorage.getItem("psassist:patients.v1") || "[]"));
-  return Array.isArray(p) && p.some((x) => x.ep === String(A.state.episodeId));
-}, 8000), "le letture per il telefono si fanno lo stesso: il paziente aperto entra in patients.v1");
-// il terzo muro, nel service worker degli ordini: un ordine nuovo, la sua scheda che parte, «Conferma di
-// nuovo» — rifiutati anche se arrivassero da una scheda del gestionale; una domanda sugli ordini (le stampe) no
-const muro = await sw.evaluate(async () => {
-  const chiedi = (m) => new Promise((res) => { if (ordMessaggio(m, { tab: { id: 424242 }, url: "https://smarthealth.multimedica.it/sa4pso/restrict/x.do" }, res) !== true) res(null); });
-  return { nuovo: await chiedi({ t: "ordineNuovo", job: { id: "muro1" } }), parto: await chiedi({ t: "ordineParto", id: "muro1" }),
-    riconferma: await chiedi({ t: "ordineRiconferma", id: "muro1" }), controlla: await chiedi({ t: "ordineControlla" }), giornale: (await ordLeggi()).some((x) => x.id === "muro1") };
-});
-check(["nuovo", "parto", "riconferma"].every((k) => muro[k] && muro[k].ok === false && muro[k].solaLettura && /sola lettura/.test(muro[k].why)) && muro.controlla && !muro.controlla.solaLettura && !muro.giornale,
-  `nel service worker, ordine nuovo, partenza e «Conferma di nuovo» rifiutati («Questo PC è in sola lettura»); le domande sugli ordini no (${JSON.stringify(muro).slice(0, 160)})`);
-// chi può chiedere i comandi del service worker (referti, schede, portale, «Dimentica»): il pannello nella
-// cornice in alto del gestionale o del portale, le pagine dell'estensione — non il registratore nel SISS,
-// nell'eViewer o in un riquadro (null: forse il portale aggiunto dal medico, che si guarda in storage)
-const mitt = await sw.evaluate(() => {
-  const s = (url, frameId = 0, tab = { id: 7 }) => ({ id: chrome.runtime.id, url, frameId, tab });
-  return [bgMittente(s("https://smarthealth.multimedica.it/sa4pso/x.do")), bgMittente(s("http://10.11.0.151/clin-port/x.jsp")), bgMittente(s("http://10.11.0.151:9080/clin-port/x.jsp")), bgMittente(s(chrome.runtime.getURL("tabellone.html"), 0, undefined)),
-    bgMittente(s("https://smarthealth.multimedica.it/sa4pso/x.do", 3)), bgMittente(s("https://dcss.cgi.crs.lombardia.it/menusiss/")), bgMittente(s("chrome://settings/")),
-    bgDaEstensione(s("https://smarthealth.multimedica.it/x")), bgDaEstensione(s(chrome.runtime.getURL("portale.html")))];
-});
-check(JSON.stringify(mitt) === JSON.stringify([true, true, true, true, false, null, false, false, true]),
-  `i comandi del service worker: dal pannello in alto e dall'estensione sì, da un riquadro no, dal SISS solo se fosse il portale aggiunto; il portale si aggiunge solo dall'estensione (${JSON.stringify(mitt)})`);
 
-// ---- il telefono associato al PC mini -------------------------------------
-sezione("il telefono associato a un PC di sola lettura");
-// la pagina propria della build mini: ponte.html dice che è di sola lettura
-const pag = await ctx.newPage();
-await pag.goto(EXTURL("ponte.html"));
-await pag.waitForSelector("#stato b", { timeout: 8000 });
-check(/sola lettura/i.test(await pag.locator(".sub").innerText()), "la sua pagina dice che il PC è di sola lettura");
-check(/Versione \d|Aggiornato alla versione/i.test(await pag.locator("#aggrow").innerText().catch(() => "")), "…e mostra la versione (si aggiorna da solo)");
-// si associa dalla sua pagina (non c'è un pannello): verso il ripetitore locale
-await sw.evaluate((u) => chrome.storage.local.set({ "ponte.host": u }).then(() => ponteAvvia()), relay.url);
-await pag.reload();
-await pag.waitForSelector("#associa", { timeout: 8000 });
-await pag.locator("#associa").click();
-await pag.waitForSelector("#qr svg", { timeout: 8000 });
-const url1 = await qrUrl();
-check(url1.startsWith(relay.url + "/ponte/#k="), `la build mini mostra il suo QR (${url1.slice(0, 36)}…)`);
-check(await finche(async () => (await statoPonte())?.relay === "su", 10000), "il PC mini è collegato al ponte");
-
-// il telefono, in un secondo browser
-const telBrowser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_PATH || chromiumPath() });
-const telCtx = await telBrowser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true, locale: "it-IT" });
-await telCtx.routeWebSocket(/\/ponte\/ws/, (ws) => { const s = ws.connectToServer(); ws.onMessage((m) => s.send(m)); s.onMessage((m) => ws.send(m)); ws.onClose((c, r) => s.close(c >= 3000 && c <= 4999 ? { code: c, reason: r } : {})); s.onClose((c, r) => ws.close(c >= 3000 && c <= 4999 ? { code: c, reason: r } : {})); });
+// ===========================================================================
+sezione("la mini 3.87: collegata come stazione, con le stampanti, e un iPhone associato");
+mini387(MINI);
+let staCtx = await lancia(PROF.sta, MINI);
+let staSw = await swDi(staCtx);
+check(new URL(staSw.url()).host === ID_INF, `la mini ha il suo id (${new URL(staSw.url()).host})`);
+await versoRelay(staSw);
+// l'iPhone associato alla mini (il ruolo `pc` di sola lettura: dopo l'aggiornamento non c'è più)
+const pm = await staCtx.newPage();
+await pm.goto(`chrome-extension://${ID_INF}/ponte.html`);
+await pm.waitForSelector("#associa", { timeout: 8000 });
+await pm.locator("#associa").click();
+check(!!(await finche(() => staSw.evaluate(() => chrome.storage.local.get("ponte.coppia").then((o) => !!o["ponte.coppia"])), 8000)), "la mini ha un iPhone associato (il QR del ponte)");
+await pm.close();
+// il telefono, associato al PC del medico
+const pp = await ctx.newPage();
+await pp.goto(`chrome-extension://${ID}/ponte.html`);
+await pp.locator("#associa").click();
+await pp.waitForSelector("#qr svg", { timeout: 8000 });
+const qrTel = await sw.evaluate(() => ponteQr());
+await pp.close();
+const telBrowser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_PATH || chromiumPath(), args: [...(process.env.PSA_CHROMIUM_ARGS || "").split(/\s+/).filter(Boolean), ...RETE_CHIUSA] });
+const telCtx = await telBrowser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, locale: "it-IT" });
 const tel = await telCtx.newPage();
 const testoTel = () => tel.locator("#app").innerText().catch(() => "");
-const aspettaTel = async (re, t = 20000) => (await finche(async () => re.test(await testoTel()), t)) ? testoTel() : "";
-await tel.goto(url1);
-check(/ROSSI MARIO/.test(await aspettaTel(/ROSSI MARIO/, 20000)), "inquadrato il QR: l'elenco dei pazienti del PC mini (la lettura funziona)");
-// il tipo del PC è «sola lettura» (dal saluto), salvato nella lista
-const kindTel = await tel.evaluate(() => { const o = JSON.parse(localStorage.getItem("psassist.ponte.pcs.v1") || "null"); const a = o && o.v.find((p) => p.id === o.attivo); return a ? a.kind : ""; });
-check(kindTel === "lettura", `il telefono sa che il PC è di sola lettura (kind: ${kindTel})`);
-// sola lettura: un segno piccolo nella testata (👁️, la scritta nel suo nome), nessuna barra larga quanto lo schermo
-check(await finche(async () => (await tel.locator(".top .sola").getAttribute("aria-label").catch(() => "") || "") === "Sola lettura · gestionale di UTENTE1", 8000)
-  && await tel.locator(".top .sola").innerText() === "👁️" && await tel.locator(".solabar").count() === 0,
-  "sola lettura: nella testata un 👁️ piccolo, la scritta «Sola lettura · gestionale di UTENTE1» solo nel suo nome (l'operatore loggato, letto dalla pagina)");
-const segno = await tel.locator(".top .sola").evaluate((e) => { const r = e.getBoundingClientRect(), s = getComputedStyle(e); return { w: r.width, h: r.height, f: parseFloat(s.fontSize), o: Number(s.opacity) }; });
-check(segno.w <= 20 && segno.h <= 20 && segno.f <= 13 && segno.o < 1, `…quasi invisibile: piccolo (${Math.round(segno.w)}×${Math.round(segno.h)} px, ${segno.f} px) e quieto (opacità ${segno.o})`);
-if (process.env.TEST_SHOTS_DIR) await tel.screenshot({ path: join(process.env.TEST_SHOTS_DIR, "tel-mini-sola-lettura.png") }).catch(() => {});
+const aspettaTel = async (re, t = 30000) => ((await finche(async () => re.test(await testoTel()), t)) ? testoTel() : "");
+await tel.goto(qrTel);
+check(/ROSSI MARIO/.test(await aspettaTel(/ROSSI MARIO/)), "il telefono associato al PC del medico");
+// la pagina della stazione (mini 3.87): il QR; il telefono lo apre e «Collega»
+let pSta = await staCtx.newPage();
+await pSta.goto(`chrome-extension://${ID_INF}/stazione.html`);
+await pSta.waitForSelector("#qr svg", { timeout: 10000 });
+const statoSta = () => staSw.evaluate(() => chrome.storage.session.get("stazione.stato").then((o) => o["stazione.stato"] || null));
+const offerta = (await statoSta()).offerta;
+await tel.evaluate((u) => { location.hash = new URL(u).hash; }, offerta.qr);
+await aspettaTel(/Collegala al PC/, 10000);
+await tel.locator('[data-a="stacollega"]').first().click();
+check(/Collegata al PC/.test(await aspettaTel(/Collegata al PC/, 40000)), "«Collega» dal telefono: la stazione collegata al PC del medico");
+const quiSta = () => staSw.evaluate(() => chrome.storage.local.get("stazione.qui").then((o) => o["stazione.qui"] || null));
+const qPrima = await finche(async () => { const q = await quiSta(); return q && q.conferma ? q : null; }, 15000);
+check(!!qPrima, "sulla mini: collegata e confermata");
+await pSta.waitForFunction(() => !document.getElementById("setic").disabled, null, { timeout: 15000 });
+await pSta.locator("#setic").selectOption("Zebra Infermeria");
+await finche(async () => (await staSw.evaluate(() => chrome.storage.local.get("stampa"))).stampa?.etichette === "Zebra Infermeria", 5000);
+const scelte = (await staSw.evaluate(() => chrome.storage.local.get("stampa"))).stampa;
+check(scelte.etichette === "Zebra Infermeria" && scelte.a4 === "HP Infermeria A4", `le stampanti scelte sulla mini (${JSON.stringify(scelte)})`);
+await pSta.close();
 
-// si apre il paziente: le viste ci sono, ma i controlli di scrittura no
-await tel.locator('[data-a="paz"]').first().click().catch(() => {});
-await aspettaTel(/ROSSI MARIO/, 8000);
-// Richieste: il catalogo si vede, ma niente bottone «Conferma e stampa»
-await tel.locator('[data-a="scheda"][data-s="richieste"]').click().catch(() => {});
-await sospendi(600);
-const haOrdina = await tel.locator('[data-a="ordina"]').count();
-check(haOrdina === 0, "nelle Richieste non c'è il bottone «Conferma e stampa» (sola lettura)");
-// Cartella: si legge, ma niente «Salva» e i campi sono di sola lettura
-await tel.locator('[data-a="scheda"][data-s="cartella"]').click().catch(() => {});
-await aspettaTel(/Anamnesi|Letto sul PC|Cartella/, 10000);
-const csalva = await tel.locator('[data-a="csalva"]').count();
-const scrivibili = await tel.evaluate(() => [...document.querySelectorAll(".cc textarea")].filter((t) => !t.readOnly).length);
-check(csalva === 0, "nella Cartella non c'è «Salva» (sola lettura)");
-check(scrivibili === 0, "…e i campi della cartella sono di sola lettura");
-// nel menu: niente «Registrazioni» (scritture); «Stampa PDF» resta, e «📷 Scansiona il QR» c'è anche qui (per aggiungere il PC completo)
-await tel.locator('[data-a="menu"]').click().catch(() => {});
-await sospendi(300);
-const menu = await tel.locator(".menu").innerText().catch(() => "");
-check(!/Registrazioni/.test(menu) && /Stampa PDF/.test(menu) && /Sola lettura · gestionale di UTENTE1/.test(menu) && await tel.locator('.menu [data-a="scansiona"]').innerText().catch(() => "") === "📷 Scansiona il QR",
-  `nel menu niente «Registrazioni»; «Stampa PDF» resta, e «📷 Scansiona il QR» c'è anche su un PC di sola lettura (${menu.replace(/\n+/g, " · ")})`);
-await tel.locator('[data-a="menu"]').click().catch(() => {});
-// il QR di una stazione di stampa, inquadrato con il PC di sola lettura attivo: la carta dice di passare al PC completo, niente «Collega»
-await tel.evaluate(() => { location.hash = `sta=${"A".repeat(87)}.${"B".repeat(22)}.${Date.now() + 600e3}&nome=Infermeria`; });
-const cartaSta = await finche(async () => /sola lettura: la stampante si collega al PC completo/.test(await tel.locator(".stcarta").innerText().catch(() => "")), 8000);
-check(cartaSta && await tel.locator('[data-a="stacollega"]').count() === 0, "il QR di una stazione con un PC di sola lettura: «la stampante si collega al PC completo», niente «Collega»");
+// ===========================================================================
+// (come l'aggiornamento vero: l'aiutante scambia la cartella, poi l'estensione si ricarica — chrome.runtime.reload)
+sezione("l'aggiornamento: la stessa cartella diventa la build Infermeria, e si ricarica");
+infermeria(MINI, true);
+const man = JSON.parse(readFileSync(join(MINI, "manifest.json"), "utf8"));
+check(man.name === "PS Assist · Stampa Infermeria" && man.key === LETTURA_KEY, `il nome e la stessa chiave della mini (stesso id): «${man.name}»`);
+check(!man.content_scripts && !man.host_permissions && !man.optional_host_permissions && !man.web_accessible_resources, "niente content script, niente permessi sugli indirizzi, niente risorse per le pagine");
+check(man.options_ui.page === "stazione.html" && man.action && !man.action.default_popup && !(man.permissions || []).includes("background"),
+  "la sua pagina è la stazione (Opzioni e icona, senza popup); nessun permesso «background»");
+check(LETTURA_VIA.every((f) => !existsSync(join(MINI, f))) && /PSA_SOLO_STAZIONE = true/.test(readFileSync(join(MINI, "sola-lettura.js"), "utf8")), "niente pagine del telefono (ponte.html, azione.html); la bandiera «solo stazione»");
+const swNuovo = staCtx.waitForEvent("serviceworker", { timeout: 20000 });
+await staSw.evaluate(() => { setTimeout(() => chrome.runtime.reload(), 50); }).catch(() => {});
+staSw = await swNuovo;
+check(new URL(staSw.url()).host === ID_INF && await staSw.evaluate(() => self.PSA_SOLO_STAZIONE === true && chrome.runtime.getManifest().name), "lo stesso id dopo l'aggiornamento, con la build nuova");
+await staSw.evaluate(() => staCaricato);
+const qDopo = await quiSta();
+const chiave = await staSw.evaluate(() => cassaLeggi("stazione.qui").then((x) => !!(x && x.k)));
+check(!!qDopo && qDopo.id === qPrima.id && qDopo.conferma && chiave, "il collegamento della stazione resta (la stessa coppia, la chiave nella cassa)");
+const scelteDopo = (await staSw.evaluate(() => chrome.storage.local.get("stampa"))).stampa;
+check(JSON.stringify(scelteDopo) === JSON.stringify(scelte), "le stampanti scelte restano");
+check(!!(await finche(() => staSw.evaluate(() => chrome.storage.local.get("ponte.coppia").then((o) => !o["ponte.coppia"])), 8000)), "l'iPhone associato a questo PC quando era la mini: via (il ruolo `pc` non c'è più)");
+
+// ===========================================================================
+sezione("nessuna pagina aperta sulla stazione: è sul ponte, e stampa");
+const pagine = await staSw.evaluate(() => chrome.runtime.getContexts({ contextTypes: ["TAB"] }).then((l) => l.length));
+check(pagine === 0, `nessuna scheda dell'estensione aperta sulla stazione (${pagine})`);
+check(!!(await finche(async () => (await statoSta())?.qui?.su, 20000)), "la stazione è in linea da sola (la presa nel documento fuori schermo)");
+const PDF = Buffer.from("%PDF-1.4\n1 0 obj << /Type /Page >> endobj\n%%EOF\n").toString("base64");
+const fogli = [["etichette", "Zebra Infermeria"], ["etichetta", "Zebra Infermeria"], ["a4", "HP Infermeria A4"]];
+for (const [tipo, attesa] of fogli) {
+  const prima = lavori("sta").length;
+  const r = await sw.evaluate(([t, p, rq]) => stazioneStampa(t, p, 1, rq), [tipo, PDF, `rq-inf-${tipo}-0001`]);
+  const l = lavori("sta");
+  check(r && r.ok && r.esito === "stampato" && l.length === prima + 1 && l.at(-1).stampante === attesa,
+    `un foglio «${tipo}» dal PC del medico: stampato sulla stazione, su ${attesa} (got ${JSON.stringify(r && { ok: r.ok, esito: r.esito, why: r.why })} → ${l.at(-1)?.stampante})`);
+}
+check(lavori("pc").length === 0, "e niente sulle stampanti del PC del medico");
+
+// ===========================================================================
+sezione("un'ora di battiti, a gestionale e pagina chiusi: una presa sola");
+const entrate0 = relay.entrate().stazione;
+const docPresa = () => staSw.evaluate(() => fuoriPing().then((r) => r && r.prese && r.prese.stazione));
+const p0 = await docPresa();
+await staSw.evaluate(async () => { FUORI.prova = true; await fuoriRegola({ battito: 200, pong: 150 }); FUORI.prova = false; });
+// 120 battiti (un'ora a uno ogni 30 secondi), e intanto i risvegli del service worker e i cambi di schede
+for (let i = 0; i < 12; i++) {
+  await sospendi(2000);
+  await staSw.evaluate(() => Promise.all([stzAvvia(), stzAvvia(false)]).then(() => staCambio()));
+}
+const p1 = await docPresa();
+await staSw.evaluate(async () => { FUORI.prova = true; await fuoriRegola({ battito: 30e3, pong: 15e3 }); FUORI.prova = false; });
+const entrate1 = relay.entrate().stazione;
+check(!!p0 && !!p1 && p1.su && p1.entrate === p0.entrate && entrate1 === entrate0,
+  `120 battiti (risposta entro 150 ms) e 24 risvegli: la presa è sempre quella — riconnessioni ${entrate1 - entrate0} al ripetitore, aperture nel documento ${p1 && p0 ? p1.entrate - p0.entrate : "?"}`);
+await staCtx.close();
+
+// ===========================================================================
+sezione("installata da zero: la pagina si apre da sola, e mostra solo il QR, le stampanti e lo stato");
+infermeria(MINI2);
+const nuovaCtx = await lancia(PROF.nuova, MINI2);
+const nuovaSw = await swDi(nuovaCtx);
+await versoRelay(nuovaSw);
+const pagina = await finche(() => nuovaCtx.pages().find((p) => p.url().endsWith("/stazione.html")), 15000);
+check(!!pagina, "alla prima installazione si apre da sola la pagina della stazione");
+if (pagina) {
+  await pagina.reload();   // (con il ponte di prova)
+  await pagina.waitForSelector("#qr svg", { timeout: 10000 });
+  await pagina.waitForFunction(() => !document.getElementById("setic").disabled, null, { timeout: 15000 });
+  const vis = await pagina.evaluate(() => {
+    const si = (el) => !!el && el.offsetParent !== null;
+    return { titolo: document.title, qr: si(document.getElementById("qr")), etic: si(document.getElementById("setic")), a4: si(document.getElementById("sa4")),
+      prove: [...document.querySelectorAll("[data-prova]")].filter(si).length, stato: si(document.getElementById("stato")),
+      nome: si(document.getElementById("nome")), lavori: si(document.getElementById("lavori")), h2: [...document.querySelectorAll("h2")].filter(si).map((h) => h.textContent) };
+  });
+  check(vis.titolo === "PS Assist · Stampa Infermeria" && vis.qr && vis.etic && vis.a4 && vis.prove === 2 && vis.stato && !vis.nome && !vis.lavori && JSON.stringify(vis.h2) === '["Stampanti"]',
+    `solo il QR, lo stato e le due stampanti con la prova: niente nome, niente elenco (${JSON.stringify(vis)})`);
+  check(/puoi chiuderla/.test(await pagina.locator("#piede").innerText()) && /Non collegata/.test(await pagina.locator("#stato").innerText()), "«Non collegata», e la pagina si può chiudere");
+}
+await nuovaCtx.close();
 
 await telCtx.close().catch(() => {});
 await telBrowser.close().catch(() => {});
 await ctx.close().catch(() => {});
 await relay.chiudi?.().catch?.(() => {}) ?? relay.close?.();
-rmSync(PROFILE, { recursive: true, force: true });
-rmSync(MINI, { recursive: true, force: true });
-console.log(fail ? `\nMINI: ${fail} CHECK FALLITI\n` : "\nMINI: TUTTO OK\n");
+for (const p of [...Object.values(PROF), ...Object.values(FINTO), MINI, MINI2]) rmSync(p, { recursive: true, force: true });
+console.log(fail ? `\nINFERMERIA: ${fail} CHECK FALLITI\n` : "\nINFERMERIA: TUTTO OK\n");
 process.exit(fail ? 1 : 0);
