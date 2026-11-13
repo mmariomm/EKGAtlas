@@ -184,7 +184,8 @@ async function ricAvvia(j) {
   await ricScrivi(j);
 }
 // I farmaci frequenti: uno per codice, quante volte e l'ultima, al più 50
-// (via i meno usati, poi i più vecchi). Un farmaco: codice, descrizione,
+// (via i meno usati, poi i più vecchi). Quelli fissati dal medico (`pin`: il
+// suo ordine, 1, 2, …) stanno davanti e non se ne vanno mai. Un farmaco: codice, descrizione,
 // quantità, «non sostituibile» e i campi scritti a mano, dall'Anteprima; una
 // visita: codice, descrizione e tipo, quando la ricetta l'ha inserita davvero.
 // I campi che non arrivano (una ricetta fatta da noi) restano quelli imparati.
@@ -199,13 +200,36 @@ async function ricImpara(voci) {
     const prima = pref.find((x) => x.codice === codice) || {};
     const n = Math.min(9999, (Number(prima.n) || (prima.codice ? 1 : 0)) + 1);
     const campi = ricCampi(v.campi) || ricCampi(prima.campi);
+    const pin = Number(prima.pin) > 0 ? { pin: Number(prima.pin) } : {};
     const voce = ricTipo(codice) === "farmaco"
-      ? { codice, descr, tipo: "farmaco", qta: Math.max(1, Math.min(99, Math.round(Number(v.qta) || 1))), ns: !!v.ns, ...(campi ? { campi } : {}), n, ts: Date.now() }
-      : { codice, descr, tipo: "visita", n, ts: Date.now() };
+      ? { codice, descr, tipo: "farmaco", qta: Math.max(1, Math.min(99, Math.round(Number(v.qta) || 1))), ns: !!v.ns, ...(campi ? { campi } : {}), n, ts: Date.now(), ...pin }
+      : { codice, descr, tipo: "visita", n, ts: Date.now(), ...pin };
     pref = [voce, ...pref.filter((x) => x.codice !== codice)];
   }
-  pref.sort((a, b) => (Number(b.n) || 1) - (Number(a.n) || 1) || (b.ts || 0) - (a.ts || 0));
-  await chrome.storage.local.set({ [RIC_PREF]: pref.slice(0, RIC_PREF_MAX) });
+  await ricPrefSalva(pref);
+}
+// in ordine: i fissati nel loro ordine (rinumerati 1, 2, …), poi gli altri per
+// uso; il tetto dei 50 tocca solo i non fissati
+function ricPrefSalva(pref) {
+  const fissi = pref.filter((x) => Number(x.pin) > 0).sort((a, b) => a.pin - b.pin).map((x, i) => ({ ...x, pin: i + 1 }));
+  const altri = pref.filter((x) => !(Number(x.pin) > 0)).map(({ pin, ...x }) => x)
+    .sort((a, b) => (Number(b.n) || 1) - (Number(a.n) || 1) || (b.ts || 0) - (a.ts || 0));
+  return chrome.storage.local.set({ [RIC_PREF]: [...fissi, ...altri.slice(0, Math.max(0, RIC_PREF_MAX - fissi.length))] });
+}
+// 📌 dal pannello: fissa/togli (`pin`), o il nuovo ordine dei fissati (`ordine`: i codici)
+async function ricPrefFissa(msg) {
+  const l = ((await chrome.storage.local.get(RIC_PREF))[RIC_PREF]) || [];
+  const pref = Array.isArray(l) ? l.filter((x) => x && ricCodiceBuono(String(x.codice || ""))) : [];
+  if (Array.isArray(msg.ordine)) {
+    msg.ordine.slice(0, RIC_PREF_MAX).forEach((c, i) => { const x = pref.find((y) => y.codice === c && Number(y.pin) > 0); if (x) x.pin = i + 1; });
+  } else {
+    const x = pref.find((y) => y.codice === msg.codice);
+    if (!x) return false;
+    if (msg.pin) { if (!(Number(x.pin) > 0)) x.pin = 1 + Math.max(0, ...pref.map((y) => Number(y.pin) || 0)); }
+    else delete x.pin;
+  }
+  await ricPrefSalva(pref);
+  return true;
 }
 
 // La scheda del SISS davanti (e la sua finestra).
@@ -231,7 +255,8 @@ function ricMessaggio(msg, sender, reply) {
   const daSiss = !!tab && dalPrescrittivo(sender.url);
 
   // ---- dal pannello (la pagina del paziente) ------------------------------
-  if (["ricettaNuova", "ricettaCerca", "ricettaPrepara", "ricettaFerma", "ricettaApri"].includes(msg.t) && !daGestionale) return reply({ ok: false, why: "non dal gestionale" }), true;
+  if (["ricettaNuova", "ricettaCerca", "ricettaPrepara", "ricettaFerma", "ricettaApri", "ricettaFissa"].includes(msg.t) && !daGestionale) return reply({ ok: false, why: "non dal gestionale" }), true;
+  if (msg.t === "ricettaFissa") return fai(async () => reply({ ok: await ricPrefFissa(msg) }));
   // «apri il SISS» dalla striscia: la scheda del SISS di questa ricetta, davanti (un tocco del medico)
   if (msg.t === "ricettaApri") return fai(async () => {
     const j = await ricLeggi();

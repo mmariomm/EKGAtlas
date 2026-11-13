@@ -6416,6 +6416,10 @@
     .ricetta .lbl:first-child { margin-top: 0; }
     .ricpref, .ricris { display: flex; flex-wrap: wrap; gap: 5px; }
     .ricchip { border: 1px solid #C4D0DC; background: #fff; color: var(--testo); border-radius: 999px; padding: 6px 11px; font: 600 11.5px/1.2 inherit; cursor: pointer; text-align: left; }
+    .ricchipw { display: inline-flex; align-items: center; gap: 1px; }
+    .ricchipw.fisso { cursor: grab; }
+    .ricpin { border: 0; background: none; cursor: pointer; padding: 2px 3px; font-size: 11px; opacity: .35; filter: grayscale(1); }
+    .ricpin.on, .ricpin:hover, .ricpin:focus-visible { opacity: 1; filter: none; }
     .ricchip:hover, .ricrisv:hover { border-color: var(--azione); color: var(--azione); }
     .ricchip.on, .ricrisv.on { background: var(--azione); border-color: var(--azione); color: #fff; }
     .ricris { flex-direction: column; flex-wrap: nowrap; margin-top: 6px; max-height: 210px; overflow: auto; }
@@ -13828,9 +13832,9 @@
       const leggi = () => Promise.all([chrome.storage.session.get("ricetta").catch(() => ({})), chrome.storage.local.get("ricetta.preferiti.v1").catch(() => ({}))]).then(([a, b]) => {
         const prima = JSON.stringify([this.ricJob, this.ricPref]);
         this.ricJob = a.ricetta || null;
-        // (i farmaci frequenti: i più usati davanti, poi i più recenti)
+        // (i farmaci frequenti: i fissati 📌 nel tuo ordine, poi i più usati, poi i più recenti)
         this.ricPref = (Array.isArray(b["ricetta.preferiti.v1"]) ? b["ricetta.preferiti.v1"] : []).filter((x) => x && x.codice)
-          .sort((x, y) => (Number(y.n) || 1) - (Number(x.n) || 1) || (y.ts || 0) - (x.ts || 0));
+          .sort((x, y) => (Number(x.pin) || 1e9) - (Number(y.pin) || 1e9) || (Number(y.n) || 1) - (Number(x.n) || 1) || (y.ts || 0) - (x.ts || 0));
         if (this.view === "ricetta" && JSON.stringify([this.ricJob, this.ricPref]) !== prima) this.ricRidisegna();
         this.stripRicetta();
       }).catch(() => {});
@@ -13918,7 +13922,7 @@
       const cf = this.ricCf(), nome = nomeInPagina();
       const scelti = new Set(r.voci.map((v) => v.codice));
       const visite = this.ricConVisite();
-      const pref = (this.ricPref || []).map((p) => `<button class="ricchip${scelti.has(p.codice) ? " on" : ""}" data-ricpref="${esc(p.codice)}" aria-pressed="${scelti.has(p.codice)}" title="${esc(p.codice)}${this.ricTipoDi(p.codice) === "visita" ? " · visita/esame" : ` · quantità ${esc(p.qta || 1)}${p.ns ? " · non sostituibile" : ""}${Object.entries(p.campi || {}).map(([k, v]) => ` · ${esc(k)}: ${esc(v)}`).join("")}`} · ${esc(p.n || 1)} volte">${esc(p.descr)}</button>`).join("");
+      const pref = (this.ricPref || []).map((p) => `<span class="ricchipw${p.pin ? " fisso" : ""}" data-ricw="${esc(p.codice)}"${p.pin ? ` draggable="true" title="Trascina per cambiare l'ordine (o Alt+← →)"` : ""}><button class="ricchip${scelti.has(p.codice) ? " on" : ""}" data-ricpref="${esc(p.codice)}" aria-pressed="${scelti.has(p.codice)}" title="${esc(p.codice)}${this.ricTipoDi(p.codice) === "visita" ? " · visita/esame" : ` · quantità ${esc(p.qta || 1)}${p.ns ? " · non sostituibile" : ""}${Object.entries(p.campi || {}).map(([k, v]) => ` · ${esc(k)}: ${esc(v)}`).join("")}`} · ${esc(p.n || 1)} volte">${esc(p.descr)}</button><button class="ricpin${p.pin ? " on" : ""}" data-ricpin="${esc(p.codice)}" aria-pressed="${!!p.pin}" aria-label="${p.pin ? "Togli da" : "Fissa fra"} i preferiti: ${esc(p.descr)}" title="${p.pin ? "Fissato: tocca per toglierlo (Alt+← → lo sposta)" : "Fissa in testa"}">📌</button></span>`).join("");
       const ris = attiva && j.risultati && j.cerca && j.risultati.n === j.cerca.n ? j.risultati : null;
       const risHtml = !ris ? "" : `<div class="ricris">${ris.voci.map((v) => `<button class="ricrisv${scelti.has(v.codice) ? " on" : ""}" data-ricadd="${esc(v.codice)}" data-descr="${esc(v.descr)}" data-tipo="${this.ricTipoDi(v.codice)}"><b>${esc(v.codice)}</b> ${esc(v.descr)}${this.ricTipoDi(v.codice) === "visita" ? ` <i class="rictipo">visita/esame</i>` : ""}</button>`).join("")
         || `<div class="ricnota">Niente per «${esc(ris.q)}»${ris.why ? ` (${esc(ris.why)})` : ""}.</div>`}</div>`;
@@ -13938,7 +13942,6 @@
           ${altro ? `<div class="ricstato warn">C'è una ricetta in preparazione nel SISS per un altro paziente: aspetta che finisca.</div>` : ""}
           <div class="lbl">Farmaci frequenti</div>
           <div class="ricpref">${pref || `<span class="ricnota">Ancora nessuno: si imparano da soli dalle ricette che arrivano in Anteprima nel SISS.</span>`}</div>
-          ${pref ? `<button class="ricbtn" id="ricdimentica" title="Toglie da questo PC i farmaci frequenti imparati dal SISS (niente del paziente: «Dimentica i dati…» non li tocca)">Dimentica i farmaci frequenti</button>` : ""}
           <div class="lbl">Cerca nel SISS</div>
           <div class="riccerca">
             <input id="ricq" type="search" autocomplete="off" spellcheck="false" value="${esc(r.q)}" placeholder="Farmaco: augmentin, tachipirina…" aria-label="Cerca un farmaco nel SISS">
@@ -13973,10 +13976,38 @@
         }
         ridisegna();
       }));
-      $("#ricdimentica")?.addEventListener("click", () => {
-        if (!confirm("Dimenticare i farmaci frequenti di questo PC?")) return;
-        chrome.storage.local.remove("ricetta.preferiti.v1").catch(() => {});
-        this.log(`${now()}  ricetta: farmaci frequenti dimenticati`);
+      // 📌 fissa/togli; i fissati si riordinano trascinandoli (o Alt+← → sul 📌)
+      const fissi = () => (this.ricPref || []).filter((x) => x.pin).map((x) => x.codice);
+      const ordina = (l) => ask({ t: "ricettaFissa", ordine: l });
+      this.root.querySelectorAll("[data-ricpin]").forEach((b) => {
+        const c = b.getAttribute("data-ricpin");
+        b.addEventListener("click", () => ask({ t: "ricettaFissa", codice: c, pin: b.getAttribute("aria-pressed") !== "true" }));
+        b.addEventListener("keydown", (e) => {
+          if (!e.altKey || !/^Arrow(Left|Right|Up|Down)$/.test(e.key)) return;
+          const l = fissi(), i = l.indexOf(c), k = i + (/Left|Up/.test(e.key) ? -1 : 1);
+          if (i < 0 || k < 0 || k >= l.length) return;
+          e.preventDefault();
+          [l[i], l[k]] = [l[k], l[i]];
+          this._ricFuoco = c;
+          ordina(l);
+        });
+        if (this._ricFuoco === c) { this._ricFuoco = null; b.focus({ preventScroll: true }); }
+      });
+      let tirato = null;
+      this.root.querySelectorAll(".ricchipw.fisso").forEach((w) => {
+        const c = w.getAttribute("data-ricw");
+        w.addEventListener("dragstart", (e) => { tirato = c; try { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", c); } catch { /* niente */ } });
+        w.addEventListener("dragover", (e) => { if (tirato && tirato !== c) e.preventDefault(); });
+        w.addEventListener("drop", (e) => {
+          e.preventDefault();
+          const da = tirato || (e.dataTransfer && e.dataTransfer.getData("text/plain"));
+          tirato = null;
+          const l = fissi(), i = l.indexOf(da), k = l.indexOf(c);
+          if (i < 0 || k < 0 || i === k) return;
+          l.splice(i, 1); l.splice(k, 0, da);
+          ordina(l);
+        });
+        w.addEventListener("dragend", () => { tirato = null; });
       });
       this.root.querySelectorAll("[data-ricadd]").forEach((b) => b.addEventListener("click", () => {
         const j = this.ricQui(), c = b.getAttribute("data-ricadd");

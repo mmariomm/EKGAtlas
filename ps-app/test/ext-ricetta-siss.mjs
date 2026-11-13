@@ -511,7 +511,7 @@ check(srvStato.registrazioni === reg10 + 1 && (await errori()).length === err10 
 check((await ricetta())?.stato === "anteprima" && !(await ricetta())?.cf, "la ricetta finisce lì, e il codice fiscale se ne va");
 
 // ---- 11. imparato dalla ricetta fatta a mano: quante volte, la nota, niente del paziente
-const PREF_OK = ["codice", "descr", "qta", "ns", "tipo", "n", "ts", "campi"];
+const PREF_OK = ["codice", "descr", "qta", "ns", "tipo", "n", "ts", "campi", "pin"];
 check(await finche(async () => (await preferiti()).some((p) => p.codice === AIC && p.qta === 3 && p.campi && p.campi.note === "1 bustina ogni 12 ore" && p.n >= 3), 8000),
   `la ricetta a mano entra nei farmaci frequenti: quantità 3, la nota, contata (${JSON.stringify((await preferiti()).find((p) => p.codice === AIC))})`);
 const pref11 = await preferiti();
@@ -545,6 +545,34 @@ await $p("#ricprepara").click();
 check(await finche(async () => /Fermato su «note»/.test(await statoPannello()), 30000), `il campo «note» non c'è: «${await statoPannello()}»`);
 const c13 = await clic();
 check(c13.anteprima === ant13 && c13.registra === 0 && (await sissStato()).vista.endsWith("/editing"), "fermo prima dell'Anteprima: niente premuto");
+
+// ---- 14. 📌: fissati in testa, nel tuo ordine (trascinando), e l'ordine resta dopo un ricarico
+const chips = () => $p(".ricchipw").evaluateAll((l) => l.map((w) => w.getAttribute("data-ricw") + (w.classList.contains("fisso") ? "*" : "")));
+const prefOrd = async () => (await preferiti()).map((p) => p.codice + (p.pin ? "#" + p.pin : ""));
+check(await $p("#ricdimentica").count() === 0, "niente più «Dimentica i farmaci frequenti»");
+await $p('[data-ricpin="89.7"]').click();
+check(await finche(async () => (await chips())[0] === "89.7*", 5000), `📌 sulla visita (meno usata): passa in testa (${await chips()})`);
+await $p(`[data-ricpin="${AIC}"]`).click();
+check(await finche(async () => (await chips()).join() === `89.7*,${AIC}*`, 5000) && (await prefOrd()).join() === `89.7#1,${AIC}#2`, `due fissati, nell'ordine in cui li fissi (${await chips()} · ${await prefOrd()})`);
+await $p(`.ricchipw[data-ricw="${AIC}"]`).dragTo($p('.ricchipw[data-ricw="89.7"]'));
+check(await finche(async () => (await chips()).join() === `${AIC}*,89.7*`, 5000) && (await prefOrd()).join() === `${AIC}#1,89.7#2`, `trascinato: ${AIC} davanti (${await chips()} · ${await prefOrd()})`);
+await $p('[data-ricpin="89.7"]').focus();
+await doc.keyboard.press("Alt+ArrowLeft");
+check(await finche(async () => (await prefOrd()).join() === `89.7#1,${AIC}#2`, 5000), `Alt+← sul 📌: lo sposta (${await prefOrd()})`);
+await doc.reload();
+await doc.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
+if (!(await $p(".card").count())) { await $p("#expand").click(); await doc.waitForSelector("#psassist-host .card", { timeout: 8000 }); }
+await $p('[data-seg="dimissioni"]').click();
+await $p("#dimricetta").click();
+check(await finche(async () => (await chips()).join() === `89.7*,${AIC}*`, 8000), `dopo un ricarico l'ordine è lo stesso (${await chips()})`);
+await $p('[data-ricpin="89.7"]').click();
+check(await finche(async () => (await chips()).join() === `${AIC}*,89.7` && !(await preferiti()).find((p) => p.codice === "89.7").pin, 5000), `tolto il 📌: torna fra gli altri, per uso (${await chips()})`);
+await sw.evaluate(() => chrome.storage.local.get("ricetta.preferiti.v1").then((o) => { const l = o["ricetta.preferiti.v1"];
+  for (let i = 0; i < 60; i++) l.push({ codice: String(100000000 + i), descr: "FARMACO " + i, tipo: "farmaco", qta: 1, n: 50, ts: Date.now() });
+  return chrome.storage.local.set({ "ricetta.preferiti.v1": l }); }));
+await sw.evaluate(() => ricImpara([{ codice: "100000001", descr: "FARMACO 1", qta: 1 }]));
+const tetto = await preferiti();
+check(tetto.length === 50 && tetto[0].codice === AIC && tetto[0].pin === 1, `al tetto dei 50 il fissato resta, primo (${tetto.length}, ${tetto[0].codice}#${tetto[0].pin})`);
 
 await ctx.close();
 srv.close();
