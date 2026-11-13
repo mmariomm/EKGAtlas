@@ -706,6 +706,104 @@ sezione("il sito che divide l'origine con l'app del telefono");
   check(/camera=\(self\)/.test(L.intestazioniApp("https://x/ponte/")["permissions-policy"]), "…e /ponte/ tiene le sue (la fotocamera per il QR): le mette il Worker, prima di queste");
 }
 
+// ======================================================================= il registro dei PC
+sezione("il registro dei PC (⋯ → Dispositivi): annuncio, lettura con prova, scadenza, tetti");
+await blocco(async () => {
+  const rel = await avviaRelay({ ipProva: true });
+  const posta = (p, corpo, ip = "10.0.0.1") => fetch(rel.url + p, { method: "POST", body: typeof corpo === "string" ? corpo : JSON.stringify(corpo), headers: { "content-type": "text/plain", "x-prova-ip": ip } });
+  const idN = () => P.b64u(P.casuale(16));
+  const tag = () => P.b64u(P.casuale(16));
+  // una stanza con le chiavi d'entrata (il PC le registra entrando), e la prova di lettura del telefono
+  const K = P.casuale(32), e = await P.chiaviEntra(K), stanza = (await P.chiaviCoppia(K)).stanza;
+  const pcWs = new WsNode(`${rel.url.replace(/^http/, "ws")}/ponte/ws?r=${stanza}&ruolo=pc`);
+  let entrato = false;
+  pcWs.on("message", async (d, b) => {
+    if (b) return;
+    const m = JSON.parse(d.toString());
+    if (m.sfida) pcWs.send(JSON.stringify({ prova: [await P.provaEntra(e.pc, m.sfida)], chiave: e.pc, altro: [e.tel] }));
+    if (typeof m.entrato === "number") entrato = true;
+  });
+  check(await finche(() => entrato), "(il PC entra nella sua stanza e le dà la chiave d'entrata del telefono)");
+  let tt = Date.now();
+  const leggi = async (chiave = e.tel, r = stanza, t = (tt = Math.max(Date.now(), tt + 1)), ip) =>
+    posta("/ponte/registro/elenco", { r, t, prova: [await P.provaEntra(chiave, "registro." + t)] }, ip);
+
+  const A = { v: 1, id: idN(), nome: "Box 3", kind: "pc", ver: "3.87.0", tel: tag(), sta: { nome: "Infermeria", tag: tag() } };
+  const B = { v: 1, id: idN(), nome: "Triage", kind: "lettura", ver: "3.87.0", stz: { nome: "Infermeria", tag: A.sta.tag } };
+  const ra = await posta("/ponte/registro", A), rb = await posta("/ponte/registro", B);
+  check(ra.status === 200 && rb.status === 200 && ra.headers.get("access-control-allow-origin") === "*",
+    "un PC associato e uno no si annunciano (POST, nessuna presa; CORS aperto: anche una pagina può annunciarsi)");
+  const ok = await leggi();
+  const l = ok.status === 200 ? (await ok.json()).pc : [];
+  const a = l.find((x) => x.nome === "Box 3"), b = l.find((x) => x.nome === "Triage");
+  check(l.length === 2 && a && a.tel === A.tel && a.sta.tag === A.sta.tag && b && !b.tel && b.stz.tag === A.sta.tag && b.kind === "lettura" && a.fa < 5000,
+    "il telefono con l'associazione vera legge l'elenco: nome, tipo, versione, impronte della stanza e della stazione, «fa»");
+  check(!JSON.stringify(l).includes(A.id) && !JSON.stringify(l).includes(B.id), "…senza gli id delle installazioni (un'impronta corta: con lei non si toglie niente)");
+  // letture senza prova
+  const t0 = Date.now() + 10;
+  const altroK = (await P.chiaviEntra(P.casuale(32))).tel;
+  const rifiuti = [
+    await posta("/ponte/registro/elenco", { r: stanza, t: t0 + 1, prova: ["x"] }),
+    await leggi(altroK),
+    await leggi(e.pc),                                          // la chiave del PC non è quella del telefono
+    await leggi(e.tel, Buffer.from(P.casuale(16)).toString("hex")),   // una stanza che non ha chiavi
+    await leggi(e.tel, stanza, Date.now() - 10 * 60e3),         // un'ora lontana
+    await posta("/ponte/registro/elenco", "{}"),
+  ];
+  check(rifiuti.every((r) => r.status === 403 || r.status === 400), `una lettura senza la prova giusta è rifiutata (${rifiuti.map((r) => r.status).join(" ")})`);
+  // la stessa prova due volte
+  const t1 = Date.now() + 500, pr = { r: stanza, t: t1, prova: [await P.provaEntra(e.tel, "registro." + t1)] };
+  const p1 = await posta("/ponte/registro/elenco", pr), p2 = await posta("/ponte/registro/elenco", pr);
+  check(p1.status === 200 && p2.status === 403, "una prova vale una volta sola (rigiocata: 403)");
+  tt = t1;
+  // campi in più, pazienti, troppo grande, forme sbagliate
+  const male = [
+    { ...A, id: idN(), paziente: "ROSSI MARIO" }, { ...A, id: idN(), cf: "RSSMRA60A01F205Z" }, { ...A, id: idN(), operatore: "Dr X" },
+    { ...A, id: idN(), sta: { nome: "x", tag: tag(), ep: "123" } }, { ...A, id: idN(), nome: "x".repeat(800) }, { ...A, id: "corto" },
+    { ...A, id: idN(), kind: "PC!" }, { ...A, id: idN(), tel: "ROSSI" }, { ...A, id: idN(), ver: "tre" }, { ...A, id: idN(), v: 2 },
+  ];
+  const rm = await Promise.all(male.map((x) => posta("/ponte/registro", x)));
+  check(rm.every((r) => r.status === 400 || r.status === 413) && Object.keys(rel.elencoPc()).length === 2,
+    `nessun campo che non sia del registro (pazienti, operatore, …), nessun annuncio troppo grande o fuori forma (${rm.map((r) => r.status).join(" ")})`);
+  check(Object.values(rel.elencoPc()).every((r) => r.nome.length <= 40), "…e i nomi restano corti");
+  // togliersi
+  const via = await posta("/ponte/registro", { v: 1, id: B.id, via: true });
+  check(via.status === 200 && !rel.elencoPc()[B.id] && !!rel.elencoPc()[A.id], "«Non comparire nella lista»: l'annuncio con `via` toglie la sua riga, solo quella");
+
+  // i tetti e la scadenza, sulla logica (con l'ora in mano)
+  const R = L.REGISTRO;
+  let salvato = null, scritture = 0;
+  const reg = new L.Registro({ leggi: () => salvato, scrivi: (v) => { salvato = structuredClone(v); scritture++; }, ip: new Map() });
+  const ann = (o, ip, ora) => reg.annuncia(JSON.stringify({ v: 1, kind: "pc", nome: "x", ...o }), ip, ora);
+  const T = 1e12;
+  const id1 = idN();
+  ann({ id: id1 }, "1.1.1.1", T);
+  const s0 = scritture;
+  ann({ id: id1 }, "1.1.1.1", T + 60e3);
+  check(scritture === s0, "lo stesso annuncio, uguale, poco dopo: nessuna scrittura");
+  check(JSON.parse(reg.elencoPer("9", T + R.scade - 1).corpo).pc.length === 1 && JSON.parse(reg.elencoPer("9", T + 60e3 + R.scade + 1).corpo).pc.length === 0,
+    "una riga non vista da 7 giorni se ne va da sola (alla lettura o all'annuncio dopo)");
+  let nuovi = 0;
+  for (let i = 0; i < R.nuoviPerIp + 20; i++) if (ann({ id: idN() }, "6.6.6.6", T + 2e9).stato === 200) nuovi++;
+  check(nuovi === R.nuoviPerIp, `un IP aggiunge al più ${R.nuoviPerIp} righe nuove ogni 10 minuti (${nuovi})`);
+  let troppi = 0;
+  for (let i = 0; i < R.annunciPerIp + 10; i++) if (ann({ id: id1 }, "7.7.7.7", T + 2e9 + i).stato === 429) troppi++;
+  check(troppi === 10, `…e al più ${R.annunciPerIp} annunci (oltre: 429)`);
+  // l'elenco pieno: una riga nuova non scaccia chi si fa sentire
+  const T2 = T + 3e9;
+  for (let i = 0; Object.keys(reg.carica()).length < R.max; i++) ann({ id: idN() }, "ip" + Math.floor(i / 50), T2);
+  const pieno = ann({ id: idN() }, "nuovo", T2 + 1000);
+  const dopo = ann({ id: idN() }, "nuovo2", T2 + R.vecchia + 1000);
+  check(Object.keys(reg.carica()).length === R.max && pieno.stato === 507 && dopo.stato === 200,
+    `al più ${R.max} righe: piene, una nuova entra solo al posto di una non vista da un giorno`);
+  check(JSON.stringify(salvato).length < 200e3, `l'elenco pieno sta in un valore solo (${Math.round(JSON.stringify(salvato).length / 1024)} KB)`);
+  let lett = 0;
+  for (let i = 0; i < R.lettureAlMinuto + 5; i++) if (reg.elencoPer("8.8.8.8", T2 + i).stato === 429) lett++;
+  check(lett === 5, `le letture: al più ${R.lettureAlMinuto} al minuto per IP`);
+  pcWs.close();
+  await rel.chiudi();
+});
+
 await relay.chiudi();
 console.log(fail ? `\nPONTE-SICUREZZA: ${fail} FALLITI` : "\nPONTE-SICUREZZA: TUTTO OK");
 process.exit(fail ? 1 : 0);

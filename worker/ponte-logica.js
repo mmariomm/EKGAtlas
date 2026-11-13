@@ -444,6 +444,22 @@ export class Stanza {
     if (avvisa && !st.attende) this.avvisa(p, st, ora);
     try { this.io.scrivi(p, { ...st, via: codice, chiusa: true }); } catch { /* chiusa intanto */ }
   }
+  // (il registro dei PC, più sotto) Il telefono prova alla stanza di avere la chiave d'entrata `tel` (non
+  // scaduta): l'HMAC su «registro.<t>», con t vicino all'ora del ripetitore e più grande dell'ultima accettata
+  // qui (una prova vale una volta). { ok } o { ok: false, stato }. Solo dopo, l'elenco. Nessuna presa.
+  provaRegistro(m, ora) {
+    if (!m) return { ok: false, stato: 400 };
+    if (this.oltre("registro", 1, REGISTRO.lettureAlMinuto, ora)) return { ok: false, stato: 429 };
+    if (Math.abs(ora - m.t) > REGISTRO.provaMs) return { ok: false, stato: 403 };
+    const a = this.io.archivio;
+    let note, ultima;
+    try { note = this.chiavi("tel", ora); ultima = a ? Number(a.leggi("registro:t")) || 0 : 0; } catch { return { ok: false, stato: 503 }; }
+    if (!a || !note.length || m.t <= ultima) return { ok: false, stato: 403 };
+    const sfida = REGISTRO_ETICHETTA + m.t;
+    if (!m.prova.some((p) => note.some((c) => uguali(p, provaDi(c, sfida))))) return { ok: false, stato: 403 };
+    try { a.scrivi("registro:t", m.t); } catch { return { ok: false, stato: 503 }; }
+    return { ok: true };
+  }
 }
 
 // Le intestazioni dell'app del telefono: solo il suo codice, e la rete solo
@@ -458,3 +474,174 @@ export function intestazioniApp(url) {
     "permissions-policy": "camera=(self), microphone=(), geolocation=()",   // la fotocamera: «Scansiona il QR»
   };
 }
+
+// ------------------------------------------------------------- il registro
+/*
+ * Il registro dei PC con PS Assist (⋯ → Dispositivi sul telefono: «Altri PC con PS Assist»).
+ *
+ *   POST /ponte/registro          un annuncio (testo JSON, piccolo): chiunque — risponde con CORS aperto,
+ *                                 così si annuncia anche una pagina (la stazione di domani), non solo l'estensione
+ *   POST /ponte/registro/elenco   { r, t, prova }: l'elenco, solo a chi prova un'associazione
+ *
+ * Ogni PS Assist (completo o «Lettura e stampa», associato o no) si annuncia con un POST — nessuna presa —
+ * al più ogni 30 minuti e solo col gestionale (o la pagina della stazione) aperto; in più quando si installa
+ * o si aggiorna e quando un'associazione cambia (extension/registro-sw.js). L'annuncio porta SOLO: un numero a
+ * caso dell'installazione (`id`: mai mostrato — chi lo sa può toglierla), il nome che il medico ha dato al PC
+ * (o uno generato), il tipo (`kind`), la versione, e impronte opache: quella della stanza del telefono
+ * associato (`tel`), e quelle della stazione di stampa con il suo nome (`sta`: dove stampa questo PC; `stz`:
+ * questo PC È una stazione). Un campo in più, e l'annuncio è rifiutato. Mai pazienti, mai chi è nel
+ * gestionale, mai chiavi; l'IP serve solo ai conti, in memoria, e non si scrive.
+ *
+ * Chi legge: solo un telefono che prova un'associazione vera — l'HMAC con la chiave d'entrata `tel` di una
+ * stanza (la stessa delle prese) su «registro.<ora>», che la stanza controlla (Stanza.provaRegistro) e non
+ * accetta due volte. L'elenco che esce non ha gli `id`: un'impronta corta di ognuno.
+ *
+ * Chi scrive: chiunque abbia l'estensione (non si evita): per questo i tetti — un annuncio di al più
+ * REGISTRO.byte, al più REGISTRO.max righe, per IP al più tanti annunci e tante righe nuove ogni 10 minuti; a
+ * elenco pieno una riga nuova prende il posto solo di una che non si fa sentire da un giorno.
+ * Le righe non viste da 7 giorni se ne vanno da sole (a ogni lettura e scrittura: nessuna sveglia).
+ *
+ * Un elenco solo, in un valore solo (lo SQLite del Durable Object «registro»): per annuncio una lettura
+ * (la prima volta che si sveglia; poi in memoria) e una scrittura, nient'altro.
+ */
+export const REGISTRO = {
+  max: 500,                   // righe in tutto
+  byte: 700,                  // un annuncio (JSON) non supera tanto
+  scade: 7 * 24 * 3600e3,     // non visto da tanto: via
+  vecchia: 24 * 3600e3,       // a elenco pieno, una riga nuova prende il posto solo di una non vista da tanto
+  uguale: 5 * 60e3,           // lo stesso annuncio, uguale, entro tanto: non si riscrive
+  finestra: 10 * 60e3,        // i conti per IP
+  annunciPerIp: 300,          // annunci per IP nella finestra (un ospedale dietro un NAT: 100 PC, 3 volte)
+  nuoviPerIp: 60,             // righe nuove per IP nella finestra
+  lettureAlMinuto: 20,        // letture al minuto, per IP (e per stanza: Stanza.provaRegistro)
+  provaMs: 5 * 60e3,          // l'ora della prova di lettura: al più tanto lontana da quella del ripetitore
+  ipMax: 5000,                // i conti per IP in memoria: oltre, si ricomincia
+};
+export const REGISTRO_ETICHETTA = "registro.";   // la «sfida» della prova di lettura: registro.<ora in ms>
+const TIPI_REG = /^[a-z]{2,12}$/;
+const IMPRONTA = /^[A-Za-z0-9_-]{22}$/;          // 16 byte, base64url
+const VERSIONE_REG = /^\d{1,4}(\.\d{1,6}){0,3}$/;
+// eslint-disable-next-line no-control-regex
+const nomeReg = (s) => (typeof s === "string" ? s.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, " ").replace(/\s+/g, " ").trim().slice(0, 40) : "");
+// la parte di una stazione: { nome, tag? } — nient'altro
+function stazioneReg(x) {
+  if (x == null) return { ok: true, v: null };
+  if (typeof x !== "object" || Array.isArray(x)) return { ok: false };
+  for (const k of Object.keys(x)) if (k !== "nome" && k !== "tag") return { ok: false };
+  if (x.nome != null && typeof x.nome !== "string") return { ok: false };
+  if (x.tag != null && !(typeof x.tag === "string" && IMPRONTA.test(x.tag))) return { ok: false };
+  return { ok: true, v: { nome: nomeReg(x.nome) || "Stazione di stampa", ...(x.tag ? { tag: x.tag } : {}) } };
+}
+// Un annuncio, dal testo del POST: { ok, a } o { ok: false, stato, perche }. Solo i campi noti, e solo nella loro forma.
+export function leggiAnnuncio(testo) {
+  const no = (perche, stato = 400) => ({ ok: false, stato, perche });
+  if (typeof testo !== "string" || !testo) return no("vuoto");
+  if (testo.length > REGISTRO.byte) return no("troppo grande", 413);
+  let m;
+  try { m = JSON.parse(testo); } catch { return no("non è JSON"); }
+  if (!m || typeof m !== "object" || Array.isArray(m) || m.v !== 1) return no("versione");
+  const NOTI = new Set(["v", "id", "via", "nome", "kind", "ver", "tel", "sta", "stz"]);
+  for (const k of Object.keys(m)) if (!NOTI.has(k)) return no("campo sconosciuto");
+  if (typeof m.id !== "string" || !IMPRONTA.test(m.id)) return no("id");
+  if (m.via === true) return { ok: true, a: { id: m.id, via: true } };
+  if (m.via != null) return no("via");
+  if (typeof m.kind !== "string" || !TIPI_REG.test(m.kind)) return no("kind");
+  if (m.ver != null && !(typeof m.ver === "string" && VERSIONE_REG.test(m.ver))) return no("versione di PS Assist");
+  if (m.tel != null && !(typeof m.tel === "string" && IMPRONTA.test(m.tel))) return no("tel");
+  if (m.nome != null && typeof m.nome !== "string") return no("nome");
+  const sta = stazioneReg(m.sta), stz = stazioneReg(m.stz);
+  if (!sta.ok || !stz.ok) return no("stazione");
+  return { ok: true, a: { id: m.id, nome: nomeReg(m.nome) || "PC", kind: m.kind, ...(m.ver ? { ver: m.ver } : {}),
+    ...(m.tel ? { tel: m.tel } : {}), ...(sta.v ? { sta: sta.v } : {}), ...(stz.v ? { stz: stz.v } : {}) } };
+}
+// l'impronta corta di un id (quella che il telefono vede: con lei non si toglie niente)
+export const improntaId = (id) => b64u(sha256(new TextEncoder().encode("ps-registro/id|" + id)).subarray(0, 9));
+// La prova di lettura, dal testo del POST del telefono: { r, t, prova: [...] }, o null
+export function leggiProvaRegistro(testo) {
+  if (typeof testo !== "string" || testo.length > 1000) return null;
+  let m;
+  try { m = JSON.parse(testo); } catch { return null; }
+  if (!m || typeof m !== "object" || !/^[0-9a-f]{32}$/.test(m.r || "") || !Number.isSafeInteger(m.t) || m.t <= 0) return null;
+  const prova = (Array.isArray(m.prova) ? m.prova : [m.prova]).filter((x) => typeof x === "string" && x.length < 100).slice(0, 4);
+  return prova.length ? { r: m.r, t: m.t, prova } : null;
+}
+
+/*
+ * Il registro, sopra:
+ *   io.leggi()        l'elenco salvato ({ id → riga }), o null
+ *   io.scrivi(v)      lo salva
+ *   io.ip?            i conti per IP, in memoria: una Map
+ */
+export class Registro {
+  constructor(io) { this.io = io; this.elenco = null; }
+  carica() {
+    if (!this.elenco) {
+      const v = this.io.leggi();
+      this.elenco = v && typeof v === "object" && !Array.isArray(v) ? { ...v } : {};
+    }
+    return this.elenco;
+  }
+  // via le righe non viste da 7 giorni: true se ne è uscita qualcuna
+  pota(ora) {
+    const e = this.carica();
+    let via = false;
+    for (const [id, r] of Object.entries(e)) if (!r || !(ora - (r.visto || 0) < REGISTRO.scade)) { delete e[id]; via = true; }
+    return via;
+  }
+  salva() { this.io.scrivi(this.elenco); }
+  // un conto per IP nella sua finestra: true se oltre
+  contaIp(ip, cosa, max, finestra, ora) {
+    const m = this.io.ip;
+    if (!m) return false;
+    if (m.size > REGISTRO.ipMax) m.clear();
+    const k = cosa + "|" + String(ip || "?");
+    let x = m.get(k);
+    if (!x || ora - x.inizio >= finestra) x = { inizio: ora, n: 0 };
+    x = { inizio: x.inizio, n: x.n + 1 };
+    m.set(k, x);
+    return x.n > max;
+  }
+  // un annuncio: { stato, corpo }
+  annuncia(testo, ip, ora) {
+    const r = leggiAnnuncio(testo);
+    if (!r.ok) return { stato: r.stato, corpo: r.perche };
+    if (this.contaIp(ip, "a", REGISTRO.annunciPerIp, REGISTRO.finestra, ora)) return { stato: 429, corpo: "troppi annunci" };
+    const a = r.a, e = this.carica();
+    let cambia = this.pota(ora);
+    const fine = (stato, corpo) => { if (cambia) this.salva(); return { stato, corpo }; };
+    if (a.via) {
+      if (e[a.id]) { delete e[a.id]; cambia = true; }
+      return fine(200, "tolto");
+    }
+    const prima = e[a.id];
+    if (!prima) {
+      if (this.contaIp(ip, "n", REGISTRO.nuoviPerIp, REGISTRO.finestra, ora)) return fine(429, "troppi nuovi");
+      const ids = Object.keys(e);
+      if (ids.length >= REGISTRO.max) {
+        const vecchia = ids.reduce((x, y) => ((e[y].visto || 0) < (e[x].visto || 0) ? y : x));
+        if (ora - (e[vecchia].visto || 0) < REGISTRO.vecchia) return fine(507, "registro pieno");
+        delete e[vecchia];
+        cambia = true;
+      }
+    }
+    const { id, ...dati } = a;
+    const riga = { ...dati, visto: ora, dal: prima ? prima.dal || ora : ora };
+    // lo stesso annuncio di poco fa: niente da scrivere
+    const uguale = prima && ora - prima.visto < REGISTRO.uguale && JSON.stringify({ ...prima, visto: 0 }) === JSON.stringify({ ...riga, visto: 0 });
+    if (!uguale) { e[id] = riga; cambia = true; }
+    return fine(200, "ok");
+  }
+  // l'elenco, per un telefono che ha già provato l'associazione (Stanza.provaRegistro): { stato, corpo }
+  elencoPer(ip, ora) {
+    if (this.contaIp(ip, "l", REGISTRO.lettureAlMinuto, 60e3, ora)) return { stato: 429, corpo: "troppe letture" };
+    if (this.pota(ora)) this.salva();
+    // (`fa`, non l'ora: l'orologio del telefono non è questo)
+    const l = Object.entries(this.carica()).map(([id, r]) => ({ h: improntaId(id), nome: r.nome, kind: r.kind,
+      ...(r.ver ? { ver: r.ver } : {}), ...(r.tel ? { tel: r.tel } : {}), ...(r.sta ? { sta: r.sta } : {}), ...(r.stz ? { stz: r.stz } : {}),
+      fa: Math.max(0, ora - r.visto) }));
+    l.sort((x, y) => x.fa - y.fa);
+    return { stato: 200, corpo: JSON.stringify({ pc: l }) };
+  }
+}
+// Le intestazioni di un annuncio: chiunque può annunciarsi (anche una pagina), e la risposta non dice niente
+export const INTESTAZIONI_ANNUNCIO = { "access-control-allow-origin": "*", "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" };

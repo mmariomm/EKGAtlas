@@ -18,7 +18,7 @@ import { readFile } from "node:fs/promises";
 import { join, normalize, extname, dirname, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { WebSocketServer } from "ws";
-import { Stanza, PONTE, PING, PONG, FILE_APP, leggiStanza, intestazioniApp } from "../../worker/ponte-logica.js";
+import { Stanza, Registro, PONTE, PING, PONG, FILE_APP, leggiStanza, intestazioniApp, leggiProvaRegistro, INTESTAZIONI_ANNUNCIO } from "../../worker/ponte-logica.js";
 
 const APP = join(dirname(fileURLToPath(import.meta.url)), "../../public/ponte");
 const TIPI = {
@@ -26,7 +26,8 @@ const TIPI = {
   ".webmanifest": "application/manifest+json", ".png": "image/png", ".svg": "image/svg+xml", ".json": "application/json",
 };
 
-export async function avviaRelay({ porta = 0, osserva = null } = {}) {
+// `ipProva`: solo nei test — l'IP di chi annuncia lo dice l'intestazione x-prova-ip (i conti per IP del registro)
+export async function avviaRelay({ porta = 0, osserva = null, ipProva = false } = {}) {
   const stanze = new Map();          // stanza → Set di prese
   const stati = new WeakMap();       // presa → stato (come serializeAttachment)
   const battiti = new WeakMap();     // presa → ultimo «ping»
@@ -61,8 +62,41 @@ export async function avviaRelay({ porta = 0, osserva = null } = {}) {
     osserva: osserva ? (d) => osserva(Buffer.from(d)) : null,
   });
 
+  // Il registro dei PC (come il Durable Object «registro», worker/ponte.js): l'elenco in memoria, e per i test
+  // ogni annuncio e ogni lettura (con chi, e com'è andata)
+  let salvato = null;
+  const registro = new Registro({ leggi: () => structuredClone(salvato), scrivi: (v) => { salvato = structuredClone(v); }, ip: new Map() });
+  const regLog = [];
+  const corpo = (req, max) => new Promise((ok) => {
+    let t = "", troppo = false;
+    req.setEncoding("utf8");
+    req.on("data", (d) => { if (troppo) return; t += d; if (t.length > max) troppo = true; });
+    req.on("end", () => ok(troppo ? null : t));
+    req.on("error", () => ok(null));
+  });
+  async function registroHttp(req, res, p) {
+    const ip = (ipProva && req.headers["x-prova-ip"]) || req.socket.remoteAddress || "";
+    const fine = (stato, testo, h = INTESTAZIONI_ANNUNCIO) => { regLog.push({ ts: Date.now(), p, stato, ip, ua: String(req.headers["user-agent"] || "").slice(0, 80) }); res.writeHead(stato, h).end(testo); };
+    if (req.method !== "POST") { fine(405, "solo POST"); return; }
+    if (p === "/ponte/registro") {
+      const t = await corpo(req, 2000);
+      if (t == null) { fine(413, "troppo grande"); return; }
+      const r = registro.annuncia(t, ip, Date.now());
+      fine(r.stato, r.corpo);
+      return;
+    }
+    const t = await corpo(req, 1000);
+    const m = t == null ? null : leggiProvaRegistro(t);
+    if (!m) { fine(400, "prova non valida", {}); return; }
+    const pr = logica(m.r).provaRegistro(m, Date.now());
+    if (!pr.ok) { fine(pr.stato === 429 || pr.stato === 503 ? pr.stato : 403, "no", {}); return; }
+    const r = registro.elencoPer(ip, Date.now());
+    fine(r.stato, r.corpo, { "content-type": "application/json", "cache-control": "no-store" });
+  }
+
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, "http://localhost");
+    if (url.pathname === "/ponte/registro" || url.pathname === "/ponte/registro/elenco") { await registroHttp(req, res, url.pathname); return; }
     if (url.pathname === "/ponte") { res.writeHead(302, { location: "/ponte/" }).end(); return; }
     if (req.method !== "GET" || !FILE_APP.has(url.pathname)) { res.writeHead(404).end(); return; }
     const rel = normalize(url.pathname.slice("/ponte/".length) || "index.html");
@@ -125,6 +159,9 @@ export async function avviaRelay({ porta = 0, osserva = null } = {}) {
     muta: (ruolo) => { for (const nome of stanze.keys()) for (const w of vive(nome)) if (stati.get(w)?.ruolo === ruolo) { mute.add(w); w._socket?.pause(); } },
     // il registro: [{ ts, stanza, ruolo, tipo: entra|esce|ritirata|chiusa dal ripetitore, codice }]
     eventi: () => eventi.map((e) => ({ ...e })),
+    // il registro dei PC: l'elenco salvato ({ id → riga }), e ogni richiesta ({ ts, p, stato, ip, ua })
+    elencoPc: () => structuredClone(salvato || {}),
+    richiesteRegistro: () => regLog.map((x) => ({ ...x })),
     // tutte le prese ancora nell'elenco (anche le ritirate), per ruolo
     tutte: () => {
       const conto = {};
