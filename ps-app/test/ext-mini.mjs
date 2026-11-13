@@ -186,6 +186,10 @@ check(!!qDopo && qDopo.id === qPrima.id && qDopo.conferma && chiave, "il collega
 const scelteDopo = (await staSw.evaluate(() => chrome.storage.local.get("stampa"))).stampa;
 check(JSON.stringify(scelteDopo) === JSON.stringify(scelte), "le stampanti scelte restano");
 check(!!(await finche(() => staSw.evaluate(() => chrome.storage.local.get("ponte.coppia").then((o) => !o["ponte.coppia"])), 8000)), "l'iPhone associato a questo PC quando era la mini: via (il ruolo `pc` non c'è più)");
+// il registro dei PC (⋯ → Dispositivi sul telefono): la build Infermeria si annuncia come «stazione», senza ponte.html
+const idReg = await staSw.evaluate(() => chrome.storage.local.get("registro.id").then((o) => o["registro.id"] || ""));
+const rigaSta = await finche(async () => { await staSw.evaluate(() => annForse({ evento: true })); const r = relay.elencoPc()[idReg]; return r && r.kind === "stazione" && !r.tel && r.stz ? r : null; }, 20000);
+check(!!rigaSta && rigaSta.stz.tag && /^\d+\.\d+/.test(rigaSta.ver || ""), `la stazione si annuncia al registro come «stazione», collegata (stz.tag), senza telefono (${JSON.stringify(rigaSta)})`);
 
 // ===========================================================================
 sezione("nessuna pagina aperta sulla stazione: è sul ponte, e stampa");

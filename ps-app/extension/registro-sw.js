@@ -8,7 +8,7 @@
  *
  * Che cosa dice, e solo questo: un numero a caso dell'installazione (registro.id; il telefono non lo vede),
  * il nome del PC (quello che il medico gli dà sulla pagina iPhone, ponte.nomePc, o uno generato), il tipo
- * (`pc`, o `lettura` per la build «Lettura e stampa»), la versione, e tre impronte opache (SHA-256, 16 byte):
+ * (`pc`, `lettura` per la build «Lettura e stampa» fino alla 3.87, `stazione` per la build «Stampa Infermeria»), la versione, e tre impronte opache (SHA-256, 16 byte):
  *   tel   della stanza del telefono associato (se un telefono è entrato davvero): il telefono, che conosce la
  *         stanza, si riconosce; chi legge senza conoscerla vede solo «associato a un altro telefono»
  *   sta   { nome, tag }: la stazione di stampa dove stampa questo PC (tag: dal codice di sei cifre della coppia)
@@ -37,6 +37,11 @@ const ANN_MIN = 15e3;           // e, se qualcosa cambia, al più uno ogni 15 se
 const ANN_RIPROVA = 5 * 60e3;   // non partito (la rete): si riprova al prossimo gesto, dopo tanto
 const ANN_CHIAVI = ["ponte.nomePc", "ponte.coppia", "stazione.coppia", "stazione.qui", "stazione.nome", ANN.no];
 const annOra = () => Date.now();
+// La build «Stampa Infermeria» (solo stazione, self.PSA_SOLO_STAZIONE): si annuncia come `stazione`. Lì non
+// c'è gestionale né pagina iPhone: la stazione è sempre sul ponte finché Chrome è aperto (stazione-sw.js,
+// staSempre), quindi il giro dei 30 minuti vale a ogni risveglio, e all'avvio di Chrome si annuncia.
+const annStazione = () => self.PSA_SOLO_STAZIONE === true;
+const annKind = () => (annStazione() ? "stazione" : self.PSA_SOLA_LETTURA === true ? "lettura" : "pc");
 const annB64u = (b) => PonteCripto.b64u(b);
 async function annImpronta(etichetta, s) {
   const h = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`ps-registro/${etichetta}|${s}`)));
@@ -52,17 +57,17 @@ async function annId() {
 // il nome generato: il tipo e quattro segni dell'id (sempre gli stessi per questo PC)
 function annNomeGenerato(id) {
   const s = id.replace(/[^A-Za-z0-9]/g, "").toUpperCase().slice(0, 4);
-  return `${self.PSA_SOLA_LETTURA === true ? "Lettura e stampa" : "PC"} ${s}`;
+  return `${annStazione() ? "Stampa Infermeria" : self.PSA_SOLA_LETTURA === true ? "Lettura e stampa" : "PC"} ${s}`;
 }
 // Quello che l'annuncio dice adesso (senza l'ora)
 async function annAnnuncio() {
   const id = await annId();
   const o = await chrome.storage.local.get(ANN_CHIAVI);
-  const n = o["ponte.nomePc"];
+  const n = annStazione() ? o["stazione.nome"] : o["ponte.nomePc"];   // (la stazione: il nome che le dà la sua pagina)
   const nome = typeof n === "string" && n.trim() ? n.replace(/\s+/g, " ").trim().slice(0, 40) : annNomeGenerato(id);
   let ver = "";
   try { ver = String(chrome.runtime.getManifest().version || ""); } catch { /* niente */ }
-  const a = { v: 1, id, nome, kind: self.PSA_SOLA_LETTURA === true ? "lettura" : "pc", ...(/^\d{1,4}(\.\d{1,6}){0,3}$/.test(ver) ? { ver } : {}) };
+  const a = { v: 1, id, nome, kind: annKind(), ...(/^\d{1,4}(\.\d{1,6}){0,3}$/.test(ver) ? { ver } : {}) };
   const c = o["ponte.coppia"];
   // associato davvero: un telefono è entrato (non un QR ancora sullo schermo)
   if (c && c.usata && /^[0-9a-f]{32}$/.test(c.stanza || "")) a.tel = await annImpronta("tel", c.stanza);
@@ -111,7 +116,7 @@ async function annForseOra(evento, aperta) {
   }
   if (!(cambiato && (evento || fa >= ANN_MIN)) && fa < ANN_OGNI) return { fatto: false, perche: "presto" };
   // il giro dei 30 minuti (o un cambio senza evento): solo con il gestionale o la pagina della stazione aperti
-  if (!evento && !aperta && !(typeof psaGestionale === "function" && await psaGestionale())) return { fatto: false, perche: "niente aperto" };
+  if (!evento && !aperta && !annStazione() && !(typeof psaGestionale === "function" && await psaGestionale())) return { fatto: false, perche: "niente aperto" };
   await chrome.storage.local.set({ [ANN.ultimo]: { ts: ora, firma } });
   const ok = await annManda(host, a).catch(() => false);
   if (!ok) await chrome.storage.local.set({ [ANN.ultimo]: { ts: ora - ANN_OGNI + ANN_RIPROVA, firma: "" } });
@@ -129,3 +134,5 @@ chrome.storage.onChanged.addListener((ch, area) => {
   if (area === "local" && ANN_CHIAVI.some((k) => k in ch)) annForse({ evento: true }).catch(() => {});
 });
 chrome.runtime.onInstalled?.addListener(() => { annForse({ evento: true }).catch(() => {}); });
+// la stazione dell'infermeria: all'avvio di Chrome (il giro dei 30 minuti, nessun battito in più)
+if (annStazione()) chrome.runtime.onStartup?.addListener(() => { annForse().catch(() => {}); });
