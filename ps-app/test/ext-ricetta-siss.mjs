@@ -57,7 +57,7 @@ const FARMACI = [
 // da sé all'Anteprima — registrazione del medico, reg1 — e la ricetta resta in
 // BOZZA; `registraAlFarmaco`: un SISS che registrasse mentre si compila;
 // `anteprimaRegistrata`: un'Anteprima che tornasse REGISTRATA, con l'NRE)
-const srvStato = { paziente: PZ, cercati: [], identificazioni: 0, registraAlFarmaco: false, anteprimaRegistrata: false, registrazioni: 0, perAnteprima: 0 };
+const srvStato = { paziente: PZ, cercati: [], identificazioni: 0, registraAlFarmaco: false, anteprimaRegistrata: false, registrazioni: 0, perAnteprima: 0, senzaNota: false };
 
 // ------------------------------------------------------ il SISS finto
 const menu = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Menu SISS</title></head><body>
@@ -114,10 +114,13 @@ function tabellaFarmaci(dove) {
       + '<td class="mat-cell mat-column-substitutability"><div><div><mat-radio-group formcontrolname="substitutability" role="radiogroup">'
       + '<mat-radio-button class="mat-radio-button' + (f.ns ? '' : ' mat-radio-checked') + '"><label class="mat-radio-label"><div class="mat-radio-container"><input class="mat-radio-input cdk-visually-hidden" type="radio" name="sost' + dove + i + '" data-i="' + i + '" value="S"' + (f.ns ? '' : ' checked') + '></div><div class="mat-radio-label-content"> Sostituibile </div></label></mat-radio-button>'
       + '<mat-radio-button class="mat-radio-button' + (f.ns ? ' mat-radio-checked' : '') + '"><label class="mat-radio-label"><div class="mat-radio-container"><input class="mat-radio-input cdk-visually-hidden" type="radio" name="sost' + dove + i + '" data-i="' + i + '" value="N"' + (f.ns ? ' checked' : '') + '></div><div class="mat-radio-label-content"> Non sostituibile </div></label></mat-radio-button>'
-      + '</mat-radio-group></div><div></div></div></td><td><button mat-icon-button mattooltip="Elimina il farmaco" type="button" class="mat-icon-button">🗑</button></td></tr>').join("")
+      + '</mat-radio-group></div><div></div></div></td>'
+      + (window.__senzaNota ? '' : '<td class="mat-cell mat-column-note"><input data-i="' + i + '" formcontrolname="note" placeholder="Note" type="text" value="' + (f.note || '').replace(/"/g, "&quot;") + '"></td>')
+      + '<td><button mat-icon-button mattooltip="Elimina il farmaco" type="button" class="mat-icon-button">🗑</button></td></tr>').join("")
     + '</tbody></table></div></app-prescription-drugs></app-prescription-drugs-home>';
 }
 function legaTabella() {
+  vista.querySelectorAll("input[formcontrolname=note]").forEach((q) => { const f = () => { farmaci[q.dataset.i].note = q.value; }; q.addEventListener("input", f); q.addEventListener("change", f); });
   vista.querySelectorAll("input[formcontrolname=quantity]").forEach((q) => { const f = () => { farmaci[q.dataset.i].qta = Number(q.value) || 1; }; q.addEventListener("input", f); q.addEventListener("change", f); });
   vista.querySelectorAll("input[type=radio]").forEach((r) => r.addEventListener("change", () => {
     farmaci[r.dataset.i].ns = r.value === "N";
@@ -234,7 +237,7 @@ const srv = https.createServer({ key: readFileSync(join(CERT, "k.pem")), cert: r
   const html = (b) => { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); res.end(b); };
   const json = (o) => { res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify(o)); };
   if (host === MENU && u.pathname.startsWith("/menusiss/")) return html(menu);
-  if (host === PR && u.pathname.startsWith("/prescrittivoRegionale/pages/")) return html(spa.replace("<script>", `<script>window.__registraAlFarmaco = ${srvStato.registraAlFarmaco}; window.__anteprimaRegistrata = ${srvStato.anteprimaRegistrata};`));
+  if (host === PR && u.pathname.startsWith("/prescrittivoRegionale/pages/")) return html(spa.replace("<script>", `<script>window.__registraAlFarmaco = ${srvStato.registraAlFarmaco}; window.__anteprimaRegistrata = ${srvStato.anteprimaRegistrata}; window.__senzaNota = ${srvStato.senzaNota};`));
   if (host === PR && /\/prescriptions\/prepare-register-request$/.test(u.pathname)) { srvStato.registrazioni++; req.resume(); return json({}); }
   if (host === PR && /\/prescriptions\/(?:partition|checkIfAlreadyRegisteredWithDifferentPriority|register-prescriptions-by-client-response|check-prescription-error|prepare-print-request)$/.test(u.pathname)) {
     if (u.pathname.endsWith("/partition")) srvStato.perAnteprima++;
@@ -308,16 +311,14 @@ check(await $p(".ricpref").innerText().then((t) => /Ancora nessuno/.test(t)) && 
 await $p("#ricq").fill("augmentin");
 const nuovaScheda = ctx.waitForEvent("page", { timeout: 10000 }).catch(() => null);
 await $p("#riccerca").click();
+const nuovaPr = ctx.waitForEvent("page", { predicate: (p) => p.url().includes("/prescrittivoRegionale/"), timeout: 20000 }).catch(() => null);
 const pMenu = await nuovaScheda;
-check(await finche(async () => /Entra nel SISS con la carta, poi riprovo da solo/.test(await statoPannello()), 8000),
-  `non c'è un Prescrittivo aperto: il pannello dice «Entra nel SISS con la carta, poi riprovo da solo» (${await statoPannello()})`);
-check(!!pMenu && (await schedeMenu()).some((t) => t.active) && (await schedeSiss()).length === 0, "il menu del SISS si apre, davanti; nessuna scheda del Prescrittivo toccata");
+check(!!pMenu && (await schedeMenu()).length === 1, "non c'è un Prescrittivo aperto: il menu del SISS si apre");
 
-// ---- 2. il medico entra (dal menu apre il Prescrittivo): la ricetta riparte da sola
+// ---- 2. il medico è entrato: «Prescrittivo Regionale» lo preme PS Assist, e la ricetta riparte da sola
 await pMenu.waitForLoadState();
-const nuovaPr = ctx.waitForEvent("page", { timeout: 10000 });
-await pMenu.click("#prreg");
 const siss = await nuovaPr;
+check(!!siss && (await schedeSiss()).length === 1 && (await schedeMenu()).length === 1, "«Prescrittivo Regionale» premuto da sé nel menu: una scheda del Prescrittivo, nessun clic tuo");
 await siss.waitForLoadState();
 const sissStato = () => siss.evaluate(() => window.__ricetta());
 const clic = () => siss.evaluate(() => ({ ...window.__clic }));
@@ -361,7 +362,8 @@ if (FOTO) { await doc.bringToFront(); await $p(".card").screenshot({ path: join(
 // ---- 4. i preferiti si imparano dall'Anteprima (codice, descrizione, quantità)
 check(await finche(async () => (await preferiti()).some((p) => p.codice === AIC && p.qta === 2 && p.descr === DESCR), 5000), "il farmaco dell'Anteprima entra nei preferiti: codice, descrizione, quantità");
 const pref = await preferiti();
-check(pref.every((p) => Object.keys(p).every((k) => ["codice", "descr", "qta", "tipo", "ts"].includes(k))) && !JSON.stringify(pref).includes(PZ.cf) && !JSON.stringify(pref).includes(PZ.cog),
+check(pref.every((p) => Object.keys(p).every((k) => ["codice", "descr", "qta", "ns", "tipo", "n", "ts"].includes(k))) && pref.find((p) => p.codice === AIC).n === 1 && pref.find((p) => p.codice === AIC).ns === true
+  && !JSON.stringify(pref).includes(PZ.cf) && !JSON.stringify(pref).includes(PZ.cog),
   "nei preferiti niente del paziente");
 await doc.bringToFront();
 check(await finche(async () => await $p(`.ricchip[data-ricpref="${AIC}"]`).count() === 1, 5000), "il pannello mostra il preferito");
@@ -423,7 +425,7 @@ await doc.evaluate(() => document.getElementById("campogest")?.blur());
 // (il clic nel campo del gestionale ha fatto richiudere il pannello «al passaggio»: lo si riapre)
 if (!(await $p(".card").count())) { await $p("#expand").click(); await doc.waitForSelector("#psassist-host .card #ricprepara", { timeout: 8000 }); }
 const f7 = await sissStato();
-check(f7.farmaci.length === 1 && f7.farmaci[0].codice === AIC && f7.farmaci[0].qta === 2 && f7.farmaci[0].ns === false && f7.quesito === "" && srvStato.cercati.slice(cercatiPrima).includes("AUGMENTIN"),
+check(f7.farmaci.length === 1 && f7.farmaci[0].codice === AIC && f7.farmaci[0].qta === 2 && f7.farmaci[0].ns === true && f7.quesito === "" && srvStato.cercati.slice(cercatiPrima).includes("AUGMENTIN"),
   `il preferito: cercato per nome nella ricerca del SISS, preso col codice esatto, con la sua quantità (${JSON.stringify(f7.farmaci)}; cercato ${srvStato.cercati.slice(cercatiPrima).join(",")})`);
 const c7 = await clic();
 check(c7.registra === 0 && c7.salva === 0 && c7.stampa === 0 && c7.cancella === 0 && c7.nuova === 1, `e di nuovo nessun Registra, Salva, Stampa (${JSON.stringify(c7)})`);
@@ -477,7 +479,7 @@ check(f9.vista.endsWith("/editing") && f9.visite.length === 1 && f9.visite[0].co
   `nel SISS la visita c'è (scelta col codice esatto fra due visite), il quesito vuoto: lo scrive il medico (${JSON.stringify(f9.visite)})`);
 check(c9.anteprima === 0 && visPrima.anteprima === 0 && c9.registra === 0 && c9.salva === 0 && c9.stampa === 0 && c9.cancella === 0, `Anteprima mai premuta, né Registra, Salva, Stampa (${JSON.stringify(c9)})`);
 check(await finche(async () => (await schedeSiss()).find((t) => /editing$/.test(t.url))?.active, 5000), "la scheda del SISS è davanti: tocca al medico");
-check(await finche(async () => (await preferiti()).some((p) => p.codice === "89.7" && p.tipo === "visita" && p.descr === "VISITA GENERALE" && Object.keys(p).every((k) => ["codice", "descr", "tipo", "ts"].includes(k))), 5000),
+check(await finche(async () => (await preferiti()).some((p) => p.codice === "89.7" && p.tipo === "visita" && p.descr === "VISITA GENERALE" && Object.keys(p).every((k) => ["codice", "descr", "tipo", "n", "ts"].includes(k))), 5000),
   "la visita inserita entra nei preferiti: codice, descrizione e tipo, nient'altro");
 await doc.bringToFront();
 check(await finche(async () => await $p('.ricchip[data-ricpref="89.7"]').count() === 1, 5000), "il pannello mostra la visita fra i preferiti");
@@ -499,12 +501,50 @@ await siss.locator("#ricerca").click();
 await siss.keyboard.type("AUGMENTIN", { delay: 40 });
 await siss.locator(`mat-option:has-text("${AIC}")`).first().click();
 await siss.waitForFunction(() => !document.getElementById("anteprima").disabled, null, { timeout: 10000 });
+await siss.locator("input[formcontrolname=note]").fill("1 bustina ogni 12 ore");
+await siss.locator("input[formcontrolname=quantity]").fill("3");
 await siss.locator("#anteprima").click();
 check(await finche(async () => /Anteprima nel SISS/.test(await statoPannello()), 15000) && await $p("#ricstato.err").count() === 0,
   `il medico fa da sé fino all'Anteprima: il pannello lo prende per buono, niente rosso («${await statoPannello()}»)`);
 check(srvStato.registrazioni === reg10 + 1 && (await errori()).length === err10 && (await clic()).registra === 0,
   "le chiamate del SISS all'Anteprima del medico: nessun errore nel registro");
 check((await ricetta())?.stato === "anteprima" && !(await ricetta())?.cf, "la ricetta finisce lì, e il codice fiscale se ne va");
+
+// ---- 11. imparato dalla ricetta fatta a mano: quante volte, la nota, niente del paziente
+const PREF_OK = ["codice", "descr", "qta", "ns", "tipo", "n", "ts", "campi"];
+check(await finche(async () => (await preferiti()).some((p) => p.codice === AIC && p.qta === 3 && p.campi && p.campi.note === "1 bustina ogni 12 ore" && p.n >= 3), 8000),
+  `la ricetta a mano entra nei farmaci frequenti: quantità 3, la nota, contata (${JSON.stringify((await preferiti()).find((p) => p.codice === AIC))})`);
+const pref11 = await preferiti();
+check(pref11[0].codice === AIC && pref11.every((p) => Object.keys(p).every((k) => PREF_OK.includes(k))) && pref11.every((p) => !p.campi || Object.keys(p.campi).every((k) => k === "note"))
+  && ![PZ.cf, PZ.cog, PZ.nom, PZ.tessera, ALTRO.cf, ALTRO.cog].some((x) => JSON.stringify(pref11).includes(x)),
+  `nei farmaci frequenti solo il farmaco (il più usato davanti): nessun nome, codice fiscale, tessera (${pref11.map((p) => Object.keys(p).join("+")).join(" | ")})`);
+
+// ---- 12. la volta dopo: il chip del farmaco frequente riempie la riga (nota compresa), e si ferma sull'Anteprima
+await siss.goto(`https://${PR}/prescrittivoRegionale/pages/dashboard`);
+await siss.waitForLoadState();
+await doc.bringToFront();
+while (await $p("[data-ricvia]").count()) await $p('[data-ricvia="0"]').click();
+check(await finche(async () => /Farmaci frequenti/i.test(await $p(".ricetta").innerText()) && await $p(`.ricchip[data-ricpref="${AIC}"]`).count() === 1, 5000), "il pannello: «Farmaci frequenti», col chip");
+await $p(`.ricchip[data-ricpref="${AIC}"]`).click();
+await sospendi(1600);
+await $p("#ricprepara").click();
+check(await finche(async () => (await sissStato()).vista.endsWith("/editing/preview"), 30000), "un tocco sul chip e «Prepara»: di nuovo fino all'Anteprima");
+const f12 = await sissStato(), c12 = await clic();
+check(f12.farmaci.length === 1 && f12.farmaci[0].codice === AIC && f12.farmaci[0].qta === 3 && f12.farmaci[0].note === "1 bustina ogni 12 ore",
+  `la riga come imparata: quantità e nota (${JSON.stringify(f12.farmaci)})`);
+check(c12.registra === 0 && c12.salva === 0 && c12.stampa === 0, "e Registra, Salva, Stampa mai premuti");
+
+// ---- 13. il campo imparato non c'è nel SISS: si ferma e lo dice, l'Anteprima non si preme
+srvStato.senzaNota = true;
+await siss.goto(`https://${PR}/prescrittivoRegionale/pages/dashboard`);
+await siss.waitForLoadState();
+await doc.bringToFront();
+await sospendi(1600);
+const ant13 = (await clic()).anteprima;
+await $p("#ricprepara").click();
+check(await finche(async () => /Fermato su «note»/.test(await statoPannello()), 30000), `il campo «note» non c'è: «${await statoPannello()}»`);
+const c13 = await clic();
+check(c13.anteprima === ant13 && c13.registra === 0 && (await sissStato()).vista.endsWith("/editing"), "fermo prima dell'Anteprima: niente premuto");
 
 await ctx.close();
 srv.close();

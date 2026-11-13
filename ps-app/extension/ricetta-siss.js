@@ -269,6 +269,19 @@
         throw new Fermo(`Fermato su «Non sostituibile» di ${v.descr}: il SISS chiede la motivazione — sceglila tu, poi Anteprima`);
       }
     }
+    // i campi imparati (posologia, note…): ognuno nel suo campo della riga, o stop
+    for (const [k, val] of Object.entries(v.campi || {})) {
+      const el = $$("input, textarea", riga).find((x) => x.getAttribute("formcontrolname") === k && x.type !== "radio" && x.type !== "checkbox");
+      if (!el) throw new Fermo(`Fermato su «${k}» di ${v.descr}: il campo non c'è nel SISS — scrivi tu «${val}»`);
+      const set = el.tagName === "TEXTAREA" ? Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set : setter;
+      el.focus();
+      set.call(el, val);
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+      lascia(el);
+      await dorme(150);
+      if (el.value !== val) throw new Fermo(`Fermato su «${k}» di ${v.descr}: il SISS non ha preso «${val}»`);
+    }
   }
 
   async function compila(voci, quesito) {
@@ -380,7 +393,34 @@
   // La vista cambia senza ricaricare (pushState): la si guarda ogni tanto.
   // Entrata → lo si dice (una ricetta aspettava il login). Un'Anteprima → i
   // farmaci che mostra diventano i preferiti (niente del paziente).
-  let ultima = "", imparato = "", nata = Date.now();   // (quando è nata questa pagina: la prima volta lo si dice)
+  let ultima = "", imparato = "", nata = Date.now();
+  // Una riga di farmaco come la lascia il medico: quantità, «non sostituibile»,
+  // e i campi di testo della riga (posologia, note), per nome del campo. Mai
+  // un valore che contenga il nome o il codice fiscale dell'intestazione.
+  function rigaImparata(tr) {
+    const h = intestazione() || {};
+    const suoi = [h.cf, ...norm(`${h.cognome || ""} ${h.nome || ""}`).split(" ")].filter((x) => x && x.length >= 3).map(norm);
+    const campi = {};
+    for (const el of $$("input, textarea", tr)) {
+      const k = el.getAttribute("formcontrolname") || "";
+      if (!k || /^(quantity|substitutability)$/.test(k) || el.type === "radio" || el.type === "checkbox" || el.type === "hidden") continue;
+      const t = String(el.value || "").replace(/\s+/g, " ").trim();
+      if (!t || suoi.some((x) => norm(t).split(" ").includes(x))) continue;
+      campi[k] = t.slice(0, 120);
+    }
+    const ns = !!$$("td.mat-column-substitutability mat-radio-button", tr).find((r) => /^non sostituibile$/i.test(testo(r)) && $("input[type=radio]", r)?.checked);
+    return { codice: codiceRiga(tr), descr: testo($("td.mat-column-description", tr)), qta: Number($("input[formcontrolname=quantity]", tr)?.value) || 1, ns, campi };
+  }
+  // il medico preme Anteprima da sé (fuori da una nostra ricetta): la ricetta
+  // com'era scritta, per i farmaci frequenti (l'Anteprima può non mostrare i campi)
+  let scritta = {};
+  document.addEventListener("click", (e) => {
+    if (!e.isTrusted || lavoro || vista() !== "editing") return;
+    const b = e.target && e.target.closest && e.target.closest("button");
+    if (!b || testo(b) !== "Anteprima") return;
+    scritta = {};
+    for (const tr of righeFarmaci()) { const x = rigaImparata(tr); if (x.codice) scritta[x.codice] = x; }
+  }, true);   // (quando è nata questa pagina: la prima volta lo si dice)
   setInterval(() => {
     const v = `${vista()}|${dentro()}`;
     if (v !== ultima) { ultima = v; if (dentro()) { ask({ t: "ricettaQui", vista: vista(), dentro: true, nata }); nata = 0; } }
@@ -393,10 +433,12 @@
     }
     if (vista() === "anteprima" && libero()) {
       const pv = $("app-prescription-previews");
-      const voci = pv ? righeFarmaci(pv).map((tr) => ({ codice: codiceRiga(tr), descr: testo($("td.mat-column-description", tr)),
-        qta: Number($("input[formcontrolname=quantity]", tr)?.value) || 1 })).filter((x) => /^\d{9}$/.test(x.codice) && x.descr) : [];
+      const voci = pv ? righeFarmaci(pv).map((tr) => {
+        const x = rigaImparata(tr), w = scritta[x.codice];
+        return w ? { ...x, ns: x.ns || w.ns, campi: { ...w.campi, ...x.campi } } : x;
+      }).filter((x) => /^\d{9}$/.test(x.codice) && x.descr) : [];
       const firma = location.href + "|" + voci.map((x) => `${x.codice}:${x.qta}`).join(",");
       if (voci.length && firma !== imparato) { imparato = firma; ask({ t: "ricettaImpara", voci }); }
-    } else imparato = "";
+    } else { imparato = ""; if (vista() !== "editing") scritta = {}; }
   }, 500);
 })();

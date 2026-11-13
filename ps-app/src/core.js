@@ -13828,7 +13828,9 @@
       const leggi = () => Promise.all([chrome.storage.session.get("ricetta").catch(() => ({})), chrome.storage.local.get("ricetta.preferiti.v1").catch(() => ({}))]).then(([a, b]) => {
         const prima = JSON.stringify([this.ricJob, this.ricPref]);
         this.ricJob = a.ricetta || null;
-        this.ricPref = Array.isArray(b["ricetta.preferiti.v1"]) ? b["ricetta.preferiti.v1"] : [];
+        // (i farmaci frequenti: i più usati davanti, poi i più recenti)
+        this.ricPref = (Array.isArray(b["ricetta.preferiti.v1"]) ? b["ricetta.preferiti.v1"] : []).filter((x) => x && x.codice)
+          .sort((x, y) => (Number(y.n) || 1) - (Number(x.n) || 1) || (y.ts || 0) - (x.ts || 0));
         if (this.view === "ricetta" && JSON.stringify([this.ricJob, this.ricPref]) !== prima) this.ricRidisegna();
         this.stripRicetta();
       }).catch(() => {});
@@ -13903,6 +13905,7 @@
       if (r.voci.some((v) => (v.tipo || "farmaco") !== tipo)) { this.message = "Una ricetta alla volta: farmaci o visite"; return; }
       const parola = cerca || String(descr || "").split(/[*\s]/)[0];
       r.voci.push(tipo === "farmaco" ? { codice, descr, tipo, qta: Math.max(1, Math.min(99, Number(qta) || 1)), ns: false, cerca: parola } : { codice, descr, tipo, cerca: parola });
+      return r.voci[r.voci.length - 1];
     }
     ricConVisite() { return !!this.ric && this.ric.voci.some((v) => v.tipo === "visita"); }
     // il quesito: con le visite solo quello scritto da te (il campo «Diagnosi» della pagina non vale)
@@ -13915,7 +13918,7 @@
       const cf = this.ricCf(), nome = nomeInPagina();
       const scelti = new Set(r.voci.map((v) => v.codice));
       const visite = this.ricConVisite();
-      const pref = (this.ricPref || []).map((p) => `<button class="ricchip${scelti.has(p.codice) ? " on" : ""}" data-ricpref="${esc(p.codice)}" aria-pressed="${scelti.has(p.codice)}" title="${esc(p.codice)}${this.ricTipoDi(p.codice) === "visita" ? " · visita/esame" : ` · quantità ${esc(p.qta || 1)}`}">${esc(p.descr)}</button>`).join("");
+      const pref = (this.ricPref || []).map((p) => `<button class="ricchip${scelti.has(p.codice) ? " on" : ""}" data-ricpref="${esc(p.codice)}" aria-pressed="${scelti.has(p.codice)}" title="${esc(p.codice)}${this.ricTipoDi(p.codice) === "visita" ? " · visita/esame" : ` · quantità ${esc(p.qta || 1)}${p.ns ? " · non sostituibile" : ""}${Object.entries(p.campi || {}).map(([k, v]) => ` · ${esc(k)}: ${esc(v)}`).join("")}`} · ${esc(p.n || 1)} volte">${esc(p.descr)}</button>`).join("");
       const ris = attiva && j.risultati && j.cerca && j.risultati.n === j.cerca.n ? j.risultati : null;
       const risHtml = !ris ? "" : `<div class="ricris">${ris.voci.map((v) => `<button class="ricrisv${scelti.has(v.codice) ? " on" : ""}" data-ricadd="${esc(v.codice)}" data-descr="${esc(v.descr)}" data-tipo="${this.ricTipoDi(v.codice)}"><b>${esc(v.codice)}</b> ${esc(v.descr)}${this.ricTipoDi(v.codice) === "visita" ? ` <i class="rictipo">visita/esame</i>` : ""}</button>`).join("")
         || `<div class="ricnota">Niente per «${esc(ris.q)}»${ris.why ? ` (${esc(ris.why)})` : ""}.</div>`}</div>`;
@@ -13933,8 +13936,9 @@
         <div class="sec ricetta">
           ${!cf ? `<div class="ricstato warn">Codice fiscale non trovato nella pagina: la ricetta si fa a mano nel SISS.</div>` : ""}
           ${altro ? `<div class="ricstato warn">C'è una ricetta in preparazione nel SISS per un altro paziente: aspetta che finisca.</div>` : ""}
-          <div class="lbl">Preferiti</div>
+          <div class="lbl">Farmaci frequenti</div>
           <div class="ricpref">${pref || `<span class="ricnota">Ancora nessuno: si imparano da soli dalle ricette che arrivano in Anteprima nel SISS.</span>`}</div>
+          ${pref ? `<button class="ricbtn" id="ricdimentica" title="Toglie da questo PC i farmaci frequenti imparati dal SISS (niente del paziente: «Dimentica i dati…» non li tocca)">Dimentica i farmaci frequenti</button>` : ""}
           <div class="lbl">Cerca nel SISS</div>
           <div class="riccerca">
             <input id="ricq" type="search" autocomplete="off" spellcheck="false" value="${esc(r.q)}" placeholder="Farmaco: augmentin, tachipirina…" aria-label="Cerca un farmaco nel SISS">
@@ -13963,9 +13967,17 @@
         const c = b.getAttribute("data-ricpref"), p = (this.ricPref || []).find((x) => x.codice === c);
         this.message = null;
         if (r.voci.some((v) => v.codice === c)) r.voci = r.voci.filter((v) => v.codice !== c);
-        else if (p) this.ricVoce(p.codice, p.descr, p.qta);
+        else if (p) {
+          const v = this.ricVoce(p.codice, p.descr, p.qta);
+          if (v && v.tipo === "farmaco") { v.ns = !!p.ns; if (p.campi && typeof p.campi === "object") v.campi = { ...p.campi }; v.freq = (this.ricPref || []).indexOf(p) + 1; }
+        }
         ridisegna();
       }));
+      $("#ricdimentica")?.addEventListener("click", () => {
+        if (!confirm("Dimenticare i farmaci frequenti di questo PC?")) return;
+        chrome.storage.local.remove("ricetta.preferiti.v1").catch(() => {});
+        this.log(`${now()}  ricetta: farmaci frequenti dimenticati`);
+      });
       this.root.querySelectorAll("[data-ricadd]").forEach((b) => b.addEventListener("click", () => {
         const j = this.ricQui(), c = b.getAttribute("data-ricadd");
         this.message = null;
@@ -14006,7 +14018,8 @@
       if (!r || !r.voci.length) return;
       if (this._ricVia && Date.now() - this._ricVia < 1500) return;   // (un doppio tocco è un tocco)
       this._ricVia = Date.now();
-      const voci = r.voci.map((v) => ({ codice: v.codice, tipo: v.tipo || "farmaco", descr: v.descr, qta: v.qta, ns: v.ns, cerca: v.cerca }));
+      const voci = r.voci.map((v) => ({ codice: v.codice, tipo: v.tipo || "farmaco", descr: v.descr, qta: v.qta, ns: v.ns, cerca: v.cerca, ...(v.campi ? { campi: v.campi } : {}) }));
+      for (const v of r.voci) if (v.freq) this.log(`${now()}  ricetta: farmaco frequente ${v.freq}`);   // (mai il paziente)
       if (new Set(voci.map((v) => v.tipo)).size > 1) { this.message = "Una ricetta alla volta: farmaci o visite"; return this.ricRidisegna(); }
       const j = this.ricQui(), quesito = String(this.ricQuesito() || "").trim();
       this.message = null;
