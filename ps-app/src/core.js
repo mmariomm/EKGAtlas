@@ -84,6 +84,7 @@
     "richieste", "cartella", "terapie", "ristampe", "ristampa",
     "visto",   // (visto sul telefono: solo la memoria dell'estensione, niente nel gestionale)
     "listaChi",   // (chi il PC conosce solo dalla smart: chi è e il link della lista della sua area — una lettura, dietro)
+    "pinDati", "pinApri",   // (i pin «Da rivedere»: chi è un paziente, e se il PC lo conosce — letture)
   ]);
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -7165,6 +7166,11 @@
             background: none; cursor: pointer; text-align: left; font-size: 13px; color: var(--testo); }
     .stmi span { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
     .stmi small { flex: none; margin-left: auto; font-size: 12px; color: var(--neutro); }
+    .pinmenu { max-width: 340px; }
+    .pinr { padding: 6px 8px; border-radius: 6px; } .pinr.evid { background: #FFF6E0; }
+    .pinr + .pinr { border-top: 1px solid #EEF1F5; }
+    .pinchi { font-weight: 600; font-size: 13px; } .pinnota { font-size: 12.5px; color: #35506B; white-space: pre-wrap; padding: 2px 0; }
+    .pinaz { display: flex; gap: 4px; } .pinaz .stmi { width: auto; min-height: 26px; padding: 2px 8px; }
     .stmi:hover, .stmi:focus { outline: none; background: #EEF2F6; }
     .stmi:focus-visible { outline: 2px solid var(--azione); outline-offset: -2px; }
     .stmi.cur { cursor: default; color: var(--neutro); }
@@ -9946,6 +9952,7 @@
                       hasExt() ? `<button role="menuitem" id="tabmenu" title="Il tabellone dei Pazienti in una scheda sua: da fissare, o sul secondo schermo">${mico("tabellone")}Tabellone</button>` : "",
                       hasExt() ? `<button role="menuitem" id="pontemenu" title="Il pannello sull'iPhone: associa il telefono, prova la rete">${memo("📱")}iPhone</button>` : "",
                       hasExt() ? `<button role="menuitem" id="etimenu" title="Poche righe scritte da te, sull'etichettatrice di questo PC o in Infermeria: prima l'anteprima, poi Stampa">${mico("etichetta")}Etichetta</button>` : "",
+                      hasExt() && this.pinN() ? `<button role="menuitem" id="pinmenu" title="I pazienti col pin, da rivedere nei prossimi giorni (anche dall'iPhone)">${memo("📌")}Da rivedere (${this.pinN()})</button>` : "",
                       `<button role="menuitem" id="consmenu" title="Al cambio turno: una riga per paziente — posto, nome, età, da quanto è in PS, cosa aspetta, cosa c'è da fare — da copiare o stampare">${mico("dafare")}Consegne</button>`,
                       // (quelle della stanza ci sono solo sulla mappa: in fondo, così le altre non cambiano posto)
                       inStanza && !this.stanzaEdit ? `<button role="menuitem" id="stmodmenu" title="Ritocca la stanza: aggiungi, sposta e rinomina letti, sedie e aree">${mico("matita")}Modifica la stanza</button>` : ""])}
@@ -11362,7 +11369,8 @@
       }
       const df = T.lista.df;
       const coda = [qui ? [voce("tray", "Togli dal posto", "")] : [],
-        [voce("dafare", "Da fare…", dfAperte(ep, df).length ? String(dfAperte(ep, df).length) : ""), voce("togli", "Togli dall'elenco", "")]].filter((g) => g.length);
+        [voce("dafare", "Da fare…", dfAperte(ep, df).length ? String(dfAperte(ep, df).length) : ""), voce("togli", "Togli dall'elenco", "")],
+        hasExt() && !TABELLONE && this.pins && !this._pinSenza ? [this.pinDi(ep) ? voce("pinvia", "Togli dal da rivedere", "📌") : voce("pin", "📌 Da rivedere…", "")] : []].filter((g) => g.length);
       const titolo = `Sposta ${i.breve + i.coda} in…`;
       wrap.insertAdjacentHTML("beforeend", `<div class="stmenu" role="menu" aria-label="${esc(titolo)}"><div class="stmenuhd" aria-hidden="true">${esc(titolo)}</div>${
         [...sezioni, ...coda.map((g) => g.join(""))].join('<div class="stmsep" role="separator"></div>')}</div>`);
@@ -11380,6 +11388,8 @@
         this.stanzaChiudiMenu();
         const dove = b.getAttribute("data-dove");
         if (dove === "togli") return this.stanzaArchivia(ep);
+        if (dove === "pin") return void this.pinMetti(ep);
+        if (dove === "pinvia") return void this.pinTogli(this.pinDi(ep));
         // «Da fare…»: la lista sotto la sua icona (nella riga, o nel letto), o sotto il paziente
         if (dove === "dafare") return this.dfApri(ep, this.dfAncora(ep) || anchor);
         // il fuoco segue il paziente: nel posto nuovo, o sulla sua riga
@@ -11405,6 +11415,130 @@
       window.removeEventListener("pointerdown", a.fuori, true);
       a.menu.remove();
       if (ritorna && a.anchor?.isConnected) a.anchor.focus();
+    }
+    // ---- i pin «Da rivedere» (appunti-sw.js): tasto destro su un paziente, e ⋯ → Da rivedere (N)
+    pinCarica(forza = false) {
+      if (!hasExt() || TABELLONE) return;
+      // la copia dei pin sul PC cambia (un pin da un'altra scheda, la chiave arrivata dall'iPhone): qui la si segue
+      if (!this._pinAscolto && chrome.storage?.onChanged) {
+        this._pinAscolto = true;
+        chrome.storage.onChanged.addListener((c, area) => {
+          if (area !== "local" || !c["appunti.copia"]) return;
+          this.pins = c["appunti.copia"].newValue?.pin || {};
+          this._pinSenza = false;
+          if (this._stanzaMenu?.ep === "pin") { this.stanzaChiudiMenu(); this.render(); this.pinMenu(this.root.querySelector("#menubtn"), "", false); }
+          else if (!this.root.activeElement) this.render();
+        });
+      }
+      const prima = JSON.stringify(this.pins || {});   // (prima della domanda: la copia può cambiare intanto, appunti.copia)
+      ask({ t: "appunti", azione: "leggi", forza }).then((r) => {
+        if (!r || !r.pin) return;
+        this.pins = r.pin;
+        this._pinSenza = !!r.senza;
+        if (JSON.stringify(r.pin) === prima) return;
+        // (il riquadro «Da rivedere» aperto si rifà con i pin riletti)
+        const aperto = this._stanzaMenu?.ep === "pin";
+        if (aperto) { this.stanzaChiudiMenu(); this.render(); this.pinMenu(this.root.querySelector("#menubtn"), "", false); }
+        else if (!this.root.activeElement) this.render();
+      }).catch(() => {});
+    }
+    pinDi(ep) {
+      const p = knownPatients().find((x) => x.ep === ep);
+      if (!p || !this.pins) return "";
+      const d = pinDati(p);
+      return Object.keys(this.pins).find((k) => { const x = this.pins[k]; return (d.cf && x.cf === d.cf) || (d.url && x.url === d.url) || (!d.cf && !x.cf && x.ep === ep && normNome(x.paziente) === normNome(d.paziente)); }) || "";
+    }
+    async pinMetti(ep) {
+      const p = knownPatients().find((x) => x.ep === ep);
+      if (!p) return;
+      const k = this.pinDi(ep), prima = k ? this.pins[k].nota || "" : "";
+      const nota = window.prompt(`📌 Da rivedere: ${p.name}\nUna nota (facoltativa, al più 500 caratteri):`, prima);
+      if (nota === null) return;
+      const r = await ask({ t: "appunti", azione: "aggiungi", pin: { ...pinDati(p), nota: nota.slice(0, 500), quando: Date.now() } });
+      if (r && r.pin) this.pins = r.pin;
+      if (r && r.ok) this.log(`${now()}  pin aggiunto`);
+      else this.segnala({ tag: "Da rivedere", tono: "warn", testo: (r && r.errore) || "Pin non salvato" }, { ms: 6000 });
+      this.render();
+    }
+    async pinTogli(k) {
+      const r = await ask({ t: "appunti", azione: "togli", k });
+      if (r && r.pin) this.pins = r.pin;
+      if (r && r.ok) this.log(`${now()}  pin tolto`);
+      else this.segnala({ tag: "Da rivedere", tono: "warn", testo: (r && r.errore) || "Pin non tolto" }, { ms: 6000 });
+      this.render();
+    }
+    pinN() { return Object.keys(this.pins || {}).length; }
+    pinTesto(x) {
+      const d = new Date(x.quando || 0), q = `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`;
+      return [x.paziente || [x.cognome, x.nome].join(" "), x.nascita ? `nato/a ${x.nascita}` : "", `dal ${q}`].filter(Boolean).join(" · ");
+    }
+    // il riquadro di ⋯ → Da rivedere: uno per riga, con la nota, «Apri» e «Togli»; in fondo «Elimina tutti i pin»
+    pinMenu(anchor, evid = "", rileggi = true) {
+      this.stanzaChiudiMenu();
+      const wrap = this.root.querySelector(".wrap");
+      if (!wrap) return;
+      const l = Object.entries(this.pins || {}).sort(([, a], [, b]) => (b.quando || 0) - (a.quando || 0));
+      const riga = ([k, x]) => `<div class="pinr${k === evid ? " evid" : ""}" data-pink="${esc(k)}"><div class="pinchi">${esc(this.pinTesto(x))}</div>${
+        x.nota ? `<div class="pinnota">${esc(x.nota)}</div>` : ""}<div class="pinaz"><button type="button" class="stmi" data-pinapri="${esc(k)}">Apri</button><button type="button" class="stmi" data-pintogli="${esc(k)}">Togli</button></div></div>`;
+      wrap.insertAdjacentHTML("beforeend", `<div class="stmenu pinmenu" role="dialog" aria-label="Da rivedere"><div class="stmenuhd">📌 Da rivedere (${l.length})</div>${
+        l.length ? l.map(riga).join("") : `<div class="pinnota">Nessun pin. Tasto destro su un paziente: «📌 Da rivedere…».</div>`}${
+        l.length ? `<div class="stmsep" role="separator"></div><button type="button" class="stmi" data-pinvia="1">Elimina tutti i pin…</button>` : ""}</div>`);
+      const menu = wrap.lastElementChild, wr = wrap.getBoundingClientRect(), ar = (anchor?.isConnected ? anchor : wrap).getBoundingClientRect();
+      menu.style.left = Math.max(8, Math.min(ar.left, innerWidth - menu.offsetWidth - 8)) - wr.left + "px";
+      menu.style.top = Math.max(8, Math.min(ar.bottom + 4, innerHeight - menu.offsetHeight - 8)) - wr.top + "px";
+      menu.addEventListener("click", (e) => {
+        const b = e.target.closest("button");
+        if (!b) return;
+        e.stopPropagation();
+        if (b.dataset.pintogli) { this.stanzaChiudiMenu(); this.pinTogli(b.dataset.pintogli); }
+        else if (b.dataset.pinapri) { this.stanzaChiudiMenu(); this.pinApri(b.dataset.pinapri); }
+        else if (b.dataset.pinvia) {
+          if (b.dataset.sicuro !== "1") { b.dataset.sicuro = "1"; b.textContent = "Elimino tutti i pin, anche dall'iPhone? Tocca di nuovo"; return; }
+          this.stanzaChiudiMenu();
+          ask({ t: "appunti", azione: "elimina" }).then((r) => {
+            if (r && r.ok) { this.pins = {}; this.log(`${now()}  pin eliminati tutti`); }
+            else this.segnala({ tag: "Da rivedere", tono: "warn", testo: (r && r.errore) || "Niente eliminato" }, { ms: 6000 });
+            this.render();
+          });
+        }
+      });
+      const fuori = (e) => { if (!e.composedPath().includes(menu)) this.stanzaChiudiMenu(); };
+      window.addEventListener("pointerdown", fuori, true);
+      this._stanzaMenu = { menu, anchor, ep: "pin", fuori };
+      menu.querySelector("button")?.focus();
+      if (rileggi) this.pinCarica(true);   // (riletto dal ponte: dall'iPhone potrebbe esserne arrivato uno, o andato via)
+    }
+    // «Apri»: il paziente che il PC conosce adesso, come sempre; se no, la pagina all'indirizzo che il gestionale gli
+    // aveva dato (mai costruito), in questa scheda, dopo il tocco del medico — e lì si controlla chi è (pinControlla).
+    pinApri(k) {
+      const x = this.pins?.[k];
+      if (!x) return;
+      const p = pinNoto(x);
+      if (p && (p.url || p.ep === this.epDiQuesta())) return this.apriPaziente(p.ep, "esiti");
+      if (!x.url || !leggibilePagina(x.url) || !/\/menuPsoEpisodio\.do$/i.test(new URL(x.url).pathname)) return this.pinNonRiesco(k);
+      this.fermaAuto();
+      tabStore.set("pinApri.v1", { k, pin: x, ts: Date.now() });
+      nav(x.url);
+    }
+    pinNonRiesco(k, x = this.pins?.[k]) {
+      this.segnala({ tag: "Da rivedere", tono: "warn", testo: `Non riesco a riaprirlo dal gestionale: ecco i dati salvati — ${x ? this.pinTesto(x) + (x.nota ? ` · «${x.nota.slice(0, 120)}»` : "") : ""}` }, { ms: 15000 });
+      if (x && this.pins?.[k]) setTimeout(() => this.pinMenu(this.root.querySelector("#menubtn"), k), 0);
+    }
+    // arrivati dalla pagina di un pin: è lui? il nome, e il codice fiscale o la data di nascita della pagina
+    pinControlla() {
+      const a = tabStore.get("pinApri.v1", null);
+      if (!a) return;
+      tabStore.set("pinApri.v1", null);
+      if (Date.now() - (a.ts || 0) > 60e3 || !a.pin) return;
+      const x = a.pin, nome = this.episodeId ? this.nomePaziente() || "" : "";
+      if (!nome) return this.pinNonRiesco(a.k, x);
+      const cf = cfPagina(document), nato = improntaNascita(nascitaInPagina(document));
+      const stessoNome = normNome(nome) === normNome(x.paziente || [x.cognome, x.nome].join(" "));
+      const cfOk = !!x.cf && cf === x.cf, natoOk = !!x.nato && nato === x.nato;
+      const contro = (!!x.cf && !!cf && cf !== x.cf) || (!!x.nato && !!nato && nato !== x.nato);
+      if (stessoNome && (cfOk || natoOk) && !contro) return this.segnala({ tag: "Da rivedere", tono: "ok", testo: `Riaperto dal pin: ${cfOk ? "codice fiscale" : "data di nascita"} e nome controllati` }, { ms: 5000 });
+      if (!stessoNome || contro) return this.segnala({ tag: "Errore grave", tono: "err", testo: "Errore grave: la pagina aperta dal pin è di un altro paziente — controlla chi è prima di fare qualunque cosa", ...this.avvisoVisto() });
+      this.pinNonRiesco(a.k, x);
     }
     // togliere dall'elenco e svuotarlo: niente conferme, si annulla
     stanzaArchivia(ep) {
@@ -14978,7 +15112,15 @@
         clearTimeout(this._resetArmatoT);
         this._resetArmato = 0; this.menuAperto = false;
         this.resetDatiPazienti();
+        // i pin «Da rivedere» non sono del turno: si chiede se togliere anche la loro copia su questo PC (quella
+        // cifrata sul ponte resta: se ne va solo con «Elimina tutti i pin»)
+        if (hasExt() && this.pinN() && window.confirm(`Togliere da questo PC anche la copia dei ${this.pinN()} pin «Da rivedere»?\n(La copia cifrata per l'iPhone resta: si elimina solo da ⋯ → Da rivedere → Elimina tutti i pin.)`)) {
+          ask({ t: "appunti", azione: "dimentica" }).catch(() => {});
+          this.pins = {};
+          this.render();
+        }
       });
+      $("#pinmenu")?.addEventListener("click", (e) => { e.stopPropagation(); this.menuAperto = false; this.render(); this.pinMenu(this.root.querySelector("#menubtn")); });
       this.root.querySelectorAll("[data-rz]").forEach((el) => this.attachResize(el));
       // doppio clic sull'angolo o sull'intestazione: di nuovo al centro, all'85%
       const alCentro = (e) => { e.stopPropagation(); this.win = null; store.set("win.v1", null); this.render(); };
@@ -17717,6 +17859,34 @@
       || (sa(x) && sa(y) ? n(x) - n(y) : sa(y) - sa(x)) || (ingresso(x) - ingresso(y)) || 0)
       .map((i) => ({ i, area: k(i) ? titoloArea(k(i), a.viste[k(i)]?.label) : "" }));
   }
+  // ------------------------------------------------ i pin «Da rivedere» (appunti-sw.js)
+  // Chi è un paziente, per il suo pin: il nome come lo scrive il gestionale (e cognome e nome), il codice fiscale
+  // se il PC lo sa, la data di nascita se si legge (sulla sua pagina), l'impronta della nascita (per ritrovarlo
+  // nelle liste) e l'indirizzo della sua pagina come il gestionale l'ha dato (ponteUrlPaziente: mai costruito).
+  // L'episodio resta solo un indizio. Tutto questo viaggia e sta cifrato: il ripetitore non lo vede.
+  const PIN_PART = /^(DE|DI|DA|DEL|DELLA|DELLE|DELLO|DEI|DEGLI|DAL|DALLA|DALLE|DALLO|LA|LO|LE|LI|SAN|SANTA|SANTO|VAN|VON|MC|MAC|DOS|DAS|DU)$/i;
+  function pinDati(p) {
+    const w = String(p.name || "").trim().split(/\s+/).filter(Boolean);
+    let i = 0;
+    while (i < w.length - 2 && PIN_PART.test(w[i])) i++;
+    const cf = String(p.pk || "").startsWith("cf:") ? p.pk.slice(3) : "";
+    const qui = !!PANNELLO && p.ep === PANNELLO.epDiQuesta();
+    const m = qui ? /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(nascitaInPagina(document)) : null;
+    return { paziente: p.name || "", cognome: w.slice(0, i + 1).join(" "), nome: w.slice(i + 1).join(" "), cf: /^[A-Z0-9]{16}$/.test(cf) ? cf : "",
+      nascita: m ? `${m[1].padStart(2, "0")}/${m[2].padStart(2, "0")}/${m[3]}` : "", nato: p.nato || "", ep: p.ep, url: ponteUrlPaziente(p) };
+  }
+  // Il paziente di un pin fra quelli che il PC conosce adesso (le sue liste): lo stesso codice fiscale, o lo stesso
+  // nome con la stessa nascita, o lo stesso episodio con lo stesso nome. Nessuna ricerca nel gestionale.
+  function pinNoto(pin) {
+    const l = tuttiPazienti().filter((p) => !p.arch);
+    if (pin.cf) { const x = l.find((p) => p.pk === "cf:" + pin.cf); if (x) return x; }
+    const nome = normNome(pin.paziente || [pin.cognome, pin.nome].join(" "));
+    // (un codice fiscale diverso da quello del pin: non è lui, qualunque cosa dica il nome)
+    const altroCf = (p) => !!pin.cf && String(p.pk || "").startsWith("cf:") && p.pk !== "cf:" + pin.cf;
+    if (nome && pin.nato) { const x = l.filter((p) => normNome(p.name) === nome && p.nato === pin.nato && !altroCf(p)); if (x.length === 1) return x[0]; }
+    const e = pin.ep ? l.find((p) => p.ep === pin.ep && !altroCf(p)) : null;
+    return e && nome && normNome(e.name) === nome ? e : null;
+  }
   function pontePazienti() {
     const m = PANNELLO.pazModello();
     // (il telefono mette i titoli delle aree)
@@ -18176,8 +18346,12 @@
     }
     // «Accetta in ambulatorio»: qui solo chi è e la lista del triage da aprire; il resto la scheda di sottofondo
     if (cmd === "accetta") return ponteAccetta(a);
+    // un pin toccato sul telefono: il PC lo conosce adesso? (le sue liste; mai una ricerca nel gestionale)
+    if (cmd === "pinApri") return { ok: true, dati: { ep: pinNoto({ ...(a.chi || {}), ep: a.ep || "" })?.ep || "" } };
     const p = a.ep ? pontePaziente(a.ep) : null;
     if (!p) return { ok: false, errore: "Questo paziente non è più nell'elenco del PC" };
+    // «📌» sul telefono: chi è (il pin lo scrive il service worker, cifrato; nel registro solo «pin aggiunto»)
+    if (cmd === "pinDati") return { ok: true, dati: pinDati(p) };
     // dimesso sul PC (archiviato): dal telefono non si tocca più
     if (p.arch) return { ok: false, errore: "Dimesso sul PC: niente inviato", dimesso: true };
     // noto solo dalla lista smart: chi è e il link della lista della sua area, per la scheda dietro (una lettura);
@@ -19441,6 +19615,8 @@
         if (r && r.ok && r.origine) { panel.portale = r.origine; panel.render(); }
       }).catch(() => {});
       panel.applyAfterNav();
+      panel.pinControlla();   // (arrivati dall'indirizzo di un pin: è lui?)
+      panel.pinCarica();      // (i pin «Da rivedere»: letti una volta all'avvio, mai a intervalli)
       const pending = nextQueued(findEpisodeId(document, location.href));
       panel.pending = pending; // a richiesta of this run still needs confirming
       // Il bottone che porta a termine la richiesta rimasta a metà (la

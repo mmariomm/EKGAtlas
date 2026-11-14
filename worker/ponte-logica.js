@@ -664,7 +664,7 @@ export const INTESTAZIONI_ANNUNCIO = { "access-control-allow-origin": "*", "cont
 export const APPUNTI = {
   corpo: 200000,              // caratteri di una richiesta
   blob: 150000,               // caratteri del valore cifrato (≈ 110 KB: qualche centinaio di pin)
-  alMinuto: 30,               // richieste al minuto per id
+  alMinuto: 60,               // richieste al minuto per id (le letture del PC sono già messe insieme: appunti-sw.js)
   provaMs: 5 * 60e3,          // l'ora della prova: al più tanto lontana da quella del ripetitore
 };
 const OP_APPUNTI = new Set(["leggi", "scrivi", "elimina"]);

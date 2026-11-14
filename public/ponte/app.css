@@ -557,3 +557,17 @@ main { padding: 12px var(--dx) calc(112px + env(safe-area-inset-bottom)) var(--s
 .eti .ord { margin-top: 14px; }
 /* (3.87) in sottofondo l'app è coperta: l'istantanea di iOS (il selettore delle app) non mostra pazienti */
 .coperto #app, .coperto #pdfin { visibility: hidden !important; }
+
+/* --- i pin «Da rivedere»: discreti — 📌 nella testata del paziente, una riga piccola sopra l'elenco --- */
+.top .pinb { font-size: 17px; opacity: .45; filter: grayscale(1); }
+.top .pinb.on { opacity: 1; filter: none; }
+.rivedi { display: block; margin: 2px 4px 8px; border: 0; background: none; color: var(--testo2); font-size: 14px; padding: 6px 2px; text-align: left; }
+.pinr { display: flex; align-items: stretch; border-top: 1px solid var(--linea); }
+.pinr:first-child { border-top: 0; }
+.pinr.evid { background: var(--blu-chiaro); }
+.pinr .pinchi { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; border: 0; background: none; padding: 10px 14px; }
+.pinr .pinchi b { font-size: 16px; font-weight: 650; }
+.pinr .pinchi small { font-size: 13px; color: var(--grigio); }
+.pinr .pinnota { font-size: 14.5px; color: var(--testo2); white-space: pre-wrap; overflow-wrap: anywhere; }
+.pinr .pinvia { border: 0; background: none; padding: 0 14px; }
+.foglio .pinin { display: block; width: 100%; margin: 6px 0 10px; border: 1px solid var(--campo); border-radius: 10px; background: var(--carta); padding: 8px 12px; font-size: 16px; font-family: inherit; resize: vertical; }

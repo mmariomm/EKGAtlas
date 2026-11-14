@@ -73,7 +73,8 @@
   // --------------------------------------------------------------- lo stato
   // Tutto qui è in memoria. Sul telefono si scrivono solo la chiave e la scelta «Lista · Mappa».
   const S = {
-    pcs: [],             // le associazioni (uno o più PC): [{ k, dev, kind: "completo"|"lettura"|"", nome, id }]
+    pins: null, appunti: null, pinFoglio: "", pinVisto: "", pinErr: "",   // i pin «Da rivedere» (solo in memoria) e la chiave degli appunti
+    pcs: [],            // le associazioni (uno o più PC): [{ k, dev, kind: "completo"|"lettura"|"", nome, id }]
     attivo: "",          // l'id dell'associazione attiva (si ricorda l'ultima)
     classifica: false,   // una scansione nuova in corso: il saluto deciderà dove va
     pcOperatore: "",     // chi è loggato nel gestionale del PC di sola lettura (testata, informativa)
@@ -584,6 +585,7 @@
     await rinnova().catch(() => {});
     if (!S.canale) return;
     S.fase = "pronta"; render();
+    appuntiAvvia();   // (i pin «Da rivedere»: la chiave d'accordo col PC, poi letti — una volta)
     // il codice dell'associazione si guarda solo adesso, accanto a quello sotto il QR del PC: poi non serve
     carica().then(() => { if (nuova && S.fase === "pronta") avviso(`Associato · codice ${codice}`); });
   }
@@ -2052,7 +2054,7 @@
   function testata() {
     if (S.fase !== "pronta") return "";
     const suPaz = S.vista.nome === "paziente", p = suPaz ? paziente(S.vista.ep) : null;
-    const suZip = { registrazioni: "Registrazioni", dispositivi: "Dispositivi", etichetta: "Etichetta" }[S.vista.nome] || "";   // (una pagina del ⋯: il suo titolo, e «‹»)
+    const suZip = { registrazioni: "Registrazioni", dispositivi: "Dispositivi", etichetta: "Etichetta", rivedere: "Da rivedere" }[S.vista.nome] || "";   // (una pagina del ⋯: il suo titolo, e «‹»)
     const sx = suPaz || suZip ? `<button class="ico" data-a="indietro" aria-label="Tutti i pazienti">${ICO.indietro}</button>` : "";
     const tit = p ? `<b>${p.omonimo ? '<span class="om">⚠ </span>' : ""}${esc(chi(p))}</b>${p.prec ? "<small>Episodio precedente</small>" : ""}`
       : suZip ? `<b>${suZip}</b>` : suPaz ? "" : S.aggiornato ? `<small>Aggiornato alle ${hhmm(S.aggiornato)}</small>` : "";
@@ -2068,13 +2070,15 @@
     }).join("")}<div class="sep"></div>` : "";
     // (l'elenco si rilegge da solo a ogni ritorno; la sessione finisce da sola; la stampante è quella toccata
     // l'ultima volta in «Stampa: PC · Infermeria»: nel ⋯ resta quello che non c'è altrove)
-    return `<header class="top">${sx}${nome}${statoPc()}${solaLettura() ? segnoSola() : ""}<button class="ico" data-a="menu" aria-label="Altro" aria-expanded="${S.menu}">${ICO.altro}</button>
+    const pinBtn = p && S.appunti ? `<button class="ico pinb${pinDi(p) ? " on" : ""}" data-a="pin" aria-label="${pinDi(p) ? "Da rivedere: la nota" : "Da rivedere"}" aria-pressed="${!!pinDi(p)}">📌</button>` : "";
+    return `<header class="top">${sx}${nome}${statoPc()}${solaLettura() ? segnoSola() : ""}${pinBtn}<button class="ico" data-a="menu" aria-label="Altro" aria-expanded="${S.menu}">${ICO.altro}</button>
       ${S.menu ? `<div class="menu" role="menu">
         ${listaPc}
         <button data-a="stampaPdf" ${stampaNo() ? "disabled" : ""}>${em("📄")}Stampa PDF${staDi() ? ` · ${esc(doveTel() === "stazione" ? staDi() : "PC")}` : ""}${stampaNo() ? ` <small>${esc(stampaNo())}</small>` : ""}</button>
         ${solaLettura() ? "" : `<button data-a="etichetta">${em("🏷️")}Etichetta</button>`}
         <button data-a="scansiona">${em("📷")}Scansiona il QR</button>
         <button data-a="dispositivi">${em("🖥️")}Dispositivi</button>
+        <button data-a="rivedere">${em("📌")}Da rivedere${nPin() ? ` (${nPin()})` : ""}</button>
         ${solaLettura() ? "" : `<button data-a="registrazioni"><span class="em rec" aria-hidden="true">●</span> Registrazioni</button>`}
         <button class="via" data-a="dimentica">${em("🗑️")}Scollega ${S.pcs.length >= 2 ? "questo PC" : "il PC"}</button>
         ${solaLettura() ? `<div class="info">${esc(testoSola())}</div>` : ""}
@@ -2509,6 +2513,109 @@
   }
   // (girato il telefono, o cambiata la finestra: la mappa intera di nuovo nella larghezza)
   addEventListener("resize", () => { if ($app.querySelector(".piano")) misureMappa(); });
+  // ---------------------------------------------- i pin «Da rivedere»
+  // I pazienti da rivedere fra qualche giorno, con una nota. Stanno sul ponte (/ponte/appunti) cifrati con la
+  // chiave degli appunti, che crea questo telefono e che ogni PC associato riceve dentro la sessione cifrata
+  // (`appuntiChiave`); un telefono nuovo la riprende da un PC (perso il telefono, i pin no). Qui la chiave sta
+  // nella cassa, non estraibile (e avvolta, solo per darla a un PC); i pin solo nella memoria della pagina.
+  // «📌» su un paziente: chi è (cognome, nome, CF, nascita, l'indirizzo della sua pagina) lo dice il PC, che
+  // scrive il pin. Togliere un pin, e leggerli, si fa da qui anche col PC assente. Letti all'apertura dell'app e
+  // della lista «Da rivedere»; mai a intervalli.
+  const APPUNTI = "appunti";
+  async function appuntiPosta(corpo) {
+    const r = await fetch(new URL("appunti", location.href).href, { method: "POST", body: corpo, headers: { "content-type": "text/plain" }, credentials: "omit", cache: "no-store" });
+    return { stato: r.status, json: await r.json().catch(() => ({})) };
+  }
+  async function appuntiTenuta() {
+    if (S.appunti) return S.appunti;
+    if (senzaCassa) return null;
+    const x = await cassaLeggi(APPUNTI).catch(() => null);
+    return x && x.hk ? (S.appunti = { x, c: await P.appuntiChiavi(x.hk) }) : null;
+  }
+  async function appuntiTieni(raw) {
+    const x = await P.appuntiAvvolgi(raw);
+    await cassaScrivi(APPUNTI, x);
+    S.appunti = { x, c: await P.appuntiChiavi(x.hk) };
+  }
+  // dopo il saluto: la chiave, d'accordo col PC (la nostra se l'abbiamo; se no la sua; se nessuno, una nuova)
+  async function appuntiAvvia() {
+    if (senzaCassa) return;
+    try {
+      const mia = await appuntiTenuta();
+      const k = mia ? P.b64u(await P.appuntiSvolgi(mia.x)) : "";
+      const r = await chiedi("appuntiChiave", { k }, TEMPO, true);
+      if (!mia) {
+        if (r && typeof r.k === "string" && r.k) await appuntiTieni(P.daB64u(r.k));
+        else { const nuova = P.casuale(32); await appuntiTieni(nuova); await chiedi("appuntiChiave", { k: P.b64u(nuova) }, TEMPO, true); }
+      }
+      await appuntiLeggi();
+    } catch { /* un PC di prima: niente pin, per ora */ }
+  }
+  async function appuntiLeggi() {
+    const t = await appuntiTenuta();
+    if (!t) return;
+    try { S.pins = (await P.appuntiFai(t.c, appuntiPosta)).doc.pin; S.pinErr = ""; }
+    catch { S.pinErr = "Pin non letti: ponte non raggiungibile"; }
+    render();
+  }
+  const normN = (t) => String(t || "").toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^A-Z0-9 ]+/g, " ").trim().replace(/\s+/g, " ");
+  // il pin di un paziente dell'elenco (l'episodio è solo un indizio: anche il nome deve essere quello)
+  const pinDi = (p) => (p && S.pins ? Object.keys(S.pins).find((k) => S.pins[k].ep === p.ep && normN(S.pins[k].paziente) === normN(String(p.nome).replace(/ · .*$/, ""))) || "" : "");
+  const nPin = () => Object.keys(S.pins || {}).length;
+  async function pinSalva(ep) {
+    const t = document.getElementById("pinnota"), nota = String(S.pinBozza != null ? S.pinBozza : t ? t.value : "").slice(0, 500);
+    S.occupato.add("pin");
+    render();
+    try {
+      await chiedi("pin", { ep, nota }, ATTESA_ACCETTA);
+      S.pinFoglio = ""; S.pinBozza = null;
+      await appuntiLeggi();
+      avviso("📌 Da rivedere: salvato", "ok");
+    } catch (e) { avviso(e.message || "Pin non salvato", "err"); }
+    finally { S.occupato.delete("pin"); render(); }
+  }
+  async function pinTogli(k) {
+    const t = await appuntiTenuta();
+    if (!t) return;
+    try {
+      S.pins = (await P.appuntiFai(t.c, appuntiPosta, (d) => { const pin = { ...d.pin }; delete pin[k]; return { ...d, pin, via: { ...d.via, [k]: Date.now() } }; })).doc.pin;
+      S.pinFoglio = "";
+      avviso("Tolto dal da rivedere", "ok");
+    } catch { avviso("Ponte non raggiungibile: pin non tolto", "err"); }
+    render();
+  }
+  // un tocco su un pin: se il PC lo conosce adesso, si apre come sempre; se no, i dati salvati (sono già sulla riga)
+  async function pinApri(k) {
+    const x = S.pins && S.pins[k];
+    if (!x) return;
+    try {
+      const d = await chiedi("pinApri", { ep: x.ep || "", chi: { cf: x.cf || "", paziente: x.paziente || "", nato: x.nato || "" } }, TEMPO);
+      if (d && d.ep && paziente(d.ep)) { apriPaziente(d.ep); return; }
+    } catch { /* il PC non risponde: i dati salvati */ }
+    S.pinVisto = k;
+    avviso("Non è nelle liste del PC: ecco i dati salvati");
+  }
+  function apriRivedere() {
+    S.vista = { nome: "rivedere", ep: "" };
+    S.menu = false;
+    render();
+    appuntiLeggi();
+  }
+  function vistaRivedere() {
+    const l = Object.entries(S.pins || {}).sort(([, a], [, b]) => (b.quando || 0) - (a.quando || 0));
+    const quando = (t) => { const d = new Date(t || 0); return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`; };
+    const riga = ([k, x]) => `<div class="pinr${S.pinVisto === k ? " evid" : ""}"><button class="pinchi" data-a="pinapri" data-k="${esc(k)}"><b>${esc(x.paziente || [x.cognome, x.nome].join(" "))}</b><small>${
+      esc([x.nascita ? `nato/a ${x.nascita}` : "", S.pinVisto === k && x.cf ? `CF ${x.cf}` : "", `dal ${quando(x.quando)}`].filter(Boolean).join(" · "))}</small>${x.nota ? `<span class="pinnota">${esc(x.nota)}</span>` : ""}</button><button class="pinvia" data-a="pintogli" data-k="${esc(k)}" aria-label="Togli dal da rivedere">${em("🗑️")}</button></div>`;
+    return `<main>${S.pinErr ? `<p class="errcod" role="alert">${esc(S.pinErr)}</p>` : ""}${l.length ? `<div class="carta">${l.map(riga).join("")}</div>`
+      : S.pins ? `<div class="vuoto">Nessun paziente da rivedere.<br>Sulla pagina di un paziente: 📌.</div>` : `<div class="carica"><div class="giro"></div></div>`}</main>`;
+  }
+  function foglioPin(p) {
+    const k = pinDi(p), x = k ? S.pins[k] : null, occ = S.occupato.has("pin");
+    return `<div class="foglio" role="dialog" aria-modal="true" aria-label="Da rivedere"><button type="button" class="velo" data-a="pinchiudi" aria-label="Chiudi"></button>
+      <div class="pannello" data-k="pin"><div class="capo"><b>📌 Da rivedere · ${esc(p.breve || p.nome)}</b><button type="button" class="chiudi" data-a="pinchiudi">Chiudi</button></div>
+      <textarea id="pinnota" class="pinin" rows="3" maxlength="500" placeholder="Una nota (facoltativa)" aria-label="Nota" ${occ ? "readonly" : ""}>${esc(S.pinBozza != null ? S.pinBozza : x ? x.nota || "" : "")}</textarea>
+      <button class="grande" data-a="pinsalva" ${occ ? "disabled" : ""}>${x ? "Salva la nota" : "Metti il pin"}</button>${x ? `<button class="grande quiet" data-a="pintogli" data-k="${esc(k)}">Togli dal da rivedere</button>` : ""}</div></div>`;
+  }
   function vistaLista() {
     if (!S.pazienti) {
       if (S.erroreLista && !S.occupato.has("lista")) {
@@ -2538,7 +2645,8 @@
       corpo = mappaHtml(vivi) + (senza.length ? `<div class="lbl">Senza posto</div>${carta(senza)}` : "");
     }
     if (S.modo === "dafare") return `<main>${stampaHtml()}${codaDi("")}${commutatore()}${corpo}${S.avviso && !S.avviso.alto ? "" : barraOrdini()}</main>`;
-    return `<main>${stampaHtml()}${codaDi("")}${commutatore()}${S.pazienti.length ? corpo + triageHtml() + (prec.length ? `<button class="prec" data-a="precapri" aria-expanded="${S.precAperti}">Episodi precedenti (${prec.length})</button>${S.precAperti ? carta(prec) : ""}` : "")
+    const rivedi = nPin() ? `<button class="rivedi" data-a="rivedere">📌 Da rivedere (${nPin()})</button>` : "";
+    return `<main>${stampaHtml()}${codaDi("")}${commutatore()}${rivedi}${S.pazienti.length ? corpo + triageHtml() + (prec.length ? `<button class="prec" data-a="precapri" aria-expanded="${S.precAperti}">Episodi precedenti (${prec.length})</button>${S.precAperti ? carta(prec) : ""}` : "")
       : `<div class="vuoto">Nessun paziente nell'elenco del PC.<br>Si riempie da solo col gestionale aperto sul PC: la lista dell'area, e la lista smart con tutto il PS.</div>${triageHtml()}`}
       ${S.avviso && !S.avviso.alto ? "" : barraOrdini()}</main>`;
   }
@@ -2749,7 +2857,7 @@
     const ter = S.terapiaSi && S.scheda === "terapia";
     return `<main>${allergieHtml(p)}${dfRiga(p)}${vitaliHtml(p)}${accPazHtml(p)}${barraOrdini(p.ep)}${stampaHtml()}<div class="seg" role="tablist">${tab("richieste", "Richieste")}${tab("esiti", "Esiti")}${tab("cartella", "Cartella")}${S.terapiaSi ? tab("terapia", "Terapia") : ""}</div>
       ${ordini}${S.scheda === "esiti" ? vistaEsiti(p) : S.scheda === "cartella" ? vistaCartella(p) : ter ? vistaTerapia(p) : vistaRichieste(p)}</main>${ctaHtml(p)}${
-      S.eoSheet && S.scheda === "cartella" && S.eo ? foglioEo() : ""}${ter ? foglioTerapia(p) : ""}${S.dfFoglio ? foglioDf(p) : ""}`;
+      S.eoSheet && S.scheda === "cartella" && S.eo ? foglioEo() : ""}${ter ? foglioTerapia(p) : ""}${S.dfFoglio ? foglioDf(p) : ""}${S.pinFoglio === p.ep ? foglioPin(p) : ""}`;
   }
   // La cartella: i campi della pagina del paziente sul PC, ognuno com'è là.
   // Si scrive dove il gestionale lascia scrivere; il resto si legge e basta.
@@ -2885,7 +2993,7 @@
   let premuto = 0, rinviato = false, disegno = false, trascino = false;
   // le azioni che senza il PC non vanno
   // (l'ordine no: senza collegamento va in coda)
-  const SERVE_PC = new Set(["valori", "pdf", "aggiornaLista", "stampaPdf", "stampaRef", "ordQui", "dfck", "dftogli", "csalva", "cricarica", "crileggi", "registrazioni", "zipLista", "zipScarica", "zipVia",
+  const SERVE_PC = new Set(["pin", "pinsalva", "valori", "pdf", "aggiornaLista", "stampaPdf", "stampaRef", "ordQui", "dfck", "dftogli", "csalva", "cricarica", "crileggi", "registrazioni", "zipLista", "zipScarica", "zipVia",
     "trileggi", "tconferma", "accetta", "areaApri", "etistampa"]);
   function render() {
     if (premuto || trascino) { rinviato = true; return; }
@@ -2894,7 +3002,7 @@
     const fuoco = att ? { id: att.id, a: att.selectionStart, b: att.selectionEnd } : null;
     const mp = $app.querySelector(".mappa"), scorri = mp ? { x: mp.scrollLeft, y: mp.scrollTop } : null;
     const fg = $app.querySelector(".foglio .pannello"), fgy = fg ? { k: fg.dataset.k, y: fg.scrollTop } : null;   // (un foglio aperto resta dov'era)
-    const corpo = S.fase === "pronta" ? (S.vista.nome === "paziente" ? vistaPaziente() : S.vista.nome === "registrazioni" ? vistaRegistrazioni() : S.vista.nome === "dispositivi" ? vistaDispositivi() : S.vista.nome === "etichetta" && S.eti ? vistaEtichetta() : vistaLista()) : S.vista.nome === "dispositivi" ? vistaDispositivi() : schermata();
+    const corpo = S.fase === "pronta" ? (S.vista.nome === "paziente" ? vistaPaziente() : S.vista.nome === "registrazioni" ? vistaRegistrazioni() : S.vista.nome === "dispositivi" ? vistaDispositivi() : S.vista.nome === "etichetta" && S.eti ? vistaEtichetta() : S.vista.nome === "rivedere" ? vistaRivedere() : vistaLista()) : S.vista.nome === "dispositivi" ? vistaDispositivi() : schermata();
     disegno = true;   // (un campo tolto dal ridisegno non è un campo lasciato)
     try { $app.innerHTML = testata() + corpo + foglioStazione() + (S.avviso ? `<div class="avviso ${esc(S.avviso.tono)}${S.avviso.alto ? " alto" : ""}" role="alert"><span>${esc(S.avviso.testo)}</span>${S.avviso.azione ? `<button type="button" data-a="avvisoAz">${esc(S.avviso.azione.testo)}</button>` : ""}</div>` : ""); }
     finally { disegno = false; }
@@ -3065,6 +3173,12 @@
     else if (a === "stampaVia") { S.stampa = null; render(); }
     else if (a === "registrazioni") apriRegistrazioni();
     else if (a === "dispositivi") apriDispositivi();
+    else if (a === "rivedere") apriRivedere();
+    else if (a === "pin") { S.pinFoglio = ep; S.pinBozza = null; render(); }
+    else if (a === "pinchiudi") { S.pinFoglio = ""; S.pinBozza = null; render(); }
+    else if (a === "pinsalva") pinSalva(ep);
+    else if (a === "pintogli") { S.pinBozza = null; pinTogli(b.dataset.k); }
+    else if (a === "pinapri") pinApri(b.dataset.k);
     else if (a === "dispvia") { S.vista = { nome: "lista", ep: "" }; render(); }   // (dalle schermate senza sessione: si torna lì)
     else if (a === "etichetta") apriEtichetta();
     else if (a === "etidove") { S.eti.dest = b.dataset.d; S.eti.rq = ""; render(); }
@@ -3153,6 +3267,7 @@
   });
   $app.addEventListener("input", (e) => {
     const t = e.target, ep = S.vista.ep;
+    if (t.id === "pinnota") { S.pinBozza = t.value; return; }   // (un ridisegno non perde quello che si scrive)
     if (t.id === "quesito") {
       const s = selDi(ep);
       s.q = t.value; s.mio = true; s.oid = "";   // scritto a mano: è il quesito del medico

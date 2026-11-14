@@ -841,6 +841,8 @@ function ponteArgomenti(d) {
   if (Array.isArray(d.ids)) a.ids = d.ids.filter((x) => typeof x === "string" && /^[\w.-]{1,80}$/.test(x)).slice(0, 40);
   if (d.valori === true) a.valori = true;
   if (Number.isSafeInteger(d.fino) && d.fino > 0) a.fino = d.fino;
+  // (un pin da riaprire: chi è, per trovarlo nelle liste del PC — mai una ricerca nel gestionale)
+  if (d.chi && typeof d.chi === "object") a.chi = { cf: /^[A-Z0-9]{16}$/.test(d.chi.cf || "") ? d.chi.cf : "", paziente: ponteTesto(d.chi.paziente, 80), nato: /^[0-9a-z]{1,10}$/.test(d.chi.nato || "") ? d.chi.nato : "" };
   return a;
 }
 // quelli che l'app manda da sé: non sono il medico, non tengono aperta la sessione
@@ -886,6 +888,7 @@ const PONTE_LETTURA = new Set([
   "visto",                                    // referti ed esiti visti sul telefono: solo la memoria dell'estensione
   "dispositivo",                              // chi è questo PC e la sua stazione di stampa (⋯ → Dispositivi): legge e basta
   "rinnova", "scollega",                      // la chiave dell'associazione: la rinnova, o la chiude (non toccano il gestionale)
+  "appuntiChiave", "pin", "pinApri",          // i pin «Da rivedere»: sul ripetitore, cifrati (non toccano il gestionale)
 ]);
 const ponteSolaLettura = () => typeof self !== "undefined" && self.PSA_SOLA_LETTURA === true;
 // Chi è questo PC, per il menu del telefono (nel saluto `ciao`): il tipo
@@ -1068,6 +1071,10 @@ async function ponteRisposta(s, d) {
     if (d.cmd === "tocco") return { ok: true };
     if (d.cmd === "ordini") return { ok: true, dati: await ponteOrdiniTel() };
     if (d.cmd === "dispositivo") return { ok: true, dati: await ponteDispositivo() };
+    // i pin «Da rivedere» (appunti-sw.js): la chiave degli appunti, e «📌» su un paziente
+    if (d.cmd === "appuntiChiave") return typeof appuntiDalTel === "function" ? await appuntiDalTel(d) : { ok: false, errore: "Pin non disponibili su questo PC" };
+    if (d.cmd === "pin") return typeof appuntiPinDalTel === "function" ? await appuntiPinDalTel(d) : { ok: false, errore: "Pin non disponibili su questo PC" };
+    if (d.cmd === "pinApri") { const r = await ponteSuScheda("pinApri", ponteArgomenti(d)); return r && r.ok ? r : { ok: true, dati: { ep: "" } }; }
     if (d.cmd === "aggiornaValori") { const a = ponteArgomenti(d), r = await ponteConLista(d, a, ponteAggiornaValori); return await ponteOffriPdf(s, r, ponteEpDi(r, a.ep)); }
     if (d.cmd === "ordina") {
       // Un ordine arrivato più di 30 secondi dopo il tocco (rimasto in una presa

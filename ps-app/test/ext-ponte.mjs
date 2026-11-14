@@ -647,7 +647,7 @@ await tocca(tel, '[data-a="menu"]');
 const vociMenu = await tel.locator(".menu button").evaluateAll((l) => l.map((b) => [...b.childNodes].filter((n) => n.nodeName !== "SMALL").map((n) => n.textContent).join("").replace(/\s+/g, " ").trim()));
 check(await tel.locator('.menu [data-a="stampaPdf"]').isDisabled() === /stampa automatica non è impostata/.test(await tel.locator('.menu [data-a="stampaPdf"]').innerText()),
   "«Stampa PDF» spenta solo col suo perché (il PC senza stampa automatica), accesa senza");
-check(JSON.stringify(vociMenu) === JSON.stringify(["📄 Stampa PDF", "🏷️ Etichetta", "📷 Scansiona il QR", "🖥️ Dispositivi", "● Registrazioni", "🗑️ Scollega il PC"])
+check(JSON.stringify(vociMenu) === JSON.stringify(["📄 Stampa PDF", "🏷️ Etichetta", "📷 Scansiona il QR", "🖥️ Dispositivi", "📌 Da rivedere", "● Registrazioni", "🗑️ Scollega il PC"])
   && !/codice|Aggiorna elenco|Chiudi sessione|Stampa su|Dimentica|Associato/.test(await tel.locator(".menu").innerText()),
   `il ⋯ del telefono: solo quello che non c'è altrove — niente «Aggiorna elenco», «Chiudi sessione», codice; per finire una parola sola, «Scollega» (${vociMenu.join(" | ")})`);
 await shot(tel, "tel-1-menu");
@@ -909,6 +909,92 @@ check(await tel.locator(".dfg").count() === 1, "e tornando si è ancora nel Da f
 await tocca(tel, '[data-a="modo"][data-m="lista"]');
 await tel.evaluate(() => localStorage.removeItem("psassist.ponte.modo"));
 await tocca(tel, '.paz[data-ep="999001"]');   // (le prove dopo cominciano dal paziente)
+
+// ===========================================================================
+sezione("i pin «Da rivedere»: dal telefono e dal PC, cifrati sul ponte");
+{
+  // (il telefono è sulla pagina di ROSSI: la chiave degli appunti c'è quando compare 📌)
+  check(await finche(async () => (await tel.locator(".top .pinb").count()) === 1, 15000), "sulla pagina del paziente, 📌 nella testata (la chiave degli appunti: creata dal telefono, data al PC)");
+  check(!!(await sw.evaluate(async () => !!(await cassaLeggi("appunti")))), "il PC tiene la chiave degli appunti nella cassa");
+  await tocca(tel, '.top [data-a="pin"]');
+  await tel.locator("#pinnota").fill("rivedere la troponina fra tre giorni");
+  await tocca(tel, '[data-a="pinsalva"]');
+  check(!!(await aspettaTel(tel, /Da rivedere: salvato/, 15000)), "📌 + nota sul telefono: salvato (chi è lo dice il PC, il pin va sul ponte)");
+  check(await finche(async () => (await tel.locator('.top .pinb.on').count()) === 1, 8000), "il 📌 resta acceso su quel paziente");
+  const tenuto = JSON.stringify(relay.appuntiTenuti());
+  check(Object.keys(relay.appuntiTenuti()).length === 1 && !/ROSSI|MARIO|troponina|999001|RSSMRA|menuPsoEpisodio/.test(tenuto),
+    "sul ripetitore: un valore solo, cifrato — niente nome, nota, episodio, CF o indirizzo");
+  check((await registroPonte()).split("\n").filter((l) => /pin/.test(l)).every((l) => !/troponina|ROSSI|RSSMRA/.test(l)) && /pin aggiunto/.test(await registroPonte()), "nel registro del ponte: «pin aggiunto», mai il nome o la nota");
+  // il PC: ⋯ → «Da rivedere (1)»
+  if (!(await $panel(doc, ".card").count())) { await $panel(doc, "#expand").click(); await sospendi(400); }
+  const apriPinPc = async () => {
+    if (!(await $panel(doc, "#pinmenu").count())) await $panel(doc, "#menubtn").click();
+    await $panel(doc, "#pinmenu").click();
+    await $panel(doc, ".pinmenu").waitFor({ timeout: 8000 });
+    await sospendi(600);   // (riletto dal ponte: il riquadro si rifà)
+    return $panel(doc, ".pinmenu").innerText();
+  };
+  const copiaPc = () => sw.evaluate(async () => Object.keys(((await chrome.storage.local.get("appunti.copia"))["appunti.copia"] || {}).pin || {}).length);
+  await finche(async () => (await copiaPc()) === 1, 8000);
+  await $panel(doc, "#menubtn").click();
+  check(/Da rivedere \(1\)/.test(await $panel(doc, "#pinmenu").innerText().catch(() => "")),
+    "sul PC: ⋯ → «Da rivedere (1)», una voce piccola");
+  const suPc = await apriPinPc();
+  check(/ROSSI MARIO/.test(suPc) && /rivedere la troponina fra tre giorni/.test(suPc), `il pin del telefono, con la nota, sul PC (${suPc.replace(/\n/g, " / ").slice(0, 160)})`);
+  await shot(doc, "pin-pc");
+  await doc.keyboard.press("Escape"); await sospendi(300);
+  if (!(await $panel(doc, ".card").count())) { await $panel(doc, "#expand").click(); await sospendi(500); }
+  if (!(await $panel(doc, ".stp[data-stp]").count())) await allaScheda(doc, "home");
+  const chipR = $panel(doc, '.stp[data-stp="999001"]').first();
+  // il PC: tasto destro su ROSSI → «Togli dal da rivedere»; il telefono non lo vede più
+  await chipR.click({ button: "right" });
+  await $panel(doc, '.stmi[data-dove="pinvia"]').click();
+  check(await finche(async () => (await copiaPc()) === 0, 8000), "tasto destro sul PC su un paziente col pin: «Togli dal da rivedere»");
+  await tocca(tel, '[data-a="indietro"]');
+  await tocca(tel, '[data-a="menu"]');
+  await tocca(tel, '.menu [data-a="rivedere"]');
+  check(!!(await aspettaTel(tel, /Nessun paziente da rivedere/, 10000)), "tolto dal PC: sul telefono non c'è più");
+  // il PC: tasto destro → «📌 Da rivedere…» con la nota; il telefono lo vede
+  await chipR.click({ button: "right" });
+  await $panel(doc, ".stmenu").waitFor({ timeout: 8000 });
+  doc.once("dialog", (d) => d.accept("controllare la RX"));
+  await $panel(doc, '.stmi[data-dove="pin"]').click();
+  check(await finche(async () => (await copiaPc()) === 1, 8000), "tasto destro sul PC: «📌 Da rivedere…», con la nota");
+  await tocca(tel, '[data-a="indietro"]');
+  await tocca(tel, '[data-a="menu"]');
+  await tocca(tel, '.menu [data-a="rivedere"]');
+  const lista = await aspettaTel(tel, /controllare la RX/, 10000);
+  check(/ROSSI MARIO/.test(lista) && /controllare la RX/.test(lista), "il pin del PC sul telefono, con la nota");
+  await shot(tel, "pin-telefono");
+  // un tocco: il PC lo conosce adesso → si apre come sempre
+  await tocca(tel, '[data-a="pinapri"]');
+  check(await finche(async () => (await tel.locator(".top button.tit").count()) === 1 && /ROSSI MARIO/.test(await tel.locator(".top .tit").innerText()), 10000), "un tocco su un pin che il PC conosce: si apre il paziente");
+  // il telefono lo toglie: sul PC non c'è più
+  await tocca(tel, '.top [data-a="pin"]');
+  await tocca(tel, '.foglio [data-a="pintogli"]');
+  await aspettaTel(tel, /Tolto dal da rivedere/, 10000);
+  const dopoTel = await apriPinPc();
+  check(/Nessun pin/.test(dopoTel) && !/ROSSI/.test(dopoTel), `tolto dal telefono: aperto «Da rivedere» sul PC (riletto dal ponte), non c'è più (${dopoTel.replace(/\n/g, " / ").slice(0, 100)})`);
+  await doc.keyboard.press("Escape");
+  // un pin di nuovo, poi il telefono «reinstallato»: la sua chiave degli appunti persa, la riprende dal PC
+  await tocca(tel, '[data-a="indietro"]');
+  await tocca(tel, '.paz[data-ep="999001"]');
+  await aspettaTel(tel, /ROSSI MARIO/, 10000);
+  await tocca(tel, '.top [data-a="pin"]');
+  await tel.locator("#pinnota").fill("ECG domani");
+  await tocca(tel, '[data-a="pinsalva"]');
+  await aspettaTel(tel, /Da rivedere: salvato/, 15000);
+  await tel.evaluate(() => new Promise((ok) => { const r = indexedDB.open("psassist-ponte", 1); r.onsuccess = () => { const t = r.result.transaction("chiavi", "readwrite"); t.objectStore("chiavi").delete("appunti"); t.oncomplete = () => ok(); }; }));
+  await tel.reload();
+  await aspettaTel(tel, /BIANCHI ANNA/, 20000);
+  await tocca(tel, '[data-a="menu"]');
+  await tocca(tel, '.menu [data-a="rivedere"]');
+  check(/ECG domani/.test(await aspettaTel(tel, /ECG domani/, 15000)), "il telefono senza la chiave degli appunti (reinstallato): la riprende dal PC, e i pin tornano");
+  check(!/ECG domani|ROSSI/.test(JSON.stringify(relay.appuntiTenuti())), "(sul ponte ancora solo cifrato)");
+  await tocca(tel, '[data-a="indietro"]');
+  await tocca(tel, '.paz[data-ep="999001"]');   // (le prove dopo cominciano dal paziente)
+  await aspettaTel(tel, /ROSSI MARIO/, 10000);
+}
 
 // ===========================================================================
 sezione("esiti, e «Aggiorna i valori»");

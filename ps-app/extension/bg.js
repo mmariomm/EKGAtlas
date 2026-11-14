@@ -2669,6 +2669,9 @@ catch (e) { console.error("PS Assist: l'aggiornamento non parte", e); }
 // (le chiavi, sue e della stazione, nella cassa: l'IndexedDB del service worker, cassa.js)
 try { importScripts("cassa.js", "ponte-host.js", "ponte-cripto.js", "ponte-sw.js"); }
 catch (e) { console.error("PS Assist: il ponte verso l'iPhone non parte", e); }
+// I pin «Da rivedere» (appunti-sw.js): cifrati sul ripetitore del ponte, con la chiave che dà l'iPhone.
+try { importScripts("appunti-sw.js"); }
+catch (e) { console.error("PS Assist: i pin «Da rivedere» non partono", e); }
 
 // La stazione di stampa (stazione-sw.js): i fogli di un ordine sulle stampanti
 // di un altro PC (l'infermeria), cifrati da un capo all'altro attraverso il
