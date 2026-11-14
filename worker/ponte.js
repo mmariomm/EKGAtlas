@@ -16,7 +16,8 @@
  * terrebbe sveglio fino a 15 minuti.
  */
 import { DurableObject } from "cloudflare:workers";
-import { Stanza, Registro, PING, PONG, FILE_APP, leggiStanza, intestazioniApp, leggiProvaRegistro, INTESTAZIONI_ANNUNCIO } from "./ponte-logica.js";
+import { Stanza, Registro, PING, PONG, FILE_APP, leggiStanza, intestazioniApp, leggiProvaRegistro, INTESTAZIONI_ANNUNCIO,
+  Appunti, APPUNTI, leggiAppunti, INTESTAZIONI_APPUNTI } from "./ponte-logica.js";
 
 const APERTA = 1;   // WebSocket.OPEN
 
@@ -96,6 +97,36 @@ export class PonteRegistro extends DurableObject {
     return new Response(r.corpo, { status: r.stato });
   }
 }
+// Gli appunti del medico (ponte-logica.js, «gli appunti»): un Durable Object per id, con un valore cifrato e la
+// sua versione nel suo SQLite. Nessuna presa e nessuna sveglia: si sveglia a una richiesta e torna a dormire.
+export class PonteAppunti extends DurableObject {
+  constructor(ctx, env) {
+    super(ctx, env);
+    const kv = ctx.storage && ctx.storage.kv && typeof ctx.storage.kv.get === "function" ? ctx.storage.kv : null;
+    this.appunti = kv ? new Appunti({
+      leggi: (k) => kv.get(k) ?? null,
+      scrivi: (k, v) => kv.put(k, v),
+      svuota: () => { for (const k of ["chiave", "v", "blob"]) kv.delete(k); },
+      conti: new Map(),
+    }) : null;
+  }
+  async fetch(request) {
+    if (!this.appunti) return new Response(JSON.stringify({ errore: "archivio" }), { status: 503, headers: INTESTAZIONI_APPUNTI });
+    const r = this.appunti.richiesta(leggiAppunti(await request.text()), Date.now());
+    return new Response(r.corpo, { status: r.stato, headers: INTESTAZIONI_APPUNTI });
+  }
+}
+async function appuntiFetch(request, env) {
+  const h = INTESTAZIONI_APPUNTI;
+  if (request.method !== "POST") return new Response("{}", { status: 405, headers: h });
+  if (!env.APPUNTI) return new Response("{}", { status: 503, headers: h });
+  const testo = await corpoBreve(request, APPUNTI.corpo);
+  if (testo == null) return new Response("{}", { status: 413, headers: h });
+  const m = leggiAppunti(testo);
+  if (!m) return new Response("{}", { status: 400, headers: h });
+  const r = await env.APPUNTI.get(env.APPUNTI.idFromName(m.id)).fetch("https://appunti/", { method: "POST", body: testo });
+  return new Response(await r.text(), { status: r.status, headers: h });
+}
 // il corpo di un POST, al più `max` caratteri (null se di più)
 async function corpoBreve(request, max) {
   if (Number(request.headers.get("content-length") || 0) > max) return null;
@@ -129,6 +160,7 @@ export async function ponteFetch(request, env) {
   const url = new URL(request.url);
   const p = url.pathname;
   if (p === "/ponte/registro" || p === "/ponte/registro/elenco") return registroFetch(request, env, p);
+  if (p === "/ponte/appunti") return appuntiFetch(request, env);
   if (p === "/ponte/ws") {
     if ((request.headers.get("upgrade") || "").toLowerCase() !== "websocket") return new Response("serve una WebSocket", { status: 426 });
     // una stanza che non può esistere non sveglia nessun Durable Object

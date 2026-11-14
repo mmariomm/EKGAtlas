@@ -804,6 +804,57 @@ await blocco(async () => {
   await rel.chiudi();
 });
 
+// ---- gli appunti («Da rivedere»): lassù solo byte cifrati, e senza la prova niente si legge né si scrive
+sezione("gli appunti: solo cifrato, con la prova, coi tetti");
+await blocco(async () => {
+  const { APPUNTI, leggiAppunti, Appunti } = await import("../../worker/ponte-logica.js");
+  const rel = await avviaRelay();
+  const posta = async (corpo) => {
+    const r = await fetch(rel.url + "/ponte/appunti", { method: "POST", body: corpo, headers: { "content-type": "text/plain" } });
+    return { stato: r.status, json: await r.json().catch(() => ({})) };
+  };
+  const A = P0.casuale(32), c = await P0.appuntiChiavi(await P0.chiaveDa(A));
+  const NOME = "VERDI GIUSEPPE", CF = "VRDGPP40A01F205X", NOTA = "rivedere la troponina fra tre giorni";
+  const pin = { cognome: "VERDI", nome: "GIUSEPPE", cf: CF, nascita: "01/01/1940", nota: NOTA, quando: Date.now(), mod: Date.now(), url: "https://gestionale.prova/paziente?ep=4242" };
+  const r1 = await P0.appuntiFai(c, posta, (d) => ({ ...d, pin: { ...d.pin, k1: pin } }));
+  check(r1.v === 1 && r1.doc.pin.k1.nota === NOTA, "il primo pin: scritto (versione 1)");
+  const tenuto = JSON.stringify(rel.appuntiTenuti());
+  check(!/VERDI|GIUSEPPE|VRDGPP|troponina|4242|gestionale/.test(tenuto) && tenuto.includes(c.id),
+    "il ripetitore tiene solo byte cifrati: niente nome, CF, nota, episodio o indirizzo");
+  // un altro telefono (un'altra chiave) con lo stesso id: niente da leggere, niente da scrivere
+  const finto = { ...(await P0.appuntiChiavi(P0.casuale(32))), id: c.id };
+  check((await posta(await P0.appuntiCorpo(finto, "leggi"))).stato === 403, "una lettura senza la prova giusta: rifiutata (403)");
+  const blobFinto = await P0.appuntiCifra(finto, { pin: {} });
+  check((await posta(await P0.appuntiCorpo(finto, "scrivi", 1, blobFinto))).stato === 403, "una scrittura senza la prova giusta: rifiutata (403)");
+  check((await posta(await P0.appuntiCorpo(finto, "scrivi", 0, blobFinto))).stato === 403, "…anche presentando una chiave nuova a id già preso");
+  check((await posta(await P0.appuntiCorpo(finto, "elimina"))).stato === 403, "…e niente «elimina» senza la prova");
+  // la stessa richiesta, ripetuta: una volta sola; e un'ora troppo lontana: no
+  const corpo = await P0.appuntiCorpo(c, "leggi");
+  check((await posta(corpo)).stato === 200 && (await posta(corpo)).stato === 403, "una prova vale una volta (ripetuta: 403)");
+  check((await posta(await P0.appuntiCorpo(c, "leggi", 0, "", Date.now() - APPUNTI.provaMs - 60e3))).stato === 403, "una prova di 6 minuti fa: 403");
+  // il compare-and-set: due scritture dalla stessa versione, la seconda riapplicata sulla copia nuova
+  const prima = await posta(await P0.appuntiCorpo(c, "leggi"));
+  const sc = async (k) => posta(await P0.appuntiCorpo(c, "scrivi", prima.json.v, await P0.appuntiCifra(c, { pin: { [k]: { ...pin, nota: k } }, via: {} })));
+  const w1 = await sc("x"), w2 = await sc("y");
+  check(w1.stato === 200 && w2.stato === 409 && w2.json.v === w1.json.v, "due scritture dalla stessa versione: la seconda ha 409 con la copia nuova");
+  const T0 = Date.now(), unite = P0.appuntiUnisci({ pin: { a: { mod: T0 + 5 } }, via: { b: T0 + 9 } }, { pin: { a: { mod: T0 + 7, n: 1 }, b: { mod: T0 + 8 }, c: { mod: T0 + 1 } }, via: {} });
+  check(unite.pin.a.n === 1 && !unite.pin.b && !!unite.pin.c, "l'unione pin per pin: vince il più recente, un tolto resta tolto");
+  // i tetti
+  const grosso = await P0.appuntiCorpo(c, "scrivi", w1.json.v, "A".repeat(APPUNTI.blob + 100));
+  check((await posta(grosso)).stato === 413, `un blob oltre ${APPUNTI.blob} caratteri: 413`);
+  check(leggiAppunti(JSON.stringify({ id: c.id, op: "leggi", t: 1, v: 0, prova: "x".repeat(43), nome: "VERDI" })) === null, "un campo in più (un nome in chiaro): la richiesta non passa");
+  const ap = new Appunti({ leggi: () => null, scrivi: () => {}, svuota: () => {}, conti: new Map() });
+  let tanti = 0;
+  for (let i = 0; i < APPUNTI.alMinuto + 5; i++) if (ap.richiesta({ id: c.id, op: "leggi", t: 1, v: 0, blob: "", chiave: "", prova: "p" + i }, 1).stato === 429) tanti++;
+  check(tanti === 5, `al più ${APPUNTI.alMinuto} richieste al minuto per id (oltre: 429)`);
+  // «Elimina tutti i pin»: con la prova, e lassù non resta niente
+  check((await P0.appuntiElimina(c, posta)).stato === 200 && !rel.appuntiTenuti()[c.id], "«Elimina tutti i pin» (con la prova): lassù non resta niente");
+  // la chiave avvolta: si ridà uguale
+  const av = await P0.appuntiAvvolgi(A);
+  check(P0.b64u(await P0.appuntiSvolgi(av)) === P0.b64u(A) && av.hk.extractable === false && av.kw.extractable === false, "la chiave degli appunti: tenuta non estraibile, avvolta per ridarla");
+  await rel.chiudi();
+});
+
 await relay.chiudi();
 console.log(fail ? `\nPONTE-SICUREZZA: ${fail} FALLITI` : "\nPONTE-SICUREZZA: TUTTO OK");
 process.exit(fail ? 1 : 0);

@@ -645,3 +645,88 @@ export class Registro {
 }
 // Le intestazioni di un annuncio: chiunque può annunciarsi (anche una pagina), e la risposta non dice niente
 export const INTESTAZIONI_ANNUNCIO = { "access-control-allow-origin": "*", "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" };
+
+// ------------------------------------------------------------- gli appunti
+/*
+ * Gli appunti del medico («Da rivedere»: i pazienti con un pin e una nota), cifrati da un capo all'altro.
+ *
+ *   POST /ponte/appunti   { id, op: leggi|scrivi|elimina, t, v, blob?, chiave?, prova }
+ *
+ * Un Durable Object per `id` (32 cifre esadecimali, dalla chiave degli appunti A: public/ponte/cripto.js), con UN
+ * valore cifrato (`blob`: AES-GCM con una chiave che qui non arriva mai) e la sua versione (`v`, per il
+ * compare-and-set: una scrittura dice la versione che ha letto, e se intanto è cambiata ha 409 con la copia nuova).
+ * Niente in chiaro: né nomi, né note, né codici fiscali, né indirizzi.
+ * Chi legge o scrive prova di avere A: l'HMAC (con la chiave della prova, da A) su id, operazione, ora, versione e
+ * SHA-256 del blob. La chiave della prova arriva qui con la prima scrittura (v = 0, a id vuoto) e resta: senza la
+ * prova giusta niente si legge e niente si scrive. Una prova vale una volta, e solo vicino all'ora del ripetitore.
+ * I tetti: il corpo, il blob, e le richieste al minuto per id. «Elimina» porta via tutto (anche la chiave della prova).
+ */
+export const APPUNTI = {
+  corpo: 200000,              // caratteri di una richiesta
+  blob: 150000,               // caratteri del valore cifrato (≈ 110 KB: qualche centinaio di pin)
+  alMinuto: 30,               // richieste al minuto per id
+  provaMs: 5 * 60e3,          // l'ora della prova: al più tanto lontana da quella del ripetitore
+};
+const OP_APPUNTI = new Set(["leggi", "scrivi", "elimina"]);
+// una richiesta, dal testo del POST: { id, op, t, v, blob, chiave, prova } o null
+export function leggiAppunti(testo) {
+  if (typeof testo !== "string" || !testo || testo.length > APPUNTI.corpo) return null;
+  let m;
+  try { m = JSON.parse(testo); } catch { return null; }
+  if (!m || typeof m !== "object" || Array.isArray(m)) return null;
+  for (const k of Object.keys(m)) if (!["id", "op", "t", "v", "blob", "chiave", "prova"].includes(k)) return null;
+  if (!/^[0-9a-f]{32}$/.test(m.id || "") || !OP_APPUNTI.has(m.op) || !Number.isSafeInteger(m.t) || m.t <= 0) return null;
+  if (!Number.isSafeInteger(m.v) || m.v < 0 || typeof m.prova !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(m.prova)) return null;
+  if (m.op === "scrivi" ? !(typeof m.blob === "string" && /^[A-Za-z0-9_-]{40,}$/.test(m.blob)) : m.blob != null) return null;
+  if (m.chiave != null && !chiaveValida(m.chiave)) return null;
+  return { id: m.id, op: m.op, t: m.t, v: m.v, blob: m.blob || "", chiave: m.chiave || "", prova: m.prova };
+}
+// la prova giusta per una richiesta, con la chiave della prova (base64url): la stessa di cripto.js (appuntiProva)
+export function provaAppunti(chiave, m) {
+  const k = daB64u(chiave);
+  if (!k || k.length !== 32) return "";
+  const h = b64u(sha256(new TextEncoder().encode(m.blob || "")));
+  return b64u(hmac(k, new TextEncoder().encode(`ps-appunti|${m.id}|${m.op}|${m.t}|${m.v}|${h}`)));
+}
+/*
+ * Gli appunti di un id, sopra:
+ *   io.leggi(k) / io.scrivi(k, v) / io.svuota()   quello che tiene (lo SQLite del Durable Object): chiave, v, blob
+ *   io.conti                                       in memoria (una Map): il conto al minuto e le prove già viste
+ */
+export class Appunti {
+  constructor(io) { this.io = io; }
+  richiesta(m, ora) {
+    const no = (stato, perche) => ({ stato, corpo: JSON.stringify({ errore: perche }) });
+    if (!m) return no(400, "richiesta non valida");
+    if (m.blob.length > APPUNTI.blob) return no(413, "troppo grande");
+    const c = this.io.conti;
+    let x = c.get("min");
+    if (!x || ora - x.inizio >= 60e3) x = { inizio: ora, n: 0 };
+    c.set("min", { inizio: x.inizio, n: x.n + 1 });
+    if (x.n + 1 > APPUNTI.alMinuto) return no(429, "troppe richieste");
+    if (Math.abs(ora - m.t) > APPUNTI.provaMs) return no(403, "ora");
+    const viste = c.get("viste") || new Map();
+    for (const [p, t] of viste) if (ora - t > 2 * APPUNTI.provaMs) viste.delete(p);
+    c.set("viste", viste);
+    if (viste.has(m.prova)) return no(403, "già vista");
+    let chiave, v, blob;
+    try { chiave = this.io.leggi("chiave"); v = Number(this.io.leggi("v")) || 0; blob = this.io.leggi("blob") || ""; } catch { return no(503, "archivio"); }
+    // la prima scrittura porta la chiave della prova; prima di lei non c'è niente da leggere
+    const nuovo = !chiave;
+    if (nuovo && !(m.op === "scrivi" && m.v === 0 && m.chiave)) return no(404, "vuoto");
+    if (!uguali(m.prova, provaAppunti(nuovo ? m.chiave : chiave, m))) return no(403, "prova");
+    viste.set(m.prova, ora);
+    const stato = (s) => ({ stato: s, corpo: JSON.stringify({ v, blob }) });
+    try {
+      if (m.op === "leggi") return stato(200);
+      if (m.op === "elimina") { this.io.svuota(); return { stato: 200, corpo: JSON.stringify({ v: 0, blob: "" }) }; }
+      if (m.v !== v) return stato(409);
+      if (nuovo) this.io.scrivi("chiave", m.chiave);
+      v += 1; blob = m.blob;
+      this.io.scrivi("blob", blob);
+      this.io.scrivi("v", v);
+      return stato(200);
+    } catch { return no(503, "archivio"); }
+  }
+}
+export const INTESTAZIONI_APPUNTI = { "access-control-allow-origin": "*", "content-type": "application/json", "cache-control": "no-store" };

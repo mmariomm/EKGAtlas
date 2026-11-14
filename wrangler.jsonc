@@ -30,6 +30,11 @@
         // the PS Assist PC registry (⋯ → Dispositivi): one object, «registro»
         "name": "REGISTRO",
         "class_name": "PonteRegistro"
+      },
+      {
+        // the doctor's encrypted «Da rivedere» pins: one object per opaque id
+        "name": "APPUNTI",
+        "class_name": "PonteAppunti"
       }
     ]
   },
@@ -44,6 +49,12 @@
       "tag": "registro-v1",
       "new_sqlite_classes": [
         "PonteRegistro"
+      ]
+    },
+    {
+      "tag": "appunti-v1",
+      "new_sqlite_classes": [
+        "PonteAppunti"
       ]
     }
   ],

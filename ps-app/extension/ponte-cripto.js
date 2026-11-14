@@ -210,9 +210,86 @@
     return unisci(a, b, Uint8Array.from(stanza.match(/../g), (h) => parseInt(h, 16)));
   }
 
+  // ------------------------------------------------ gli appunti («Da rivedere»)
+  // Una chiave sua (A, 32 byte): la crea il telefono, e la dà a ogni PC associato dentro la sessione cifrata (e
+  // un PC la ridà a un telefono nuovo). Da A, con HKDF: il numero degli appunti sul ripetitore (`id`: lo vede, e
+  // da lì non si risale ad A), la chiave della prova (HMAC: il ripetitore la tiene, dalla prima scrittura, per
+  // dire chi può leggere e scrivere — non apre niente) e la chiave AES-GCM con cui l'elenco viaggia e sta lassù.
+  // Il ripetitore vede solo byte cifrati: nessun nome, nessuna nota, nessun indirizzo.
+  const SALE_A = enc.encode("ps-appunti/1");
+  async function appuntiChiavi(a) {
+    if (!eChiave(a) && (!(a instanceof Uint8Array) || a.length !== 32)) throw new Error("chiave degli appunti non valida");
+    const prova = await hkdf(a, SALE_A, "prova", 32);
+    return { id: esa(await hkdf(a, SALE_A, "id", 16)), chiave: b64u(prova),
+      hmac: await subtle.importKey("raw", prova, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]),
+      aes: await aes(await hkdf(a, SALE_A, "cifra", 32)) };
+  }
+  const sha = async (t) => b64u(new Uint8Array(await subtle.digest("SHA-256", enc.encode(t))));
+  // la prova di una richiesta: la stessa che rifà il ripetitore (worker/ponte-logica.js, provaAppunti)
+  async function appuntiProva(c, op, t, v, blob) {
+    const testo = `ps-appunti|${c.id}|${op}|${t}|${v}|${await sha(blob || "")}`;
+    return b64u(new Uint8Array(await subtle.sign("HMAC", c.hmac, enc.encode(testo))));
+  }
+  async function appuntiCorpo(c, op, v = 0, blob = "", ora = Date.now()) {
+    const t = Math.round(ora), scrive = op === "scrivi";
+    return JSON.stringify({ id: c.id, op, t, v, ...(scrive ? { blob } : {}), ...(scrive && v === 0 ? { chiave: c.chiave } : {}),
+      prova: await appuntiProva(c, op, t, v, scrive ? blob : "") });
+  }
+  async function appuntiCifra(c, doc) {
+    const iv = casuale(IV);
+    const ct = new Uint8Array(await subtle.encrypt({ name: "AES-GCM", iv, additionalData: enc.encode(c.id) }, c.aes, enc.encode(JSON.stringify(doc))));
+    return b64u(unisci(iv, ct));
+  }
+  async function appuntiApri(c, blob) {
+    if (!blob) return { v: 1, pin: {}, via: {} };
+    const b = daB64u(blob);
+    const chiaro = await subtle.decrypt({ name: "AES-GCM", iv: b.subarray(0, IV), additionalData: enc.encode(c.id) }, c.aes, b.subarray(IV));
+    const d = JSON.parse(dec.decode(chiaro));
+    return { v: 1, pin: d && typeof d.pin === "object" && d.pin ? d.pin : {}, via: d && typeof d.via === "object" && d.via ? d.via : {} };
+  }
+  // Due copie dell'elenco, pin per pin: vince la più recente; un pin tolto (`via`: quando) resta tolto, se non è
+  // stato rimesso dopo. Le tracce dei tolti se ne vanno dopo 180 giorni (i pin no: solo il medico li toglie).
+  function appuntiUnisci(a, b, ora = Date.now()) {
+    const out = { v: 1, pin: {}, via: {} };
+    for (const d of [a, b]) for (const [k, t] of Object.entries((d && d.via) || {})) if (Number.isFinite(t) && ora - t < 180 * 864e5 && !(out.via[k] >= t)) out.via[k] = t;
+    for (const d of [a, b]) for (const [k, p] of Object.entries((d && d.pin) || {})) {
+      if (!p || typeof p !== "object" || (out.via[k] || 0) >= (p.mod || 0)) continue;
+      if (!out.pin[k] || (out.pin[k].mod || 0) < (p.mod || 0)) out.pin[k] = p;
+    }
+    return out;
+  }
+  // Una lettura (senza `cambia`) o una modifica con compare-and-set: si legge, si cambia, si scrive con la
+  // versione letta; se intanto qualcuno ha scritto (409, con la copia nuova), si riapplica lì la modifica.
+  //   fai(corpo) → { stato, json }   (la POST a /ponte/appunti)
+  async function appuntiFai(c, fai, cambia = null) {
+    let r = await fai(await appuntiCorpo(c, "leggi"));
+    if (r.stato === 404) r = { stato: 200, json: { v: 0, blob: "" } };
+    for (let giro = 0; giro < 5; giro++) {
+      if (r.stato !== 200 && r.stato !== 409) throw Object.assign(new Error("appunti: " + r.stato), { stato: r.stato });
+      const v = r.json.v | 0, doc = await appuntiApri(c, r.json.blob);
+      if (!cambia) return { v, doc };
+      const nuovo = appuntiUnisci(cambia(doc), null);
+      r = await fai(await appuntiCorpo(c, "scrivi", v, await appuntiCifra(c, nuovo)));
+      if (r.stato === 200) return { v: r.json.v | 0, doc: nuovo };
+      if (r.stato === 404) r = { stato: 409, json: { v: 0, blob: "" } };
+    }
+    throw new Error("appunti: troppi conflitti");
+  }
+  // «Elimina tutti i pin»: la copia lassù se ne va (con la prova)
+  const appuntiElimina = async (c, fai) => fai(await appuntiCorpo(c, "elimina"));
+  // Per tenerla e per darla: A come CryptoKey HKDF non estraibile (per ricavare) e i suoi byte avvolti da una
+  // chiave AES-GCM non estraibile (solo per ridarla, dentro una sessione cifrata, a un PC o a un telefono).
+  async function appuntiAvvolgi(raw) {
+    const kw = await subtle.generateKey({ name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);
+    const iv = casuale(IV);
+    return { hk: await chiaveDa(raw), kw, iv, ct: new Uint8Array(await subtle.encrypt({ name: "AES-GCM", iv }, kw, raw)) };
+  }
+  const appuntiSvolgi = async (x) => new Uint8Array(await subtle.decrypt({ name: "AES-GCM", iv: x.iv }, x.kw, x.ct));
+
   globalThis.PonteCripto = {
     VERSIONE, TIPO, casuale, b64u, daB64u, chiaviCoppia, chiaviSessione,
     sigilla, apri, leggiTestata, Canale, canaleTel, canalePc, leggiFrammento, frammento, codice,
     chiaveDa, chiaviEntra, provaEntra, coppiaEcdh, rinnova, legameDi,
+    appuntiChiavi, appuntiProva, appuntiCorpo, appuntiCifra, appuntiApri, appuntiUnisci, appuntiFai, appuntiElimina, appuntiAvvolgi, appuntiSvolgi,
   };
 })();

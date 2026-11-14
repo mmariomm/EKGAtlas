@@ -18,7 +18,8 @@ import { readFile } from "node:fs/promises";
 import { join, normalize, extname, dirname, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { WebSocketServer } from "ws";
-import { Stanza, Registro, PONTE, PING, PONG, FILE_APP, leggiStanza, intestazioniApp, leggiProvaRegistro, INTESTAZIONI_ANNUNCIO } from "../../worker/ponte-logica.js";
+import { Stanza, Registro, PONTE, PING, PONG, FILE_APP, leggiStanza, intestazioniApp, leggiProvaRegistro, INTESTAZIONI_ANNUNCIO,
+  Appunti, APPUNTI, leggiAppunti, INTESTAZIONI_APPUNTI } from "../../worker/ponte-logica.js";
 
 const APP = join(dirname(fileURLToPath(import.meta.url)), "../../public/ponte");
 const TIPI = {
@@ -94,8 +95,25 @@ export async function avviaRelay({ porta = 0, osserva = null, ipProva = false } 
     fine(r.stato, r.corpo, { "content-type": "application/json", "cache-control": "no-store" });
   }
 
+  // Gli appunti (come il Durable Object «appunti», worker/ponte.js): per id quello che tiene (in memoria) e i
+  // suoi conti; per i test, `appuntiTenuti()` dice ESATTAMENTE quello che il ripetitore ha (mai niente in chiaro)
+  const appArchivi = new Map(), appConti = new Map(), appLog = [];
+  async function appuntiHttp(req, res) {
+    const fine = (stato, testo) => { appLog.push({ ts: Date.now(), stato }); res.writeHead(stato, INTESTAZIONI_APPUNTI).end(testo); };
+    if (req.method === "OPTIONS") { res.writeHead(204, INTESTAZIONI_APPUNTI).end(); return; }
+    if (req.method !== "POST") { fine(405, "{}"); return; }
+    const t = await corpo(req, APPUNTI.corpo);
+    if (t == null) { fine(413, "{}"); return; }
+    const m = leggiAppunti(t);
+    if (!m) { fine(400, "{}"); return; }
+    const a = di(appArchivi, m.id);
+    const r = new Appunti({ leggi: (k) => a.get(k) ?? null, scrivi: (k, v) => a.set(k, v), svuota: () => a.clear(), conti: di(appConti, m.id) }).richiesta(m, Date.now());
+    fine(r.stato, r.corpo);
+  }
+
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, "http://localhost");
+    if (url.pathname === "/ponte/appunti") { await appuntiHttp(req, res); return; }
     if (url.pathname === "/ponte/registro" || url.pathname === "/ponte/registro/elenco") { await registroHttp(req, res, url.pathname); return; }
     if (url.pathname === "/ponte") { res.writeHead(302, { location: "/ponte/" }).end(); return; }
     if (req.method !== "GET" || !FILE_APP.has(url.pathname)) { res.writeHead(404).end(); return; }
@@ -162,6 +180,9 @@ export async function avviaRelay({ porta = 0, osserva = null, ipProva = false } 
     // il registro dei PC: l'elenco salvato ({ id → riga }), e ogni richiesta ({ ts, p, stato, ip, ua })
     elencoPc: () => structuredClone(salvato || {}),
     richiesteRegistro: () => regLog.map((x) => ({ ...x })),
+    // gli appunti: { id → { chiave, v, blob } } così come li tiene il ripetitore, e ogni richiesta ({ ts, stato })
+    appuntiTenuti: () => Object.fromEntries([...appArchivi].filter(([, a]) => a.size).map(([id, a]) => [id, Object.fromEntries(a)])),
+    richiesteAppunti: () => appLog.map((x) => ({ ...x })),
     // tutte le prese ancora nell'elenco (anche le ritirate), per ruolo
     tutte: () => {
       const conto = {};
