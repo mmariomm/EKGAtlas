@@ -7595,7 +7595,7 @@ async function scenarioMenuSezioni(browser) {
   await b.page.waitForSelector("#psassist-host .card", { state: "attached" });
   await menu(b.page);
   s = await sezioni(b.page);
-  check(scen, di(s, "Paziente").join() === "termenu,stampamenu" && !(await $panel(b.page, "#ricmenu").count()) && di(s, "Strumenti").join() === "tabmenu,pontemenu,consmenu"
+  check(scen, di(s, "Paziente").join() === "termenu,stampamenu" && !(await $panel(b.page, "#ricmenu").count()) && di(s, "Strumenti").join() === "tabmenu,pontemenu,etimenu,consmenu"
     && di(s, "Questo PC").join() === "stampanti,regmenu,resetpaz" && !(await sparse(b.page)),
     `con l'estensione, sul paziente: Terapia, Stampa (la Ricetta SISS no: sta solo nelle Dimissioni) · Tabellone, iPhone, Consegne · Impostazioni, Registrazioni, Dimentica i dati… (got ${vedi(s)})`);
   check(scen, await riga(b.page, "tabmenu", "pontemenu"), "le voci corte, due per riga, alte almeno 32 px (Tabellone · iPhone)");
@@ -7615,7 +7615,7 @@ async function scenarioMenuSezioni(browser) {
   await menu(b.page);
   s = await sezioni(b.page);
   // («Segue il gestionale» non c'è più: la smart si legge appena il gestionale è aperto, sempre)
-  check(scen, JSON.stringify(s.map((x) => x.t)) === '["Strumenti","Questo PC"]' && di(s, "Strumenti").join() === "tabmenu,pontemenu,consmenu,stmodmenu"
+  check(scen, JSON.stringify(s.map((x) => x.t)) === '["Strumenti","Questo PC"]' && di(s, "Strumenti").join() === "tabmenu,pontemenu,etimenu,consmenu,stmodmenu"
     && !(await $panel(b.page, "#seguesw").count()),
     `con l'estensione, sulla stanza: Modifica la stanza in fondo agli Strumenti, e nessun «Segue il gestionale» (got ${vedi(s)})`);
   await shotSide(b.page, "menu-sezioni-stanza");
