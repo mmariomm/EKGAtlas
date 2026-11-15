@@ -7,8 +7,11 @@
  *
  * Il Durable Object usa l'ibernazione delle WebSocket: fra un messaggio e
  * l'altro non resta niente in memoria, e il battito («ping» → «pong») lo
- * risponde Cloudflare senza svegliarlo. Non c'è niente su disco e niente nei
- * log: i messaggi sono cifrati da un capo all'altro e qui passano come byte.
+ * risponde Cloudflare senza svegliarlo. I messaggi non toccano il disco né i
+ * log: sono cifrati da un capo all'altro e qui passano come byte. Su disco (il
+ * SQLite dei Durable Object) restano solo: le chiavi d'entrata di ogni stanza,
+ * il registro dei PC (con i tetti degli appunti nuovi) e gli appunti del medico,
+ * cifrati — niente in chiaro di un paziente.
  *
  * Quello che costa è il Durable Object sveglio: lo svegliano solo una presa
  * che entra, una che esce e un messaggio cifrato — nessuna sveglia sua, e
