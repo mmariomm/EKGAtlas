@@ -69,7 +69,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.90.0";
+  const VERSION = "3.90.1";
   const NS = "psassist:"; // storage namespace
   // La build «mini» (PS Assist · Lettura e stampa): sola lettura. La bandiera
   // la mette sola-lettura.js, caricato prima di content.js (vedi manifest). Qui
@@ -19037,7 +19037,8 @@
     // (un numero già dato a una scheda — anche a un'altra: la memoria è del gestionale — non muove più niente)
     const dati = store.get(AREA_TEL_RQ, []), visti = Array.isArray(dati) ? dati : [];
     if (visti.includes(rq)) return { ok: false, incerto: true, errore: "Già chiesto: guarda sul PC su che area è il gestionale" };
-    store.set(AREA_TEL_RQ, [...visti, rq].slice(-30));
+    // (annotato PRIMA di muoversi; se la memoria non lo prende, niente si muove: rimandato potrebbe rifarsi)
+    if (!store.set(AREA_TEL_RQ, [...visti, rq].slice(-30))) return { ok: false, errore: "Il PC non riesce ad annotarlo nella memoria del gestionale: niente cambiato" };
     // (la risposta parte prima della pagina nuova)
     apriArea(k, chi, (u) => { setTimeout(() => nav(u), 150); return true; }, rq);
     return { ok: true, dati: { ep: p.ep, k, area: nome, nome: p.name }, registro: `passo il gestionale all'area ${nome} e apro ${p.name}` };
