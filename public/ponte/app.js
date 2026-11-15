@@ -782,11 +782,11 @@
     if (!a.inviata) {
       // mai partita: si sa che il PC non l'ha
       S.attese.delete(id);
-      a.no(Object.assign(new Error(inLinea() ? "Il PC non è raggiungibile: niente mandato" : "Senza rete: niente mandato al PC"), { nonInviata: true }));
+      a.no(Object.assign(new Error(inLinea() ? "PC non raggiungibile: niente mandato" : "Senza rete: niente mandato al PC"), { nonInviata: true }));
       return;
     }
     if (a.tardi) { a.scaduta = true; a.t = setTimeout(() => scaduta(id), TARDI_MAX); } else S.attese.delete(id);
-    a.no(Object.assign(new Error(assente ? "Il PC non è raggiungibile" : "Il PC non ha risposto in tempo"), { tempo: true, inviata: true }));
+    a.no(Object.assign(new Error(assente ? "PC non raggiungibile" : "Il PC non ha risposto in tempo"), { tempo: true, inviata: true }));
     if (!assente) rifai();   // una risposta che non arriva: la presa può essere morta
   }
   // Una scrittura: un numero suo, e la risposta che arriva tardi la chiude
@@ -851,7 +851,7 @@
     setTimeout(() => {
       if (S.cambio !== c || !c.occupato) return;
       if (S.saluto === mio) S.saluto = null;
-      c.occupato = false; c.errore = "Il PC non risponde"; render();
+      c.occupato = false; c.errore = "PC non raggiungibile"; render();
     }, 8000);
   }
   // il PC non lo fa (un PC con l'estensione di prima, che voleva un codice): la strada che vale sempre, un QR nuovo
@@ -1735,13 +1735,13 @@
     const ver = verOk(info && info.versione) || p.ver || "";
     const quando = p.visto ? ` · visto ${alle(p.visto)}` : "";
     const [tono, stato] = qui
-      ? (pronto() ? ["ok", "Collegato a questo iPhone"] : S.pari === false ? ["warn", "Non raggiungibile adesso" + quando] : ["", inLinea() ? "Ricollego…" : "Senza rete"])
+      ? (pronto() ? ["ok", "Collegato a questo iPhone"] : S.pari === false ? ["warn", "PC non raggiungibile" + quando] : ["", inLinea() ? "Ricollego…" : "Senza rete"])
       : x.stato === "controllo" ? ["", "Controllo…"]
       : x.stato === "su" ? ["ok", "Disponibile"]
       : x.stato === "muto" ? ["warn", "Sul ponte, ma non risponde" + quando]
       : x.stato === "altro" ? ["warn", "Associato a un altro telefono"]
       : x.stato === "rete" ? ["", "Senza rete" + quando]
-      : ["", "Non disponibile" + quando];
+      : ["", "PC non raggiungibile" + quando];
     const s = info && info.stazione && typeof info.stazione === "object" ? info.stazione : null, f = s && foglioDi(s.ultimo);
     const r = regDi(p);   // (la sua riga del registro: la stazione e quando si è annunciato, se il PC adesso non risponde)
     const sta = s ? `<div class="d3">🖨️ <b>${esc(String(s.nome || "Stazione di stampa").slice(0, 40))}</b> · <span class="${s.presente ? "ok" : "warn"}">${s.presente ? "raggiungibile" : "non raggiungibile"}</span>${
@@ -2069,7 +2069,7 @@
   function zitto() { clearTimeout(tAvviso); S.avviso = null; }
   // il collegamento si dice solo quando manca
   const statoPc = () => {
-    const t = !inLinea() ? "Senza rete" : !S.ws || S.ws.readyState !== 1 ? "Ricollego…" : S.pari === false ? "PC assente" : "";
+    const t = !inLinea() ? "Senza rete" : !S.ws || S.ws.readyState !== 1 ? "Ricollego…" : S.pari === false ? "PC non raggiungibile" : "";
     return t ? `<span class="statopc" role="status"><i></i>${t}</span>` : "";
   };
   // il menu ⋯: un'emoji e poche parole, che si leggono a colpo d'occhio
@@ -2157,17 +2157,20 @@
       case "pc":
         if (S.pari === null && !(S.ws && S.ws.readyState === 1)) {
           return piena(ICO.pc, "Non raggiungo il ponte", "<p>Controlla la connessione del telefono: riprovo da solo.</p>",
-            `<button class="grande" data-a="riapri">Riprova</button>${DISP_BTN}${scansiona()}`, true);
+            `<button class="grande" data-a="riapri">Riprova</button>${DISP_BTN}${scansiona(true)}`, true);
         }
-        return piena(ICO.pc, "Il PC non risponde", `<p>${S.pari ? "Il PC è sul ponte ma non risponde: riprovo da solo." : "Sul PC dell'ospedale deve essere aperto Chrome col pannello: lo aspetto, e riprovo da solo."}</p>
+        // (un'azione principale: Riprova; il QR e Dispositivi sono quieti)
+        return piena(ICO.pc, "PC non raggiungibile", `<p>${S.pari ? "Il PC è sul ponte ma non risponde: riprovo da solo." : "Sul PC dell'ospedale deve essere aperto Chrome col pannello: lo aspetto, e riprovo da solo."}</p>
           <p>Se sul PC c'è un QR nuovo, inquadra quello.</p>`,
-          `<button class="grande" data-a="riapri">Riprova</button>${DISP_BTN}${scansiona()}`, true);
+          `<button class="grande" data-a="riapri">Riprova</button>${DISP_BTN}${scansiona(true)}`, true);
       case "altrove":
         return piena(ICO.pc, "Aperto su un altro dispositivo", "<p>Il pannello è aperto su un altro telefono o in un'altra scheda: qui si è fermato.</p>",
           `<button class="grande" data-a="riapri">Riprendi qui</button>${scansiona(true)}`);
+      // (4403: di solito le chiavi di questo telefono non valgono più nella stanza — Riprova non aiuta: serve un
+      // QR nuovo, e la prima cosa che si legge e si tocca è quella. Riprova resta, quieto, per un ponte che si sbaglia)
       case "scollegato":
-        return piena(ICO.pc, "Scollegato", "<p>Il ponte non riconosce più questo telefono: qui ci si è fermati.</p>",
-          `<button class="grande" data-a="riapri">Riprova</button>${DISP_BTN}${scansiona(true)}`);
+        return piena(ICO.pc, "Scollegato", "<p><b>Serve un QR nuovo</b>: sul PC <b>⋯ → iPhone → Associa l'iPhone</b>, poi inquadralo.</p><p>Il ponte non riconosce più questo telefono: qui ci si è fermati.</p>",
+          `${scansiona()}<button class="grande quiet" data-a="riapri">Riprova</button>${DISP_BTN}`);
       case "chiusa":
         // (chiusa per i 3 minuti, con l'app in sottofondo: al ritorno si riapre da sola, e
         // questa schermata non si vede nemmeno per un attimo)
@@ -2383,7 +2386,8 @@
       si(await chiedi("areaApri", { ep, nato: Math.round(quando + S.scarto) }, ATTESA_AREA, false, { rq: x.rq, scade: quando + 30e3,
         tardi: (d) => { if (d.ok) si(d.dati); else no(errDa(d)); render(); } }));
     } catch (e) {
-      no(e.inviata ? Object.assign(new Error("Incerto: il PC non ha ancora risposto — guarda sul PC su che area è"), { incerto: true }) : e);
+      // (il medico può essere lontano dal PC: la risposta, quando arriva, la dice qui `tardi`)
+      no(e.inviata ? Object.assign(new Error("Aspetto il PC: ti dico qui su che area è appena risponde"), { incerto: true }) : e);
     }
     render();
   }

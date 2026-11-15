@@ -2619,7 +2619,7 @@ sezione("l'app in sottofondo: la presa si chiude, al ritorno si riprende da sola
       };
     }
   });
-  const nonRaggiungibile = /non è raggiungibile|Incerto|Sessione chiusa|non ha risposto/;
+  const nonRaggiungibile = /non è raggiungibile|non raggiungibile|Incerto|Sessione chiusa|non ha risposto/;
   await finche(async () => relay.prese().tel === 1, 10000);
   await finche(async () => await dietroSu("999001") === 0, 60000);   // (una lettura da sé partita prima, finita: le pagine del PC contano da qui)
 
@@ -2716,6 +2716,10 @@ sezione("l'app in sottofondo: la presa si chiude, al ritorno si riprende da sola
   await mostra(tel);
   await sospendi(1500);
   check(relay.entrate().tel === e0 && /Scollegato/.test(await testoTel(tel)), "…nemmeno al ritorno dell'app");
+  // prima il rimedio: «Serve un QR nuovo», e il bottone principale (l'unico non quieto) è «Scansiona il QR»
+  const principali = await tel.locator(".piena .grande:not(.quiet)").evaluateAll((l) => l.map((b) => b.dataset.a));
+  check(/Scollegato\s+Serve un QR nuovo/.test(await testoTel(tel)) && principali.join() === "scansiona" && await tel.locator('.piena [data-a="riapri"].quiet').count() === 1,
+    `«Scollegato» dice per prima cosa che serve un QR nuovo, e «Scansiona il QR» è l'azione principale; Riprova resta, quieta (${principali.join()})`);
   if (SHOTS) await shot(tel, "tel-scollegato");
   await tocca(tel, '[data-a="riapri"]');
   check(/ROSSI MARIO/.test(await aspettaTel(tel, /ROSSI MARIO/, 20000)), "«Riprova»: di nuovo dentro");
@@ -2946,8 +2950,12 @@ check(/revocat/.test(await aspettaTel(tel, /revocat/, 10000)), "revocata: il tel
 check(await tel.evaluate(() => localStorage.length) === 0, "e dimentica la chiave");
 const vecchio = await telCtx.newPage();
 await vecchio.goto(url1);
-const nonRisponde = await aspettaTel(vecchio, /Il PC non risponde|QR scaduto/, 15000);
-check(/Il PC non risponde/.test(nonRisponde) ? /QR nuovo/.test(nonRisponde) : /QR scaduto/.test(nonRisponde), "il vecchio QR non apre più niente: «Il PC non risponde» (e se c'è un QR nuovo, inquadra quello), o «QR scaduto» se i pochi minuti sono passati");
+const nonRisponde = await aspettaTel(vecchio, /PC non raggiungibile|QR scaduto/, 15000);
+check(/PC non raggiungibile/.test(nonRisponde) ? /QR nuovo/.test(nonRisponde) : /QR scaduto/.test(nonRisponde), "il vecchio QR non apre più niente: «PC non raggiungibile» (e se c'è un QR nuovo, inquadra quello), o «QR scaduto» se i pochi minuti sono passati");
+if (/PC non raggiungibile/.test(nonRisponde)) {
+  const principali = await vecchio.locator(".piena .grande:not(.quiet)").evaluateAll((l) => l.map((b) => b.dataset.a));
+  check(principali.join() === "riapri", `«PC non raggiungibile»: un'azione principale sola, Riprova (${principali.join()})`);
+}
 await vecchio.close();
 await tel.evaluate(() => localStorage.clear());
 await ponte2.locator("#associa").click();
@@ -2999,7 +3007,7 @@ await avanti(7 * 60e3);
   const lateCtx = await telBrowser.newContext(IPHONE);
   const late = await lateCtx.newPage();
   await late.goto(urlE);
-  check(/Il PC non risponde/.test(await aspettaTel(late, /Il PC non risponde/, 15000)) && (await coppiaPc())?.dev === "",
+  check(/PC non raggiungibile/.test(await aspettaTel(late, /PC non raggiungibile/, 15000)) && (await coppiaPc())?.dev === "",
     "il link del QR dopo il suo tempo: il PC non lo accetta, nessun telefono entra");
   await lateCtx.close();
   const vecCtx = await telBrowser.newContext(IPHONE);
@@ -3297,7 +3305,7 @@ sezione("⋯ → Dispositivi: i PC associati, chi c'è, chi è collegato a quest
   await tocca(tel, '[data-a="menu"]');
   check(await tel.locator('.menu [data-a="dispositivi"]').count() === 1 && /Dispositivi$/.test((await tel.locator('.menu [data-a="dispositivi"]').innerText()).trim()), "nel ⋯ c'è «Dispositivi»");
   await tocca(tel, '[data-a="dispositivi"]');
-  const pronta = await finche(async () => { const t = await testoTel(tel); return /Collegato a questo iPhone/.test(t) && /Disponibile/.test(t) && /Non disponibile/.test(t) && /stampato alle/.test(t); }, 15000);
+  const pronta = await finche(async () => { const t = await testoTel(tel); return /Collegato a questo iPhone/.test(t) && /Disponibile/.test(t) && /PC non raggiungibile/.test(t) && /stampato alle/.test(t); }, 15000);
   const righe = await tel.locator(".dsp[data-pc]").evaluateAll((l) => l.map((x) => ({ id: x.dataset.pc, t: x.innerText.replace(/\s+/g, " ").trim() })));
   check(pronta && /Dispositivi/.test(await tel.locator("header").innerText()) && righe.map((r) => r.id).join() === [vero.id, mini.id, spento.id].join(),
     `una riga per PC associato, l'attivo in cima (${righe.map((r) => r.t).join(" | ")})`);
@@ -3305,7 +3313,7 @@ sezione("⋯ → Dispositivi: i PC associati, chi c'è, chi è collegato a quest
   check(new RegExp(`^💻 PC v${versionePc.replace(/\./g, "\\.")} Associato a questo iPhone Collegato a questo iPhone .{1,3} Infermeria · raggiungibile · ultimo foglio stampato alle \\d\\d:\\d\\d$`).test(r0),
     `il PC attivo: «PC», la sua versione, «Collegato a questo iPhone», e la sua stazione con l'ultimo foglio (${r0})`);
   check(/^💻 Infermeria PC v3\.85\.3 Associato a questo iPhone Disponibile$/.test(r1), `l'altro PC acceso: il suo nome, «PC», la versione che dice adesso, «Disponibile» (${r1})`);
-  check(/^💻 Studio medici PC v3\.84\.0 Associato a questo iPhone Non disponibile · visto ieri alle 18:40$/.test(r2), `quello spento: «Non disponibile», e quando si è fatto sentire (${r2})`);
+  check(/^💻 Studio medici PC v3\.84\.0 Associato a questo iPhone PC non raggiungibile · visto ieri alle 18:40$/.test(r2), `quello spento: «PC non raggiungibile», e quando si è fatto sentire (${r2})`);
   check(!/Lettura e stampa|Sola lettura|👁/.test(righe.map((r) => r.t).join(" ")), "nessuna riga dice «sola lettura»");
   check(await finche(async () => relay.entrate().tel - e0 === 2 && relay.prese().tel === aperte0, 10000),
     `una presa breve per ognuno degli altri due PC, chiusa subito: resta aperta solo quella della sessione (${relay.entrate().tel - e0} nuove, ${relay.prese().tel} aperte)`);
