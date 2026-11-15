@@ -816,8 +816,35 @@ await blocco(async () => {
   const A = P0.casuale(32), c = await P0.appuntiChiavi(await P0.chiaveDa(A));
   const NOME = "VERDI GIUSEPPE", CF = "VRDGPP40A01F205X", NOTA = "rivedere la troponina fra tre giorni";
   const pin = { cognome: "VERDI", nome: "GIUSEPPE", cf: CF, nascita: "01/01/1940", nota: NOTA, quando: Date.now(), mod: Date.now(), url: "https://gestionale.prova/paziente?ep=4242" };
-  const r1 = await P0.appuntiFai(c, posta, (d) => ({ ...d, pin: { ...d.pin, k1: pin } }));
-  check(r1.v === 1 && r1.doc.pin.k1.nota === NOTA, "il primo pin: scritto (versione 1)");
+  // (3.90) la prima scrittura crea l'id lassù: solo con la prova di una stanza vera (le sue chiavi d'entrata pc o tel)
+  const K = P.casuale(32), e = await P.chiaviEntra(K), stanza = (await P.chiaviCoppia(K)).stanza;
+  const pcWs = new WsNode(`${rel.url.replace(/^http/, "ws")}/ponte/ws?r=${stanza}&ruolo=pc`);
+  let entrato = false;
+  pcWs.on("message", async (d, b) => {
+    if (b) return;
+    const m = JSON.parse(d.toString());
+    if (m.sfida) pcWs.send(JSON.stringify({ prova: [await P.provaEntra(e.pc, m.sfida)], chiave: e.pc, altro: [e.tel] }));
+    if (typeof m.entrato === "number") entrato = true;
+  });
+  check(await finche(() => entrato), "(il PC entra nella sua stanza e le dà la chiave d'entrata del telefono)");
+  const primo = (d) => ({ ...d, pin: { ...d.pin, k1: pin } });
+  const senza = await P0.appuntiFai(c, posta, primo).then(() => 200, (x) => x.stato);
+  const altraK = await P.chiaviEntra(P.casuale(32)), vuota = Buffer.from(P.casuale(16)).toString("hex");
+  const sbagliata = await P0.appuntiFai(c, posta, primo, { r: stanza, entra: [altraK.pc, altraK.tel] }).then(() => 200, (x) => x.stato);
+  const senzaChiavi = await P0.appuntiFai(c, posta, primo, { r: vuota, entra: [e.pc] }).then(() => 200, (x) => x.stato);
+  const statoni = await P0.appuntiFai(c, posta, primo, { r: stanza, entra: [e.medico, e.stazione] }).then(() => 200, (x) => x.stato);
+  check(senza === 403 && sbagliata === 403 && senzaChiavi === 403 && statoni === 403 && !Object.keys(rel.appuntiTenuti()).length,
+    `appunti nuovi senza la prova di una stanza (nessuna, chiavi d'altri, una stanza senza chiavi, chiavi di un altro ruolo): 403, e lassù niente (got ${senza} ${sbagliata} ${senzaChiavi} ${statoni})`);
+  // la prova vale per quell'id: rigiocata per un altro, no
+  const tProva = Date.now(), prStanza = { r: stanza, prova: [await P.provaEntra(e.pc, `appunti.${c.id}.${tProva}`)] };
+  const altroC = await P0.appuntiChiavi(P0.casuale(32));
+  const corpoAltro = JSON.parse(await P0.appuntiCorpo(altroC, "scrivi", 0, await P0.appuntiCifra(altroC, { pin: {} }), tProva));
+  check((await posta(JSON.stringify({ ...corpoAltro, stanza: prStanza }))).stato === 403, "la prova della stanza di un id, portata per un altro: 403");
+  const r1 = await P0.appuntiFai(c, posta, primo, { r: stanza, entra: [e.pc] });
+  check(r1.v === 1 && r1.doc.pin.k1.nota === NOTA, "il primo pin, con la prova della stanza (la chiave del PC): scritto (versione 1)");
+  const c2 = await P0.appuntiChiavi(P0.casuale(32));
+  check((await P0.appuntiFai(c2, posta, primo, { r: stanza, entra: [e.tel] })).v === 1, "…e con quella del telefono (un altro id): scritto");
+  check((await P0.appuntiElimina(c2, posta)).stato === 200, "(quello del telefono, tolto)");
   const tenuto = JSON.stringify(rel.appuntiTenuti());
   check(!/VERDI|GIUSEPPE|VRDGPP|troponina|4242|gestionale/.test(tenuto) && tenuto.includes(c.id),
     "il ripetitore tiene solo byte cifrati: niente nome, CF, nota, episodio o indirizzo");
@@ -847,11 +874,31 @@ await blocco(async () => {
   let tanti = 0;
   for (let i = 0; i < APPUNTI.alMinuto + 5; i++) if (ap.richiesta({ id: c.id, op: "leggi", t: 1, v: 0, blob: "", chiave: "", prova: "p" + i }, 1).stato === 429) tanti++;
   check(tanti === 5, `al più ${APPUNTI.alMinuto} richieste al minuto per id (oltre: 429)`);
+  // i tetti degli id nuovi: per IP all'ora, e per tutti al giorno (su disco: un Durable Object che si riaddormenta non li azzera)
+  {
+    const { Registro } = await import("../../worker/ponte-logica.js");
+    let disco = null;
+    const reg = () => new Registro({ leggi: () => null, scrivi: () => {}, ip: new Map(), nuovi: { leggi: () => disco, scrivi: (v) => { disco = v; } } });
+    const T = Date.UTC(2026, 10, 15, 8), r1 = reg();
+    const daUno = Array.from({ length: APPUNTI.nuoviPerIp + 2 }, (_, i) => r1.nuoviAppunti("10.0.0.1", T + i).stato);
+    check(daUno.filter((s) => s === 200).length === APPUNTI.nuoviPerIp && daUno.slice(-2).every((s) => s === 429) && r1.nuoviAppunti("10.0.0.2", T).stato === 200,
+      `id nuovi: al più ${APPUNTI.nuoviPerIp} all'ora da un IP (oltre 429), un altro IP sì`);
+    let ok = 0, no = 0;
+    for (let i = 0; i < APPUNTI.nuoviAlGiorno + 20; i++) { const s = reg().nuoviAppunti("10.1." + i, T + 1000 + i).stato; if (s === 200) ok++; else if (s === 429) no++; }
+    check(ok + APPUNTI.nuoviPerIp + 1 === APPUNTI.nuoviAlGiorno && no === 20 + APPUNTI.nuoviPerIp + 1, `…al più ${APPUNTI.nuoviAlGiorno} al giorno per tutti, contati su disco (got ${ok} sì, ${no} no)`);
+    check(reg().nuoviAppunti("10.9.9.9", T + 864e5).stato === 200, "…e il giorno dopo si riparte");
+    const st = new (L.Stanza)({ tutte: () => [], aperta: () => false, invia: () => {}, chiudi: () => {}, leggi: () => null, scrivi: () => {}, battito: () => 0,
+      archivio: { leggi: (k) => (k === "entra:pc" ? [e.pc] : null), scrivi: () => {} }, conti: new Map() });
+    let molte = 0;
+    for (let i = 0; i < APPUNTI.nuoviAlMinuto + 3; i++) if (st.provaAppunti({ id: c.id, t: T, prova: ["x"] }, T + i).stato === 429) molte++;
+    check(molte === 3, `…e al più ${APPUNTI.nuoviAlMinuto} prove al minuto per stanza`);
+  }
   // «Elimina tutti i pin»: con la prova, e lassù non resta niente
   check((await P0.appuntiElimina(c, posta)).stato === 200 && !rel.appuntiTenuti()[c.id], "«Elimina tutti i pin» (con la prova): lassù non resta niente");
   // la chiave avvolta: si ridà uguale
   const av = await P0.appuntiAvvolgi(A);
   check(P0.b64u(await P0.appuntiSvolgi(av)) === P0.b64u(A) && av.hk.extractable === false && av.kw.extractable === false, "la chiave degli appunti: tenuta non estraibile, avvolta per ridarla");
+  pcWs.close();
   await rel.chiudi();
 });
 

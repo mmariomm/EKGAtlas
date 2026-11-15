@@ -14,7 +14,7 @@
  * se toglierla. La copia lassù se ne va solo con «Elimina tutti i pin».
  * Nel registro: «pin aggiunto/tolto», mai il nome, la nota o il codice fiscale.
  */
-/* global PonteCripto, cassaLeggi, cassaScrivi, cassaTogli, ponteIndirizzo, ponteSuScheda, ponteNota, ponteScriviStato, sulGestionale, corto */
+/* global pt, ponteStanza, PonteCripto, cassaLeggi, cassaScrivi, cassaTogli, ponteIndirizzo, ponteSuScheda, ponteNota, ponteScriviStato, sulGestionale, corto */
 
 const APP_CASSA = "appunti";            // la cassa: { hk, kw, iv, ct } (appuntiAvvolgi)
 const APP_COPIA = "appunti.copia";      // storage.local: { pin: { k → pin }, ts } — la copia per vederli senza rete
@@ -60,13 +60,17 @@ async function appFai(cambia = null) {
   const c = await appChiavi();
   if (!c) return { ok: !cambia, senza: true, pin: (await appCopia()).pin, ...(cambia ? { errore: "Prima collega l'iPhone una volta: la chiave dei pin la dà lui" } : {}) };
   try {
-    const r = await PonteCripto.appuntiFai(c, appPosta, cambia);
+    const r = await PonteCripto.appuntiFai(c, appPosta, cambia, appStanza());
     await appSalvaCopia(r.doc.pin);
     return { ok: true, pin: r.doc.pin };
   } catch (e) {
     return { ok: !cambia, offline: true, stato: (e && e.stato) || 0, pin: (await appCopia()).pin, ...(cambia ? { errore: "Ponte non raggiungibile: pin non salvato" } : {}) };
   }
 }
+// la stanza del ponte di questo PC e le sue chiavi d'entrata: la prima scrittura crea gli appunti lassù solo con la
+// prova di una stanza (worker/ponte-logica.js, Stanza.provaAppunti)
+const appStanza = () => (pt.coppia && pt.entra ? { r: ponteStanza(),
+  entra: [pt.entra.pc, pt.entra.tel, pt.qr && pt.qr.entra.pc, pt.prossima && pt.prossima.entra.pc].filter(Boolean) } : null);
 const appNuovoK = () => PonteCripto.b64u(PonteCripto.casuale(9));
 async function appAggiungi(x) {
   const p = appPin(x);

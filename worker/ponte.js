@@ -17,7 +17,7 @@
  */
 import { DurableObject } from "cloudflare:workers";
 import { Stanza, Registro, PING, PONG, FILE_APP, leggiStanza, intestazioniApp, leggiProvaRegistro, INTESTAZIONI_ANNUNCIO,
-  Appunti, APPUNTI, leggiAppunti, INTESTAZIONI_APPUNTI } from "./ponte-logica.js";
+  Appunti, APPUNTI, leggiAppunti, INTESTAZIONI_APPUNTI, ammettiAppunti, leggiProvaAppunti } from "./ponte-logica.js";
 
 const APERTA = 1;   // WebSocket.OPEN
 
@@ -59,6 +59,11 @@ export class PonteStanza extends DurableObject {
       const r = this.stanza.provaRegistro(leggiProvaRegistro(await request.text()), Date.now());
       return new Response(r.ok ? "ok" : "no", { status: r.ok ? 200 : r.stato });
     }
+    // (gli appunti: la prova della stanza per un id nuovo)
+    if (new URL(request.url).pathname === "/ponte/appunti/prova") {
+      const r = this.stanza.provaAppunti(leggiProvaAppunti(await request.text()), Date.now());
+      return new Response(r.ok ? "ok" : "no", { status: r.ok ? 200 : r.stato });
+    }
     const r = leggiStanza(new URL(request.url));
     if (!r.ok) return new Response(r.perche, { status: r.stato });
     const { 0: client, 1: server } = new WebSocketPair();
@@ -88,12 +93,16 @@ export class PonteRegistro extends DurableObject {
   constructor(ctx, env) {
     super(ctx, env);
     const kv = ctx.storage && ctx.storage.kv && typeof ctx.storage.kv.get === "function" ? ctx.storage.kv : null;
-    this.registro = kv ? new Registro({ leggi: () => kv.get("elenco") ?? null, scrivi: (v) => kv.put("elenco", v), ip: new Map() }) : null;
+    this.registro = kv ? new Registro({ leggi: () => kv.get("elenco") ?? null, scrivi: (v) => kv.put("elenco", v), ip: new Map(),
+      nuovi: { leggi: () => kv.get("appunti:nuovi") ?? null, scrivi: (v) => kv.put("appunti:nuovi", v) } }) : null;
   }
   async fetch(request) {
     if (!this.registro) return new Response("archivio", { status: 503 });
     const ip = request.headers.get("x-ip") || "";
-    const r = new URL(request.url).pathname === "/elenco" ? this.registro.elencoPer(ip, Date.now()) : this.registro.annuncia(await request.text(), ip, Date.now());
+    const p = new URL(request.url).pathname;
+    // (gli appunti: i tetti degli id nuovi — qui, perché questo Durable Object è uno solo)
+    if (p === "/appunti") { const r = this.registro.nuoviAppunti(ip, Date.now()); return new Response(r.corpo, { status: r.stato }); }
+    const r = p === "/elenco" ? this.registro.elencoPer(ip, Date.now()) : this.registro.annuncia(await request.text(), ip, Date.now());
     return new Response(r.corpo, { status: r.stato });
   }
 }
@@ -112,7 +121,8 @@ export class PonteAppunti extends DurableObject {
   }
   async fetch(request) {
     if (!this.appunti) return new Response(JSON.stringify({ errore: "archivio" }), { status: 503, headers: INTESTAZIONI_APPUNTI });
-    const r = this.appunti.richiesta(leggiAppunti(await request.text()), Date.now());
+    // (x-nuovo: dal Worker, che ha già visto la prova della stanza e i tetti — qui non arriva nessun altro)
+    const r = this.appunti.richiesta(leggiAppunti(await request.text()), Date.now(), request.headers.get("x-nuovo") === "1");
     return new Response(r.corpo, { status: r.stato, headers: INTESTAZIONI_APPUNTI });
   }
 }
@@ -124,7 +134,13 @@ async function appuntiFetch(request, env) {
   if (testo == null) return new Response("{}", { status: 413, headers: h });
   const m = leggiAppunti(testo);
   if (!m) return new Response("{}", { status: 400, headers: h });
-  const r = await env.APPUNTI.get(env.APPUNTI.idFromName(m.id)).fetch("https://appunti/", { method: "POST", body: testo });
+  // un id nuovo: prima la stanza che porta (la prova), poi i tetti nel registro
+  const ok = await ammettiAppunti(m,
+    async (r, corpo) => (env.PONTE ? (await env.PONTE.get(env.PONTE.idFromName(r)).fetch("https://stanza/ponte/appunti/prova", { method: "POST", body: corpo })).status : 503),
+    async () => (env.REGISTRO ? (await env.REGISTRO.get(env.REGISTRO.idFromName("registro")).fetch("https://registro/appunti",
+      { method: "POST", headers: { "x-ip": request.headers.get("cf-connecting-ip") || "" } })).status : 503));
+  if (ok && ok !== true) return new Response("{}", { status: ok.stato, headers: h });
+  const r = await env.APPUNTI.get(env.APPUNTI.idFromName(m.id)).fetch("https://appunti/", { method: "POST", body: testo, headers: ok === true ? { "x-nuovo": "1" } : {} });
   return new Response(await r.text(), { status: r.status, headers: h });
 }
 // il corpo di un POST, al più `max` caratteri (null se di più)

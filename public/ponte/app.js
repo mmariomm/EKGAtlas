@@ -2578,7 +2578,8 @@
     const t = await appuntiTenuta();
     if (!t) return;
     try {
-      S.pins = (await P.appuntiFai(t.c, appuntiPosta, (d) => { const pin = { ...d.pin }; delete pin[k]; return { ...d, pin, via: { ...d.via, [k]: Date.now() } }; })).doc.pin;
+      S.pins = (await P.appuntiFai(t.c, appuntiPosta, (d) => { const pin = { ...d.pin }; delete pin[k]; return { ...d, pin, via: { ...d.via, [k]: Date.now() } }; },
+        S.chiavi && S.entra && S.entra.length ? { r: stanzaOra(), entra: S.entra } : null)).doc.pin;   // (la prova della stanza: se gli appunti lassù non ci sono ancora)
       S.pinFoglio = "";
       avviso("Tolto dal da rivedere", "ok");
     } catch { avviso("Ponte non raggiungibile: pin non tolto", "err"); }
