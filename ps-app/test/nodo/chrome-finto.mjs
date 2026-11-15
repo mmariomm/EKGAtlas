@@ -23,6 +23,8 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 export const leggi = (f) => readFileSync(join(root, f), "utf8");
 
 export const discoNuovo = () => ({ local: {}, session: {}, scritture: 0 });
+// (come chrome.storage: JSON — un campo undefined sparisce, una Date diventa stringa)
+const clona = (o) => JSON.parse(JSON.stringify(o));
 export const giri = async (n) => { for (let i = 0; i < n; i++) await new Promise((r) => setImmediate(r)); };
 
 export function swNuovo(disco, opz = {}) {
@@ -39,11 +41,11 @@ export function swNuovo(disco, opz = {}) {
         await prima("get", chiavi);
         if (!sw.vivo) return new Promise(() => {});   // morto intanto: nessuna risposta
         const o = {};
-        for (const x of chiavi) if (x in d()) o[x] = structuredClone(d()[x]);
+        for (const x of chiavi) if (x in d()) o[x] = clona(d()[x]);
         return o;
       },
       set: async (o) => {
-        const copia = structuredClone(o);   // (com'è adesso: chrome lo serializza alla chiamata)
+        const copia = clona(o);   // (com'è adesso: chrome lo serializza alla chiamata)
         // Chrome la scrive alla chiamata (se la memoria la prende), comunque vada il service worker dopo:
         // morto a metà, si perde solo la risposta
         const rotta = !!(sw.opz.guasto && sw.opz.guasto("set", nome, Object.keys(copia)));

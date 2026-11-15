@@ -46,6 +46,10 @@ console.log("\narchivio.js: il registro");
   const x = await sw.R.leggi("aaaaaaaa");
   check(x && x.ep === "1" && x.fase === "inviato" && x.ts === sw.ora, "scrivi fonde nel record che c'è, con l'ora di adesso");
   check((await sw.R.leggi("nessuno0")) === undefined && json(await sw.R.tutti()) === json(disco.session["prova.rq"]), "leggi / tutti: quello che c'è sul disco");
+  // come chrome.storage (JSON): un campo undefined sparisce, sul disco e alla lettura
+  await sw.R.scrivi("vuoto001", { a: 1, b: undefined });
+  const v = await sw.R.leggi("vuoto001");
+  check(v.a === 1 && !("b" in v) && !("b" in disco.session["prova.rq"].vuoto001), "un campo undefined non arriva sul disco (come Chrome: JSON)");
 }
 {
   // il tetto (i 5 più recenti) e la scadenza (10 ore), a ogni scrittura
