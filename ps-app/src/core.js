@@ -9130,9 +9130,9 @@
       const letto = { onStop: () => { this.lettoOrdine(fuoco); Promise.all(chiudi.map((x) => ask({ t: "ordineChiudi", id: x }))).then((rs) => { const x = rs[rs.length - 1]; if (x && x.ordini) this.ordiniAggiorna(x.ordini); }); },
         titoloStop: "Chiudi l'avviso" };
       const ferma = { onStop: () => ask({ t: "ordineFerma", id }).then((x) => { if (x && x.tolto) ask({ t: "ordineControlla" }).then((y) => y && y.ordini && this.ordiniAggiorna(y.ordini)); }), ferma: true };
-      // (la Ristampa di un gesto: tutti i fogli di tutte le sue richieste, una volta ciascuno)
+      // (la Ristampa — o «Stampa qui» — di un gesto: di ogni sua richiesta i fogli non usciti, una volta ciascuno)
       const stampaQui = (label, titolo, qui = false) => ({ azione: { label, titolo, fn: () => ask({ t: "ordineStampaQui", id: g && g.conStampa ? g.conStampa.id : id,
-        ...(g && !qui ? { gruppo: g.ids } : {}), ...(qui ? { qui: true } : {}) }) } });
+        ...(g ? { gruppo: g.ids } : {}), ...(qui ? { qui: true } : {}) }) } });
       // (un ordine per la stazione di stampa: quello che lei non ha stampato si stampa qui con un tocco, mai da solo)
       const sta = fuoco.dest === "stazione", nonUsciti = (fuoco.fogli || []).some((f) => f.stato !== "stampato" && f.stato !== "mandato" && f.stato !== "tolto");
       const quiTitolo = `Stampa qui, su questo PC, i fogli che ${fuoco.destNome || "la stazione"} non ha stampato`;

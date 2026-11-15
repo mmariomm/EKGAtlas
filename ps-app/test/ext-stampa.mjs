@@ -1458,6 +1458,25 @@ if (await prova("il pacchetto Dolore toracico con l'RX: due ordini in sottofondo
   const una = await striscia(doc, /2 richieste/, 15000).catch(() => "");
   check(/ROSSI MARIO/.test(una) && /Confermata/.test(una) && /Stampato su Zebra ZD421 e HP LaserJet A4/.test(una) && /2 richieste, 7 esami/.test(una) && (await azione(doc)) === "Ristampa",
     `una riga sola per le due richieste: «Confermata · Stampato su Zebra ZD421 e HP LaserJet A4 · 2 richieste, 7 esami», con «Ristampa» (got ${una || "niente"} · ${await azione(doc)})`);
+  // La stessa Ristampa, ma con le etichette POC già sulle provette e il foglio RX non uscito: solo
+  // quello — come «Ristampa» sulla riga del foglio —, mai di nuovo le etichette POC. (Poi gli ordini come erano.)
+  const tali = await ordini();
+  await sw.evaluate(() => chrome.storage.session.get("ordini").then((o) => {
+    const l = o.ordini || [], rx = l.find((x) => x.kind === "radio" && x.stato === "avviso" && x.fogli);
+    rx.fogli[0] = { ...rx.fogli[0], stato: "fallito" };
+    return chrome.storage.session.set({ ordini: l });
+  }));
+  await sospendi(800);
+  const s0 = lavori().length;
+  await $panel(doc, AZIONE).click();
+  await finche(async () => lavori().length > s0, 30000);
+  await sospendi(3000);
+  const solo = lavori().slice(s0);
+  check(solo.length === 1 && solo[0].tipo === "a4" && solo[0].stampante === "HP LaserJet A4",
+    `«Ristampa» di un tocco con POC + RX, le etichette POC uscite e l'RX no: solo il foglio RX (got ${JSON.stringify(solo.map((x) => `${x.tipo}→${x.stampante}`))})`);
+  // (con un nome nuovo: quelli di prima la scheda li ha già stampati, e non li rifà)
+  await sw.evaluate((l) => chrome.storage.session.set({ ordini: l.map((x) => ({ ...x, id: x.id + "b" })) }), tali);
+  await striscia(doc, /2 richieste/, 15000).catch(() => "");
   const l0 = lavori().length;
   await $panel(doc, AZIONE).click();
   await finche(async () => lavori().length >= l0 + 3, 60000);

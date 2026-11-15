@@ -2305,21 +2305,26 @@ function ordMessaggio(msg, sender, reply) {
     (async () => {
       const l = await ordLeggi();
       const rec = l.find((x) => x.id === msg.id && (x.stato === "stampa" || x.stato === "avviso") && x.stampa);
-      // La Ristampa di un tocco su Conferma (`gruppo`: i suoi ordini, una
-      // richiesta per erogatore): tutti i fogli di tutte le sue richieste, una
-      // volta ciascuno, le etichette prima — e quegli ordini se ne vanno insieme.
-      const gruppo = !msg.qui && rec && rec.gesto && Array.isArray(msg.gruppo)
-        ? l.filter((x) => x.gesto === rec.gesto && msg.gruppo.includes(x.id) && x.stato === "avviso" && x.stampa) : [];
-      if (gruppo.length > 1 && gruppo.includes(rec)) {
-        const visti = new Set(), tutti = [];
-        for (const j of gruppo.flatMap((x) => x.stampa.jobs || [])) if (j && !visti.has(j.url)) { visti.add(j.url); tutti.push(j); }
-        const jobs = [...tutti.filter((j) => j.printer === "etichettatrice"), ...tutti.filter((j) => j.printer !== "etichettatrice")];
-        return reply({ ok: await ordDai(rec.id, tab.id, true, jobs, "", gruppo.map((x) => x.id).filter((x) => x !== rec.id)) });
-      }
       // «Ristampa» dopo la stampa senza dialogo: i fogli non usciti (o non si
       // sa); se sono usciti tutti, tutti — un'etichetta inceppata
-      const f = rec && rec.stato === "avviso" && Array.isArray(rec.fogli) ? rec.fogli : [];
-      const non = f.length ? rec.stampa.jobs.filter((_, i) => f[i] && !usciti(f[i]) && f[i].stato !== "tolto") : [];
+      const nonUsciti = (x) => {
+        const f = x && x.stato === "avviso" && Array.isArray(x.fogli) ? x.fogli : [];
+        return f.length ? x.stampa.jobs.filter((_, i) => f[i] && !usciti(f[i]) && f[i].stato !== "tolto") : [];
+      };
+      // La Ristampa (o «Stampa qui») di un tocco su Conferma (`gruppo`: i suoi
+      // ordini, una richiesta per erogatore): di ogni richiesta i SUOI fogli non
+      // usciti, come sulle righe dei fogli — tutti, solo se sono usciti tutti —,
+      // una volta ciascuno, le etichette prima; e quegli ordini se ne vanno insieme.
+      const gruppo = rec && rec.gesto && Array.isArray(msg.gruppo)
+        ? l.filter((x) => x.gesto === rec.gesto && msg.gruppo.includes(x.id) && x.stato === "avviso" && x.stampa) : [];
+      if (gruppo.length > 1 && gruppo.includes(rec)) {
+        const fuori = gruppo.flatMap(nonUsciti);
+        const visti = new Set(), tutti = [];
+        for (const j of fuori.length ? fuori : gruppo.flatMap((x) => x.stampa.jobs || [])) if (j && !visti.has(j.url)) { visti.add(j.url); tutti.push(j); }
+        const jobs = [...tutti.filter((j) => j.printer === "etichettatrice"), ...tutti.filter((j) => j.printer !== "etichettatrice")];
+        return reply({ ok: await ordDai(rec.id, tab.id, true, jobs, msg.qui ? "qui" : "", gruppo.map((x) => x.id).filter((x) => x !== rec.id)) });
+      }
+      const non = nonUsciti(rec);
       // («Stampa qui»: i fogli che la stazione non ha stampato, qui; «Ristampa», dove sono andati)
       reply({ ok: !!rec && await ordDai(rec.id, tab.id, true, non.length ? non : null, msg.qui ? "qui" : "") });
     })().catch(() => reply({ ok: false }));
