@@ -12,6 +12,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { leggiCore } from "../tools/frammenti.mjs";
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -582,8 +583,8 @@ check(!nomi.includes("eviewer.json") && !/Visualizzatore di immagini/.test(riep)
 }
 
 // ------------- quello che il pannello manda (core.js): la diagnosi, il Registro, l'errore grave
-// Le funzioni VERE, prese da src/core.js così come sono (come fa tools/build.mjs per registra-pdf.js).
-const core = readFileSync(join(root, "src/core.js"), "utf8");
+// Le funzioni VERE, prese da src/core/ (leggiCore) così come sono (come fa tools/build.mjs per registra-pdf.js).
+const core = leggiCore(root);
 const corpoDi = (i) => { let d = 0; for (let k = core.indexOf("{", i); k < core.length; k++) { if (core[k] === "{") d++; else if (core[k] === "}" && !--d) return core.slice(i, k + 1); } return ""; };
 const funzione = (nome) => corpoDi(core.indexOf(`function ${nome}(`));
 const riga = (inizio) => { const i = core.indexOf(inizio); return core.slice(i, core.indexOf(";\n", i) + 1); };

@@ -15,6 +15,7 @@ import { createHash } from "node:crypto";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import { leggiCore } from "./frammenti.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const guai = [];
@@ -44,7 +45,7 @@ if (elenco.length) {
   if (sha !== /\$EXE_SHA256 = '([0-9A-F]{64})'/.exec(readFileSync(join(root, "stampa/installa.ps1"), "utf8"))?.[1]) guai.push(`stampa/SumatraPDF.exe non è l'ufficiale 3.6.1 (${sha.slice(0, 12)}…)`);
 }
 const manifest = JSON.parse(readFileSync(join(root, "extension/manifest.json"), "utf8"));
-const core = /const VERSION = "([^"]+)"/.exec(readFileSync(join(root, "src/core.js"), "utf8"))?.[1];
+const core = /const VERSION = "([^"]+)"/.exec(leggiCore(root))?.[1];
 const dist = readFileSync(join(root, "dist/VERSION.txt"), "utf8").trim();
 if (core !== manifest.version || dist !== manifest.version) guai.push(`versioni diverse: core.js ${core}, manifest ${manifest.version}, dist/VERSION.txt ${dist}`);
 if (!manifest.key) guai.push("il manifest non ha la «key»: l'ID dell'estensione cambierebbe con la cartella");

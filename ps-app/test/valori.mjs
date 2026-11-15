@@ -4,15 +4,16 @@
  *   outOfRange — is this value outside its range? (never a red mark we
  *                cannot justify: when in doubt it must answer 0)
  *   sigla      — the short name a doctor reads
- * They are taken from src/core.js as they ship, not re-typed here.
+ * They are taken from src/core/ (leggiCore) as they ship, not re-typed here.
  *   node test/valori.mjs
  */
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { leggiCore } from "../tools/frammenti.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const core = readFileSync(join(root, "src/core.js"), "utf8");
+const core = leggiCore(root);
 const grab = (name) => {
   const i = core.indexOf(`function ${name}(`);
   if (i < 0) throw new Error("non trovata: " + name);

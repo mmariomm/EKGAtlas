@@ -13,6 +13,7 @@ import { pdfSemplice, RIGHE_ECG, RIGHE_ALTRO } from "./pdf-difficili.mjs";
 import { readFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { leggiCore } from "../tools/frammenti.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const CONTENT = join(root, "extension/content.js");
@@ -23,7 +24,7 @@ if (SHOTS) mkdirSync(SHOTS, { recursive: true });
 
 // Una funzione pura presa dal sorgente com'è (come in valori.mjs): una tabella
 // di casi non ha bisogno del browser.
-const SORGENTE = readFileSync(join(root, "src/core.js"), "utf8");
+const SORGENTE = leggiCore(root);
 // (`dove`: quello che la funzione prende dal resto del file, finto)
 function prendi(nome, dove = {}) {
   const i0 = SORGENTE.indexOf(`function ${nome}(`);

@@ -13,10 +13,11 @@ import { readFileSync, existsSync, statSync } from "node:fs";
 import { deflateSync } from "node:zlib";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { leggiCore } from "../tools/frammenti.mjs";
 import { pdfCifrato, pdfOggettiCompressi, pdfKerning, RIGHE_ESEMPIO, pdfSemplice, RIGHE_ECG, RIGHE_ALTRO } from "./pdf-difficili.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const core = readFileSync(join(root, "src/core.js"), "utf8");
+const core = leggiCore(root);
 const grab = (name) => {
   const i = core.indexOf(`function ${name}(`);
   if (i < 0) throw new Error("non trovata: " + name);

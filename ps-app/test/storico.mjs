@@ -12,14 +12,15 @@ import { chromium } from "playwright";
 import { readFileSync, existsSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { leggiCore } from "../tools/frammenti.mjs";
 import { paginaStorico, PAZIENTE, DATE } from "./fixtures/storico.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const core = readFileSync(join(root, "src/core.js"), "utf8");
+const core = leggiCore(root);
 // take the reader exactly as it ships, with the helpers it leans on
 const da = core.indexOf("  const STORICO_SX =");
 const a = core.indexOf("  // ------------------------------------------------------- RISULTATI MODEL");
-if (da < 0 || a < 0 || a < da) throw new Error("blocco STORICO non trovato in src/core.js");
+if (da < 0 || a < 0 || a < da) throw new Error("blocco STORICO non trovato in src/core/");
 // il lettore usa impronta() (definita altrove nel file): la portiamo con noi
 const grab = (name) => {
   const i = core.indexOf(`function ${name}(`);
@@ -40,7 +41,7 @@ const linea = (frammento) => {
 // le sigle, le sezioni e la provenienza: un blocco solo, com'è nel sorgente
 const sigleDa = core.indexOf("  const SIGLE = [");
 const sigleA = core.indexOf("  // ---- comparing draws");
-if (sigleDa < 0 || sigleA < sigleDa) throw new Error("blocco SIGLE non trovato in src/core.js");
+if (sigleDa < 0 || sigleA < sigleDa) throw new Error("blocco SIGLE non trovato in src/core/");
 const src = grab("impronta") + "\n" + linea("const valKey =") + "\n"
   + core.slice(sigleDa, sigleA) + "\n" + core.slice(da, a);
 

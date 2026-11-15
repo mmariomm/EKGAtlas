@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 /*
- * Build PS Assist: injects the verified catalog into src/core.js and emits
+ * Build PS Assist: stitches src/core/*.js together (in the order fixed by
+ * tools/frammenti.mjs, without their «//@» headers), injects the verified
+ * catalog and emits
  *   extension/content.js               (MV3 content script)
  *   bookmarklet/…bookmarklet.txt       (same core as a javascript: URL)
  *   extension/ponte-cripto.js          (copy of ../public/ponte/cripto.js)
@@ -15,9 +17,10 @@ import { readFileSync, writeFileSync, mkdirSync, copyFileSync, readdirSync } fro
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { origineDelPonte } from "../ponte/host.mjs";
+import { leggiCore } from "./frammenti.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const core = readFileSync(join(root, "src/core.js"), "utf8");
+const core = leggiCore(root);   // src/core/*.js, cuciti
 const catalog = JSON.parse(readFileSync(join(root, "src/catalog.json"), "utf8"));
 const dimissioni = JSON.parse(readFileSync(join(root, "src/dimissioni.json"), "utf8"));
 const eo = JSON.parse(readFileSync(join(root, "src/eo.json"), "utf8"));
@@ -27,7 +30,7 @@ const PLACEHOLDER_DIM = "/*__DIMISSIONI__*/ {}";
 const PLACEHOLDER_EO = "/*__EO__*/ {}";
 for (const [ph, cosa] of [[PLACEHOLDER, "catalog"], [PLACEHOLDER_DIM, "dimissioni"], [PLACEHOLDER_EO, "eo"]]) {
   if (!core.includes(ph)) {
-    console.error(`${cosa} placeholder not found in src/core.js`);
+    console.error(`${cosa} placeholder not found in src/core/`);
     process.exit(1);
   }
 }

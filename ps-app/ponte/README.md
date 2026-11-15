@@ -584,7 +584,7 @@ del service worker, mai una sveglia. Senza `chrome.offscreen` (o se il documento
 sta nel service worker come fino alla 3.86, e le schede del gestionale lo risvegliano ogni 30 secondi. I dati dei pazienti stanno dove stavano (il `localStorage` del gestionale,
 l'archivio dell'estensione) e il motore sta nel content script: il service worker passa ogni comando
 decifrato a **una** scheda viva del gestionale (prima quella davanti al medico; mai la scheda di un
-ordine o dei valori in sottofondo), che lo esegue col codice di sempre (`src/core.js`, sezione PONTE)
+ordine o dei valori in sottofondo), che lo esegue col codice di sempre (`src/core/75-ponte.js` e `76-ponte-gestionale.js`, sezione PONTE)
 e risponde. Nessuna scheda del gestionale: «Apri il gestionale sul PC». Gestionale sulla pagina
 d'accesso: «Gestionale da riaprire». Una scheda che tace oltre l'attesa può star lavorando ancora: per
 un ordine la risposta è «non si sa», mai un no, e l'ordine che nasce lo stesso arriva al telefono; un
@@ -650,7 +650,7 @@ volte. Nel registro degli errori (`segnaErrore`) solo il perché e i nomi dei ca
 
 **La Terapia.** La pagina Terapia del gestionale (`PsoEpisodioTerapieImposta`), sempre da una scheda
 di sottofondo (`ponte.terapie`, una sola) aperta sulla pagina del paziente, che preme il suo
-pulsante «Terapia» e fa il lavoro chiesto (`ponteTerapiaQui` in `core.js`). Una lettura sola si
+pulsante «Terapia» e fa il lavoro chiesto (`ponteTerapiaQui` in `src/core/76-ponte-gestionale.js`). Una lettura sola si
 chiude. Finita bene una ricerca (cioè col foglio «＋ Farmaco» aperto sul telefono; un PC di sola
 lettura non cerca), la scheda resta ferma sulla pagina Terapia (`fermo`) e il lavoro dopo la riusa
 (`ponteTerapiaLavoro`): una ricerca lì dov'è, nella tendina della pagina; un'aggiunta prima rilegge
@@ -680,7 +680,7 @@ bottone), o `ep`, un paziente noto al PC ancora al triage (`pazienti` lo segna
 `accetta`: la sua pagina è quella del triage e nessuna lista dell'ambulatorio l'ha visto dopo) — e
 il suo numero `rq` (`ponte.accetta.rq`: la fase e com'è andata). Una scheda del medico dice chi è
 e dà l'indirizzo della lista del triage; una scheda di sottofondo (`ponte.accette`, una alla volta;
-`ponteAccettaQui` in `core.js`) apre la lista, trova la riga — una sola: per episodio se il PC lo
+`ponteAccettaQui` in `src/core/76-ponte-gestionale.js`) apre la lista, trova la riga — una sola: per episodio se il PC lo
 conosce, se no per la stessa `chiaveTriage` (nome e arrivo); il suo nome, la sua
 freccia dello stesso episodio — e chiede `ponteAccettaInvio`: il service worker annota «inviato»
 **prima**, e solo allora la scheda clicca la freccia (`a[name="AccettaAMBU"]`). Dopo si guarda e

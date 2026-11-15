@@ -326,7 +326,7 @@ turno): un paziente mai aperto non ha cuore.
 tipo, sempre in quest'ordine e ognuno **tinto col colore della sua sezione negli Esiti** (Lab
 verde, ECG viola, Imaging magenta); dentro, tornati su chiesti, e se qualcosa aspetta da quanto aspetta il più vecchio: neutro, poi
 **ambra**, poi **rosso** (laboratorio 60′/120′, ECG 15′/30′, imaging 90′/180′: le soglie stanno
-in cima alla sezione «STATO ESAMI» di `src/core.js`). Il **●**, dentro il pezzetto del suo tipo,
+in cima alla sezione «STATO ESAMI», `src/core/26-stato-esami-vitali.js`). Il **●**, dentro il pezzetto del suo tipo,
 dice che è arrivato qualcosa da quando hai guardato i suoi Esiti — nel Lab **rosso** se fra i
 valori nuovi non ancora segnati «Letto» ce n'è uno fuori range. Un tipo mai chiesto non c'è; se
 non si sa niente non c'è niente (mai un finto 0/0). In un'area, corto: solo quello che aspetta, o
@@ -1753,7 +1753,7 @@ Windows), con **Stampa una pagina di prova** per ciascuna. Da lì:
   rosso, con **Ristampa** — anche quello che a stampa interrotta non è mai partito — e, a stampa
   finita, accanto un ✕ grigio, **«Visto: togli»**: un tocco, e quell'ordine non si mostra più —
   né le sue righe, né la striscia, né il «!1» —; niente si ristampa, e nel giornale degli ordini
-  (e al telefono) resta com'era. (I nomi stanno tutti in `NOMI_RIGA`, in `src/core.js`.)
+  (e al telefono) resta com'era. (I nomi stanno tutti in `NOMI_RIGA`, in `src/core/00-intestazione.js`.)
 - **Si dice solo quello che si sa.** L'aiutante, dopo aver mandato il foglio, guarda per qualche
   secondo la coda di stampa di Windows:
   - **«Stampato su Zebra ZD421»** (alla fine «Stampato · 6 esami confermati 14:32»): il foglio è
@@ -2845,7 +2845,7 @@ così non escono testi clinici.
 
 ```
 ps-app/
-├── src/core.js          ← unica fonte: motore + pannello (zero dipendenze)
+├── src/core/            ← unica fonte: motore + pannello (zero dipendenze), a frammenti cuciti dalla build (vedi sotto)
 ├── src/catalog.json     ← catalogo esami verificato (SSG: POC/Urgenze/Centrale/RX · OSG: POC/Centrale)
 ├── src/dimissioni.json  ← gli otto fogli di dimissione (testi rivisti, nessun dato di paziente)
 ├── test/fixtures/       ← la tabella dello storico e la pagina Terapia, ricostruite dalla loro forma (dati inventati)
@@ -2860,10 +2860,11 @@ ps-app/
 │                          ripetitore Node per test e prove (stessa logica di ../worker/ponte-logica.js);
 │                          l'app del telefono sta in ../public/ponte/
 ├── extension/registra*  ← ⋯ → Registrazioni: registra.js (service worker), registra-pagina.js (nella pagina,
-│                          anche sul SISS), registra-pill.js (la pill: regole CSS da core.js),
+│                          anche sul SISS), registra-pill.js (la pill: regole CSS da COLORS),
 │                          registra-db.js (il suo IndexedDB: grezzo, ultimi minuti, zip), registra-esporta.html/.js
 │                          (il documento fuori schermo che salva lo zip), registra-anonimo.js (anonimizza e controlla),
 │                          registra-sonda.js (nell'eViewer, nel mondo della pagina: canvas, WebSocket, blob — conta e basta)
+├── tools/frammenti.mjs  ← l'ordine dei frammenti di src/core/ e leggiCore() (il sorgente intero, cucito)
 ├── tools/build.mjs      ← genera extension/content.js, il bookmarklet, extension/ponte-cripto.js,
 │                          extension/ponte-host.js, extension/registra-pdf.js, registra-pill.js e registra-vocabolario.json
 ├── tools/icons.mjs      ← genera le icone PNG (niente binari a mano)
@@ -2881,6 +2882,26 @@ ps-app/
                             l'«ORA-20965» di un secondo erogatore nella stessa richiesta, il carrello perso a metà ordine,
                             il foglio «Stampa Richiesta Radiologia»)
 ```
+
+### Dove sta il codice (src/core/)
+
+Il pannello è **un file solo** quando gira (`extension/content.js`, un'unica IIFE), ma il sorgente sta
+in `src/core/`, a frammenti tagliati dove cambia il lavoro. Non sono moduli: `tools/build.mjs` li cuce
+uno dopo l'altro **nell'ordine scritto in `tools/frammenti.mjs`** (nessun glob: un frammento nuovo va
+messo nella lista, o la build si ferma), togliendo prima le righe `//@` in cima a ciascuno, che dicono
+cosa c'è dentro. Cuciti, sono byte per byte il vecchio `src/core.js`. Chi vuole il sorgente intero
+(build, editor, verifica-build, le prove che prendono una funzione così com'è) lo chiede a `leggiCore()`.
+
+| Frammenti | Cosa c'è |
+|---|---|
+| `00`–`05` | intestazione e regole di sicurezza, CONFIG (VERSION, risorse, pacchetti, segnaposto), utilità (fetch, windows-1252, form) |
+| `10`–`16` | modelli delle pagine: paziente, SIGLE, stampa, referti, storico del portale, risultati, esiti e carrello |
+| `20`–`32` | magazzino e cancello del motore, pazienti e aree, lista smart, stato esami e vitali, note e Da fare, catalogo, **il motore delle richieste (`30-motore.js`)**, pianta della stanza |
+| `40`–`41` | il CSS del pannello (COLORS), icone, ponte verso l'estensione, finestra |
+| `42`–`53` | la classe `Panel` (si apre in 42, si chiude in 53): selezione, ordine in sottofondo, viste, tabellone, stanza, esiti, Da fare, referti, schede del menu, EO, finestra e `bind()` |
+| `60`–`70` | la Conferma (anche nativa, in cornice), PDF → testo, la stampa (wizard, automatica, stazione) |
+| `75`–`76` | il Ponte verso l'iPhone, e il suo lavoro nella scheda dietro |
+| `80`–`90` | l'avvio (`boot`, tabellone a tutta pagina, pill su ogni pagina), la terapia, il portale clinico |
 
 Sviluppo:
 

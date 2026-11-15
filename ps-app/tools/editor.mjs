@@ -13,10 +13,11 @@
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { leggiCore } from "./frammenti.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const dim = JSON.parse(readFileSync(join(root, "src/dimissioni.json"), "utf8"));
-const version = /const VERSION = "([^"]+)"/.exec(readFileSync(join(root, "src/core.js"), "utf8"))[1];
+const version = /const VERSION = "([^"]+)"/.exec(leggiCore(root))[1];
 
 const page = `<!doctype html>
 <html lang="it"><head><meta charset="utf-8">
