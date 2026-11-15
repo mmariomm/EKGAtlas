@@ -1807,7 +1807,9 @@ async function ponteCartellaFine(id, esito) {
 // confermate è «Confermata»; se no «Incerto: controlla sul PC», mai di nuovo.
 const ponteTerapieMemo = async () => (await chrome.storage.session.get(PONTE_TERAPIA))[PONTE_TERAPIA] || {};
 const ponteTerapieTutte = async () => (await chrome.storage.session.get(PONTE_TERAPIE))[PONTE_TERAPIE] || {};
-const ponteTerapiaRqTutti = async () => (await chrome.storage.session.get(PONTE_TERAPIA_RQ))[PONTE_TERAPIA_RQ] || {};
+// (il registro dei numeri: archivio.js — la sua fila, 14 ore, i 60 più recenti)
+const ponteTerapiaRq = PsaArchivio.registro({ area: "session", chiave: PONTE_TERAPIA_RQ, n: 60, ms: PONTE_REGISTRO, ora: () => ponteOra() });
+const ponteTerapiaRqTutti = ponteTerapiaRq.tutti;
 const ponteTerapiaOpz = (o) => (o && typeof o.v === "string" && o.v && o.v.length <= 40 && typeof o.t === "string" && o.t.length <= 80 ? { v: o.v, t: o.t } : null);
 // una lettura della pagina: le righe confermate (quello che la pagina ne mostra) e le voci delle tendine, niente altro
 function ponteTerapiaPulita(l) {
@@ -1858,11 +1860,10 @@ async function ponteDimentica() {
   // l'episodio, la fase («inviato» prima del clic) e l'esito; quello di
   // un'accettazione riuscita porta anche il nome: quello va via (nella stessa fila
   // di chi scrive, così nessuna fase si perde).
-  ponteFilaAccettaRq = ponteFilaAccettaRq.then(async () => {
-    const m = await ponteAccettaRqTutti();
+  const accettaSenzaNomi = ponteAccettaRq.cambia((m) => {
     let tolti = 0;
     for (const x of Object.values(m)) if (x && x.esito && x.esito.dati && "nome" in x.esito.dati) { const { nome, ...resto } = x.esito.dati; x.esito = { ...x.esito, dati: resto }; tolti++; }
-    if (tolti) await chrome.storage.session.set({ [PONTE_ACCETTA_RQ]: m });
+    return tolti > 0;
   }).catch(() => {});
   pt.registro = [];
   // (e le risposte delle scritture tenute per un riavvio: resta solo com'è andata, così rimandate non si rifanno —
@@ -1872,20 +1873,10 @@ async function ponteDimentica() {
   const t = pt.sessione && pt.sessione.rqSalvo;
   // (riuscita e senza più i suoi dati: «guarda sul PC», mai un «fatto» vuoto)
   if (t) for (const x of Object.values(t)) if (x && x.r) x.r = x.r.ok ? ponteRqCorta(x.r) : { ok: false, ...(x.r.incerto ? { incerto: true } : {}) };
-  await Promise.all([ponteFilaCartella, ponteFilaTerapiaMemo, ponteFilaAccettaRq, ponteScriviStato(), ponteSessioneSalva()]);
+  await Promise.all([ponteFilaCartella, ponteFilaTerapiaMemo, accettaSenzaNomi, ponteScriviStato(), ponteSessioneSalva()]);
 }
 // (questa può fallire: chi annota «inviato» non deve credere di averlo fatto)
-let ponteFilaTerapiaRq = Promise.resolve();
-function ponteTerapiaRqScrivi(rq, x) {
-  const p = ponteFilaTerapiaRq.then(async () => {
-    const m = await ponteTerapiaRqTutti();
-    m[rq] = { ...(m[rq] || {}), ...x, ts: ponteOra() };
-    const tieni = Object.entries(m).filter(([, y]) => ponteOra() - y.ts < PONTE_REGISTRO).sort((a, b) => b[1].ts - a[1].ts).slice(0, 60);
-    await chrome.storage.session.set({ [PONTE_TERAPIA_RQ]: Object.fromEntries(tieni) });
-  });
-  ponteFilaTerapiaRq = p.catch(() => {});
-  return p;
-}
+const ponteTerapiaRqScrivi = (rq, x) => ponteTerapiaRq.scrivi(rq, x);
 // nel registro degli errori (e la registrazione automatica: registra.js): il perché, mai un nome
 function ponteTerapiaErrore(perche, grave = false) {
   if (typeof segnaErrore === "function") segnaErrore("terapia telefono", { perche: corto(perche, 60) || "?", ...(grave ? { grave: true } : {}) });
@@ -2135,20 +2126,11 @@ const PONTE_ACCETTA_MAX = 60e3;              // la lista, il clic, le pagine di 
 const PONTE_ACCETTA_RIPROVA = 8e3;           // una scheda che in tanto non ha ancora chiesto chi è: si riapre sulla lista, una volta
 const PONTE_ACCETTA_GRAVE = "Errore grave: la riga del triage sul PC è di un altro paziente";
 const ponteAccetteTutte = async () => (await chrome.storage.session.get(PONTE_ACCETTE))[PONTE_ACCETTE] || {};
-const ponteAccettaRqTutti = async () => (await chrome.storage.session.get(PONTE_ACCETTA_RQ))[PONTE_ACCETTA_RQ] || {};
+const ponteAccettaRq = PsaArchivio.registro({ area: "session", chiave: PONTE_ACCETTA_RQ, n: 60, ms: PONTE_REGISTRO, ora: () => ponteOra() });
+const ponteAccettaRqTutti = ponteAccettaRq.tutti;
 const ponteAccettaDopo = (id) => ["inviato", "verifica"].includes(pt.accette.get(id)?.fase);
 // (questa può fallire: chi annota «inviato» non deve credere di averlo fatto)
-let ponteFilaAccettaRq = Promise.resolve();
-function ponteAccettaRqScrivi(rq, x) {
-  const p = ponteFilaAccettaRq.then(async () => {
-    const m = await ponteAccettaRqTutti();
-    m[rq] = { ...(m[rq] || {}), ...x, ts: ponteOra() };
-    const tieni = Object.entries(m).filter(([, y]) => ponteOra() - y.ts < PONTE_REGISTRO).sort((a, b) => b[1].ts - a[1].ts).slice(0, 60);
-    await chrome.storage.session.set({ [PONTE_ACCETTA_RQ]: Object.fromEntries(tieni) });
-  });
-  ponteFilaAccettaRq = p.catch(() => {});
-  return p;
-}
+const ponteAccettaRqScrivi = (rq, x) => ponteAccettaRq.scrivi(rq, x);
 let ponteFilaAccette = Promise.resolve();
 const ponteAccetteCambia = (fn) => (ponteFilaAccette = ponteFilaAccette.then(async () => {
   const v = await ponteAccetteTutte();
@@ -2408,18 +2390,9 @@ async function ponteListaFine(id, esito) {
 // corso (quello del medico o di un ordine).
 const PONTE_AREA_RQ = "ponte.area.rq";        // storage.session: i passaggi d'area dal telefono, per numero: { fase, esito }
 const PONTE_AREA_MAX = 60e3;                  // Imposta, «Conferma» (al più due), la lista, la riga: la scheda ha 45 secondi (AREA_VAI_MS)
-const ponteAreaRqTutti = async () => (await chrome.storage.session.get(PONTE_AREA_RQ))[PONTE_AREA_RQ] || {};
-let ponteFilaAreaRq = Promise.resolve();
-function ponteAreaRqScrivi(rq, x) {
-  const p = ponteFilaAreaRq.then(async () => {
-    const m = await ponteAreaRqTutti();
-    m[rq] = { ...(m[rq] || {}), ...x, ts: ponteOra() };
-    const tieni = Object.entries(m).filter(([, y]) => ponteOra() - y.ts < PONTE_REGISTRO).sort((a, b) => b[1].ts - a[1].ts).slice(0, 60);
-    await chrome.storage.session.set({ [PONTE_AREA_RQ]: Object.fromEntries(tieni) });
-  });
-  ponteFilaAreaRq = p.catch(() => {});
-  return p;
-}
+const ponteAreaRq = PsaArchivio.registro({ area: "session", chiave: PONTE_AREA_RQ, n: 60, ms: PONTE_REGISTRO, ora: () => ponteOra() });
+const ponteAreaRqTutti = ponteAreaRq.tutti;
+const ponteAreaRqScrivi = (rq, x) => ponteAreaRq.scrivi(rq, x);
 function ponteAreaApri(d) {
   const a = ponteArgomenti(d), rq = typeof d.rq === "string" && /^[\w-]{8,40}$/.test(d.rq) ? d.rq : "";
   if (!rq || !a.ep) return Promise.resolve({ ok: false, errore: "Richiesta non valida: niente cambiato" });

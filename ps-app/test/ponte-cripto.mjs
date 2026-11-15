@@ -502,6 +502,7 @@ async function pcFinto({ sessione = {}, locale = {}, scheda = null, gest = null,
   vm.runInContext(EXT("presa.js"), ctx);
   vm.runInContext(EXT("fuori-sw.js"), ctx);
   vm.runInContext(EXT("cassa.js"), ctx);
+  vm.runInContext(EXT("archivio.js"), ctx);   // (i registri per numero e i nomi delle chiavi: bg.js lo carica prima del ponte)
   vm.runInContext(EXT("ponte-sw.js"), ctx);
   const ev = (codice) => vm.runInContext(codice, ctx);
   await ev("ponteCaricato");

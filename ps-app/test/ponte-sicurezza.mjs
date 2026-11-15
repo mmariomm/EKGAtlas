@@ -289,7 +289,7 @@ async function pcVero({ locale = {}, cassa = new Map(), sessione = {} } = {}) {
     ospite: async () => ({ ok: true }), stampaPdf: async () => ({ ok: true, esito: "stampato" }), ruotaDi: () => 0, STAMPA_PDF_MAX: 15e6,
   });
   vm.runInContext("const PONTE_HOST_FISSO = \"\";\nDate.now = ((v) => () => v() + globalThis.__salto)(Date.now);", ctx);
-  for (const f of ["ponte-cripto.js", "presa.js", "fuori-sw.js", "cassa.js", "ponte-sw.js", "stazione-sw.js"]) { const s = EXT(f); if (s) vm.runInContext(s, ctx, { filename: f }); }
+  for (const f of ["ponte-cripto.js", "presa.js", "fuori-sw.js", "cassa.js", "archivio.js", "ponte-sw.js", "archivio.js", "stazione-sw.js"]) { const s = EXT(f); if (s) vm.runInContext(s, ctx, { filename: f }); }
   locale["ponte.host"] = relay.url;
   const ev = (c) => vm.runInContext(c, ctx);
   await ev("ponteCaricato");

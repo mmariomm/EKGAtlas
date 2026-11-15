@@ -2694,7 +2694,8 @@ catch (e) { console.error("PS Assist: l'aggiornamento non parte", e); }
 // schede del gestionale. Sta in file suoi; vede le costanti qui sopra. Un
 // errore lì dentro spegne il ponte, non il resto: ordini, referti, stampe.
 // (le chiavi, sue e della stazione, nella cassa: l'IndexedDB del service worker, cassa.js)
-try { importScripts("cassa.js", "ponte-host.js", "ponte-cripto.js", "ponte-sw.js"); }
+// (i registri «per numero» del ponte: archivio.js, prima di lui)
+try { importScripts("cassa.js", "ponte-host.js", "ponte-cripto.js", "archivio.js", "ponte-sw.js"); }
 catch (e) { console.error("PS Assist: il ponte verso l'iPhone non parte", e); }
 // I pin «Da rivedere» (appunti-sw.js): cifrati sul ripetitore del ponte, con la chiave che dà l'iPhone.
 try { importScripts("appunti-sw.js"); }
