@@ -724,7 +724,7 @@ async function stzComando(s, d) {
   if (stz.sessione !== s) return;
   stz.presa.manda(await s.canale.cifra({ re: d.id, ...r }));
 }
-const stzRqValido = (rq) => (typeof rq === "string" && /^[\w-]{8,48}$/.test(rq) ? rq : "");
+const stzRqValido = (rq) => (typeof rq === "string" && /^[\w-]{8,48}$/.test(rq) && !(rq in Object.prototype) ? rq : "");
 let stzFilaRq = Promise.resolve();
 const stzRqTutti = async () => (await chrome.storage.local.get(STA.rq))[STA.rq] || {};
 // (questa può fallire, e chi stampa lo deve sapere: ma un guasto non ferma i fogli dopo)
