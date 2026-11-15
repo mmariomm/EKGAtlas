@@ -40,8 +40,8 @@
 // storage.local resta solo quello che non è segreto, con l'`id` della chiave.
 const STA = {
   // sul PC del medico
-  coppia: "stazione.coppia",     // storage.local: { id, nome, dal, via, codice, revoca?, staProva? } (la chiave: nella cassa)
-  pubblico: "stazione",          // storage.session: quello che le pagine del PC mostrano (niente chiavi)
+  coppia: PsaArchivio.CHIAVE.stazioneCoppia,      // "stazione.coppia", storage.local: { id, nome, dal, via, codice, revoca?, staProva? } (la chiave: nella cassa)
+  pubblico: PsaArchivio.CHIAVE.stazionePubblico,  // "stazione", storage.session: quello che le pagine del PC mostrano (niente chiavi)
   // sulla stazione
   qui: "stazione.qui",           // storage.local: { id, dal, codice, conferma, revoca? }: questo PC è una stazione (la chiave: nella cassa)
   nome: "stazione.nome",         // storage.local: il nome che il medico vede («Infermeria»)

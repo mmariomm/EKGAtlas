@@ -2694,7 +2694,8 @@ catch (e) { console.error("PS Assist: l'aggiornamento non parte", e); }
 // schede del gestionale. Sta in file suoi; vede le costanti qui sopra. Un
 // errore lì dentro spegne il ponte, non il resto: ordini, referti, stampe.
 // (le chiavi, sue e della stazione, nella cassa: l'IndexedDB del service worker, cassa.js)
-// (i registri «per numero» del ponte: archivio.js, prima di lui)
+// (i registri «per numero» del ponte e i nomi delle chiavi lette da più file: archivio.js, prima di lui —
+// caricato una seconda volta con la stazione, non si rifà)
 try { importScripts("cassa.js", "ponte-host.js", "ponte-cripto.js", "archivio.js", "ponte-sw.js"); }
 catch (e) { console.error("PS Assist: il ponte verso l'iPhone non parte", e); }
 // I pin «Da rivedere» (appunti-sw.js): cifrati sul ripetitore del ponte, con la chiave che dà l'iPhone.
@@ -2705,7 +2706,7 @@ catch (e) { console.error("PS Assist: i pin «Da rivedere» non partono", e); }
 // di un altro PC (l'infermeria), cifrati da un capo all'altro attraverso il
 // ripetitore del ponte; e lo stesso file fa da stazione, su quel PC. Un errore
 // lì spegne la stazione, non il resto.
-try { importScripts("stazione-sw.js"); }
+try { importScripts("archivio.js", "stazione-sw.js"); }
 catch (e) { console.error("PS Assist: la stazione di stampa non parte", e); }
 // La build «Stampa Infermeria» (solo stazione): il suo poco in più (infermeria-sw.js).
 if (self.PSA_SOLO_STAZIONE === true) {

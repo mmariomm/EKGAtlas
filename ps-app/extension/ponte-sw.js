@@ -73,8 +73,10 @@ const PONTE_CASSA = "ponte";
 const PONTE_VECCHIA_MAX = 24 * 3600e3;      // la chiave d'entrata di prima resta per tanto (la stanza la cambia alla prima entrata)
 const PONTE_PAUSA = "Sul PC è entrato un altro utente: riconferma sul PC";
 const PONTE_STATO = "ponte";                // storage.session: quello che le pagine mostrano
-const PONTE_ORDINI = "ponte.ordini";        // storage.session: gli ordini partiti dal telefono
-const PONTE_VALORI = "ponte.valori";        // storage.session: le schede aperte per «Aggiorna i valori»
+// (i nomi delle chiavi lette anche da altri file: archivio.js, PsaArchivio.CHIAVE)
+const PONTE_K = PsaArchivio.CHIAVE;
+const PONTE_ORDINI = PONTE_K.ponteOrdini;   // storage.session: gli ordini partiti dal telefono (bg.js la ripulisce)
+const PONTE_VALORI = PONTE_K.ponteValori;   // storage.session: le schede aperte per «Aggiorna i valori» (bg.js la legge)
 const PONTE_CARTELLE = "ponte.cartelle";    // storage.session: le schede aperte per salvare la cartella (solo { ep, ts })
 const PONTE_CARTELLA = "ponte.cartella";    // storage.session: l'ultima lettura della cartella di ogni paziente (memoria, mai disco)
 const PONTE_REGISTRO = 14 * 3600e3;         // quanto restano gli appunti e il registro dei referti (NON la durata dell'associazione: quella non scade)
@@ -971,10 +973,10 @@ function ponteVersione() {
   try { return String(chrome.runtime.getManifest().version || "").slice(0, 20); } catch { return ""; }
 }
 async function ponteStazioneDi() {
-  const c = (await chrome.storage.local.get("stazione.coppia").catch(() => ({})))["stazione.coppia"];
+  const c = (await chrome.storage.local.get(PONTE_K.stazioneCoppia).catch(() => ({})))[PONTE_K.stazioneCoppia];
   if (!c || c.revoca) return null;
   // (quello che stazione-sw.js scrive per le pagine del PC: `presente` = la stazione è nella sua stanza adesso)
-  const pub = (await chrome.storage.session.get("stazione").catch(() => ({}))).stazione;
+  const pub = (await chrome.storage.session.get(PONTE_K.stazionePubblico).catch(() => ({})))[PONTE_K.stazionePubblico];
   // l'ultimo foglio mandato alla stazione (un ordine, una ristampa, un PDF dal telefono), dal giornale delle stampe di bg.js
   let u = null;
   for (const r of await ordLeggi().catch(() => [])) {
@@ -1343,13 +1345,13 @@ function ponteStampaParole(rec) {
 // (`auto`: questo PC stampa da solo, con l'aiutante — se no il telefono spegne
 // Ristampa, 🖨️ e Stampa PDF verso il PC, e dice perché, prima del tocco)
 async function ponteStampaDove() {
-  const o = await chrome.storage.local.get(["stampa", "stazione.coppia"]);
-  const c = o["stazione.coppia"];
+  const o = await chrome.storage.local.get([PONTE_K.stampa, PONTE_K.stazioneCoppia]);
+  const c = o[PONTE_K.stazioneCoppia];
   const auto = !!(await stampaScelte().catch(() => null));
   // (la misura dell'etichetta libera: il telefono impagina l'anteprima su questa, il PC il PDF)
   const eti = typeof etichettaMisura === "function" ? { eti: await etichettaMisura().catch(() => null) } : {};
   if (!c || c.revoca) return { stazione: "", auto, ...eti };
-  return { stazione: corto(c.nome || "Infermeria", 40), dove: (o.stampa || {}).dove === "stazione" ? "stazione" : "qui", auto, ...eti };
+  return { stazione: corto(c.nome || "Infermeria", 40), dove: (o[PONTE_K.stampa] || {}).dove === "stazione" ? "stazione" : "qui", auto, ...eti };
 }
 
 // L'ordine. Il numero lo fa il telefono quando arma «Conferma» (oid): la
@@ -1453,7 +1455,7 @@ async function ponteSuScheda(cmd, args) {
   // Nessuna scheda risponde, e PS Assist si è aggiornato da poco (aggiorna.js): nelle schede aperte
   // prima c'è il pannello vecchio, che non parla più con l'estensione finché la pagina non si ricarica.
   if ([...no].every((x) => x === "assente")) {
-    const u = (await chrome.storage.local.get("aggiornaUltima").catch(() => ({}))).aggiornaUltima;
+    const u = (await chrome.storage.local.get(PONTE_K.aggiornaUltima).catch(() => ({})))[PONTE_K.aggiornaUltima];
     if (u && ponteOra() - (u.quando || 0) < PONTE_AGGIORNATA_MS) {
       return { ok: false, errore: ponteSolaLettura() ? "PS Assist si è aggiornato: sul PC ricarica la pagina del gestionale" : "PS Assist si è aggiornato: sul PC tocca «Ricarica la pagina»" };
     }
@@ -2560,12 +2562,12 @@ async function ponteAggiornaOrdini(memo, l) {
 // collegata o tolta): il telefono collegato lo sa subito — i suoi bottoni di
 // stampa si accendono o si spengono col perché (ponteStampaDove), senza riaprire.
 chrome.storage.onChanged.addListener((ch, area) => {
-  if (area !== "local" || !(ch.stampa || ch["stazione.coppia"]) || !pt.sessione) return;
+  if (area !== "local" || !(ch[PONTE_K.stampa] || ch[PONTE_K.stazioneCoppia]) || !pt.sessione) return;
   ponteStampaDove().then((stampa) => ponteInvia(pt.sessione, { evento: "stampa", stampa })).catch(() => {});
 });
 chrome.storage.onChanged.addListener((ch, area) => {
-  if (area !== "session" || !ch.ordini) return;
-  const l = Array.isArray(ch.ordini.newValue) ? ch.ordini.newValue : [];
+  if (area !== "session" || !ch[PONTE_K.ordini]) return;
+  const l = Array.isArray(ch[PONTE_K.ordini].newValue) ? ch[PONTE_K.ordini].newValue : [];
   ponteInFilaOrdini(async () => {
     const memo = await ponteOrdiniMemo();
     if (memo.some((m) => !m.fine) || ponteDelTelefono(memo, l).length) await ponteAggiornaOrdini(memo, l);
