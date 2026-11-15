@@ -112,6 +112,14 @@ export function encodeWin1252(str) {
   }
   return Buffer.from(bytes);
 }
+// The inverse, per the WHATWG windows-1252 table. Node's TextDecoder maps
+// 0x80-0x9F to the C1 controls (0x97 -> U+0097, not «—»), so it is not used.
+const W1252_INV = Object.fromEntries(Object.entries(W1252).map(([cp, b]) => [b, Number(cp)]));
+export function decodeWin1252(bytes) {
+  let s = "";
+  for (const b of bytes) s += String.fromCodePoint(W1252_INV[b] ?? b);
+  return s;
+}
 export function decodeFormBody(raw) {
   // raw: Buffer of an application/x-www-form-urlencoded body in win1252
   const out = {};
@@ -128,7 +136,7 @@ export function decodeFormBody(raw) {
         else if (c === "%" && /^[0-9a-fA-F]{2}$/.test(s.slice(i + 1, i + 3))) { bytes.push(parseInt(s.slice(i + 1, i + 3), 16)); i += 2; }
         else bytes.push(s.charCodeAt(i) & 0xFF);
       }
-      return new TextDecoder("windows-1252").decode(Buffer.from(bytes));
+      return decodeWin1252(bytes);
     };
     const key = dec(k);
     if (out[key] === undefined) out[key] = dec(v);

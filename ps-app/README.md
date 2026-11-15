@@ -1568,6 +1568,20 @@ che non può leggere niente: cifrato da un capo all'altro, nessun dato su nessun
   automatica e perché, il controllo — niente pazienti. **Scarica** lo porta sul telefono a pezzi, cifrato come
   tutto il resto (al più 100 MB), e lo tiene in memoria; poi **Condividi…** lo passa a iOS (all'app di Claude, a
   File), o, dove non si può, **Salva**. **Cancella** (due tocchi) lo toglie dal PC. Ogni comando nel registro del ponte.
+- **Da rivedere** (📌, sul PC e sul telefono): un paziente da rivedere fra qualche giorno, con una nota.
+  I pin stanno sul ripetitore del ponte (`/ponte/appunti`) **cifrati da un capo all'altro** (AES-256-GCM,
+  con una chiave che hanno solo il telefono e i PC del medico): Cloudflare vede un numero opaco e byte.
+  Dentro: cognome e nome, codice fiscale e data di nascita (quando il PC li sa), l'indirizzo della pagina,
+  la nota, la data. **Non scadono**: un pin si toglie col suo 🗑️, e **tutti**, anche lassù, con ⋯ → Da
+  rivedere → «Elimina tutti i pin…» (due tocchi). Sul PC ne resta una copia in chiaro per vederli senza
+  rete (`appunti.copia`): «Dimentica i dati…» chiede se toglierla. Dettagli: [`ponte/README.md`](ponte/README.md#i-pin-da-rivedere).
+- **Il registro dei PC** (⋯ → Dispositivi sul telefono): ogni PS Assist si annuncia al ripetitore
+  (`/ponte/registro`, un POST piccolo al più ogni 30 minuti di lavoro, mai a gestionale chiuso) con il
+  nome del PC, il tipo, la versione e tre impronte opache — **nessun paziente**, nessun utente, nessuna
+  chiave. Lo legge solo un telefono associato. Una riga non annunciata da 7 giorni se ne va; sulla pagina
+  ⋯ → iPhone, «Non comparire nella lista» la toglie. Dettagli: [`ponte/README.md`](ponte/README.md#il-registro-dei-pc).
+- **«Scollega»** (⋯ sul telefono) e il 🗑️ di un PC: due tocchi, come ogni cosa che non si disfa (servirà
+  un QR nuovo); un doppio tocco per sbaglio non vale.
 - **Prova la rete** (⋯ → iPhone): dal PC dell'ospedale, sulla presa vera del ponte, in pochi secondi
   dice se si raggiunge e quanto ci mette; «Tieni aperto 15 minuti» dice se e perché cade; il testo da
   copiare ha un blocco «Per l'IT». Si apre in una scheda sua: un quarto d'ora deve reggere i cambi di
@@ -2503,7 +2517,10 @@ nella tendina del gestionale») — poi **Prepara nel gestionale** (o Ctrl+Invio
    telefono col QR; allora il service worker
    tiene **una** presa (WSS, 443) verso **un** host, il Worker di EKG Atlas, e ci passano solo messaggi
    cifrati da un capo all'altro (AES-256-GCM, chiavi da HKDF, la chiave del QR mai a un server):
-   il sito li inoltra al telefono e non li può leggere né li tiene. Le richieste al gestionale
+   il sito li inoltra al telefono e non li può leggere né li tiene. Tiene, cifrati da un capo
+   all'altro e senza scadenza, solo i **pin «Da rivedere»** del medico (anche nomi di pazienti: il
+   sito vede byte; si tolgono con «Elimina tutti i pin…»), e un **registro dei PC** senza pazienti
+   (nome, tipo, versione, impronte opache; 7 giorni): [`ponte/README.md`](ponte/README.md#che-cosa-resta-su-cloudflare). Le richieste al gestionale
    restano quelle di sempre, fatte dalle sue schede. La chiave sta in `storage.local` finché
    non la revochi (nessuna scadenza), e vale per un telefono solo. Revoca, sessione che si
    chiude dopo 3 minuti senza comandi, la spia «iPhone collegato» e il Registro:
@@ -2874,7 +2891,11 @@ npm run build      # rigenera extension/content.js + bookmarklet (+ ponte-cripto
 npm run esempi     # rigenera esempi-gestionale/ dagli originali e verifica che sia pulito
 npm run dist       # al rilascio: build, fogli di dimissione, dist/ps-assist-latest.zip (con stampa/ e SumatraPDF)
 npm run verifica-build   # al rilascio, dopo dist e il commit: build fresca = build committata? zip e versioni giusti?
-npm test           # 108 scenari e2e + le prove con l'estensione vera (ordine in sottofondo, scheda nascosta, stampa automatica, ponte, registra, aggiorna, tabellone, terapia) + storico + il cancello privacy (+ l'aiutante di Windows, con PowerShell 7: PWSH=…)
+npm test           # = node tools/prove.mjs: prima la build, poi ogni prova una alla volta (con PSA_CHROMIUM_ARGS), senza
+                   # fermarsi alla prima rossa; alla fine una tabella con esito e tempi, uscita 1 se una è rossa.
+                   # «SALTATO» (uscita 77, es. stampa-host senza PowerShell) non conta come passata. Parole per
+                   # sceglierne alcune (node tools/prove.mjs ponte registro), --log DIR per un file per prova.
+                   # 108 scenari e2e + le prove con l'estensione vera (ordine in sottofondo, scheda nascosta, stampa automatica, ponte, registra, aggiorna, tabellone, terapia) + storico + il cancello privacy (+ l'aiutante di Windows, con PowerShell 7: PWSH=…)
                    # + l'ordine in una scheda DAVVERO nascosta: Chrome senza Playwright, CDP grezzo (test/ext-nascosta.mjs; serve openssl)
                    # + il Ponte: 120 controlli senza browser (cifratura, ripetitore, Worker) e 166 dal vivo (test/ext-ponte.mjs)
                    # + la stazione di stampa: due PC veri, il telefono che inquadra il suo QR, gli ordini (test/ext-stazione.mjs)

@@ -405,6 +405,11 @@ const jsonc = (t) => JSON.parse(t.replace(/^\s*\/\/.*$/gm, "").replace(/\s\/\/ .
 const cfg = jsonc(readFileSync(join(root, "../wrangler.jsonc"), "utf8"));
 check(cfg.main === "worker/index.js" && cfg.migrations.some((m) => (m.new_sqlite_classes || []).includes("PonteStanza"))
   && cfg.assets.not_found_handling === "single-page-application", "wrangler.jsonc: il Worker, il Durable Object su SQLite, il sito resta una SPA");
+// (tutti e tre su SQLite, ognuno col suo binding: senza, il registro e i pin rispondono 503)
+const legati = Object.fromEntries((cfg.durable_objects.bindings || []).map((b) => [b.name, b.class_name]));
+const suSqlite = (c) => cfg.migrations.some((m) => (m.new_sqlite_classes || []).includes(c));
+check(legati.PONTE === "PonteStanza" && legati.REGISTRO === "PonteRegistro" && legati.APPUNTI === "PonteAppunti" && ["PonteStanza", "PonteRegistro", "PonteAppunti"].every(suSqlite),
+  `wrangler.jsonc: PonteStanza, PonteRegistro e PonteAppunti legati e su SQLite (${JSON.stringify(legati)})`);
 check(String(cfg.compatibility_date) >= "2026-04-07", `compatibility_date ${cfg.compatibility_date}: dal 2026-04-07 Cloudflare risponde da sé alle chiusure (web_socket_auto_reply_to_close), e il Durable Object non manda ws.close()`);
 check(cfg.observability.logs && cfg.observability.logs.invocation_logs === false, "nessuna riga di log per richiesta: l'indirizzo della presa porta la stanza");
 check(JSON.stringify(cfg.assets.run_worker_first) === '["/ponte/*","/api/*"]',
@@ -1227,6 +1232,13 @@ await blocco(async () => {
     "si apre su visibilitychange, pageshow e online; si chiude su visibilitychange e pagehide");
   check(/e\.code === 4001\) return altrove\(\)/.test(app) && /e\.code === 4403\) return scollegato\(\)/.test(app) && /case "scollegato":[\s\S]{0,120}"Scollegato"/.test(app),
     "4001: nessun tentativo da sé; 4403: ci si ferma e si legge «Scollegato»");
+  // (3.90) un'azione principale per schermata: «Non raggiungo il ponte» e «PC non raggiungibile» Riprova (il QR quieto);
+  // «Scollegato» prima «Serve un QR nuovo» e Scansiona (Riprova quieto)
+  const pcScr = /case "pc":([\s\S]*?)case "altrove":/.exec(app)[1], scoll = /case "scollegato":([\s\S]*?)case "chiusa":/.exec(app)[1];
+  const principali = (t) => (t.match(/class="grande"|scansiona\(\)/g) || []).length;
+  check(principali(pcScr) === 2 && (pcScr.match(/scansiona\(true\)/g) || []).length === 2 && /"PC non raggiungibile"/.test(pcScr)
+    && principali(scoll) === 1 && /\$\{scansiona\(\)\}/.test(scoll) && /grande quiet" data-a="riapri"/.test(scoll) && /Serve un QR nuovo/.test(scoll),
+    "un bottone principale per schermata: Riprova su «Non raggiungo il ponte» e «PC non raggiungibile», «Scansiona il QR» su «Scollegato» (che dice prima «Serve un QR nuovo»)");
   check(/const BATTITO = 30e3, PONG = 15e3;/.test(app), "il battito: ogni 30 s, morta dopo 15 s senza «pong» (come nel progetto)");
 });
 
