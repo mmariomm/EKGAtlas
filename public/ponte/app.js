@@ -694,7 +694,7 @@
     if (d.evento === "stampa" && d.stampa && typeof d.stampa === "object") { if (S.catalogo) { S.catalogo = { ...S.catalogo, stampa: d.stampa }; render(); } return; }
     if (d.evento === "avviso") avviso(d.testo);
   }
-  const errDa = (d) => Object.assign(new Error(d.errore || "Non riuscito sul PC"), { dati: d.dati, incerto: !!d.incerto, dimesso: !!d.dimesso, scaduta: !!d.scaduto, smart: d.smart || null,
+  const errDa = (d) => Object.assign(new Error(d.errore || "Non riuscito sul PC"), { dati: d.dati, incerto: !!d.incerto, dimesso: !!d.dimesso, scaduta: !!d.scaduto, smart: d.smart || null, occupato: !!d.occupato,
     ricarica: Array.isArray(d.cambiati) || Array.isArray(d.chiusi) ? [...(d.cambiati || []), ...(d.chiusi || [])] : null });
   // Un comando al PC. `auto`: lo manda l'app da sé (non il medico), e non
   // tiene aperta la sessione — né qui né sul PC. `tempo`: quanto può volerci,
@@ -714,7 +714,21 @@
   // («areaApri» cambia l'area della sessione del gestionale: anche lei)
   const SCRITTURE_TEL = new Set(["ordina", "cartellaSalva", "terapiaAggiungi", "accetta", "areaApri", "registrazioneVia", "dfAggiungi", "dfSpunta", "dfTogli", "posto", "stazioneCollega",
     "etichetta"]);   // (l'etichetta libera stampa: un tocco del medico, mai su un PC di sola lettura)
+  // (3.90) Una lettura che arriva mentre il PC manda un ordine: il PC risponde subito «occupato» (ponte-sw.js,
+  // ponteOccupato) — la scheda del gestionale aspetterebbe la fine dell'ordine. Qui si tiene quello che c'è e si
+  // chiede di nuovo fra OCCUPATO_MS, finché l'ordine finisce (al più OCCUPATO_GIRI volte: un ordine dura al più
+  // 4 minuti); mai «il PC non risponde». Solo le letture: una scrittura (`o.rq`) non si rifà da sé.
+  const OCCUPATO_MS = 4e3, OCCUPATO_GIRI = 60;
   function chiedi(cmd, args = {}, tempo = TEMPO, auto = false, o = {}) {
+    if (o.rq) return chiediUna(cmd, args, tempo, auto, o);
+    const giro = (n) => chiediUna(cmd, args, tempo, auto, o).catch((e) => {
+      if (!e || !e.occupato || n >= OCCUPATO_GIRI) throw e;
+      if (n === 0 && !auto) avviso("Il PC sta mandando un ordine: riprovo");
+      return new Promise((ok) => setTimeout(ok, OCCUPATO_MS)).then(() => giro(n + 1));
+    });
+    return giro(0);
+  }
+  function chiediUna(cmd, args = {}, tempo = TEMPO, auto = false, o = {}) {
     return new Promise((si, no) => {
       if (solaLettura() && SCRITTURE_TEL.has(cmd)) { no(Object.assign(new Error("Sola lettura: su questo PC non si scrive"), { solaLettura: true })); return; }
       if (!S.canale) { no(new Error("Sessione chiusa")); return; }

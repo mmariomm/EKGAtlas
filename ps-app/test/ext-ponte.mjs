@@ -3581,6 +3581,40 @@ sezione("la rete del telefono: ascensore, 5G, presa tagliata, rete lenta");
 }
 
 // ===========================================================================
+sezione("una lettura dal telefono mentre il PC manda un ordine: «occupato» subito, e il telefono riprova da sé (3.90)");
+{
+  // (gli avvisi del telefono, tutti; e le risposte del PC alle letture)
+  await tel.evaluate(() => {
+    window.__avvisi = [];
+    new MutationObserver(() => { for (const a of document.querySelectorAll(".avviso, .statopc")) if (!window.__avvisi.includes(a.textContent)) window.__avvisi.push(a.textContent); })
+      .observe(document.getElementById("app"), { childList: true, subtree: true });
+  });
+  await sw.evaluate(() => {
+    self.__risposte = [];
+    const vera = self.__veraRisposta = ponteRisposta;
+    globalThis.ponteRisposta = async (s, d) => { const r = await vera(s, d); self.__risposte.push({ cmd: d.cmd, ok: !!(r && r.ok), occupato: !!(r && r.occupato) }); return r; };
+  });
+  const risposte = (cmd) => sw.evaluate((c) => self.__risposte.filter((x) => x.cmd === c), cmd);
+  // un ordine che lavora sul PC: il motore preso da una scheda (bg.js motoreScrivi) — le schede del gestionale aspettano
+  await sw.evaluate(() => motoreScrivi({ tab: -1, id: "prova-occupato", scade: Date.now() + 120e3 }));
+  await tocca(tel, '.paz[data-ep="999002"]');
+  const riprovo = await finche(async () => (await tel.evaluate(() => window.__avvisi)).some((x) => /Il PC sta mandando un ordine: riprovo/.test(x)), 10000);
+  await sospendi(9000);
+  const mentre = await risposte("esiti");
+  check(riprovo && mentre.length >= 2 && mentre.every((x) => x.occupato && !x.ok),
+    `gli esiti chiesti mentre un ordine lavora: il PC risponde subito «occupato» (${mentre.length} volte), il telefono dice «Il PC sta mandando un ordine: riprovo» e richiede`);
+  await sw.evaluate(() => motoreScrivi(null));
+  const dopo = await finche(async () => (await risposte("esiti")).some((x) => x.ok), 20000);
+  await sospendi(1500);
+  const falsi = (await tel.evaluate(() => window.__avvisi)).filter((x) => /non risponde|in tempo|Non so|ricarica|raggiungibile/i.test(x));
+  check(dopo && !falsi.length,
+    `finito l'ordine, gli esiti arrivano da soli; mai un falso «il PC non risponde» (${falsi.join(" | ") || "nessuno"})`);
+  await sw.evaluate(() => { globalThis.ponteRisposta = self.__veraRisposta; });
+  await tocca(tel, '[data-a="indietro"]');
+  await aspettaTel(tel, /ROSSI MARIO/, 20000);
+}
+
+// ===========================================================================
 sezione("il PC muto (addormentato, rete caduta senza dirlo): per il telefono è assente, l'ordine scade pulito (3.90)");
 {
   const { PONTE } = await import("../../worker/ponte-logica.js");   // (lo stesso modulo del ripetitore di questa prova)

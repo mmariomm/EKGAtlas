@@ -1055,6 +1055,17 @@ async function ponteComandoOra(s, d) {
   }
   return rispondi(await r);
 }
+// (3.90) Le letture che la scheda del gestionale fa leggendo pagine (fetchDoc): mentre un ordine lavora sul PC
+// aspetterebbero la sua fine (fino a 4 minuti), il service worker passerebbe alla scheda dopo, ferma uguale, e il
+// telefono avrebbe un falso «il gestionale non risponde». Il PC risponde subito «occupato», senza toccare
+// niente: il telefono tiene quello che ha e chiede di nuovo quando l'ordine finisce (app.js, chiedi).
+// Solo letture: una stampa (ristampa) non è qui — mai rifatta da sé.
+const PONTE_LETTURE_MOTORE = new Set(["esiti", "ristampe", "cartella"]);
+const PONTE_OCCUPATO = "Un ordine sta lavorando sul PC: i dati arrivano appena finisce";
+async function ponteOccupato() {
+  if (typeof motorePronto !== "undefined") await motorePronto;   // (bg.js: il motore di una scheda, riletto al risveglio)
+  return typeof motoreAlLavoro === "function" && motoreAlLavoro(await ordLeggi().catch(() => []));
+}
 async function ponteRisposta(s, d) {
   try {
     // La build mini: solo lettura e ristampa. Qualunque altro comando (le
@@ -1064,6 +1075,8 @@ async function ponteRisposta(s, d) {
     if (ponteSolaLettura() && !PONTE_LETTURA.has(d.cmd)) return { ok: false, errore: "Questo PC è in sola lettura", solaLettura: true };
     // un altro utente nel gestionale: niente letture e niente scritture, finché il medico non riconferma sul PC
     if (pt.coppia && pt.coppia.pausa && !PONTE_IN_PAUSA.has(d.cmd)) return { ok: false, errore: PONTE_PAUSA, pausa: true };
+    // (3.90) una lettura mentre un ordine lavora sul PC: «occupato», subito (ponteOccupato)
+    if (PONTE_LETTURE_MOTORE.has(d.cmd) && await ponteOccupato()) return { ok: false, occupato: true, errore: PONTE_OCCUPATO };
     if (d.cmd === "ciao") return { ok: true, dati: { inattivoMin: PONTE_INATTIVO / 60e3, ...(await ponteChiSono()) } };
     if (d.cmd === "rinnova") return await ponteRinnova(d);
     // il medico tocca o scorre il telefono (al più uno al minuto): conta come un comando — l'orologio dei 3
