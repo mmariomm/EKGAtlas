@@ -3534,6 +3534,17 @@ async function scenarioContinuity(browser) {
 async function scenarioReferti(browser) {
   const scen = "referti";
   const mock = conConsulenza(createMock({}));
+  // Chromium headless non ha il visore PDF: un PDF aperto in una scheda
+  // diventa un download e la scheda resta su about:blank (così falliva da
+  // sempre). Qui si prova che la scheda vada all'indirizzo del server e che il
+  // riclick la ritrovi, non il visore di Chrome: il referto arriva come pagina.
+  const h = mock.handle;
+  mock.handle = (req) => {
+    const out = h(req);
+    return /Sa4ViewerExtRedirect\.do\?.*REFERTO_ID=bbbb2222/.test(req.url) && /pdf/.test(out.headers["content-type"] || "")
+      ? { status: 200, headers: { "content-type": "text/html" }, body: Buffer.from("<!doctype html><title>referto</title>il PDF") }
+      : out;
+  };
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
   await page.waitForSelector("#psassist-host", { state: "attached" });
