@@ -136,6 +136,17 @@ await ctx.route("https://raw.githubusercontent.com/**", async (r) => {
 // qualunque altra cosa fuori: annotata (non deve essercene)
 const fuori = [];
 await ctx.route(/^https?:\/\/(?!smarthealth\.multimedica\.it|raw\.githubusercontent\.com)/, (r) => { fuori.push(r.request().url()); r.abort(); });
+// …tranne l'annuncio al registro dei PC (registro-sw.js): parte da sé quando l'estensione si installa o si
+// aggiorna, verso il ripetitore del ponte. Qui non esce (risposto in locale, mai la rete vera), e si guarda che
+// dica solo chi è il PC: mai un paziente. (Prima finiva fra le «fuori», e la prova era rossa anche sulla 3.89.)
+const annunci = [];
+await ctx.route(/^https:\/\/[^/]+\/ponte\/registro$/, (r) => {
+  const q = r.request();
+  let corpo = null;
+  try { corpo = JSON.parse(q.postData() || ""); } catch { /* resta null */ }
+  annunci.push({ metodo: q.method(), corpo });
+  return r.fulfill({ status: 204, body: "" });
+});
 
 let sw = ctx.serviceWorkers()[0];
 if (!sw) sw = await ctx.waitForEvent("serviceworker", { timeout: 15000 });
@@ -729,6 +740,10 @@ console.log("\naggiorna: ripristina.cmd — da sé, la versione tolta non torna 
 }
 
 check(fuori.length === 0, `nessun'altra richiesta fuori dall'ospedale (got ${fuori.slice(0, 3).join(", ")})`);
+const CHIAVI_ANNUNCIO = new Set(["v", "id", "nome", "kind", "ver", "tel", "sta", "stz", "via"]);
+check(annunci.every((a) => a.metodo === "POST" && a.corpo && a.corpo.v === 1 && Object.keys(a.corpo).every((k) => CHIAVI_ANNUNCIO.has(k))
+  && !/ROSSI|BIANCHI|RSSMRA|999001/i.test(JSON.stringify(a.corpo))),
+  `l'annuncio al registro dei PC (${annunci.length}, all'installazione e agli aggiornamenti): un POST che dice solo chi è il PC, mai un paziente (${JSON.stringify(annunci[0] && annunci[0].corpo)})`);
 await ctx.close();
 for (const d of [BASE, PROFILE, FINTO]) rmSync(d, { recursive: true, force: true });
 console.log(fail ? `\nAGGIORNA: ${fail} CHECK FALLITI\n` : "\nAGGIORNA: TUTTO OK\n");
