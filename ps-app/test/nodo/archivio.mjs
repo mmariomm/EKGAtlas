@@ -102,7 +102,8 @@ console.log("\narchivio.js: il registro");
   const R = sw.ev("R");
   check(await R.gia("riavvio1") === true && await R.segna("riavvio1") === false && (await R.leggi("riavvio1")).fase === "inviato",
     "dopo il riavvio del service worker: già visto, segna no, la fase «inviato» è lì");
-  // morto a metà di una scrittura: la scrittura non arriva — e chi aspettava non ha mai avuto il via
+  // morto a metà di una scrittura: Chrome l'ha già scritta (alla chiamata), si perde solo la risposta — il
+  // vecchio non ha mai avuto il via, e il nuovo la trova: segna no (niente fatto due volte)
   const disco2 = discoNuovo();
   const sw2 = conRegistro(disco2, { ritardo: (op) => (op === "set" ? 6 : 0) });
   let via = null;
@@ -111,8 +112,8 @@ console.log("\narchivio.js: il registro");
   const dopo = sw2.riavvia(); dopo.carica("extension/archivio.js");
   dopo.codice(`globalThis.R = PsaArchivio.registro({ area: "session", chiave: "prova.rq", n: 5, ms: ${10 * H}, ora: () => __ora });`);
   await giri(20);
-  check(via === null && await dopo.ev("R").segna("ameta001") === true,
-    "morto a metà della scrittura: il vecchio non ha mai avuto il via, il nuovo lo trova nuovo (niente fatto due volte)");
+  check(via === null && !!disco2.session["prova.rq"]?.ameta001 && await dopo.ev("R").segna("ameta001") === false,
+    "morto a metà della scrittura: il vecchio non ha mai avuto il via, la scrittura è sul disco, il nuovo segna no (niente fatto due volte)");
 }
 {
   // la memoria rotta: CHIUSI — gia «sì», segna «no», scrivi/tutti rifiutano, la fila va avanti

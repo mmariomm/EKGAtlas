@@ -5,7 +5,8 @@
  *   const sw = swNuovo(disco, opz);          // un service worker: un contesto vm col suo chrome
  *   sw.carica("extension/archivio.js");      // i file, come importScripts
  *   sw.riavvia()                             // il service worker muore: la memoria va, il disco resta;
- *                                            // le scritture ancora in volo del vecchio NON arrivano
+ *                                            // una set già chiamata dal vecchio è scritta (Chrome la scrive
+ *                                            // alla chiamata): si perde solo la risposta
  *
  * opz.ritardo(op, area, chiavi) → giri di setImmediate prima che get/set risponda (0: subito).
  *   Sono giri, non millisecondi: lo stesso ordine a ogni corsa (niente orologio vero).
@@ -43,10 +44,13 @@ export function swNuovo(disco, opz = {}) {
       },
       set: async (o) => {
         const copia = structuredClone(o);   // (com'è adesso: chrome lo serializza alla chiamata)
-        await prima("set", Object.keys(copia));
-        if (!sw.vivo) return new Promise(() => {});   // morto a metà: non arriva, e nessuno lo saprà
-        Object.assign(d(), copia);
-        disco.scritture++;
+        // Chrome la scrive alla chiamata (se la memoria la prende), comunque vada il service worker dopo:
+        // morto a metà, si perde solo la risposta
+        const rotta = !!(sw.opz.guasto && sw.opz.guasto("set", nome, Object.keys(copia)));
+        if (!rotta) { Object.assign(d(), copia); disco.scritture++; }
+        await giri(sw.opz.ritardo ? sw.opz.ritardo("set", nome, Object.keys(copia)) : 0);
+        if (rotta) throw new Error(`storage.${nome}.set: guasto finto`);
+        if (!sw.vivo) return new Promise(() => {});   // morto a metà: scritta, ma nessuna risposta
       },
       remove: async (k) => { await prima("remove", [].concat(k)); if (sw.vivo) for (const x of [].concat(k)) delete d()[x]; },
     };
