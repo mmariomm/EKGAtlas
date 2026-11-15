@@ -31,7 +31,7 @@ faccio, è **delegare a Sonnet i sotto-compiti** e tenermi pianificazione e veri
 ## Il progetto
 
 Il lavoro vero sta in `ps-app/` (PS Assist, estensione Chrome MV3 + bookmarklet per il
-Pronto Soccorso). Sorgente unico `ps-app/src/core.js` → `extension/content.js` e
+Pronto Soccorso). Sorgente unico `ps-app/src/core/` (frammenti, in ordine in `tools/frammenti.mjs`) → `extension/content.js` e
 bookmarklet via `npm run build`. `npm test` fa girare tutta la suite; `npm run dist`
 rifà lo zip. Le regole di sicurezza sono in `ps-app/README.md` — si leggono prima di
 toccare il motore delle richieste.
