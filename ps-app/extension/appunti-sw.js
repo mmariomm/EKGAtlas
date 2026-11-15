@@ -10,8 +10,8 @@
  *
  * Nessuna scadenza: un pin lo toglie solo il medico. Si legge quando il pannello lo chiede (all'avvio, e quando si
  * apre «Da rivedere»), mai a intervalli. Si scrive a ogni cambio, con il compare-and-set (cripto.js, appuntiFai).
- * Una copia in chiaro resta in storage.local (`appunti.copia`) per vederli senza rete; «Dimentica i dati…» chiede
- * se toglierla. La copia lassù se ne va solo con «Elimina tutti i pin».
+ * Una copia in chiaro resta in storage.local (`appunti.copia`) per vederli senza rete; «Dimentica i dati…» non la
+ * tocca (i pin non sono del turno). Tutte e due se ne vanno solo con «Elimina tutti…» di Da rivedere.
  * Nel registro: «pin aggiunto/tolto», mai il nome, la nota o il codice fiscale.
  */
 /* global pt, ponteStanza, PonteCripto, cassaLeggi, cassaScrivi, cassaTogli, ponteIndirizzo, ponteSuScheda, ponteNota, ponteScriviStato, sulGestionale, corto */
@@ -19,6 +19,7 @@
 const APP_CASSA = "appunti";            // la cassa: { hk, kw, iv, ct } (appuntiAvvolgi)
 const APP_COPIA = "appunti.copia";      // storage.local: { pin: { k → pin }, ts } — la copia per vederli senza rete
 const APP_NOTA_MAX = 500;
+const APP_ATTESA = 10e3;
 let appTenuta = null;
 const appChiave = async () => appTenuta || (appTenuta = await cassaLeggi(APP_CASSA).catch(() => null));
 async function appChiavi() {
@@ -28,8 +29,9 @@ async function appChiavi() {
 async function appPosta(corpo) {
   const host = await ponteIndirizzo();
   if (!host) throw new Error("ponte da configurare");
+  // (10 secondi al più: un proxy che tiene la connessione non lascia il medico ad aspettare — «Ponte non raggiungibile»)
   const r = await fetch(`${host}/ponte/appunti`, { method: "POST", body: corpo, headers: { "content-type": "text/plain" },
-    credentials: "omit", cache: "no-store", referrerPolicy: "no-referrer" });
+    credentials: "omit", cache: "no-store", referrerPolicy: "no-referrer", signal: AbortSignal.timeout(APP_ATTESA) });
   return { stato: r.status, json: await r.json().catch(() => ({})) };
 }
 const appCopia = async () => ((await chrome.storage.local.get(APP_COPIA))[APP_COPIA] || { pin: {} });
@@ -58,13 +60,13 @@ function appLeggi(forza = false) {
 async function appFai(cambia = null) {
   if (cambia) appLettura = null;
   const c = await appChiavi();
-  if (!c) return { ok: !cambia, senza: true, pin: (await appCopia()).pin, ...(cambia ? { errore: "Prima collega l'iPhone una volta: la chiave dei pin la dà lui" } : {}) };
+  if (!c) return { ok: !cambia, senza: true, pin: (await appCopia()).pin, ...(cambia ? { errore: "Prima collega l'iPhone una volta: la chiave di Da rivedere la dà lui" } : {}) };
   try {
     const r = await PonteCripto.appuntiFai(c, appPosta, cambia, appStanza());
     await appSalvaCopia(r.doc.pin);
     return { ok: true, pin: r.doc.pin };
   } catch (e) {
-    return { ok: !cambia, offline: true, stato: (e && e.stato) || 0, pin: (await appCopia()).pin, ...(cambia ? { errore: "Ponte non raggiungibile: pin non salvato" } : {}) };
+    return { ok: !cambia, offline: true, stato: (e && e.stato) || 0, pin: (await appCopia()).pin, ...(cambia ? { errore: "Ponte non raggiungibile: non salvato" } : {}) };
   }
 }
 // la stanza del ponte di questo PC e le sue chiavi d'entrata: la prima scrittura crea gli appunti lassù solo con la
@@ -122,7 +124,8 @@ async function appuntiPinDalTel(d) {
   return x.ok ? { ok: true } : x;
 }
 
-// Dalle pagine del gestionale (il pannello): { t: "appunti", azione: leggi|aggiungi|togli|elimina|dimentica }
+// Dalle pagine del gestionale (il pannello): { t: "appunti", azione: leggi|aggiungi|togli|elimina|copia }
+// («Dimentica i dati…» non tocca i pin: non sono del turno — se ne vanno solo con «Elimina tutti…» di Da rivedere)
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   if (!msg || msg.t !== "appunti" || !sender || !sender.tab || !sulGestionale(sender.url)) return;
   const fai = (p) => { p.then(reply, (e) => reply({ ok: false, errore: corto(e && e.message || e, 80) })); return true; };
@@ -130,8 +133,6 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   if (msg.azione === "aggiungi" && msg.pin && typeof msg.pin === "object") return fai(appAggiungi(msg.pin));
   if (msg.azione === "togli" && typeof msg.k === "string" && /^[\w-]{1,20}$/.test(msg.k)) return fai(appTogli(msg.k));
   if (msg.azione === "elimina") return fai(appElimina());
-  // «Dimentica i dati…»: la copia su questo PC (solo se il medico ha detto sì); quella lassù resta
-  if (msg.azione === "dimentica") return fai(chrome.storage.local.remove(APP_COPIA).then(() => ({ ok: true })));
   if (msg.azione === "copia") return fai(appCopia().then((c) => ({ ok: true, pin: c.pin || {} })));
 });
 /* exported appuntiDalTel, appuntiPinDalTel, cassaTogli */

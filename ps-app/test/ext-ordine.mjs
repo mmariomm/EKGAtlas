@@ -304,7 +304,7 @@ if (prova("un'occhiata alla scheda dell'ordine — l'esito arriva lo stesso nell
   await worker.waitForTimeout(300);
   await doc.bringToFront();
   const pronto = await striscia(doc, /2 esami in carrello.*Conferma dal gestionale/, 30000).catch(() => "");
-  check(/ROSSI MARIO/.test(pronto) && (await azione(doc)) === "apri il carrello",
+  check(/ROSSI MARIO/.test(pronto) && (await azione(doc)) === "Apri il carrello",
     `nella tua scheda: «✓ 2 esami in carrello · Conferma dal gestionale», e «apri il carrello» (got: ${pronto || "niente"})`);
   check(await aspettaChiusa(worker), "e la scheda dell'ordine, che non guardavi più, si chiude");
   check(conferme(A).length === 0, "niente confermato da solo");
@@ -461,7 +461,7 @@ if (prova("l'errore arriva nella tua scheda, col resoconto intero — e «Svuota
   const rossa = await striscia(doc, /ROSSI MARIO.*(non mandat|Errore)/, 40000).catch(() => "");
   check(/TROPONINA US: non mandato/.test(rossa) && /apri il carrello → Riprova/.test(rossa) && !/oggi si chiama/.test(rossa) && (await $panel(doc, ".pill.run.err").count()) === 1,
     `la striscia del medico è rossa e comincia da cosa fare: «TROPONINA US: non mandato · apri il carrello → Riprova» — il perché sta nel resoconto (got: ${rossa || "niente"})`);
-  check((await azione(doc)) === "apri il carrello", `e accanto «apri il carrello» (got: ${await azione(doc) || "niente"})`);
+  check((await azione(doc)) === "Apri il carrello", `e accanto «Apri il carrello» (got: ${await azione(doc) || "niente"})`);
   {
     const err = ((await sw.evaluate(() => chrome.storage.local.get("errori.v1")))["errori.v1"] || []).filter((x) => x.tipo === "ordine");
     check(err.some((x) => /oggi si chiama/.test(x.dati.motivo)) && !/ROSSI|MARIO/.test(JSON.stringify(err)),
@@ -536,7 +536,7 @@ if (prova("errore mentre guardi la scheda dell'ordine — resta, slegata, e lì 
   await w.waitForLoadState().catch(() => {});
   await w.bringToFront();
   const rossa = await striscia(w, /ROSSI MARIO.*(non mandat|Errore)/, 40000).catch(() => "");
-  check(/non mandato/.test(rossa) && (await azione(w)) === "apri il carrello",
+  check(/non mandato/.test(rossa) && (await azione(w)) === "Apri il carrello",
     `lì l'esito è quello di ogni scheda: la striscia rossa, con «apri il carrello» (got: ${rossa || "niente"})`);
   const dove = w.url();
   await w.waitForTimeout(1500);
@@ -637,7 +637,7 @@ if (prova("⏹ sulla striscia ferma l'ordine")) {
   await doc.waitForTimeout(3000);
   check(/ROSSI MARIO/.test(ferma2) && arrivati === n && n < 3 && conferme(A).length === 0,
     `l'ordine si ferma nella sua scheda: niente più invii, niente confermato (got: ${ferma2 || "niente"} · ${n} invii)`);
-  check((await azione(doc)) === "apri il carrello", "e «apri il carrello» per vedere dove si è fermato");
+  check((await azione(doc)) === "Apri il carrello", "e «Apri il carrello» per vedere dove si è fermato");
   check(await aspettaChiusa(worker, 8000), "la scheda dell'ordine, mai guardata, si chiude da sola");
   await $panel(doc, STOP).click();
   await doc.waitForTimeout(300);

@@ -682,6 +682,17 @@ if (prova("la Conferma ignorata ma tornata coi suoi tempi: da controllare, anche
   check(iPost >= 0 && carrelloDopo === 0, `e il carrello non si legge da solo per giudicarla (got ${carrelloDopo} letture dopo la Conferma)`);
   await sospendi(3000);
   check(conferme(A).length === 1, `una Conferma sola (got ${conferme(A).length})`);
+  // poi la pagina del paziente la elenca (il gestionale ci ha messo di più): l'ordine diventa
+  // «Confermata», con le etichette dalla sua pagina — mai dette stampate —, e niente si preme
+  A.state.richieste[rid].confirmed = true;
+  await suPagina(doc, A.patientUrl);
+  const questo = async () => (await ordini()).find((y) => y.id === rec.id);
+  await finche(async () => ((await questo())?.pubblico || {}).titolo === "Confermata", 20000);
+  const provato = await questo();
+  const pp = (provato && provato.pubblico) || {};
+  check(!!provato && pp.tono === "ok" && /etichette dalla sua pagina, Stampa/.test(pp.testo || "") && !/[Ss]tampat/.test(`${pp.testo} ${pp.dettaglio}`) && !provato.consegna,
+    `la pagina del paziente la elenca: «Da controllare» diventa «Confermata · etichette dalla sua pagina, Stampa», mai «stampate» (got ${JSON.stringify(provato && [provato.stato, pp.titolo, pp.testo, pp.dettaglio])})`);
+  check(conferme(A).length === 1, `e ancora una Conferma sola (got ${conferme(A).length})`);
   sess.dopoConferma = null; sess.confermaLenta = 0;
 }
 // Non più «da confermare», e la pagina del paziente la elenca: niente si
@@ -827,8 +838,10 @@ if (prova("«Conferma di nuovo» mentre la Conferma del medico è in volo: nient
   const rec = (await ordini()).find((x) => x.id === rec0.id);
   check(premuto && conferme(A).length === 2 && conferme(A).every((q) => q.params.RICHIESTA_ID === rid),
     `due Conferme: quella ignorata e quella del medico — «Conferma di nuovo» non preme (got ${conferme(A).length})`);
-  check(!(r2 && r2.ok) && !!rec && rec.vista?.tag === "Da controllare" && !rec.vista?.riconferma && !(await ordini()).some((x) => x.id === rec0.id + "c"),
-    `il tocco non parte, e il bottone se ne va: «Da controllare» (got ${JSON.stringify(r2 && r2.ok)} · ${JSON.stringify(rec && rec.vista)})`);
+  // («Da controllare»; o già «Confermata», se intanto una pagina del paziente l'ha elencata — la Conferma del medico è arrivata)
+  const detto = rec?.vista?.tag === "Da controllare" || (rec?.vista?.tag === "Confermata" && A.state.richieste[rid].confirmed && !/[Ss]tampat/.test(rec.vista.testo || ""));
+  check(!(r2 && r2.ok) && !!rec && detto && !rec.vista?.riconferma && !(await ordini()).some((x) => x.id === rec0.id + "c"),
+    `il tocco non parte, e il bottone se ne va: «Da controllare» (o «Confermata», provata) (got ${JSON.stringify(r2 && r2.ok)} · ${JSON.stringify(rec && rec.vista)})`);
   await doc2.close().catch(() => {});
   sess.dopoConferma = null; sess.confermaLenta = 0;
 }
@@ -1247,7 +1260,7 @@ if (prova("dal telefono, la radiologia senza risposta del service worker: da con
   const r = await sw.evaluate((e) => ponteSuScheda("ordina", { ep: "999001", quesito: "dolore toracico", esami: e, id: "telgambe0001" }), [`${RES.POC}:324`, `${RES.RX}:35`]);
   await sw.evaluate(() => { chrome.runtime.onMessage.removeListener(self.__senzaRx); chrome.runtime.onMessage.addListener(ordMessaggio); });
   const av = (r && r.dati && r.dati.avviso) || "";
-  check(!!r && r.ok && (r.dati.ordini || []).length === 1 && /^Da controllare: radiologia \(il service worker non risponde/.test(av) && !/Non partiti/.test(av),
+  check(!!r && r.ok && (r.dati.ordini || []).length === 1 && /^Da controllare: radiologia \(PS Assist non ha risposto/.test(av) && !/Non partiti/.test(av),
     `il laboratorio partito, la radiologia senza risposta: «Da controllare: radiologia (…)», mai «Non partiti» (got ${JSON.stringify(r && r.ok)} · «${av}»)`);
   await finche(async () => !(await ordini()).some((x) => ["coda", "avvio", "corre"].includes(x.stato)), 60000);
 }

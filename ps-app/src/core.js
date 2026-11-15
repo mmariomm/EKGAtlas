@@ -2709,7 +2709,7 @@
   // cinque minuti si rinuncia (false: non parte niente).
   const ATTESA_MOTORE_MAX = 5 * 60e3;
   async function prendiMotore(id, ui) {
-    if (!hasExt()) return true;
+    if (!hasExt()) return !extPersa();   // (il pannello di prima di un aggiornamento: mai un motore senza il service worker)
     const fine = Date.now() + ATTESA_MOTORE_MAX;
     let persi = 0, detto = false;
     try {
@@ -7227,6 +7227,11 @@
     .pinr + .pinr { border-top: 1px solid #EEF1F5; }
     .pinchi { font-weight: 600; font-size: 13px; } .pinnota { font-size: 12.5px; color: #35506B; white-space: pre-wrap; padding: 2px 0; }
     .pinaz { display: flex; gap: 4px; } .pinaz .stmi { width: auto; min-height: 26px; padding: 2px 8px; }
+    .pintesto { display: block; box-sizing: border-box; width: calc(100% - 16px); margin: 2px 8px 6px; min-height: 64px; resize: vertical;
+                font: inherit; font-size: 13px; padding: 6px 8px; border: 1px solid #C6D4E4; border-radius: 6px; color: var(--testo); }
+    .pintesto:focus { outline: 2px solid var(--azione); outline-offset: -1px; }
+    .stmi[aria-disabled="true"] { cursor: default; color: var(--neutro); }
+    .stmi.armato, .stmi.armato:hover { color: var(--err); font-weight: 700; background: var(--err-f); }
     .stmi:hover, .stmi:focus { outline: none; background: #EEF2F6; }
     .stmi:focus-visible { outline: 2px solid var(--azione); outline-offset: -2px; }
     .stmi.cur { cursor: default; color: var(--neutro); }
@@ -7392,6 +7397,13 @@
     store.set(IMPARATI, Object.fromEntries(Object.entries(tutti).filter(([k]) => vivi.has(k) || k in nuovi)));
   }
   const hasExt = () => { try { return !!(chrome && chrome.runtime && chrome.runtime.id); } catch { return false; } };
+  // L'estensione c'era quando la pagina è nata e adesso non c'è più (aggiornata
+  // da sé, o ricaricata, con la pagina aperta): questo pannello è quello di
+  // prima. Non fa più niente — niente ordini, niente stampe, niente «Dimentica»
+  // a metà: solo «Ricarica la pagina». (Il bookmarklet non l'ha mai avuta: lui
+  // lavora come sempre.)
+  const EXT_AVVIO = hasExt();
+  const extPersa = () => EXT_AVVIO && !hasExt();
   // (nessuna risposta = `perso`: il service worker non l'ha detta, non ha detto di no)
   const ask = (msg) => new Promise((res) => {
     try { chrome.runtime.sendMessage(msg, (r) => { void chrome.runtime.lastError; res(r || { ok: false, perso: true }); }); }
@@ -7500,6 +7512,17 @@
       this.host.id = "psassist-host";
       this.root = this.host.attachShadow({ mode: "open" });
       document.documentElement.appendChild(this.host);
+      // Dopo un aggiornamento questo pannello non tocca più niente: il primo
+      // tocco (o tasto) lo ferma prima di ogni suo gestore, e lo ridisegna.
+      if (EXT_AVVIO) {
+        const ferma = (e) => {
+          if (!extPersa() || e.target?.closest?.("#psscaduta")) return;
+          e.stopImmediatePropagation(); e.preventDefault();
+          this.render();
+        };
+        for (const t of ["click", "contextmenu", "keydown", "submit", "change"]) this.root.addEventListener(t, ferma, true);
+        const veglia = setInterval(() => { if (extPersa()) { clearInterval(veglia); this.render(); } }, 2000);
+      }
       // Aperto o ridotto, a ogni pagina. Il gestionale ricarica la pagina a
       // ogni clic: se ci è arrivato il medico dal gestionale voleva VEDERE il
       // gestionale, e la finestra all'85% glielo coprirebbe — si parte dalla
@@ -7975,7 +7998,7 @@
     async apriStampanti() {
       this.menuAperto = false;
       const r = await ask({ t: "apriImpostazioni" });
-      if (!(r && r.ok)) this.message = "Non riesco ad aprire le impostazioni: aprile da chrome://extensions → PS Assist → Dettagli → Opzioni.";
+      if (!(r && r.ok)) this.message = "Non riesco ad aprire le impostazioni: ricarica la pagina e riprova.";
       this.render();
     }
 
@@ -9019,7 +9042,7 @@
       }
       if (!r.no) {
         // il service worker non risponde: non si sa, e da qui non si manda niente
-        this.segnala({ tag: "Da controllare", testo: GUARDA, quesito: "il PC non ha risposto: non so se l'ordine è partito", tono: "warn", paziente: chi,
+        this.segnala({ tag: "Da controllare", testo: GUARDA, quesito: "PS Assist non ha risposto: non so se l'ordine è partito", tono: "warn", paziente: chi,
           onStop: () => this.segnala(null) });
         return false;
       }
@@ -9068,6 +9091,12 @@
         if (!mio || mio.worker == null) return this.slegaLavoro();   // (un ordine finito non ha più scheda)
         if (mio.ferma && !LAVORO.ferma) { LAVORO.ferma = true; this.fermaLavoro(); }
         return;
+      }
+      // un ordine «Da controllare» di questo paziente, e questa pagina che elenca la sua richiesta: la prova
+      const ep = this.pageType === "patient" ? findEpisodeId(document, location.href) : "";
+      if (ep && this.ordini.some((x) => String(x.ep) === ep && (x.pubblico || {}).titolo === "Da controllare" && !x.stampa)) {
+        const qui = Object.keys(printModel(document, location.href));
+        if (qui.length) ordiniProvati(ep, qui);
       }
       this.registriOrdini();
       this.stripOrdine();
@@ -9163,14 +9192,14 @@
       // scheda resta tua, anche per ordinare a un altro paziente. Le azioni
       // dell'ordine stanno nel bottoncino accanto.
       const alCarrello = fuoco.consegna || leggibilePagina(fuoco.listUrl)
-        ? { azione: { label: "apri il carrello", titolo: "Apre qui il carrello della richiesta, col resoconto (una lettura: niente si manda)", fn: () => this.ordineCarrello(fuoco) } } : {};
+        ? { azione: { label: "Apri il carrello", titolo: "Apre qui il carrello della richiesta, col resoconto (una lettura: niente si manda)", fn: () => this.ordineCarrello(fuoco) } } : {};
       const chiudi = g ? g.ids : [id];
       const letto = { onStop: () => { this.lettoOrdine(fuoco); Promise.all(chiudi.map((x) => ask({ t: "ordineChiudi", id: x }))).then((rs) => { const x = rs[rs.length - 1]; if (x && x.ordini) this.ordiniAggiorna(x.ordini); }); },
         titoloStop: "Chiudi l'avviso" };
       const ferma = { onStop: () => ask({ t: "ordineFerma", id }).then((x) => { if (x && x.tolto) ask({ t: "ordineControlla" }).then((y) => y && y.ordini && this.ordiniAggiorna(y.ordini)); }), ferma: true };
-      // (la Ristampa di un gesto: tutti i fogli di tutte le sue richieste, una volta ciascuno)
+      // (la Ristampa — o «Stampa qui» — di un gesto: di ogni sua richiesta i fogli non usciti, una volta ciascuno)
       const stampaQui = (label, titolo, qui = false) => ({ azione: { label, titolo, fn: () => ask({ t: "ordineStampaQui", id: g && g.conStampa ? g.conStampa.id : id,
-        ...(g && !qui ? { gruppo: g.ids } : {}), ...(qui ? { qui: true } : {}) }) } });
+        ...(g ? { gruppo: g.ids } : {}), ...(qui ? { qui: true } : {}) }) } });
       // (un ordine per la stazione di stampa: quello che lei non ha stampato si stampa qui con un tocco, mai da solo)
       const sta = fuoco.dest === "stazione", nonUsciti = (fuoco.fogli || []).some((f) => f.stato !== "stampato" && f.stato !== "mandato" && f.stato !== "tolto");
       const quiTitolo = `Stampa qui, su questo PC, i fogli che ${fuoco.destNome || "la stazione"} non ha stampato`;
@@ -9619,6 +9648,7 @@
 
     // ---- run starters ----
     startPlan(base) {
+      if (extPersa()) return this.render();
       if (this.runState === "running" || this._delegando || this._motoreAtteso) return;
       if (!base.dalLavoro) tabStore.set(PREMUTO, Date.now());
       // La scheda di un ordine che gira fa solo quell'ordine: un altro, da
@@ -9814,12 +9844,27 @@
       const off = this.root.getElementById("solaoff");
       if (off) off.addEventListener("click", (e) => { e.stopPropagation(); ask({ t: "ponteScollega" }); });
     }
+    // Il pannello di prima di un aggiornamento: una riga, e un tocco riapre la
+    // pagina con una GET dello stesso indirizzo (come la pillola di
+    // aggiornata.js: mai un «ricarica» che rimanderebbe un modulo).
+    renderScaduta() {
+      if (this.root.getElementById("psscaduta")) return;
+      const leggibile = leggibilePagina(location.href);
+      this.root.innerHTML = `<style>:host{all:initial}
+        button{position:fixed;right:12px;bottom:12px;z-index:2147483646;border:0;border-radius:999px;padding:9px 15px;
+          font:600 13px -apple-system,"Segoe UI",Roboto,Arial,sans-serif;color:#fff;background:#0B5CAD;box-shadow:0 6px 20px rgba(9,42,74,.25);cursor:pointer}
+        button:focus-visible{outline:2px solid #fff;outline-offset:-4px}</style>
+        <button type="button" id="psscaduta" title="Questo pannello è quello di prima dell'aggiornamento: non manda ordini e non stampa">${
+          leggibile ? "PS Assist aggiornata · Ricarica la pagina" : "PS Assist aggiornata · Riapri la pagina dal gestionale"}</button>`;
+      this.root.getElementById("psscaduta").addEventListener("click", () => { if (leggibile) location.assign(location.href.split("#")[0]); });
+    }
     render() {
       // La build mini non ha il pannello degli ordini: solo un distintivo
       // discreto «sola lettura», che diventa «iPhone collegato · Scollega»
       // quando una sessione del telefono è aperta (chi passa davanti al PC lo
       // sa e la può chiudere). Ogni chiamata a render() finisce qui.
       if (SOLA_LETTURA) return this.renderBadge();
+      if (extPersa()) return this.renderScaduta();
       const patientName = this.pageType === "vista" ? this.nomePaziente() : nomeInPagina();
       // (su una pagina «altra» l'episodio è quello che il pannello ha
       // riconosciuto, o nessuno: non il primo link che la pagina porta)
@@ -10008,7 +10053,7 @@
                       hasExt() ? `<button role="menuitem" id="tabmenu" title="Il tabellone dei Pazienti in una scheda sua: da fissare, o sul secondo schermo">${mico("tabellone")}Tabellone</button>` : "",
                       hasExt() ? `<button role="menuitem" id="pontemenu" title="Il pannello sull'iPhone: associa il telefono, prova la rete">${memo("📱")}iPhone</button>` : "",
                       hasExt() ? `<button role="menuitem" id="etimenu" title="Poche righe scritte da te, sull'etichettatrice di questo PC o in Infermeria: prima l'anteprima, poi Stampa">${mico("etichetta")}Etichetta</button>` : "",
-                      hasExt() && this.pinN() ? `<button role="menuitem" id="pinmenu" title="I pazienti col pin, da rivedere nei prossimi giorni (anche dall'iPhone)">${memo("📌")}Da rivedere (${this.pinN()})</button>` : "",
+                      hasExt() && this.pinN() ? `<button role="menuitem" id="pinmenu" title="I pazienti da rivedere nei prossimi giorni (anche dall'iPhone)">${memo("📌")}Da rivedere (${this.pinN()})</button>` : "",
                       `<button role="menuitem" id="consmenu" title="Al cambio turno: una riga per paziente — posto, nome, età, da quanto è in PS, cosa aspetta, cosa c'è da fare — da copiare o stampare">${mico("dafare")}Consegne</button>`,
                       // (quelle della stanza ci sono solo sulla mappa: in fondo, così le altre non cambiano posto)
                       inStanza && !this.stanzaEdit ? `<button role="menuitem" id="stmodmenu" title="Ritocca la stanza: aggiungi, sposta e rinomina letti, sedie e aree">${mico("matita")}Modifica la stanza</button>` : ""])}
@@ -11426,7 +11471,7 @@
       const df = T.lista.df;
       const coda = [qui ? [voce("tray", "Togli dal posto", "")] : [],
         [voce("dafare", "Da fare…", dfAperte(ep, df).length ? String(dfAperte(ep, df).length) : ""), voce("togli", "Togli dall'elenco", "")],
-        hasExt() && !TABELLONE && this.pins && !this._pinSenza ? [this.pinDi(ep) ? voce("pinvia", "Togli dal da rivedere", "📌") : voce("pin", "📌 Da rivedere…", "")] : []].filter((g) => g.length);
+        hasExt() && !TABELLONE && this.pins && !this._pinSenza ? [this.pinDi(ep) ? voce("pinvia", "Togli da Da rivedere", "📌") : voce("pin", "Aggiungi a Da rivedere…", "📌")] : []].filter((g) => g.length);
       const titolo = `Sposta ${i.breve + i.coda} in…`;
       wrap.insertAdjacentHTML("beforeend", `<div class="stmenu" role="menu" aria-label="${esc(titolo)}"><div class="stmenuhd" aria-hidden="true">${esc(titolo)}</div>${
         [...sezioni, ...coda.map((g) => g.join(""))].join('<div class="stmsep" role="separator"></div>')}</div>`);
@@ -11441,11 +11486,12 @@
       menu.addEventListener("click", (e) => {
         const b = e.target.closest(".stmi");
         if (!b || b.hasAttribute("aria-disabled")) return;
-        this.stanzaChiudiMenu();
         const dove = b.getAttribute("data-dove");
+        // (il menu resta, col «Salvo…», finché il ponte risponde)
+        if (dove === "pinvia") return void this.pinTogli(this.pinDi(ep), b);
+        this.stanzaChiudiMenu();
         if (dove === "togli") return this.stanzaArchivia(ep);
-        if (dove === "pin") return void this.pinMetti(ep);
-        if (dove === "pinvia") return void this.pinTogli(this.pinDi(ep));
+        if (dove === "pin") return void this.pinMetti(ep, anchor);
         // «Da fare…»: la lista sotto la sua icona (nella riga, o nel letto), o sotto il paziente
         if (dove === "dafare") return this.dfApri(ep, this.dfAncora(ep) || anchor);
         // il fuoco segue il paziente: nel posto nuovo, o sulla sua riga
@@ -11504,23 +11550,63 @@
       const d = pinDati(p);
       return Object.keys(this.pins).find((k) => { const x = this.pins[k]; return (d.cf && x.cf === d.cf) || (d.url && x.url === d.url) || (!d.cf && !x.cf && x.ep === ep && normNome(x.paziente) === normNome(d.paziente)); }) || "";
     }
-    async pinMetti(ep) {
-      const p = knownPatients().find((x) => x.ep === ep);
-      if (!p) return;
+    // «Aggiungi a Da rivedere…»: la nota in un riquadro del pannello, accanto al
+    // paziente (mai il prompt del browser, che blocca la pagina), al più 500
+    // caratteri. «Salva» dice «Salvo…» finché il ponte risponde (10 secondi al
+    // più: appunti-sw.js). Esc o un clic fuori: niente salvato.
+    pinMetti(ep, anchor = null) {
+      const p = knownPatients().find((x) => x.ep === ep), wrap = this.root.querySelector(".wrap");
+      if (!p || !wrap) return;
+      this.stanzaChiudiMenu();
       const k = this.pinDi(ep), prima = k ? this.pins[k].nota || "" : "";
-      const nota = window.prompt(`📌 Da rivedere: ${p.name}\nUna nota (facoltativa, al più 500 caratteri):`, prima);
-      if (nota === null) return;
-      const r = await ask({ t: "appunti", azione: "aggiungi", pin: { ...pinDati(p), nota: nota.slice(0, 500), quando: Date.now() } });
-      if (r && r.pin) this.pins = r.pin;
-      if (r && r.ok) this.log(`${now()}  pin aggiunto`);
-      else this.segnala({ tag: "Da rivedere", tono: "warn", testo: (r && r.errore) || "Pin non salvato" }, { ms: 6000 });
-      this.render();
+      wrap.insertAdjacentHTML("beforeend", `<div class="stmenu pinmenu" role="dialog" aria-label="Aggiungi a Da rivedere"><div class="stmenuhd">📌 ${
+        k ? "Da rivedere" : "Aggiungi a Da rivedere"}: ${esc(p.name)}</div><textarea class="pintesto" maxlength="${PIN_NOTA_MAX}" rows="3" placeholder="Una nota (facoltativa)" aria-label="Nota, al più ${PIN_NOTA_MAX} caratteri">${
+        esc(prima)}</textarea><div class="pinaz"><button type="button" class="stmi" data-pinsalva="1">Salva</button><button type="button" class="stmi" data-pinannulla="1">Annulla</button></div></div>`);
+      const menu = wrap.lastElementChild, ta = menu.querySelector("textarea"), wr = wrap.getBoundingClientRect(), ar = (anchor?.isConnected ? anchor : wrap).getBoundingClientRect();
+      menu.style.left = Math.max(8, Math.min(ar.left, innerWidth - menu.offsetWidth - 8)) - wr.left + "px";
+      menu.style.top = Math.max(8, Math.min(ar.bottom + 4, innerHeight - menu.offsetHeight - 8)) - wr.top + "px";
+      const salva = async () => {
+        const b = menu.querySelector("[data-pinsalva]");
+        if (b.hasAttribute("aria-disabled")) return;
+        b.setAttribute("aria-disabled", "true"); b.textContent = "Salvo…"; ta.readOnly = true;
+        const r = await ask({ t: "appunti", azione: "aggiungi", pin: { ...pinDati(p), nota: ta.value.slice(0, PIN_NOTA_MAX), quando: Date.now() } });
+        if (this._stanzaMenu?.menu === menu) this.stanzaChiudiMenu();
+        if (r && r.pin) this.pins = r.pin;
+        if (r && r.ok) this.log(`${now()}  pin aggiunto`);
+        else this.segnala({ tag: "Da rivedere", tono: "warn", testo: (r && r.errore) || "Non salvato" }, { ms: 6000 });
+        this.render();
+      };
+      menu.addEventListener("click", (e) => {
+        const b = e.target.closest("button");
+        if (!b) return;
+        e.stopPropagation();
+        if (b.dataset.pinsalva) salva();
+        else if (b.dataset.pinannulla) this.stanzaChiudiMenu(true);
+      });
+      menu.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); this.stanzaChiudiMenu(true); }
+        else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); salva(); }
+      });
+      const fuori = (e) => { if (!e.composedPath().includes(menu)) this.stanzaChiudiMenu(); };
+      window.addEventListener("pointerdown", fuori, true);
+      this._stanzaMenu = { menu, anchor, ep: "pinnota", fuori };
+      ta.focus();
+      ta.setSelectionRange(ta.value.length, ta.value.length);
     }
-    async pinTogli(k) {
+    // «Togli»: il bottone toccato dice «Salvo…» finché il ponte risponde, poi il riquadro si chiude
+    async pinTogli(k, bottone = null) {
+      const menu = bottone && this._stanzaMenu?.menu?.contains(bottone) ? this._stanzaMenu.menu : null;
+      if (bottone) {
+        if (bottone.hasAttribute("aria-disabled")) return;
+        bottone.setAttribute("aria-disabled", "true");
+        (bottone.querySelector("span") || bottone).textContent = "Salvo…";
+        bottone.querySelector("small")?.remove();
+      }
       const r = await ask({ t: "appunti", azione: "togli", k });
+      if (menu && this._stanzaMenu?.menu === menu) this.stanzaChiudiMenu();
       if (r && r.pin) this.pins = r.pin;
       if (r && r.ok) this.log(`${now()}  pin tolto`);
-      else this.segnala({ tag: "Da rivedere", tono: "warn", testo: (r && r.errore) || "Pin non tolto" }, { ms: 6000 });
+      else this.segnala({ tag: "Da rivedere", tono: "warn", testo: (r && r.errore) || "Non tolto" }, { ms: 6000 });
       this.render();
     }
     pinN() { return Object.keys(this.pins || {}).length; }
@@ -11537,8 +11623,8 @@
       const riga = ([k, x]) => `<div class="pinr${k === evid ? " evid" : ""}" data-pink="${esc(k)}"><div class="pinchi">${esc(this.pinTesto(x))}</div>${
         x.nota ? `<div class="pinnota">${esc(x.nota)}</div>` : ""}<div class="pinaz"><button type="button" class="stmi" data-pinapri="${esc(k)}">Apri</button><button type="button" class="stmi" data-pintogli="${esc(k)}">Togli</button></div></div>`;
       wrap.insertAdjacentHTML("beforeend", `<div class="stmenu pinmenu" role="dialog" aria-label="Da rivedere"><div class="stmenuhd">📌 Da rivedere (${l.length})</div>${
-        l.length ? l.map(riga).join("") : `<div class="pinnota">Nessun pin. Tasto destro su un paziente: «📌 Da rivedere…».</div>`}${
-        l.length ? `<div class="stmsep" role="separator"></div><button type="button" class="stmi" data-pinvia="1">Elimina tutti i pin…</button>` : ""}</div>`);
+        l.length ? l.map(riga).join("") : `<div class="pinnota">Nessun paziente da rivedere. Tasto destro su un paziente: «Aggiungi a Da rivedere…».</div>`}${
+        l.length ? `<div class="stmsep" role="separator"></div><button type="button" class="stmi" data-pinvia="1" title="Toglie tutti i pazienti da rivedere, anche dall'iPhone">Elimina tutti…</button>` : ""}</div>`);
       const menu = wrap.lastElementChild, wr = wrap.getBoundingClientRect(), ar = (anchor?.isConnected ? anchor : wrap).getBoundingClientRect();
       menu.style.left = Math.max(8, Math.min(ar.left, innerWidth - menu.offsetWidth - 8)) - wr.left + "px";
       menu.style.top = Math.max(8, Math.min(ar.bottom + 4, innerHeight - menu.offsetHeight - 8)) - wr.top + "px";
@@ -11546,10 +11632,11 @@
         const b = e.target.closest("button");
         if (!b) return;
         e.stopPropagation();
-        if (b.dataset.pintogli) { this.stanzaChiudiMenu(); this.pinTogli(b.dataset.pintogli); }
+        if (b.dataset.pintogli) this.pinTogli(b.dataset.pintogli, b);
         else if (b.dataset.pinapri) { this.stanzaChiudiMenu(); this.pinApri(b.dataset.pinapri); }
         else if (b.dataset.pinvia) {
-          if (b.dataset.sicuro !== "1") { b.dataset.sicuro = "1"; b.textContent = "Elimino tutti i pin, anche dall'iPhone? Tocca di nuovo"; return; }
+          const armato = () => { const a = this.armatoDi("pinvia"); b.textContent = a ? "Elimino tutti, anche dall'iPhone? Tocca di nuovo" : "Elimina tutti…"; b.classList.toggle("armato", a); };
+          if (!this.dueTocchi("pinvia", armato)) return;
           this.stanzaChiudiMenu();
           ask({ t: "appunti", azione: "elimina" }).then((r) => {
             if (r && r.ok) { this.pins = {}; this.log(`${now()}  pin eliminati tutti`); }
@@ -11592,8 +11679,8 @@
       const stessoNome = normNome(nome) === normNome(x.paziente || [x.cognome, x.nome].join(" "));
       const cfOk = !!x.cf && cf === x.cf, natoOk = !!x.nato && nato === x.nato;
       const contro = (!!x.cf && !!cf && cf !== x.cf) || (!!x.nato && !!nato && nato !== x.nato);
-      if (stessoNome && (cfOk || natoOk) && !contro) return this.segnala({ tag: "Da rivedere", tono: "ok", testo: `Riaperto dal pin: ${cfOk ? "codice fiscale" : "data di nascita"} e nome controllati` }, { ms: 5000 });
-      if (!stessoNome || contro) return this.segnala({ tag: "Errore grave", tono: "err", testo: "Errore grave: la pagina aperta dal pin è di un altro paziente — controlla chi è prima di fare qualunque cosa", ...this.avvisoVisto() });
+      if (stessoNome && (cfOk || natoOk) && !contro) return this.segnala({ tag: "Da rivedere", tono: "ok", testo: `Riaperto da Da rivedere: ${cfOk ? "codice fiscale" : "data di nascita"} e nome controllati` }, { ms: 5000 });
+      if (!stessoNome || contro) return this.segnala({ tag: "Errore grave", tono: "err", testo: "Errore grave: la pagina aperta da Da rivedere è di un altro paziente — controlla chi è prima di fare qualunque cosa", ...this.avvisoVisto() });
       this.pinNonRiesco(a.k, x);
     }
     // togliere dall'elenco e svuotarlo: niente conferme, si annulla
@@ -11939,16 +12026,15 @@
           </div>`;
       // la barra della Conferma c'è solo quando c'è qualcosa da confermare
       const barra = n || confermaOra;
-      // In fondo, quiete, le ristampe: due strade sole. «Ristampa»: l'ultimo
-      // ordine intero — tutte le sue richieste (una per erogatore), etichette,
-      // lista esami e RX, una volta ciascuno. «Altre…»: le richieste di prima,
-      // una per una (la sezione Stampa).
+      // In fondo, quieta, la ristampa: «Ristampa», l'ultimo ordine intero —
+      // tutte le sue richieste (una per erogatore), etichette, lista esami e
+      // RX, una volta ciascuno. Le richieste di prima, una per una: ⋯ →
+      // «Stampa le richieste» (una strada sola, non due).
       let ristampa = "";
       if (this.pageType === "patient" && this.epDiQuesta()) {
-        const map = stampePaziente(this.epDiQuesta()), ult = ultimeRichieste(map, this.epDiQuesta()), altre = richiesteStampabili(map).length > ult.length;
+        const map = stampePaziente(this.epDiQuesta()), ult = ultimeRichieste(map, this.epDiQuesta());
         if (ult.length) ristampa = `<div class="rpiede"><button class="lnk ultima" id="stultima" title="Etichette e fogli di nuovo, di tutto l'ultimo ordine: ${
-          esc(ult.map((r) => printMeta(map, r).when || "richiesta " + r).join(" e "))}${perChi ? ` — ${esc(perChi)}` : ""}">${icoIn("etichetta")}Ristampa</button>${
-          altre ? ` <button class="lnk ultima" id="stampaltre" title="Le richieste di prima, una per una">Altre…</button>` : ""}</div>`;
+          esc(ult.map((r) => printMeta(map, r).when || "richiesta " + r).join(" e "))}${perChi ? ` — ${esc(perChi)}` : ""} (le richieste di prima: ⋯ → Stampa le richieste)">${icoIn("etichetta")}Ristampa</button></div>`;
       }
       return `
         ${pendingSec}
@@ -13773,7 +13859,7 @@
       return `<div class="sec ponteno">
         <div class="banner warn"><b>Qui la pagina dell'iPhone non si apre nel pannello</b>${this._ponteNo === "scheda"
           ? "L'ho aperta in una scheda sua, accanto a questa." : this._ponteNo === "apro" ? "La apro in una scheda sua…"
-          : "E nemmeno in una scheda: ricarica la pagina (o l'estensione, da chrome://extensions) e riprova."}</div>
+          : "E nemmeno in una scheda: ricarica la pagina e riprova."}</div>
         <button class="btn ghost" id="ponteapri">Aprila in una scheda</button></div>`;
     }
     ponteCornice() {
@@ -13870,7 +13956,7 @@
       const testo = e.testo, n = (e.nAnt = (e.nAnt || 0) + 1);
       ask({ t: "etichettaAnteprima", testo }).then((r) => {
         if (this._eti !== e || e.nAnt !== n) return;
-        e.ant = r && (r.ok || r.errore) ? r : { ok: false, errore: "L'estensione non risponde: ricarica la pagina" };
+        e.ant = r && (r.ok || r.errore) ? r : { ok: false, errore: "PS Assist non risponde: ricarica la pagina" };
         const d = (r && r.dove) || {};
         if (!e.dest || (e.dest !== "stazione" && !d.qui) || (e.dest !== "qui" && !d.stazione)) e.dest = d.qui ? "qui" : d.stazione ? "stazione" : "";
         if (this.view !== "etichetta") return;
@@ -13989,7 +14075,7 @@
       if (!hasExt()) return registro;
       const L = this.regLista;
       if (!L) { this.caricaRegistrazioni(); return `<div class="sec"><div class="hint">Leggo le registrazioni…</div></div>${registro}`; }
-      if (!L.ok) return `<div class="sec"><div class="hint">Il registratore non risponde: ricarica l'estensione e riprova.</div></div>${registro}`;
+      if (!L.ok) return `<div class="sec"><div class="hint">PS Assist non risponde: ricarica la pagina e riprova.</div></div>${registro}`;
       const r = this.reg, occ = this.regOcc || "";
       const kb = (b) => (b >= 1048576 ? `${(b / 1048576).toFixed(1).replace(".", ",")} MB` : `${Math.max(1, Math.round(b / 1024))} KB`);
       const giorno = (ts) => { const d = new Date(ts); return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`; };
@@ -14001,7 +14087,7 @@
       } else if ((r && r.salvo && Date.now() - r.salvo < 5 * 60e3) || occ === "ferma" || occ === "salva") {
         testa = `<div class="tnow regnow"><span class="tlab">Salvo la registrazione: anonimizzo e controllo, qui su questo PC…</span></div>`;
       } else if (r && r.stato === "fermo") {
-        const armata = this.regArma && this.regArma.id === "grezzo";
+        const armata = this.armatoDi("reg:grezzo");
         testa = `<div class="regko" role="alert">Registrazione ferma ma non salvata${r.errore ? `: ${esc(r.errore)}` : ""}.</div>
           <button class="btn primary" id="regsalva">Salva di nuovo</button><button class="btn ghost${armata ? " armato" : ""}" id="regbutta">${armata ? "La cancello? Tocca di nuovo" : "Cancellala da questo PC"}</button>`;
       } else {
@@ -14010,7 +14096,7 @@
       }
       const auto = L.auto !== false;
       const righe = (L.lista || []).map((z) => {
-        const armata = this.regArma && this.regArma.id === z.id, aperta = this.regRiep === z.id, scarica = occ === "pc:" + z.id;
+        const armata = this.armatoDi("reg:" + z.id), aperta = this.regRiep === z.id, scarica = occ === "pc:" + z.id;
         return `<div class="regrow" data-zip="${esc(z.id)}">
           <div class="rr1"><b>${esc(giorno(z.quando || z.ts))} ${esc(hhmm(z.quando || z.ts))}</b><span class="regtag${z.motivo === "auto" ? " auto" : ""}">${z.motivo === "auto" ? "automatica" : "a mano"}</span><span class="rkb">${esc(kb(z.byte))}</span></div>
           ${z.motivo === "auto" && z.errore ? `<div class="rr2">${esc(z.errore)}</div>` : ""}
@@ -14028,7 +14114,7 @@
             : "Spenta: niente in memoria, niente salvato da solo."}${r && r.stato === "rec" ? " Mentre registri a mano, vale la tua." : ""}</div>
           <div class="lbl">Salvate (${(L.lista || []).length})${tot ? `<span class="ttot">${esc(kb(tot))}</span>` : ""}</div>
           ${righe ? `<div class="reglist">${righe}</div>` : `<div class="hint">Nessuna registrazione salvata.</div>`}
-          ${(L.lista || []).length > 1 ? `<button class="mini via${this.regArma && this.regArma.id === "*" ? " armato" : ""}" id="regtutte">${this.regArma && this.regArma.id === "*"
+          ${(L.lista || []).length > 1 ? `<button class="mini via${this.armatoDi("reg:*") ? " armato" : ""}" id="regtutte">${this.armatoDi("reg:*")
             ? `Cancello tutte le ${(L.lista || []).length} registrazioni? Tocca di nuovo` : "Cancella tutto"}</button>` : ""}
           <div class="hint">Al più 30 zip e 300 MB: oltre, se ne vanno i più vecchi, prima gli automatici. Ogni zip porta anche il Registro e le diagnosi di quei minuti.</div>
         </div>${registro}`;
@@ -14036,7 +14122,7 @@
     legaRegistrazioni($) {
       const dopo = (x, ok, no) => {
         this.regOcc = "";
-        this.message = x && x.ok ? ok(x) : (no || ((y) => `Non riuscito: ${(y && y.why) || "il registratore non risponde, ricarica l'estensione"}`))(x);
+        this.message = x && x.ok ? ok(x) : (no || ((y) => `Non riuscito: ${(y && y.why) || "PS Assist non risponde: ricarica la pagina"}`))(x);
         this.caricaRegistrazioni();
         this.render();
       };
@@ -14058,15 +14144,8 @@
         this.regOcc = "salva"; this.render();
         dopo(await ask({ t: "registraSalva" }), fatto);
       });
-      // due tocchi, per il grezzo non salvato e per ogni zip
-      const arma = (id) => {
-        if (this.regArma && this.regArma.id === id && Date.now() - this.regArma.ts < 5000) { this.regArma = null; return true; }
-        this.regArma = { id, ts: Date.now() };
-        clearTimeout(this._regArmaT);
-        this._regArmaT = setTimeout(() => { if (this.regArma && this.regArma.id === id) { this.regArma = null; if (this.view === "registrazioni") this.render(); } }, 5000);
-        this.render();
-        return false;
-      };
+      // due tocchi, per il grezzo non salvato e per ogni zip (dueTocchi)
+      const arma = (id) => this.dueTocchi("reg:" + id, () => { if (this.view === "registrazioni") this.render(); });
       $("#regbutta")?.addEventListener("click", async () => {
         if (!arma("grezzo")) return;
         dopo(await ask({ t: "registraButta" }), () => ({ ok: "Registrazione cancellata da questo PC." }));
@@ -14132,7 +14211,7 @@
       const leggi = () => Promise.all([chrome.storage.session.get("ricetta").catch(() => ({})), chrome.storage.local.get("ricetta.preferiti.v1").catch(() => ({}))]).then(([a, b]) => {
         const prima = JSON.stringify([this.ricJob, this.ricPref]);
         this.ricJob = a.ricetta || null;
-        // (i farmaci frequenti: i fissati 📌 nel tuo ordine, poi i più usati, poi i più recenti)
+        // (i preferiti: i fissati 📌 nel tuo ordine, poi i più usati, poi i più recenti)
         this.ricPref = (Array.isArray(b["ricetta.preferiti.v1"]) ? b["ricetta.preferiti.v1"] : []).filter((x) => x && x.codice)
           .sort((x, y) => (Number(x.pin) || 1e9) - (Number(y.pin) || 1e9) || (Number(y.n) || 1) - (Number(x.n) || 1) || (y.ts || 0) - (x.ts || 0));
         if (this.view === "ricetta" && JSON.stringify([this.ricJob, this.ricPref]) !== prima) this.ricRidisegna();
@@ -14173,7 +14252,7 @@
         ...(attiva ? { onStop: () => ask({ t: "ricettaFerma", id: j.id }), ferma: true, titoloStop: "Ferma la ricetta" }
           : { onStop: () => { this._ricLetta = j.id; this._firmaRic = ""; this.segnala(null); }, titoloStop: "Chiudi l'avviso" }),
         ...(j.worker != null && (davanti || j.stato === "compilo" || j.stato === "fermo")
-          ? { azione: { label: "apri il SISS", titolo: "Porta davanti la scheda del SISS", fn: () => ask({ t: "ricettaApri", id: j.id }) } } : {}) };
+          ? { azione: { label: "Apri il SISS", titolo: "Porta davanti la scheda del SISS", fn: () => ask({ t: "ricettaApri", id: j.id }) } } : {}) };
       const firma = JSON.stringify(s);
       if (mia && firma === this._firmaRic) return;
       this._firmaRic = firma;
@@ -14240,11 +14319,11 @@
         <div class="sec ricetta">
           ${!cf ? `<div class="ricstato warn">Codice fiscale non trovato nella pagina: la ricetta si fa a mano nel SISS.</div>` : ""}
           ${altro ? `<div class="ricstato warn">C'è una ricetta in preparazione nel SISS per un altro paziente: aspetta che finisca.</div>` : ""}
-          <div class="lbl">Farmaci frequenti</div>
+          <div class="lbl">Preferiti</div>
           <div class="ricpref">${pref || `<span class="ricnota">Ancora nessuno: si imparano da soli dalle ricette che arrivano in Anteprima nel SISS.</span>`}</div>
           <div class="lbl">Cerca nel SISS</div>
           <div class="riccerca">
-            <input id="ricq" type="search" autocomplete="off" spellcheck="false" value="${esc(r.q)}" placeholder="Farmaco: augmentin, tachipirina…" aria-label="Cerca un farmaco nel SISS">
+            <input id="ricq" type="search" autocomplete="off" spellcheck="false" value="${esc(r.q)}" placeholder="Farmaco o visita: augmentin, tachipirina…" aria-label="Cerca nel SISS: un farmaco, una visita, un esame">
             <button class="ricbtn" id="riccerca"${!cf || altro || (attiva && j.voci) ? " disabled" : ""}>Cerca</button>
           </div>
           ${attiva && j.cerca && !ris ? `<div class="ricnota">Cerco «${esc(j.cerca.q)}» nel SISS…</div>` : risHtml}
@@ -14331,7 +14410,7 @@
     ricNuovoId() { return "ric-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8); }
     async ricChiedi(msg) {
       const x = await ask(msg);
-      if (!(x && x.ok)) { this.message = (x && x.why) || "Il service worker non risponde: ricarica l'estensione e riprova."; this.ricRidisegna(); }
+      if (!(x && x.ok)) { this.message = (x && x.why) || "PS Assist non risponde: ricarica la pagina e riprova."; this.ricRidisegna(); }
       return x;
     }
     async ricCerca() {
@@ -14608,13 +14687,31 @@
       return "dialogo";
     }
 
-    resetArmato() { return Date.now() - (this._resetArmato || 0) < 6000; }
+    // Le azioni che non si annullano — «Dimentica i dati…», cancellare una
+    // registrazione, «Elimina tutti…» di Da rivedere — vogliono due tocchi: il
+    // primo arma il bottone (rosso, «… Tocca di nuovo»), il secondo entro
+    // DUE_TOCCHI_MS la fa. Passato il tempo il bottone torna com'era: mai un
+    // «Tocca di nuovo» che non vale più. Una regola, un tempo, per tutte.
+    // → true al secondo tocco; al primo `ridisegna` (anche quando scade) e false.
+    dueTocchi(k, ridisegna = () => this.render()) {
+      clearTimeout(this._armatoT);
+      if (this.armatoDi(k)) { this._armato = null; return true; }
+      const prima = this._armato;   // (un altro bottone armato: si disarma, e lo si vede)
+      this._armato = { k, ts: Date.now(), ridisegna };
+      this._armatoT = setTimeout(() => { if (this._armato && this._armato.k === k) { this._armato = null; ridisegna(); } }, DUE_TOCCHI_MS + 50);
+      if (prima && prima.k !== k) prima.ridisegna();
+      ridisegna();
+      return false;
+    }
+    armatoDi(k) { return !!this._armato && this._armato.k === k && Date.now() - this._armato.ts < DUE_TOCCHI_MS; }
+    resetArmato() { return this.armatoDi("dimentica"); }
     // Cancella subito qui (la memoria del browser e di questa scheda), con
     // «Annulla» per 8 secondi come ogni altra cosa che si può rimpiangere: la
     // fotografia di prima torna com'era. Le altre schede e l'estensione
     // (referti salvati, schede cliniche, ordini finiti, registrazioni) si
     // puliscono finiti gli 8 secondi — o subito, se la pagina se ne va prima.
     async resetDatiPazienti() {
+      if (extPersa()) return this.render();   // (qui pulirebbe la pagina sola, e direbbe «dimenticati»)
       if (this.giroQui()) return;
       this.fermaAuto();   // (il caricamento da solo non riscrive quello che si cancella)
       this._resetFuori?.();   // (un reset di prima ancora nei suoi 8 secondi: il suo resto adesso)
@@ -15153,28 +15250,16 @@
       $("#strazione")?.addEventListener("click", (e) => { this._fuocoId = null; e.currentTarget.blur(); this.striscia?.azione?.fn?.(); });
       $("#collapse")?.addEventListener("click", () => this.riduci());
       $("#menubtn")?.addEventListener("click", (e) => {
-        e.stopPropagation(); this.menuAperto = !this.menuAperto; this._resetArmato = 0; this.render();
+        e.stopPropagation(); this.menuAperto = !this.menuAperto; if (this.resetArmato()) this._armato = null; this.render();
       });
       // due tocchi: il primo chiede, il secondo (entro pochi secondi) cancella
       $("#resetpaz")?.addEventListener("click", (e) => {
         e.stopPropagation();
-        if (!this.resetArmato()) {
-          this._resetArmato = Date.now(); this.render();
-          // passati i 6 secondi il bottone torna «Dimentica i dati…»: mai un «Tocca di nuovo» che non vale più
-          clearTimeout(this._resetArmatoT);
-          this._resetArmatoT = setTimeout(() => { if (this.menuAperto && !this.resetArmato()) this.render(); }, 6050);
-          return;
-        }
-        clearTimeout(this._resetArmatoT);
-        this._resetArmato = 0; this.menuAperto = false;
+        // (passati i secondi il bottone torna «Dimentica i dati…»: dueTocchi)
+        if (!this.dueTocchi("dimentica", () => { if (this.menuAperto) this.render(); })) return;
+        this.menuAperto = false;
+        // (i pin «Da rivedere» non sono del turno: restano — se ne vanno solo con ⋯ → Da rivedere → «Elimina tutti…»)
         this.resetDatiPazienti();
-        // i pin «Da rivedere» non sono del turno: si chiede se togliere anche la loro copia su questo PC (quella
-        // cifrata sul ponte resta: se ne va solo con «Elimina tutti i pin»)
-        if (hasExt() && this.pinN() && window.confirm(`Togliere da questo PC anche la copia dei ${this.pinN()} pin «Da rivedere»?\n(La copia cifrata per l'iPhone resta: si elimina solo da ⋯ → Da rivedere → Elimina tutti i pin.)`)) {
-          ask({ t: "appunti", azione: "dimentica" }).catch(() => {});
-          this.pins = {};
-          this.render();
-        }
       });
       $("#pinmenu")?.addEventListener("click", (e) => { e.stopPropagation(); this.menuAperto = false; this.render(); this.pinMenu(this.root.querySelector("#menubtn")); });
       this.root.querySelectorAll("[data-rz]").forEach((el) => this.attachResize(el));
@@ -15664,7 +15749,6 @@
         avviaStampa(jobs, { panel: this, title: `Richiesta ${rid}.`, ep: this.episodeId, paziente: this.nomePaziente(), url: location.href,
           jobId: `rist-${rid}-${Math.floor(Date.now() / 2000)}` });
       }));
-      $("#stampaltre")?.addEventListener("click", () => this.setView("stampa"));
       $("#stultima")?.addEventListener("click", () => {
         const map = stampePaziente(this.epDiQuesta());
         const ids = ultimeRichieste(map, this.epDiQuesta());
@@ -15791,7 +15875,17 @@
     const stampabili = printModel(doc, url);
     const restano = tutte.filter((x) => !(x.ep === ep && stampabili[x.rid]));
     if (restano.length !== (store.get(DA_CONFERMARE, []) || []).length) store.set(DA_CONFERMARE, restano);
+    // (provate qui: un ordine rimasto «Da controllare» per una di loro diventa «Confermata» — ordineProvata)
+    const provate = tutte.filter((x) => x.ep === ep && stampabili[x.rid]).map((x) => x.rid);
+    if (provate.length) ordiniProvati(ep, provate);
     return restano.filter((x) => x.ep === ep).sort((a, b) => a.ts - b.ts);
+  }
+  // Le richieste che la pagina del paziente elenca confermate, al service
+  // worker: gli ordini di quell'episodio rimasti «Da controllare» per una di
+  // loro diventano «Confermata» (le etichette dalla sua pagina: mai dette stampate).
+  function ordiniProvati(ep, rids) {
+    if (!hasExt() || !ep || !rids.length) return;
+    ask({ t: "ordineProvata", ep: String(ep), rids: rids.map(String).slice(0, 50) }).catch(() => {});
   }
 
   // ------------------------------------------------ le Conferme premute
@@ -15840,7 +15934,7 @@
   // il perché in una riga ancora sotto, o nel Registro. Mai una parola nuova.
   const GUARDA = "guarda le sue richieste: se c'è, Ristampa; se no, apri il carrello";
   const RIFARLA = "Se c'è già fra le sue richieste: Ristampa. Se no: premi tu Conferma";
-  const RIFARLA_PERCHE = "La Conferma è partita, ma la pagina del paziente non mostra questa richiesta. Prima di rifarla guarda le sue richieste (in fondo alle Richieste, «Altre…»): se c'è, Ristampa; se no, controlla il carrello e premi tu Conferma.";
+  const RIFARLA_PERCHE = "La Conferma è partita, ma la pagina del paziente non mostra questa richiesta. Prima di rifarla guarda le sue richieste (⋯ → Stampa le richieste): se c'è, Ristampa; se no, controlla il carrello e premi tu Conferma.";
   // `carrello`: l'elenco della richiesta. SOLO se la Conferma è tornata
   // sospettamente in fretta (`subito`: prima di CONFERMA_SOSPETTA — l'unica
   // Conferma ignorata delle registrazioni è tornata in 0,2 s, le vere in
@@ -16439,6 +16533,7 @@
   // Senza stampa automatica: il PDF in una cornice invisibile e il dialogo di
   // stampa del browser (la stampante la sceglie il medico).
   function stampaDialogoPdf(buf) {
+    if (extPersa()) return;
     const url = URL.createObjectURL(new Blob([new Uint8Array(buf).slice()], { type: "application/pdf" }));
     const f = document.createElement("iframe");
     f.id = "psassist-stampa-referto";
@@ -16922,6 +17017,7 @@
   // (tre volte, con lo stesso numero: una stampa sola): non si sa se è
   // partita — mai un dialogo da solo, lo si dice con «Ristampa».
   async function stampaAltrove(jobs, opzioni) {
+    if (extPersa()) return false;
     const { panel = null, tag = "Stampa", fine = null, title = "" } = opzioni;
     const ep = String(opzioni.ep || "");
     const job = { id: opzioni.jobId || `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`, ep, tag,
@@ -16951,7 +17047,7 @@
   function openPrintWizard(jobs, opzioni = {}) {
     const { title = "", onClose, panel = null, tag = "Stampa", fine = null } = opzioni;
     let ultimaDiag = null;   // l'ultimo visualizzatore non catturato, per «⧉ Diagnosi»
-    if (wizardOpen || !jobs.length) return;
+    if (wizardOpen || !jobs.length || extPersa()) return;
     wizardOpen = true;
     // di chi sono i fogli: «ROSSI M. · 68 M», sulla striscia e in testa alla scheda
     const { chi, testata } = (() => {
@@ -17470,6 +17566,7 @@
 
   const PARZIALI = new Set();   // (le richieste già segnalate «meno esami in pagina», una volta per pagina)
   function maybeAutoPrint(panel, doc = document, url = location.href) {
+    if (extPersa()) return false;
     const flag = tabStore.get("print.v1", null);
     if (!flag) return false;
     // never print for an episode other than the page in front of the user
@@ -17681,7 +17778,7 @@
   // elenca (printModel: solo numeri, indirizzi della pagina, nomi di esami —
   // mai il paziente) vanno qui, in memoria condivisa, per episodio. Il
   // pannello di una pagina caricata PRIMA usa quelli (stampePaziente): la
-  // Ristampa e le «Altre…» vedono la richiesta nuova. Il resto (lo stato degli
+  // Ristampa e «Stampa le richieste» vedono la richiesta nuova. Il resto (lo stato degli
   // esami, ✓ e ⏳) lo scrive già leggiStatoPagina. L'«Aggiorna» del gestionale
   // resta quello che è: un tocco tuo.
   const STAMPE_FRESCHE = "stampeFresche.v1", STAMPE_FRESCHE_TTL = 12 * 3600e3;
@@ -17920,6 +18017,8 @@
   // se il PC lo sa, la data di nascita se si legge (sulla sua pagina), l'impronta della nascita (per ritrovarlo
   // nelle liste) e l'indirizzo della sua pagina come il gestionale l'ha dato (ponteUrlPaziente: mai costruito).
   // L'episodio resta solo un indizio. Tutto questo viaggia e sta cifrato: il ripetitore non lo vede.
+  const PIN_NOTA_MAX = 500;   // (come APP_NOTA_MAX, appunti-sw.js)
+  const DUE_TOCCHI_MS = 6000;   // il secondo tocco di un'azione che non si annulla (dueTocchi)
   const PIN_PART = /^(DE|DI|DA|DEL|DELLA|DELLE|DELLO|DEI|DEGLI|DAL|DALLA|DALLE|DALLO|LA|LO|LE|LI|SAN|SANTA|SANTO|VAN|VON|MC|MAC|DOS|DAS|DU)$/i;
   function pinDati(p) {
     const w = String(p.name || "").trim().split(/\s+/).filter(Boolean);
@@ -18038,6 +18137,7 @@
   // (come un referto senza stampa automatica): niente scheda nuova, la
   // stampante la sceglie il medico. `no`: il dialogo non si è aperto.
   function stampaTesto(titolo, righe, no = () => {}) {
+    if (extPersa()) return;
     document.getElementById("psassist-stampa-testo")?.remove();
     const f = document.createElement("iframe");
     f.id = "psassist-stampa-testo";
@@ -18303,7 +18403,7 @@
       let r = { ok: false };
       for (let k = 0; k < 3 && !r.ok && !r.no; k++) r = await ask({ t: "ordineNuovo", job });
       if (!r.ok) {
-        const perche = r.no ? r.why || "rifiutato" : "il service worker non risponde: guarda il carrello prima di rifarlo";
+        const perche = r.no ? r.why || "rifiutato" : "PS Assist non ha risposto: guarda il carrello prima di rifarlo";
         // (senza risposta non si sa se è partito: «Da controllare» sul telefono, come sul PC — mai «niente inviato»)
         if (!ordini.length) return { ok: false, ...(r.no ? {} : { incerto: true }), errore: r.no ? `Ordine non partito: ${perche}` : `Non so se l'ordine è partito: ${perche}` };
         // (una gamba dopo la prima senza risposta: anche lei può essere partita — da controllare; quelle dopo, non mandate)
