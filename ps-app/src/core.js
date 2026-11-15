@@ -7171,6 +7171,10 @@
     .pinr + .pinr { border-top: 1px solid #EEF1F5; }
     .pinchi { font-weight: 600; font-size: 13px; } .pinnota { font-size: 12.5px; color: #35506B; white-space: pre-wrap; padding: 2px 0; }
     .pinaz { display: flex; gap: 4px; } .pinaz .stmi { width: auto; min-height: 26px; padding: 2px 8px; }
+    .pintesto { display: block; box-sizing: border-box; width: calc(100% - 16px); margin: 2px 8px 6px; min-height: 64px; resize: vertical;
+                font: inherit; font-size: 13px; padding: 6px 8px; border: 1px solid #C6D4E4; border-radius: 6px; color: var(--testo); }
+    .pintesto:focus { outline: 2px solid var(--azione); outline-offset: -1px; }
+    .stmi[aria-disabled="true"] { cursor: default; color: var(--neutro); }
     .stmi:hover, .stmi:focus { outline: none; background: #EEF2F6; }
     .stmi:focus-visible { outline: 2px solid var(--azione); outline-offset: -2px; }
     .stmi.cur { cursor: default; color: var(--neutro); }
@@ -9992,7 +9996,7 @@
                       hasExt() ? `<button role="menuitem" id="tabmenu" title="Il tabellone dei Pazienti in una scheda sua: da fissare, o sul secondo schermo">${mico("tabellone")}Tabellone</button>` : "",
                       hasExt() ? `<button role="menuitem" id="pontemenu" title="Il pannello sull'iPhone: associa il telefono, prova la rete">${memo("📱")}iPhone</button>` : "",
                       hasExt() ? `<button role="menuitem" id="etimenu" title="Poche righe scritte da te, sull'etichettatrice di questo PC o in Infermeria: prima l'anteprima, poi Stampa">${mico("etichetta")}Etichetta</button>` : "",
-                      hasExt() && this.pinN() ? `<button role="menuitem" id="pinmenu" title="I pazienti col pin, da rivedere nei prossimi giorni (anche dall'iPhone)">${memo("📌")}Da rivedere (${this.pinN()})</button>` : "",
+                      hasExt() && this.pinN() ? `<button role="menuitem" id="pinmenu" title="I pazienti da rivedere nei prossimi giorni (anche dall'iPhone)">${memo("📌")}Da rivedere (${this.pinN()})</button>` : "",
                       `<button role="menuitem" id="consmenu" title="Al cambio turno: una riga per paziente — posto, nome, età, da quanto è in PS, cosa aspetta, cosa c'è da fare — da copiare o stampare">${mico("dafare")}Consegne</button>`,
                       // (quelle della stanza ci sono solo sulla mappa: in fondo, così le altre non cambiano posto)
                       inStanza && !this.stanzaEdit ? `<button role="menuitem" id="stmodmenu" title="Ritocca la stanza: aggiungi, sposta e rinomina letti, sedie e aree">${mico("matita")}Modifica la stanza</button>` : ""])}
@@ -11410,7 +11414,7 @@
       const df = T.lista.df;
       const coda = [qui ? [voce("tray", "Togli dal posto", "")] : [],
         [voce("dafare", "Da fare…", dfAperte(ep, df).length ? String(dfAperte(ep, df).length) : ""), voce("togli", "Togli dall'elenco", "")],
-        hasExt() && !TABELLONE && this.pins && !this._pinSenza ? [this.pinDi(ep) ? voce("pinvia", "Togli dal da rivedere", "📌") : voce("pin", "📌 Da rivedere…", "")] : []].filter((g) => g.length);
+        hasExt() && !TABELLONE && this.pins && !this._pinSenza ? [this.pinDi(ep) ? voce("pinvia", "Togli da Da rivedere", "📌") : voce("pin", "Aggiungi a Da rivedere…", "📌")] : []].filter((g) => g.length);
       const titolo = `Sposta ${i.breve + i.coda} in…`;
       wrap.insertAdjacentHTML("beforeend", `<div class="stmenu" role="menu" aria-label="${esc(titolo)}"><div class="stmenuhd" aria-hidden="true">${esc(titolo)}</div>${
         [...sezioni, ...coda.map((g) => g.join(""))].join('<div class="stmsep" role="separator"></div>')}</div>`);
@@ -11425,11 +11429,12 @@
       menu.addEventListener("click", (e) => {
         const b = e.target.closest(".stmi");
         if (!b || b.hasAttribute("aria-disabled")) return;
-        this.stanzaChiudiMenu();
         const dove = b.getAttribute("data-dove");
+        // (il menu resta, col «Salvo…», finché il ponte risponde)
+        if (dove === "pinvia") return void this.pinTogli(this.pinDi(ep), b);
+        this.stanzaChiudiMenu();
         if (dove === "togli") return this.stanzaArchivia(ep);
-        if (dove === "pin") return void this.pinMetti(ep);
-        if (dove === "pinvia") return void this.pinTogli(this.pinDi(ep));
+        if (dove === "pin") return void this.pinMetti(ep, anchor);
         // «Da fare…»: la lista sotto la sua icona (nella riga, o nel letto), o sotto il paziente
         if (dove === "dafare") return this.dfApri(ep, this.dfAncora(ep) || anchor);
         // il fuoco segue il paziente: nel posto nuovo, o sulla sua riga
@@ -11488,23 +11493,63 @@
       const d = pinDati(p);
       return Object.keys(this.pins).find((k) => { const x = this.pins[k]; return (d.cf && x.cf === d.cf) || (d.url && x.url === d.url) || (!d.cf && !x.cf && x.ep === ep && normNome(x.paziente) === normNome(d.paziente)); }) || "";
     }
-    async pinMetti(ep) {
-      const p = knownPatients().find((x) => x.ep === ep);
-      if (!p) return;
+    // «Aggiungi a Da rivedere…»: la nota in un riquadro del pannello, accanto al
+    // paziente (mai il prompt del browser, che blocca la pagina), al più 500
+    // caratteri. «Salva» dice «Salvo…» finché il ponte risponde (10 secondi al
+    // più: appunti-sw.js). Esc o un clic fuori: niente salvato.
+    pinMetti(ep, anchor = null) {
+      const p = knownPatients().find((x) => x.ep === ep), wrap = this.root.querySelector(".wrap");
+      if (!p || !wrap) return;
+      this.stanzaChiudiMenu();
       const k = this.pinDi(ep), prima = k ? this.pins[k].nota || "" : "";
-      const nota = window.prompt(`📌 Da rivedere: ${p.name}\nUna nota (facoltativa, al più 500 caratteri):`, prima);
-      if (nota === null) return;
-      const r = await ask({ t: "appunti", azione: "aggiungi", pin: { ...pinDati(p), nota: nota.slice(0, 500), quando: Date.now() } });
-      if (r && r.pin) this.pins = r.pin;
-      if (r && r.ok) this.log(`${now()}  pin aggiunto`);
-      else this.segnala({ tag: "Da rivedere", tono: "warn", testo: (r && r.errore) || "Pin non salvato" }, { ms: 6000 });
-      this.render();
+      wrap.insertAdjacentHTML("beforeend", `<div class="stmenu pinmenu" role="dialog" aria-label="Aggiungi a Da rivedere"><div class="stmenuhd">📌 ${
+        k ? "Da rivedere" : "Aggiungi a Da rivedere"}: ${esc(p.name)}</div><textarea class="pintesto" maxlength="${PIN_NOTA_MAX}" rows="3" placeholder="Una nota (facoltativa)" aria-label="Nota, al più ${PIN_NOTA_MAX} caratteri">${
+        esc(prima)}</textarea><div class="pinaz"><button type="button" class="stmi" data-pinsalva="1">Salva</button><button type="button" class="stmi" data-pinannulla="1">Annulla</button></div></div>`);
+      const menu = wrap.lastElementChild, ta = menu.querySelector("textarea"), wr = wrap.getBoundingClientRect(), ar = (anchor?.isConnected ? anchor : wrap).getBoundingClientRect();
+      menu.style.left = Math.max(8, Math.min(ar.left, innerWidth - menu.offsetWidth - 8)) - wr.left + "px";
+      menu.style.top = Math.max(8, Math.min(ar.bottom + 4, innerHeight - menu.offsetHeight - 8)) - wr.top + "px";
+      const salva = async () => {
+        const b = menu.querySelector("[data-pinsalva]");
+        if (b.hasAttribute("aria-disabled")) return;
+        b.setAttribute("aria-disabled", "true"); b.textContent = "Salvo…"; ta.readOnly = true;
+        const r = await ask({ t: "appunti", azione: "aggiungi", pin: { ...pinDati(p), nota: ta.value.slice(0, PIN_NOTA_MAX), quando: Date.now() } });
+        if (this._stanzaMenu?.menu === menu) this.stanzaChiudiMenu();
+        if (r && r.pin) this.pins = r.pin;
+        if (r && r.ok) this.log(`${now()}  pin aggiunto`);
+        else this.segnala({ tag: "Da rivedere", tono: "warn", testo: (r && r.errore) || "Non salvato" }, { ms: 6000 });
+        this.render();
+      };
+      menu.addEventListener("click", (e) => {
+        const b = e.target.closest("button");
+        if (!b) return;
+        e.stopPropagation();
+        if (b.dataset.pinsalva) salva();
+        else if (b.dataset.pinannulla) this.stanzaChiudiMenu(true);
+      });
+      menu.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); this.stanzaChiudiMenu(true); }
+        else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); salva(); }
+      });
+      const fuori = (e) => { if (!e.composedPath().includes(menu)) this.stanzaChiudiMenu(); };
+      window.addEventListener("pointerdown", fuori, true);
+      this._stanzaMenu = { menu, anchor, ep: "pinnota", fuori };
+      ta.focus();
+      ta.setSelectionRange(ta.value.length, ta.value.length);
     }
-    async pinTogli(k) {
+    // «Togli»: il bottone toccato dice «Salvo…» finché il ponte risponde, poi il riquadro si chiude
+    async pinTogli(k, bottone = null) {
+      const menu = bottone && this._stanzaMenu?.menu?.contains(bottone) ? this._stanzaMenu.menu : null;
+      if (bottone) {
+        if (bottone.hasAttribute("aria-disabled")) return;
+        bottone.setAttribute("aria-disabled", "true");
+        (bottone.querySelector("span") || bottone).textContent = "Salvo…";
+        bottone.querySelector("small")?.remove();
+      }
       const r = await ask({ t: "appunti", azione: "togli", k });
+      if (menu && this._stanzaMenu?.menu === menu) this.stanzaChiudiMenu();
       if (r && r.pin) this.pins = r.pin;
       if (r && r.ok) this.log(`${now()}  pin tolto`);
-      else this.segnala({ tag: "Da rivedere", tono: "warn", testo: (r && r.errore) || "Pin non tolto" }, { ms: 6000 });
+      else this.segnala({ tag: "Da rivedere", tono: "warn", testo: (r && r.errore) || "Non tolto" }, { ms: 6000 });
       this.render();
     }
     pinN() { return Object.keys(this.pins || {}).length; }
@@ -11521,8 +11566,8 @@
       const riga = ([k, x]) => `<div class="pinr${k === evid ? " evid" : ""}" data-pink="${esc(k)}"><div class="pinchi">${esc(this.pinTesto(x))}</div>${
         x.nota ? `<div class="pinnota">${esc(x.nota)}</div>` : ""}<div class="pinaz"><button type="button" class="stmi" data-pinapri="${esc(k)}">Apri</button><button type="button" class="stmi" data-pintogli="${esc(k)}">Togli</button></div></div>`;
       wrap.insertAdjacentHTML("beforeend", `<div class="stmenu pinmenu" role="dialog" aria-label="Da rivedere"><div class="stmenuhd">📌 Da rivedere (${l.length})</div>${
-        l.length ? l.map(riga).join("") : `<div class="pinnota">Nessun pin. Tasto destro su un paziente: «📌 Da rivedere…».</div>`}${
-        l.length ? `<div class="stmsep" role="separator"></div><button type="button" class="stmi" data-pinvia="1">Elimina tutti i pin…</button>` : ""}</div>`);
+        l.length ? l.map(riga).join("") : `<div class="pinnota">Nessun paziente da rivedere. Tasto destro su un paziente: «Aggiungi a Da rivedere…».</div>`}${
+        l.length ? `<div class="stmsep" role="separator"></div><button type="button" class="stmi" data-pinvia="1" title="Toglie tutti i pazienti da rivedere, anche dall'iPhone">Elimina tutti…</button>` : ""}</div>`);
       const menu = wrap.lastElementChild, wr = wrap.getBoundingClientRect(), ar = (anchor?.isConnected ? anchor : wrap).getBoundingClientRect();
       menu.style.left = Math.max(8, Math.min(ar.left, innerWidth - menu.offsetWidth - 8)) - wr.left + "px";
       menu.style.top = Math.max(8, Math.min(ar.bottom + 4, innerHeight - menu.offsetHeight - 8)) - wr.top + "px";
@@ -11530,10 +11575,10 @@
         const b = e.target.closest("button");
         if (!b) return;
         e.stopPropagation();
-        if (b.dataset.pintogli) { this.stanzaChiudiMenu(); this.pinTogli(b.dataset.pintogli); }
+        if (b.dataset.pintogli) this.pinTogli(b.dataset.pintogli, b);
         else if (b.dataset.pinapri) { this.stanzaChiudiMenu(); this.pinApri(b.dataset.pinapri); }
         else if (b.dataset.pinvia) {
-          if (b.dataset.sicuro !== "1") { b.dataset.sicuro = "1"; b.textContent = "Elimino tutti i pin, anche dall'iPhone? Tocca di nuovo"; return; }
+          if (b.dataset.sicuro !== "1") { b.dataset.sicuro = "1"; b.textContent = "Elimino tutti, anche dall'iPhone? Tocca di nuovo"; return; }
           this.stanzaChiudiMenu();
           ask({ t: "appunti", azione: "elimina" }).then((r) => {
             if (r && r.ok) { this.pins = {}; this.log(`${now()}  pin eliminati tutti`); }
@@ -11576,8 +11621,8 @@
       const stessoNome = normNome(nome) === normNome(x.paziente || [x.cognome, x.nome].join(" "));
       const cfOk = !!x.cf && cf === x.cf, natoOk = !!x.nato && nato === x.nato;
       const contro = (!!x.cf && !!cf && cf !== x.cf) || (!!x.nato && !!nato && nato !== x.nato);
-      if (stessoNome && (cfOk || natoOk) && !contro) return this.segnala({ tag: "Da rivedere", tono: "ok", testo: `Riaperto dal pin: ${cfOk ? "codice fiscale" : "data di nascita"} e nome controllati` }, { ms: 5000 });
-      if (!stessoNome || contro) return this.segnala({ tag: "Errore grave", tono: "err", testo: "Errore grave: la pagina aperta dal pin è di un altro paziente — controlla chi è prima di fare qualunque cosa", ...this.avvisoVisto() });
+      if (stessoNome && (cfOk || natoOk) && !contro) return this.segnala({ tag: "Da rivedere", tono: "ok", testo: `Riaperto da Da rivedere: ${cfOk ? "codice fiscale" : "data di nascita"} e nome controllati` }, { ms: 5000 });
+      if (!stessoNome || contro) return this.segnala({ tag: "Errore grave", tono: "err", testo: "Errore grave: la pagina aperta da Da rivedere è di un altro paziente — controlla chi è prima di fare qualunque cosa", ...this.avvisoVisto() });
       this.pinNonRiesco(a.k, x);
     }
     // togliere dall'elenco e svuotarlo: niente conferme, si annulla
@@ -17912,6 +17957,7 @@
   // se il PC lo sa, la data di nascita se si legge (sulla sua pagina), l'impronta della nascita (per ritrovarlo
   // nelle liste) e l'indirizzo della sua pagina come il gestionale l'ha dato (ponteUrlPaziente: mai costruito).
   // L'episodio resta solo un indizio. Tutto questo viaggia e sta cifrato: il ripetitore non lo vede.
+  const PIN_NOTA_MAX = 500;   // (come APP_NOTA_MAX, appunti-sw.js)
   const PIN_PART = /^(DE|DI|DA|DEL|DELLA|DELLE|DELLO|DEI|DEGLI|DAL|DALLA|DALLE|DALLO|LA|LO|LE|LI|SAN|SANTA|SANTO|VAN|VON|MC|MAC|DOS|DAS|DU)$/i;
   function pinDati(p) {
     const w = String(p.name || "").trim().split(/\s+/).filter(Boolean);

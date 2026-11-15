@@ -23,6 +23,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { rmSync, existsSync, statSync, mkdirSync, writeFileSync, readFileSync, chmodSync } from "node:fs";
 import vm from "node:vm";
+import { createServer } from "node:http";
 
 // (mai la rete vera: nessun proxy, ogni nome risolto in locale — il gestionale finto passa dalle route di Playwright)
 const RETE_CHIUSA = ["--proxy-server=direct://", "--host-resolver-rules=MAP * 127.0.0.1"];
@@ -946,20 +947,31 @@ sezione("i pin «Da rivedere»: dal telefono e dal PC, cifrati sul ponte");
   if (!(await $panel(doc, ".card").count())) { await $panel(doc, "#expand").click(); await sospendi(500); }
   if (!(await $panel(doc, ".stp[data-stp]").count())) await allaScheda(doc, "home");
   const chipR = $panel(doc, '.stp[data-stp="999001"]').first();
-  // il PC: tasto destro su ROSSI → «Togli dal da rivedere»; il telefono non lo vede più
+  // il PC: tasto destro su ROSSI → «Togli da Da rivedere»; il telefono non lo vede più
   await chipR.click({ button: "right" });
-  await $panel(doc, '.stmi[data-dove="pinvia"]').click();
-  check(await finche(async () => (await copiaPc()) === 0, 8000), "tasto destro sul PC su un paziente col pin: «Togli dal da rivedere»");
+  const togliTesto = await $panel(doc, '.stmi[data-dove="pinvia"]').innerText();
+  const togliOra = await $panel(doc, '.stmi[data-dove="pinvia"]').evaluate((b) => { b.click(); return b.textContent; });
+  check(await finche(async () => (await copiaPc()) === 0, 8000) && /^Togli da Da rivedere/.test(togliTesto) && togliOra === "Salvo…",
+    `tasto destro sul PC su un paziente col pin: «Togli da Da rivedere», e «Salvo…» finché il ponte risponde (got «${togliTesto.replace(/\n/g, " ")}» → «${togliOra}»)`);
   await tocca(tel, '[data-a="indietro"]');
   await tocca(tel, '[data-a="menu"]');
   await tocca(tel, '.menu [data-a="rivedere"]');
   check(!!(await aspettaTel(tel, /Nessun paziente da rivedere/, 10000)), "tolto dal PC: sul telefono non c'è più");
-  // il PC: tasto destro → «📌 Da rivedere…» con la nota; il telefono lo vede
+  // il PC: tasto destro → «Aggiungi a Da rivedere…»: la nota in un campo del pannello (mai il prompt del browser); il telefono lo vede
   await chipR.click({ button: "right" });
   await $panel(doc, ".stmenu").waitFor({ timeout: 8000 });
-  doc.once("dialog", (d) => d.accept("controllare la RX"));
+  let prompt = 0;
+  const contaPrompt = (d) => { prompt++; d.dismiss().catch(() => {}); };
+  doc.on("dialog", contaPrompt);
+  const metti = await $panel(doc, '.stmi[data-dove="pin"]').innerText();
   await $panel(doc, '.stmi[data-dove="pin"]').click();
-  check(await finche(async () => (await copiaPc()) === 1, 8000), "tasto destro sul PC: «📌 Da rivedere…», con la nota");
+  await $panel(doc, ".pintesto").waitFor({ timeout: 5000 });
+  const campo = await $panel(doc, ".pintesto").evaluate((t) => ({ max: t.maxLength, fuoco: t.getRootNode().activeElement === t }));
+  await $panel(doc, ".pintesto").fill("controllare la RX");
+  const salvo = await $panel(doc, "[data-pinsalva]").evaluate((b) => { b.click(); return b.textContent; });
+  check(await finche(async () => (await copiaPc()) === 1, 8000) && /^Aggiungi a Da rivedere/.test(metti) && campo.max === 500 && campo.fuoco && salvo === "Salvo…" && prompt === 0,
+    `tasto destro sul PC: «Aggiungi a Da rivedere…», la nota in un campo del pannello (500 caratteri, col fuoco), «Salvo…», nessun prompt (got «${metti.replace(/\n/g, " ")}» · ${JSON.stringify(campo)} · «${salvo}» · ${prompt} prompt)`);
+  doc.off("dialog", contaPrompt);
   await tocca(tel, '[data-a="indietro"]');
   await tocca(tel, '[data-a="menu"]');
   await tocca(tel, '.menu [data-a="rivedere"]');
@@ -974,7 +986,7 @@ sezione("i pin «Da rivedere»: dal telefono e dal PC, cifrati sul ponte");
   await tocca(tel, '.foglio [data-a="pintogli"]');
   await aspettaTel(tel, /Tolto dal da rivedere/, 10000);
   const dopoTel = await apriPinPc();
-  check(/Nessun pin/.test(dopoTel) && !/ROSSI/.test(dopoTel), `tolto dal telefono: aperto «Da rivedere» sul PC (riletto dal ponte), non c'è più (${dopoTel.replace(/\n/g, " / ").slice(0, 100)})`);
+  check(/Nessun paziente da rivedere/.test(dopoTel) && !/ROSSI/.test(dopoTel), `tolto dal telefono: aperto «Da rivedere» sul PC (riletto dal ponte), non c'è più (${dopoTel.replace(/\n/g, " / ").slice(0, 100)})`);
   await doc.keyboard.press("Escape");
   // un pin di nuovo, poi il telefono «reinstallato»: la sua chiave degli appunti persa, la riprende dal PC
   await tocca(tel, '[data-a="indietro"]');
@@ -3724,20 +3736,40 @@ await prova.close();
 // ===========================================================================
 sezione("«Dimentica i dati…» non tocca i pin «Da rivedere»");
 {
+  // (una scheda del gestionale nuova: quella di prima è chiusa da un pezzo)
+  const pd = await ctx.newPage();
+  await suPagina(pd, A.patientUrl);
   const copiaPin = () => sw.evaluate(async () => Object.keys(((await chrome.storage.local.get("appunti.copia"))["appunti.copia"] || {}).pin || {}).length);
   const n0 = await copiaPin();
   let dialoghi = 0;
   const conta = (d) => { dialoghi++; d.dismiss().catch(() => {}); };
-  doc.on("dialog", conta);
-  await doc.bringToFront();
-  if (!(await $panel(doc, ".card").count())) { await $panel(doc, "#expand").click(); await sospendi(400); }
-  if (!(await $panel(doc, "#resetpaz").count())) await $panel(doc, "#menubtn").click();
-  await $panel(doc, "#resetpaz").click();
-  await $panel(doc, "#resetpaz").click();
+  pd.on("dialog", conta);
+  await pd.bringToFront();
+  if (!(await $panel(pd, ".card").count())) { await $panel(pd, "#expand").click(); await sospendi(400); }
+  if (!(await $panel(pd, "#resetpaz").count())) await $panel(pd, "#menubtn").click();
+  await $panel(pd, "#resetpaz").click();
+  await $panel(pd, "#resetpaz").click();
   await sospendi(9500);   // (passati gli 8 secondi dell'Annulla: anche l'estensione ha dimenticato)
-  doc.off("dialog", conta);
+  pd.off("dialog", conta);
   const n1 = await copiaPin();
   check(n0 >= 1 && dialoghi === 0 && n1 === n0, `due tocchi su «Dimentica i dati…»: nessuna domanda sui pin, e i pin restano (got ${n0} → ${n1}, ${dialoghi} dialoghi)`);
+  await pd.close();
+}
+
+// ===========================================================================
+sezione("Da rivedere: il ponte che tiene la connessione e non risponde — 10 secondi, poi «Ponte non raggiungibile»");
+{
+  const muto = createServer(() => {});   // (accetta, e non risponde mai)
+  await new Promise((ok) => muto.listen(0, "127.0.0.1", ok));
+  const r = await sw.evaluate(async (h) => {
+    const prima = ponteIndirizzo;
+    ponteIndirizzo = async () => h;   // eslint-disable-line no-global-assign
+    const t0 = Date.now();
+    try { const x = await appTogli("nessuno"); return { ok: x.ok, errore: x.errore || "", ms: Date.now() - t0 }; } finally { ponteIndirizzo = prima; }   // eslint-disable-line no-global-assign
+  }, `http://127.0.0.1:${muto.address().port}`);
+  muto.closeAllConnections(); muto.close();
+  check(!r.ok && r.ms >= 9000 && r.ms < 16000 && /^Ponte non raggiungibile/.test(r.errore),
+    `il ponte che non risponde: dopo 10 secondi «Ponte non raggiungibile», non dopo minuti (got ${JSON.stringify(r)})`);
 }
 
 await telBrowser.close();
