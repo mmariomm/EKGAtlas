@@ -31,6 +31,10 @@
  *     numero: uno solo torna true. Un record scaduto conta finché la scrittura
  *     dopo non lo toglie (il lato sicuro).
  *
+ * E `cambia(area, chiave, fn)`: lo stesso giro a mano, nella stessa fila, su una
+ * chiave che non è un registro (un elenco: «Ultimi fogli» della stazione):
+ * fn(valore) sincrona torna il valore nuovo, o undefined (niente da scrivere).
+ *
  * E i NOMI delle chiavi che un file scrive e un altro legge (CHIAVE): chi le
  * legge da un altro file usa il nome, non la stringa ricopiata.
  */
@@ -48,6 +52,28 @@ globalThis.PsaArchivio = globalThis.PsaArchivio || (function () {
   const AREE = new Set(["local", "session"]);
   const FILE = new Map();   // area+chiave → la coda delle scritture (in memoria: muore col service worker, la chiave no)
   const DENTRO = new Set(); // area+chiave → la funzione di un `cambia` sta girando adesso (per chi rientra nella fila)
+  // (senza prototipo: «__proto__» è un numero come gli altri — passa /^[\w-]{8,40}$/ — mai il prototipo della mappa)
+  const mappa = (v) => Object.assign(Object.create(null), v);
+
+  // la fila di una chiave (chi rientra dalla funzione di un `cambia` aspetterebbe sé stesso per sempre: errore subito)
+  function inFila(k, fn) {
+    if (DENTRO.has(k)) throw new Error(`archivio: ${k} — un cambia rientra nella sua stessa fila (la fermerebbe per sempre): niente fatto`);
+    const p = (FILE.get(k) || Promise.resolve()).then(fn); FILE.set(k, p.catch(() => {})); return p;
+  }
+  // un giro a mano su una chiave qualsiasi, nella sua fila: fn(valore) SINCRONA → il valore nuovo
+  // (undefined: niente da scrivere). Leggi, cambia, scrivi: mai due a metà sopra la stessa chiave.
+  function cambia(area, chiave, fn) {
+    if (!AREE.has(area) || typeof chiave !== "string" || !chiave) throw new Error("archivio: cambia vuole area (local|session) e chiave");
+    const k = area + " " + chiave;
+    return inFila(k, async () => {
+      const v = (await chrome.storage[area].get(chiave))[chiave];
+      let r;
+      DENTRO.add(k);
+      try { r = fn(v); } finally { DENTRO.delete(k); }
+      if (r && typeof r.then === "function") { r.then(null, () => {}); throw new Error(`archivio: ${k} — cambia vuole una funzione sincrona (una che aspetta, se rientra nella sua fila, la ferma per sempre): niente fatto`); }
+      if (r !== undefined) await chrome.storage[area].set({ [chiave]: r });
+    });
+  }
 
   function registro(o) {
     const { area, chiave, n, ms } = o || {};
@@ -58,14 +84,7 @@ globalThis.PsaArchivio = globalThis.PsaArchivio || (function () {
     const deposito = () => chrome.storage[area];
     // (la fila è della CHIAVE, non di chi la chiede: due registri sulla stessa chiave fanno la stessa fila)
     const k = area + " " + chiave;
-    // (chi rientra nella fila dalla funzione di un `cambia` aspetterebbe sé stesso per sempre: errore subito, si chiude)
-    const rientro = () => new Error(`archivio: ${k} — un cambia rientra nella sua stessa fila (la fermerebbe per sempre): niente fatto`);
-    const inFila = (fn) => {
-      if (DENTRO.has(k)) throw rientro();
-      const p = (FILE.get(k) || Promise.resolve()).then(fn); FILE.set(k, p.catch(() => {})); return p;
-    };
-    // (senza prototipo: «__proto__» è un numero come gli altri — passa /^[\w-]{8,40}$/ — mai il prototipo della mappa)
-    const tutti = async () => Object.assign(Object.create(null), (await deposito().get(chiave))[chiave]);
+    const tutti = async () => mappa((await deposito().get(chiave))[chiave]);
     // (i più giovani di `ms`, e di quelli gli `n` più recenti: lo stesso giro dei registri del ponte — ma quello
     // appena scritto resta sempre: con l'orologio tornato indietro sarebbe l'ultimo, e prende il posto dell'n-esimo)
     const tieni = (m, rq) => {
@@ -83,18 +102,14 @@ globalThis.PsaArchivio = globalThis.PsaArchivio || (function () {
       chiave, area,
       tutti,
       leggi: async (rq) => (await tutti())[rq],
-      scrivi: (rq, x) => inFila(() => scriviOra(rq, x)),
-      // (fn sincrona: dentro la fila non si aspetta niente — una che aspetta potrebbe aspettare la sua fila)
-      cambia: (fn) => inFila(async () => {
-        const m = await tutti();
-        let si;
-        DENTRO.add(k);
-        try { si = fn(m); } finally { DENTRO.delete(k); }
-        if (si && typeof si.then === "function") { si.then(null, () => {}); throw new Error(`archivio: ${k} — cambia vuole una funzione sincrona (una che aspetta, se rientra nella sua fila, la ferma per sempre): niente fatto`); }
-        if (si) await deposito().set({ [chiave]: m });
+      scrivi: (rq, x) => inFila(k, () => scriviOra(rq, x)),
+      // (fn sincrona, vedi cambia qui sopra: torna vero → si scrive la mappa cambiata)
+      cambia: (fn) => cambia(area, chiave, (v) => {
+        const m = mappa(v), si = fn(m);
+        return si && typeof si.then === "function" ? si : si ? m : undefined;
       }),
-      gia: (rq) => inFila(async () => !!(await tutti())[rq]).catch(() => true),
-      segna: (rq, x = {}) => inFila(async () => {
+      gia: (rq) => inFila(k, async () => !!(await tutti())[rq]).catch(() => true),
+      segna: (rq, x = {}) => inFila(k, async () => {
         if ((await tutti())[rq]) return false;
         await scriviOra(rq, x);
         return true;
@@ -102,5 +117,5 @@ globalThis.PsaArchivio = globalThis.PsaArchivio || (function () {
     };
   }
 
-  return Object.freeze({ CHIAVE, registro });
+  return Object.freeze({ CHIAVE, registro, cambia });
 })();

@@ -789,9 +789,9 @@ async function stzStampaOra(rq, c, pdf) {
   const r = await stampaPdf(c.tipo, pdf, s[c.tipo], ruotaDi(s), c.copie);
   const e = { fase: "fatto", esito: r.esito, stampante: corto(r.stampante, 80), why: corto(r.why || "", 200), copie: r.ok ? r.copie || 1 : c.copie, ts: staOra() };
   await stzRqScrivi(rq, e);
-  const l = (await chrome.storage.local.get(STA.lavori))[STA.lavori] || [];
-  l.push({ ts: e.ts, tipo: c.tipo, pagine: stzPagine(pdf), copie: c.copie, esito: e.esito, stampante: e.stampante });
-  await chrome.storage.local.set({ [STA.lavori]: l.slice(-30) });
+  // («Ultimi fogli»: leggi, aggiungi, scrivi nella fila della chiave — due fogli insieme non se ne perdono uno)
+  const u = { ts: e.ts, tipo: c.tipo, pagine: stzPagine(pdf), copie: c.copie, esito: e.esito, stampante: e.stampante };
+  await PsaArchivio.cambia("local", STA.lavori, (l) => [...(Array.isArray(l) ? l : []), u].slice(-30));
   return e;
 }
 // «Scollega» sulla stazione: da subito non riceve più niente; il PC lo sa adesso, o appena c'è

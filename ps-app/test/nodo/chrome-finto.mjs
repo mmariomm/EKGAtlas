@@ -38,10 +38,12 @@ export function swNuovo(disco, opz = {}) {
     return {
       get: async (k) => {
         const chiavi = k == null ? Object.keys(d()) : [].concat(k);
-        await prima("get", chiavi);
-        if (!sw.vivo) return new Promise(() => {});   // morto intanto: nessuna risposta
+        // (letto alla chiamata, come la set scrive alla chiamata: Chrome le fa in ordine — una get chiamata
+        // prima di una set non vede la set, anche se la sua risposta arriva dopo)
         const o = {};
         for (const x of chiavi) if (x in d()) o[x] = clona(d()[x]);
+        await prima("get", chiavi);
+        if (!sw.vivo) return new Promise(() => {});   // morto intanto: nessuna risposta
         return o;
       },
       set: async (o) => {
