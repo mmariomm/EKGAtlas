@@ -52,6 +52,18 @@ console.log("\narchivio.js: il registro");
   check(v.a === 1 && !("b" in v) && !("b" in disco.session["prova.rq"].vuoto001), "un campo undefined non arriva sul disco (come Chrome: JSON)");
 }
 {
+  // `__proto__` come numero (passa /^[\w-]{8,40}$/): una chiave come le altre, mai il prototipo
+  const disco = discoNuovo(), sw = conRegistro(disco);
+  const prima = await esito(sw.R.leggi("__proto__"));
+  check(prima.ok && prima.v === null && await sw.R.gia("__proto__") === false, "«__proto__» mai scritto: leggi non trova niente, gia dice no");
+  await sw.R.scrivi("__proto__", { fase: "inviato" });
+  await sw.R.scrivi("normale1", {});
+  const x = await sw.R.leggi("__proto__"), t = await sw.R.tutti();
+  check(x && x.fase === "inviato" && Object.hasOwn(t, "__proto__") && Object.keys(disco.session["prova.rq"]).includes("__proto__"),
+    "«__proto__» scritto: è sul disco, leggi e tutti lo trovano come un numero qualsiasi");
+  check(await sw.R.segna("__proto__") === false && t.fase === undefined, "…segna no, e nessun prototipo cambiato");
+}
+{
   // il tetto (i 5 più recenti) e la scadenza (10 ore), a ogni scrittura
   const disco = discoNuovo(), sw = conRegistro(disco);
   for (let i = 0; i < 8; i++) { sw.ora += 1000; await sw.R.scrivi("numero-" + i, { i }); }

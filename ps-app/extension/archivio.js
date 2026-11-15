@@ -17,7 +17,8 @@
  *     giovani di `ms`, gli `n − 1` più recenti. Se la
  *     scrittura non riesce, la promessa la rifiuta (chi annota «inviato» PRIMA
  *     di fare non deve credere di averlo annotato), e la fila va avanti;
- *   - `tutti()` / `leggi(rq)`: una lettura com'è adesso (fuori dalla fila,
+ *   - `tutti()` / `leggi(rq)`: una lettura com'è adesso (una mappa senza
+ *     prototipo: «__proto__» è un numero come gli altri; fuori dalla fila,
  *     come prima). Un errore di lettura rifiuta: chi legge prima di fare, non fa;
  *   - `cambia(fn)`: un giro a mano nella stessa fila (fn torna vero → si scrive).
  *     fn è SINCRONA e non rientra nella fila (scrivi/cambia della stessa
@@ -63,7 +64,8 @@ globalThis.PsaArchivio = globalThis.PsaArchivio || (function () {
       if (DENTRO.has(k)) throw rientro();
       const p = (FILE.get(k) || Promise.resolve()).then(fn); FILE.set(k, p.catch(() => {})); return p;
     };
-    const tutti = async () => (await deposito().get(chiave))[chiave] || {};
+    // (senza prototipo: «__proto__» è un numero come gli altri — passa /^[\w-]{8,40}$/ — mai il prototipo della mappa)
+    const tutti = async () => Object.assign(Object.create(null), (await deposito().get(chiave))[chiave]);
     // (i più giovani di `ms`, e di quelli gli `n` più recenti: lo stesso giro dei registri del ponte — ma quello
     // appena scritto resta sempre: con l'orologio tornato indietro sarebbe l'ultimo, e prende il posto dell'n-esimo)
     const tieni = (m, rq) => {
