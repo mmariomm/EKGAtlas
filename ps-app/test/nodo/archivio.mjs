@@ -64,6 +64,17 @@ console.log("\narchivio.js: il registro");
   check(json(Object.keys(disco.session["prova.rq"])) === json(["numero-9"]) && await sw.R.gia("numero-8") === false, "…e dopo la scrittura non c'è più");
 }
 {
+  // l'orologio torna indietro (60 s) con già `n` record più nuovi: quello appena scritto resta comunque
+  const disco = discoNuovo(), sw = conRegistro(disco);
+  for (let i = 0; i < 5; i++) { sw.ora += 1000; await sw.R.scrivi("avanti-" + i, { i }); }
+  sw.ora -= 60e3;
+  await sw.R.scrivi("indietro", { fase: "inviato" });
+  const k = Object.keys(disco.session["prova.rq"]);
+  check(k.length === 5 && k.includes("indietro") && (await sw.R.leggi("indietro"))?.fase === "inviato",
+    `orologio indietro di 60 s: il record appena scritto resta, il tetto pure (${k.join(",")})`);
+  check(await sw.R.segna("indietr2") === true && await sw.R.segna("indietr2") === false, "orologio indietro: segna dello stesso numero due volte, un solo «sì»");
+}
+{
   // la fila: dieci scritture insieme, coi ritardi, una dietro l'altra — nessuna persa
   const disco = discoNuovo(), sw = conRegistro(disco, { ritardo: (op) => (op === "get" ? 3 : 5) }, { area: "local", chiave: "fila.rq", n: 50, ms: H });
   await Promise.all(Array.from({ length: 10 }, (_, i) => sw.R.scrivi("fila-000" + i, { i })));

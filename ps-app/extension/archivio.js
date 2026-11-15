@@ -13,7 +13,8 @@
  *   - una FILA per chiave: le scritture una dietro l'altra (leggi, cambia,
  *     scrivi), mai due a metà sopra la stessa chiave;
  *   - `scrivi(rq, x)`: fonde x nel record che c'è, con `ts` di adesso; poi tiene
- *     solo quelli più giovani di `ms` e, di quelli, i `n` più recenti. Se la
+ *     lui (sempre: anche con l'orologio tornato indietro) e, degli altri più
+ *     giovani di `ms`, gli `n − 1` più recenti. Se la
  *     scrittura non riesce, la promessa la rifiuta (chi annota «inviato» PRIMA
  *     di fare non deve credere di averlo annotato), e la fila va avanti;
  *   - `tutti()` / `leggi(rq)`: una lettura com'è adesso (fuori dalla fila,
@@ -54,12 +55,18 @@ globalThis.PsaArchivio = globalThis.PsaArchivio || (function () {
     const k = area + " " + chiave;
     const inFila = (fn) => { const p = (FILE.get(k) || Promise.resolve()).then(fn); FILE.set(k, p.catch(() => {})); return p; };
     const tutti = async () => (await deposito().get(chiave))[chiave] || {};
-    // (i più giovani di `ms`, e di quelli i `n` più recenti: lo stesso giro dei registri del ponte)
-    const tieni = (m) => Object.fromEntries(Object.entries(m).filter(([, y]) => ora() - y.ts < ms).sort((a, b) => b[1].ts - a[1].ts).slice(0, n));
+    // (i più giovani di `ms`, e di quelli gli `n` più recenti: lo stesso giro dei registri del ponte — ma quello
+    // appena scritto resta sempre: con l'orologio tornato indietro sarebbe l'ultimo, e prende il posto dell'n-esimo)
+    const tieni = (m, rq) => {
+      const l = Object.entries(m).filter(([, y]) => ora() - y.ts < ms).sort((a, b) => b[1].ts - a[1].ts);
+      const i = l.findIndex(([k]) => k === rq);
+      if (i >= n) l.splice(n - 1, 0, l.splice(i, 1)[0]);
+      return Object.fromEntries(l.slice(0, n));
+    };
     async function scriviOra(rq, x) {
       const m = await tutti();
       m[rq] = { ...(m[rq] || {}), ...x, ts: ora() };
-      await deposito().set({ [chiave]: tieni(m) });
+      await deposito().set({ [chiave]: tieni(m, rq) });
     }
     return {
       chiave, area,
