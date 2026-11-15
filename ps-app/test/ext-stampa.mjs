@@ -489,6 +489,10 @@ if (await prova("stampa automatica: etichette all'etichettatrice, lista all'A4, 
   installa(true);
   await scelte(ATTIVA);
   comportati({ lento: 1200 });   // (il tempo di leggere la striscia mentre «stampa»)
+  // (i due PDF «in volo» insieme: con 400 ms ciascuno, su una macchina carica
+  // il secondo può partire quando il primo è già tornato — la prova misurava il
+  // carico, non il codice. 2 s lasciano il margine.)
+  pdfVia.lento = { re: FOGLIO, ms: 2000 };
   await suPagina(doc, A.patientUrl);
   await apriPannello(doc);
   await azzeraStampe(doc);
