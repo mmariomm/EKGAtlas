@@ -2408,6 +2408,28 @@ function ordMessaggio(msg, sender, reply) {
   // ✕ «Visto» sulla riga di un foglio non uscito (o dall'esito sconosciuto), a
   // stampa finita: l'ordine non si mostra più qui — né le sue righe, né la
   // striscia —, ma resta nel giornale com'è (e il telefono lo vede com'è).
+  // Un ordine rimasto «Da controllare» (la Conferma è partita, la prova no) e
+  // la pagina del paziente che adesso elenca la sua richiesta coi suoi fogli:
+  // la prova c'è. Diventa «Confermata», come quando la prova arriva subito —
+  // le etichette dalla sua pagina, «Stampa»: mai dette stampate —, e il
+  // carrello da guardare non serve più. (Solo numeri dalla pagina: le richieste
+  // che elenca, per quell'episodio. Niente si manda al gestionale.)
+  if (msg.t === "ordineProvata") return fai(async () => {
+    const ep = String(msg.ep || "");
+    const rids = Array.isArray(msg.rids) ? msg.rids.map(String).filter((r) => /^\d{1,20}$/.test(r)).slice(0, 50) : [];
+    const l = await ordLeggi();
+    const provati = l.filter((x) => (x.stato === "avviso" || x.stato === "chiusa") && !x.stampa && ep && String(x.ep) === ep
+      && (x.pubblico || {}).titolo === DA_CONTROLLARE && rids.includes(ridDi(x)));
+    if (!provati.length) return reply({ ok: true, n: 0 });
+    for (const rec of provati) {
+      rec.rid = ridDi(rec);
+      rec.stato = "avviso"; rec.agg = Date.now(); rec.confermata = Date.now();
+      rec.vista = { tag: CONFERMATA, testo: "etichette dalla sua pagina, Stampa", tono: "ok", quesito: "vista confermata sulla pagina del paziente" };
+      delete rec.consegna; delete rec.resto;
+    }
+    await ordScrivi(l);
+    reply({ ok: true, n: provati.length, ordini: l });
+  });
   if (msg.t === "ordineVisto") return fai(async () => {
     const l = await ordLeggi();
     const rec = l.find((x) => x.id === msg.id && FINALI.has(x.stato));

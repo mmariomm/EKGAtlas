@@ -682,6 +682,17 @@ if (prova("la Conferma ignorata ma tornata coi suoi tempi: da controllare, anche
   check(iPost >= 0 && carrelloDopo === 0, `e il carrello non si legge da solo per giudicarla (got ${carrelloDopo} letture dopo la Conferma)`);
   await sospendi(3000);
   check(conferme(A).length === 1, `una Conferma sola (got ${conferme(A).length})`);
+  // poi la pagina del paziente la elenca (il gestionale ci ha messo di più): l'ordine diventa
+  // «Confermata», con le etichette dalla sua pagina — mai dette stampate —, e niente si preme
+  A.state.richieste[rid].confirmed = true;
+  await suPagina(doc, A.patientUrl);
+  const questo = async () => (await ordini()).find((y) => y.id === rec.id);
+  await finche(async () => ((await questo())?.pubblico || {}).titolo === "Confermata", 20000);
+  const provato = await questo();
+  const pp = (provato && provato.pubblico) || {};
+  check(!!provato && pp.tono === "ok" && /etichette dalla sua pagina, Stampa/.test(pp.testo || "") && !/[Ss]tampat/.test(`${pp.testo} ${pp.dettaglio}`) && !provato.consegna,
+    `la pagina del paziente la elenca: «Da controllare» diventa «Confermata · etichette dalla sua pagina, Stampa», mai «stampate» (got ${JSON.stringify(provato && [provato.stato, pp.titolo, pp.testo, pp.dettaglio])})`);
+  check(conferme(A).length === 1, `e ancora una Conferma sola (got ${conferme(A).length})`);
   sess.dopoConferma = null; sess.confermaLenta = 0;
 }
 // Non più «da confermare», e la pagina del paziente la elenca: niente si

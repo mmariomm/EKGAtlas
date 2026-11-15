@@ -9031,6 +9031,12 @@
         if (mio.ferma && !LAVORO.ferma) { LAVORO.ferma = true; this.fermaLavoro(); }
         return;
       }
+      // un ordine «Da controllare» di questo paziente, e questa pagina che elenca la sua richiesta: la prova
+      const ep = this.pageType === "patient" ? findEpisodeId(document, location.href) : "";
+      if (ep && this.ordini.some((x) => String(x.ep) === ep && (x.pubblico || {}).titolo === "Da controllare" && !x.stampa)) {
+        const qui = Object.keys(printModel(document, location.href));
+        if (qui.length) ordiniProvati(ep, qui);
+      }
       this.registriOrdini();
       this.stripOrdine();
       const w = this.root.querySelector("#bracciale");
@@ -15764,7 +15770,17 @@
     const stampabili = printModel(doc, url);
     const restano = tutte.filter((x) => !(x.ep === ep && stampabili[x.rid]));
     if (restano.length !== (store.get(DA_CONFERMARE, []) || []).length) store.set(DA_CONFERMARE, restano);
+    // (provate qui: un ordine rimasto «Da controllare» per una di loro diventa «Confermata» — ordineProvata)
+    const provate = tutte.filter((x) => x.ep === ep && stampabili[x.rid]).map((x) => x.rid);
+    if (provate.length) ordiniProvati(ep, provate);
     return restano.filter((x) => x.ep === ep).sort((a, b) => a.ts - b.ts);
+  }
+  // Le richieste che la pagina del paziente elenca confermate, al service
+  // worker: gli ordini di quell'episodio rimasti «Da controllare» per una di
+  // loro diventano «Confermata» (le etichette dalla sua pagina: mai dette stampate).
+  function ordiniProvati(ep, rids) {
+    if (!hasExt() || !ep || !rids.length) return;
+    ask({ t: "ordineProvata", ep: String(ep), rids: rids.map(String).slice(0, 50) }).catch(() => {});
   }
 
   // ------------------------------------------------ le Conferme premute
