@@ -290,13 +290,15 @@ sezione("il telefono: il rinnovo, la cassa, il QR nuovo (rev-s2)");
 }
 // P3: un QR del PC con l'orologio 4 minuti avanti (scade fra 9 minuti, sul telefono): vale
 {
-  const t3 = await tctx.newPage();
-  const lett = pcFinto("lettura", { ...RISPOSTE("PC lettura", "BIANCHI ANNA"), ciao: { kind: "lettura", nome: "PC lettura", versione: "3.87.0" } });
-  await lett.pronto;
-  await t3.goto(lett.link(Date.now() + 9 * 60e3));
+  // (un telefono a parte: su quello di prima un QR nuovo chiederebbe «Sostituisco?»)
+  const c3 = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, locale: "it-IT" });
+  const t3 = await c3.newPage();
+  const avanti = pcFinto("avanti", RISPOSTE("PC avanti", "BIANCHI ANNA"));
+  await avanti.pronto;
+  await t3.goto(avanti.link(Date.now() + 9 * 60e3));
   const v3 = await finche(async () => { const x = await t3.locator("#app").innerText().catch(() => ""); return /BIANCHI ANNA|QR non valido/.test(x) ? x : ""; }, 20000);
   check(!!v3 && /BIANCHI ANNA/.test(v3), "P3. un QR vero di un PC con l'orologio 4 minuti avanti (fino a 5): vale (non «QR non valido»)");
-  await t3.close();
+  await c3.close();
 }
 // P2-3: un PC che non dà alla stanza la chiave del telefono (il telefono entra senza «entrato»): niente rinnovo
 {
@@ -357,22 +359,21 @@ sezione("il telefono: il rinnovo, la cassa, il QR nuovo (rev-s2)");
     IDBObjectStore.prototype.get = function (k) { if (k === rotta) throw new DOMException("non risponde", "UnknownError"); return get.call(this, k); };
   });
   const t7 = await c7.newPage();
-  const uno = pcFinto("uno", { ...RISPOSTE("PC uno", "AZZURRI UGO"), ciao: { kind: "lettura", nome: "PC uno", versione: "3.87.0" } });
-  const due = pcFinto("due", RISPOSTE("PC due", "ROSA ADA"));
-  await Promise.all([uno.pronto, due.pronto]);
+  // (un PC per telefono dalla 3.90 — niente più sola lettura accanto —: la riga che non si legge è l'unica)
+  const uno = pcFinto("uno", RISPOSTE("PC uno", "AZZURRI UGO"));
+  await uno.pronto;
   await t7.goto(uno.link(Date.now() + 5 * 60e3));
   await finche(async () => /AZZURRI UGO/.test(await t7.locator("#app").innerText().catch(() => "")), 20000);
-  await t7.goto(due.link(Date.now() + 5 * 60e3));
-  await finche(async () => /ROSA ADA/.test(await t7.locator("#app").innerText().catch(() => "")), 20000);
   await sospendi(1500);
   const righe = await t7.evaluate(() => JSON.parse(localStorage.getItem("psassist.ponte.pcs.v1")).v.map((x) => ({ id: x.id, nome: x.nome })));
   const idUno = (righe.find((x) => x.nome === "PC uno") || {}).id;
   await t7.evaluate((id) => localStorage.setItem("prova.rotta", id), idUno);
   await t7.goto(`${relay.url}/ponte/`);
-  await finche(async () => /ROSA ADA/.test(await t7.locator("#app").innerText().catch(() => "")), 20000);
+  await finche(async () => /Scansiona il QR/.test(await t7.locator("#app").innerText().catch(() => "")), 20000);
   await sospendi(1500);
   const dopo = await t7.evaluate(() => JSON.parse(localStorage.getItem("psassist.ponte.pcs.v1")).v.map((x) => x.id));
-  check(righe.length === 2 && !!idUno && dopo.includes(idUno), "P2-5. una riga che la cassa non legge all'apertura (IndexedDB che non risponde): resta su disco — il telefono lavora con l'altra, e non la cancella");
+  check(righe.length === 1 && !!idUno && dopo.includes(idUno) && !/AZZURRI UGO/.test(await t7.locator("#app").innerText().catch(() => "")),
+    "P2-5. una riga che la cassa non legge all'apertura (IndexedDB che non risponde): resta su disco — il telefono non la usa, e non la cancella");
   await c7.close();
 }
 // P2-1: il PC passa alla stanza della chiave nuova; il telefono, riaperto, lo trova lì (e la tiene)

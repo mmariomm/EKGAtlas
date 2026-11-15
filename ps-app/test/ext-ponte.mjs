@@ -3251,14 +3251,17 @@ sezione("le registrazioni del PC dal telefono: elenco, scarica a pezzi, cancella
 // ===========================================================================
 sezione("⋯ → Dispositivi: i PC associati, chi c'è, chi è collegato a questo iPhone");
 {
-  // Accanto al PC vero (con la sua stazione di stampa), il telefono ha in lista due PC
-  // di sola lettura: «Infermeria», acceso — un PC finto nella sua stanza del ripetitore,
-  // che risponde alla sonda come ponte-sw.js —, e «Studio medici», spento, sentito ieri sera.
+  // Accanto al PC vero (con la sua stazione di stampa), il telefono ha in lista due altri PC
+  // (un QR di un PC associato a un altro telefono resta in lista): «Infermeria», acceso — un PC
+  // finto nella sua stanza del ripetitore, che risponde alla sonda come ponte-sw.js —, e «Studio
+  // medici», spento, sentito ieri sera. E una riga di un PC di sola lettura (la mini fino alla
+  // 3.87): la sola lettura non c'è più, e all'apertura la riga se ne va (3.90).
   const vero = await chiaveTel(tel);
   const KM = P.casuale(32), KS = P.casuale(32), chM = await P.chiaviCoppia(KM);
   const ieri = new Date(); ieri.setDate(ieri.getDate() - 1); ieri.setHours(18, 40, 0, 0);
-  const mini = { k: P.b64u(KM), dev: P.b64u(P.casuale(16)), kind: "lettura", nome: "Infermeria", id: "provaMini01" };
-  const spento = { k: P.b64u(KS), dev: P.b64u(P.casuale(16)), kind: "lettura", nome: "Studio medici", id: "provaSpento1", ver: "3.84.0", visto: ieri.getTime() };
+  const mini = { k: P.b64u(KM), dev: P.b64u(P.casuale(16)), kind: "completo", nome: "Infermeria", id: "provaMini01" };
+  const spento = { k: P.b64u(KS), dev: P.b64u(P.casuale(16)), nome: "Studio medici", id: "provaSpento1", ver: "3.84.0", visto: ieri.getTime() };
+  const vecchiaMini = { k: P.b64u(P.casuale(32)), dev: P.b64u(P.casuale(16)), kind: "lettura", nome: "Sola lettura", id: "provaLett01" };
   const { default: WS } = await import("ws");
   const finto = new WS(`${relay.url.replace(/^http/, "ws")}/ponte/ws?r=${chM.stanza}&ruolo=pc`);
   const sentito = [];   // quello che arriva al PC finto: il «c'è?» del ripetitore, e i saluti
@@ -3267,16 +3270,18 @@ sezione("⋯ → Dispositivi: i PC associati, chi c'è, chi è collegato a quest
     try {
       const m = (await P.apri(chM.salutoTel, new Uint8Array(d), P.TIPO.SALUTO_TEL)).dati;
       sentito.push(m.sonda === true ? "sonda" : "saluto");
-      if (m.sonda === true) finto.send(await P.sigilla(chM.salutoPc, P.TIPO.SALUTO_PC, 0, { v: 1, eco: m.n, sonda: { kind: "lettura", nome: "Infermeria", versione: "3.85.3", stazione: null } }));
+      if (m.sonda === true) finto.send(await P.sigilla(chM.salutoPc, P.TIPO.SALUTO_PC, 0, { v: 1, eco: m.n, sonda: { kind: "completo", nome: "Infermeria", versione: "3.85.3", stazione: null } }));
     } catch { /* non di questa stanza */ }
   });
   await new Promise((ok, no) => { finto.once("open", ok); finto.once("error", no); });
   // la stazione del PC vero, come se fosse collegata (quello che ponte-sw.js legge da stazione-sw.js e dal giornale delle stampe)
   await sw.evaluate(() => { self.__staVera = ponteStazioneDi; self.ponteStazioneDi = async () => ({ nome: "Infermeria", presente: true, ultimo: { esito: "stampato", fa: 4 * 60e3 } }); });
-  await tel.evaluate((v) => localStorage.setItem("psassist.ponte.pcs.v1", JSON.stringify({ v, attivo: v[0].id })), [vero, mini, spento]);
+  await tel.evaluate((v) => localStorage.setItem("psassist.ponte.pcs.v1", JSON.stringify({ v, attivo: v[0].id })), [vero, mini, vecchiaMini, spento]);
   await tel.reload();
   await aspettaTel(tel, /BIANCHI ANNA/, 20000);
   await sospendi(500);
+  const suDisco = await tel.evaluate(() => JSON.parse(localStorage.getItem("psassist.ponte.pcs.v1")).v.map((p) => p.id));
+  check(suDisco.join() === [vero.id, mini.id, spento.id].join(), `la riga del PC di sola lettura se ne va all'apertura; le altre restano (${suDisco.join()})`);
   const s0 = sentito.length, e0 = relay.entrate().tel, aperte0 = relay.prese().tel;
   await tocca(tel, '[data-a="menu"]');
   check(await tel.locator('.menu [data-a="dispositivi"]').count() === 1 && /Dispositivi$/.test((await tel.locator('.menu [data-a="dispositivi"]').innerText()).trim()), "nel ⋯ c'è «Dispositivi»");
@@ -3288,8 +3293,9 @@ sezione("⋯ → Dispositivi: i PC associati, chi c'è, chi è collegato a quest
   const [r0 = "", r1 = "", r2 = ""] = righe.map((r) => r.t);
   check(new RegExp(`^💻 PC v${versionePc.replace(/\./g, "\\.")} Associato a questo iPhone Collegato a questo iPhone .{1,3} Infermeria · raggiungibile · ultimo foglio stampato alle \\d\\d:\\d\\d$`).test(r0),
     `il PC attivo: «PC», la sua versione, «Collegato a questo iPhone», e la sua stazione con l'ultimo foglio (${r0})`);
-  check(/^👁.{0,2} Infermeria Lettura e stampa v3\.85\.3 Associato a questo iPhone Disponibile$/.test(r1), `l'altro PC acceso: il suo nome, «Lettura e stampa», la versione che dice adesso, «Disponibile» (${r1})`);
-  check(/^👁.{0,2} Studio medici Lettura e stampa v3\.84\.0 Associato a questo iPhone Non disponibile · visto ieri alle 18:40$/.test(r2), `quello spento: «Non disponibile», e quando si è fatto sentire (${r2})`);
+  check(/^💻 Infermeria PC v3\.85\.3 Associato a questo iPhone Disponibile$/.test(r1), `l'altro PC acceso: il suo nome, «PC», la versione che dice adesso, «Disponibile» (${r1})`);
+  check(/^💻 Studio medici PC v3\.84\.0 Associato a questo iPhone Non disponibile · visto ieri alle 18:40$/.test(r2), `quello spento: «Non disponibile», e quando si è fatto sentire (${r2})`);
+  check(!/Lettura e stampa|Sola lettura|👁/.test(righe.map((r) => r.t).join(" ")), "nessuna riga dice «sola lettura»");
   check(await finche(async () => relay.entrate().tel - e0 === 2 && relay.prese().tel === aperte0, 10000),
     `una presa breve per ognuno degli altri due PC, chiusa subito: resta aperta solo quella della sessione (${relay.entrate().tel - e0} nuove, ${relay.prese().tel} aperte)`);
   check(await finche(async () => sentito.slice(s0).join() === '{"pari":true},sonda,{"pari":false}', 8000),
