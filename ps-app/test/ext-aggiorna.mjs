@@ -249,8 +249,8 @@ console.log("\naggiorna: non da qui");
     `senza installata.json (caricata da un'altra cartella): niente tocco, e come si fa (got ${JSON.stringify(r)})`);
   await apriMenu();
   const testo = (await $panel(doc, ".menu").innerText()).replace(/\s+/g, " ");
-  check((await voce()) === 0 && (await puntino()) === false && testo.includes(`C'è la ${NUOVA}`),
-    `nel ⋯ una riga che dice come, senza puntino né «Aggiorna app» (got ${testo.slice(-220)})`);
+  check((await voce()) === 0 && (await puntino()) === false && testo.includes(`C'è la ${NUOVA}`) && /perché si aggiorni da sola/.test(testo) && !/con un tocco/.test(testo),
+    `nel ⋯ una riga che dice come (perché si aggiorni da sola, non «con un tocco»), senza puntino né «Aggiorna app» (got ${testo.slice(-220)})`);
   await chiudiMenu();
   writeFileSync(join(EST, "installata.json"), MARCA);
   installaAiutante(false);

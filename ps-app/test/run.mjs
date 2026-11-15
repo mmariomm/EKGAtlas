@@ -3222,8 +3222,8 @@ async function scenarioStampaUltima(browser) {
   await page.goto(mock.patientUrl);
   await richieste(page);
   const testo = (await page.locator("#psassist-host #stultima").innerText().catch(() => "")).trim();
-  check(scen, testo === "Ristampa" && (await page.locator('#psassist-host #stampaltre').count()) === 1,
-    `in fondo alle Richieste, «Ristampa» e «Altre…» (got «${testo}»)`);
+  check(scen, testo === "Ristampa" && (await page.locator('#psassist-host #stampaltre').count()) === 0,
+    `in fondo alle Richieste, «Ristampa» sola: le altre da ⋯ → «Stampa le richieste», non anche da «Altre…» (got «${testo}»)`);
   await page.locator("#psassist-host #stultima").scrollIntoViewIfNeeded().catch(() => {});
   await shot(page, "stampa-ultima-richiesta");
   await ore({ 699999: "2026-10-27 14:33:00.0", 699998: "2026-10-27 14:31:00.0" });

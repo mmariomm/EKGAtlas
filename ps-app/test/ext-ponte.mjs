@@ -3753,6 +3753,28 @@ sezione("«Dimentica i dati…» non tocca i pin «Da rivedere»");
   pd.off("dialog", conta);
   const n1 = await copiaPin();
   check(n0 >= 1 && dialoghi === 0 && n1 === n0, `due tocchi su «Dimentica i dati…»: nessuna domanda sui pin, e i pin restano (got ${n0} → ${n1}, ${dialoghi} dialoghi)`);
+  // «Elimina tutti…» di Da rivedere: due tocchi come «Dimentica» — rosso, e passati i secondi torna com'era
+  if (!(await $panel(pd, ".card").count())) { await $panel(pd, "#expand").click(); await sospendi(400); }
+  // (i pin si leggono quando la pagina si apre: il ⋯ li mostra appena ci sono)
+  await finche(async () => {
+    if (await $panel(pd, "#pinmenu").count()) return true;
+    if (await $panel(pd, ".menu").count()) await $panel(pd, "#menubtn").click();
+    await $panel(pd, "#menubtn").click();
+    await sospendi(300);
+    return (await $panel(pd, "#pinmenu").count()) > 0;
+  }, 15000);
+  await $panel(pd, "#pinmenu").click();
+  await $panel(pd, ".pinmenu [data-pinvia]").waitFor({ timeout: 8000 });
+  await sospendi(1000);   // (riletto dal ponte: il riquadro si rifà)
+  const via = $panel(pd, ".pinmenu [data-pinvia]");
+  const primaVia = (await via.innerText()).trim();
+  await via.click();
+  const armato = (await via.innerText()).trim(), rosso = await via.evaluate((b) => b.classList.contains("armato"));
+  await sospendi(6600);
+  const tornato = (await via.innerText().catch(() => "")).trim();
+  check(primaVia === "Elimina tutti…" && armato === "Elimino tutti, anche dall'iPhone? Tocca di nuovo" && rosso && tornato === "Elimina tutti…" && (await copiaPin()) === n0,
+    `«Elimina tutti…»: il primo tocco arma (rosso), e dopo 6 secondi torna com'era, senza eliminare (got «${primaVia}» → «${armato}» ${rosso ? "rosso" : ""} → «${tornato}»)`);
+  await pd.keyboard.press("Escape");
   await pd.close();
 }
 

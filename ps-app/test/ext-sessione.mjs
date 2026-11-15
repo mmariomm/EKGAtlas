@@ -838,8 +838,10 @@ if (prova("«Conferma di nuovo» mentre la Conferma del medico è in volo: nient
   const rec = (await ordini()).find((x) => x.id === rec0.id);
   check(premuto && conferme(A).length === 2 && conferme(A).every((q) => q.params.RICHIESTA_ID === rid),
     `due Conferme: quella ignorata e quella del medico — «Conferma di nuovo» non preme (got ${conferme(A).length})`);
-  check(!(r2 && r2.ok) && !!rec && rec.vista?.tag === "Da controllare" && !rec.vista?.riconferma && !(await ordini()).some((x) => x.id === rec0.id + "c"),
-    `il tocco non parte, e il bottone se ne va: «Da controllare» (got ${JSON.stringify(r2 && r2.ok)} · ${JSON.stringify(rec && rec.vista)})`);
+  // («Da controllare»; o già «Confermata», se intanto una pagina del paziente l'ha elencata — la Conferma del medico è arrivata)
+  const detto = rec?.vista?.tag === "Da controllare" || (rec?.vista?.tag === "Confermata" && A.state.richieste[rid].confirmed && !/[Ss]tampat/.test(rec.vista.testo || ""));
+  check(!(r2 && r2.ok) && !!rec && detto && !rec.vista?.riconferma && !(await ordini()).some((x) => x.id === rec0.id + "c"),
+    `il tocco non parte, e il bottone se ne va: «Da controllare» (o «Confermata», provata) (got ${JSON.stringify(r2 && r2.ok)} · ${JSON.stringify(rec && rec.vista)})`);
   await doc2.close().catch(() => {});
   sess.dopoConferma = null; sess.confermaLenta = 0;
 }
@@ -1258,7 +1260,7 @@ if (prova("dal telefono, la radiologia senza risposta del service worker: da con
   const r = await sw.evaluate((e) => ponteSuScheda("ordina", { ep: "999001", quesito: "dolore toracico", esami: e, id: "telgambe0001" }), [`${RES.POC}:324`, `${RES.RX}:35`]);
   await sw.evaluate(() => { chrome.runtime.onMessage.removeListener(self.__senzaRx); chrome.runtime.onMessage.addListener(ordMessaggio); });
   const av = (r && r.dati && r.dati.avviso) || "";
-  check(!!r && r.ok && (r.dati.ordini || []).length === 1 && /^Da controllare: radiologia \(il service worker non risponde/.test(av) && !/Non partiti/.test(av),
+  check(!!r && r.ok && (r.dati.ordini || []).length === 1 && /^Da controllare: radiologia \(PS Assist non ha risposto/.test(av) && !/Non partiti/.test(av),
     `il laboratorio partito, la radiologia senza risposta: «Da controllare: radiologia (…)», mai «Non partiti» (got ${JSON.stringify(r && r.ok)} · «${av}»)`);
   await finche(async () => !(await ordini()).some((x) => ["coda", "avvio", "corre"].includes(x.stato)), 60000);
 }

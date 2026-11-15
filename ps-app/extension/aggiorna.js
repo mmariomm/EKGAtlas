@@ -78,7 +78,7 @@ async function aggVersione() {
 // ricarica. host.ps1 copia manifest.json per ultimo: a metà copia «chi» dice
 // ancora la vecchia).
 async function aggInstallata(v) {
-  const come = `per aggiornarla con un tocco: stampa\\installa.cmd, poi in chrome://extensions carica l'estensione da ${AGG_CARTELLA}`;
+  const come = `perché si aggiorni da sola: stampa\\installa.cmd, poi in chrome://extensions carica l'estensione da ${AGG_CARTELLA}`;
   const marca = await fetch(chrome.runtime.getURL("installata.json")).then((r) => r.ok).catch(() => false);
   if (!marca) return { puo: false, come };
   const c = await ospite({ t: "chi" }, 30e3);
