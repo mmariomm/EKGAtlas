@@ -266,7 +266,13 @@ check(coperta, "in sottofondo l'app si copre (il selettore delle app di iOS non 
 await aspetta(/ROSSI MARIO/);
 await tel.locator('[data-a="menu"]').click();
 const sc = tel.locator('[data-a="dimentica"]');
-if (await sc.count()) { await sc.click(); await sc.click(); }
+// due tocchi, come ogni cosa che non si disfa: il primo arma (e il ⋯ resta aperto), un doppio tocco per sbaglio non scollega
+await sc.click();
+await sc.click();
+await sospendi(1200);
+check(!vero.comandi.slice(primi).includes("scollega") && /Scollego\? Tocca di nuovo/.test(await sc.innerText().catch(() => "")),
+  "«Scollega il PC»: il primo tocco arma («Scollego? Tocca di nuovo…»), un doppio tocco per sbaglio non scollega");
+await sc.click();
 check(await finche(() => vero.comandi.slice(primi).includes("scollega"), 8000), "«Scollega» sul telefono: il PC riceve «scollega» (e chiude l'associazione anche lui)");
 
 sezione("il telefono: il rinnovo, la cassa, il QR nuovo (rev-s2)");

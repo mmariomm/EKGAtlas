@@ -67,6 +67,9 @@ button { cursor: pointer; touch-action: manipulation; }
 .menu .pcrow.qui .pcbtn { color: var(--blu); }
 .menu .pcrow .pcbtn small { color: var(--grigio); font-weight: 600; }
 .menu .pcvia { flex: none; width: 42px; text-align: center; color: var(--grigio); }
+/* «Scollega» armato (il primo dei due tocchi): lo dice, in rosso */
+.menu .pcvia.arma { width: auto; color: var(--rosso); font-weight: 700; }
+.menu .via.arma { font-weight: 700; }
 .menu .sep { height: 1px; background: var(--linea); margin: 6px 6px; }
 
 main { padding: 12px var(--dx) calc(112px + env(safe-area-inset-bottom)) var(--sx); max-width: 760px; margin: 0 auto; }

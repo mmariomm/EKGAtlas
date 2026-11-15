@@ -89,7 +89,7 @@
     vista: { nome: "lista", ep: "" }, scheda: "esiti", dfFoglio: false, precAperti: false,
     sel: new Map(), bloccati: new Map(), aperti: new Set(),
     riprendi: null,      // dopo i 3 minuti (o il riavvio del PC): { ep, scheda } dell'ultimo paziente — solo in memoria, mai su disco, e solo finché il PC non risponde
-    occupato: new Set(), vitAperti: "", promTesto: "", menu: false, arma: null, avviso: null,
+    occupato: new Set(), vitAperti: "", promTesto: "", menu: false, arma: null, viaArma: null, avviso: null,
     inviati: new Map(),  // ep → oid dell'ordine che sta andando al PC (il bottone aspetta)
     cartelle: new Map(), // ep → la cartella letta sul PC: { ep, letto, campi: [{ nome, v, ro }] }
     cbozze: new Map(),   // ep → Map(nome → { base, testo }): quello che il medico ha scritto, e su che cosa
@@ -339,10 +339,37 @@
   // «Scollega» un PC della lista (la sua chiave via da qui). L'attivo: via quello e si passa a un altro
   // (o, se era l'ultimo, si resta senza associazione).
   function dimenticaPcId(id) {
-    if (!S.coppia || id === S.coppia.id) return dimentica("senza");
+    if (!S.coppia || id === S.coppia.id) return scollegaAttivo();   // (l'attivo: come «Scollega il PC», lo sa anche il PC)
     S.pcs = S.pcs.filter((p) => p.id !== id);
     cassaTogli(id);
     salvaPcs(); render();
+  }
+  // «Scollega» (il ⋯, o il 🗑️ di un PC della lista) non si disfa — serve un QR nuovo —: due tocchi, come un
+  // ordine. Il primo arma per 6 secondi (il ⋯ resta aperto e lo dice), il secondo scollega; un secondo tocco
+  // entro 800 ms è un doppio tocco per sbaglio e non conta. `id`: quello del PC, o «*» per il PC attivo.
+  function armaVia(id) {
+    const ora = Date.now(), a = S.viaArma;
+    S.menu = true;   // (il tocco nel ⋯ lo chiude: qui resta aperto finché non scollega)
+    if (!a || a.id !== id || ora - a.ts > 6000) {
+      S.viaArma = { id, ts: ora };
+      setTimeout(() => { if (S.viaArma && S.viaArma.id === id && Date.now() - S.viaArma.ts >= 6000) { S.viaArma = null; render(); } }, 6100);
+      render();
+      return false;
+    }
+    if (ora - a.ts < 800) return false;   // un doppio tocco per sbaglio è un tocco solo
+    S.viaArma = null; S.menu = false;
+    return true;
+  }
+  // Il PC attivo: anche sul PC l'associazione finisce («scollega»); un PC di prima non lo conosce: «esci», come
+  // sempre (si aspetta che partano — al più 2 secondi —: chiusa la presa subito, non arriverebbero)
+  let scollegando = false;
+  function scollegaAttivo() {
+    if (scollegando) return;
+    render();
+    if (!S.canale) return dimentica("senza");
+    scollegando = true;
+    const via = [chiedi("scollega", {}, 2000, true).catch(() => {}), chiedi("esci", {}, 2000).catch(() => {})];
+    Promise.race([Promise.all(via), pausa(2000)]).then(() => { scollegando = false; dimentica("senza"); });
   }
   function dimentica(fase) {
     // via l'associazione ATTIVA; se ne restano altre, si passa alla prima
@@ -2062,7 +2089,9 @@
       const att = p.id === (S.coppia && S.coppia.id);
       const vivo = att && S.fase === "pronta" && !!S.canale;
       const stato = vivo ? "attivo adesso" : att ? "attivo" : "";
-      return `<div class="pcrow${att ? " qui" : ""}"><button class="pcbtn" data-a="pc" data-id="${esc(p.id)}">${em("💻")}${esc(p.nome || "PC")}${stato ? ` <small>${stato}</small>` : ""}</button><button class="pcvia" data-a="pcvia" data-id="${esc(p.id)}" aria-label="Scollega questo PC">${em("🗑️")}</button></div>`;
+      return `<div class="pcrow${att ? " qui" : ""}"><button class="pcbtn" data-a="pc" data-id="${esc(p.id)}">${em("💻")}${esc(p.nome || "PC")}${stato ? ` <small>${stato}</small>` : ""}</button>${S.viaArma && S.viaArma.id === p.id
+        ? `<button class="pcvia arma" data-a="pcvia" data-id="${esc(p.id)}">Scollego? Tocca di nuovo</button>`
+        : `<button class="pcvia" data-a="pcvia" data-id="${esc(p.id)}" aria-label="Scollega questo PC">${em("🗑️")}</button>`}</div>`;
     }).join("")}<div class="sep"></div>` : "";
     // (l'elenco si rilegge da solo a ogni ritorno; la sessione finisce da sola; la stampante è quella toccata
     // l'ultima volta in «Stampa: PC · Infermeria»: nel ⋯ resta quello che non c'è altrove)
@@ -2076,7 +2105,8 @@
         <button data-a="dispositivi">${em("🖥️")}Dispositivi</button>
         <button data-a="rivedere">${em("📌")}Da rivedere${nPin() ? ` (${nPin()})` : ""}</button>
         <button data-a="registrazioni"><span class="em rec" aria-hidden="true">●</span> Registrazioni</button>
-        <button class="via" data-a="dimentica">${em("🗑️")}Scollega ${S.pcs.length >= 2 ? "questo PC" : "il PC"}</button>
+        <button class="via${S.viaArma && S.viaArma.id === "*" ? " arma" : ""}" data-a="dimentica">${em("🗑️")}${
+          S.viaArma && S.viaArma.id === "*" ? "Scollego? Tocca di nuovo: servirà un QR nuovo" : `Scollega ${S.pcs.length >= 2 ? "questo PC" : "il PC"}`}</button>
       </div>` : ""}</header>`;
   }
   // (le schermate senza sessione: «Dispositivi» apre la stessa lista — il registro e le sonde, una volta, al tocco)
@@ -3141,10 +3171,10 @@
     if (b.getAttribute("aria-disabled") === "true") { if (b.id === "ordina" && selDi(S.vista.ep).esami.size && !selDi(S.vista.ep).q.trim()) fuocoSu("quesito"); return; }
     const a = b.dataset.a, ep = S.vista.ep;
     if (a !== "menu" && S.menu) S.menu = false;
-    if (a === "menu") { S.menu = !S.menu; render(); }
+    if (a === "menu") { S.menu = !S.menu; S.viaArma = null; render(); }
     else if (a === "riapri") riapri();
     else if (a === "pc") attivaPc(b.dataset.id);                 // passa a un altro PC della lista
-    else if (a === "pcvia") dimenticaPcId(b.dataset.id);          // «Scollega» un PC della lista
+    else if (a === "pcvia") { if (armaVia(b.dataset.id)) dimenticaPcId(b.dataset.id); }   // «Scollega» un PC della lista (due tocchi)
     else if (a === "regpc") { S.regAiuto = S.regAiuto === b.dataset.id ? "" : b.dataset.id; render(); }   // un PC non associato: come si collega
     else if (a === "cambia") cambia();
     else if (a === "scansiona") apriScan();
@@ -3184,18 +3214,7 @@
     else if (a === "mappasel") { S.mappaSel = b.dataset.k; render(); }
     else if (a === "indietro") { S.vista = { nome: "lista", ep: "" }; S.arma = null; S.eti = null; render(); aggiornaLista(); }
     else if (a === "aggiornaLista") aggiornaLista(false, true);
-    else if (a === "dimentica") {
-      if (b.dataset.sicuro !== "1") { b.dataset.sicuro = "1"; b.textContent = "Scollego? Servirà un QR nuovo"; return; }
-      // (3.87) anche sul PC l'associazione finisce («scollega»); un PC di prima non lo conosce: «esci», come sempre
-      // (si aspetta che partano — al più 2 secondi —: chiusa la presa subito, non arriverebbero)
-      if (S.canale) {
-        b.disabled = true;
-        const via = [chiedi("scollega", {}, 2000, true).catch(() => {}), chiedi("esci", {}, 2000).catch(() => {})];
-        Promise.race([Promise.all(via), pausa(2000)]).then(() => dimentica("senza"));
-        return;
-      }
-      dimentica("senza");
-    }
+    else if (a === "dimentica") { if (armaVia("*")) scollegaAttivo(); }   // «Scollega il PC» (due tocchi)
     else if (a === "sostituisci") sostituisci(true);
     else if (a === "tieni") sostituisci(false);
     else if (a === "riavvia") location.reload();

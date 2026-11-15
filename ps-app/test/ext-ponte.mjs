@@ -1163,6 +1163,17 @@ const esitiDi = async (ep, re = /./) => {
   await sospendi(8000);
   check(perso && rifatta && aperteB() === n2 + 1, `una navigazione davvero persa: dopo qualche secondo la pagina del paziente si chiede di nuovo, una volta sola (${aperteB() - n2} richieste, dopo ${dopo2} ms)`);
   check(await finche(async () => await dietroSu("999002") === 0, 60000), "…e la lettura finisce lo stesso: la scheda dietro si chiude");
+  // il 🗑️ di un PC della lista non si disfa (serve un QR nuovo): due tocchi, come «Scollega il PC»
+  const idsTel = () => tel.evaluate(() => JSON.parse(localStorage.getItem("psassist.ponte.pcs.v1")).v.map((p) => p.id).join());
+  await tocca(tel, '[data-a="menu"]');
+  await tocca(tel, '[data-a="pcvia"][data-id="ZZclone0001"]');
+  await tocca(tel, '[data-a="pcvia"][data-id="ZZclone0001"]');   // (un doppio tocco per sbaglio: conta uno)
+  const armato = (await tel.locator('[data-a="pcvia"][data-id="ZZclone0001"]').innerText().catch(() => "")).trim();
+  await sospendi(900);
+  const ids1 = await idsTel();
+  await tocca(tel, '[data-a="pcvia"][data-id="ZZclone0001"]');
+  check(/^Scollego\? Tocca di nuovo$/.test(armato) && ids1 === [c0.id, "ZZclone0001"].join() && await finche(async () => await idsTel() === c0.id, 5000),
+    `il 🗑️ di un PC della lista: il primo tocco arma («${armato}»), un doppio tocco non toglie niente, il secondo tocco sì (${ids1} → ${await idsTel()})`);
   // com'era: un PC solo in lista
   await tel.evaluate((c) => localStorage.setItem("psassist.ponte.pcs.v1", JSON.stringify({ v: [c], attivo: c.id })), c0);
   await tel.reload();
