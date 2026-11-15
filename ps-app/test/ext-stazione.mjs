@@ -654,6 +654,26 @@ const foglioProva = (rq) => sw.evaluate((r) => stazioneStampa("a4", btoa("%PDF-1
 }
 
 // ===========================================================================
+sezione("il registro dei fogli che non si scrive una volta: quel foglio non esce, i fogli dopo sì");
+{
+  // un guasto del disco (una volta sola) proprio sul registro dei fogli della stazione
+  await staSw.evaluate(() => {
+    const vero = chrome.storage.local.set.bind(chrome.storage.local);
+    let una = true;
+    chrome.storage.local.set = (o, ...r) => (una && o && STA.rq in o ? (una = false, Promise.reject(new Error("IO error"))) : vero(o, ...r));
+    globalThis.__veroSet = vero;
+  });
+  const sta0 = lavori("sta").length;
+  const k1 = await foglioProva("guasto-a-" + Date.now().toString(36));
+  await sospendi(800);
+  check(k1.esito !== "stampato" && lavori("sta").length === sta0, `il foglio col registro guasto: non stampato, perché non annotato prima (got ${k1.esito})`);
+  const k2 = await foglioProva("guasto-b-" + Date.now().toString(36));
+  await finche(() => lavori("sta").length > sta0, 10000);
+  check(k2.esito === "stampato" && lavori("sta").length === sta0 + 1, `il foglio dopo, col disco tornato a posto: stampato, una volta (got ${k2.esito})`);
+  await staSw.evaluate(() => { chrome.storage.local.set = globalThis.__veroSet; });
+}
+
+// ===========================================================================
 sezione("il puntino sull'icona: solo un guaio (foglio non stampato, aiutante muto), e si spegne guardando la stazione");
 {
   const puntino = () => staSw.evaluate(async () => ({ t: await chrome.action.getBadgeText({}), c: await chrome.action.getBadgeBackgroundColor({}) }));

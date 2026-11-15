@@ -230,9 +230,13 @@
     const testo = `ps-appunti|${c.id}|${op}|${t}|${v}|${await sha(blob || "")}`;
     return b64u(new Uint8Array(await subtle.sign("HMAC", c.hmac, enc.encode(testo))));
   }
-  async function appuntiCorpo(c, op, v = 0, blob = "", ora = Date.now()) {
-    const t = Math.round(ora), scrive = op === "scrivi";
-    return JSON.stringify({ id: c.id, op, t, v, ...(scrive ? { blob } : {}), ...(scrive && v === 0 ? { chiave: c.chiave } : {}),
+  // `stanza` ({ r, entra: [chiavi d'entrata pc/tel] }): la prima scrittura crea l'id lassù, e solo chi prova una
+  // stanza del ponte lo può fare (worker/ponte-logica.js, Stanza.provaAppunti): l'HMAC su «appunti.<id>.<t>»
+  async function appuntiCorpo(c, op, v = 0, blob = "", ora = Date.now(), stanza = null) {
+    const t = Math.round(ora), scrive = op === "scrivi", crea = scrive && v === 0;
+    const prStanza = crea && stanza && /^[0-9a-f]{32}$/.test(stanza.r || "") && Array.isArray(stanza.entra) && stanza.entra.length
+      ? { r: stanza.r, prova: await Promise.all(stanza.entra.slice(0, 4).map((k) => provaEntra(k, `appunti.${c.id}.${t}`))) } : null;
+    return JSON.stringify({ id: c.id, op, t, v, ...(scrive ? { blob } : {}), ...(crea ? { chiave: c.chiave } : {}), ...(prStanza ? { stanza: prStanza } : {}),
       prova: await appuntiProva(c, op, t, v, scrive ? blob : "") });
   }
   async function appuntiCifra(c, doc) {
@@ -261,7 +265,8 @@
   // Una lettura (senza `cambia`) o una modifica con compare-and-set: si legge, si cambia, si scrive con la
   // versione letta; se intanto qualcuno ha scritto (409, con la copia nuova), si riapplica lì la modifica.
   //   fai(corpo) → { stato, json }   (la POST a /ponte/appunti)
-  async function appuntiFai(c, fai, cambia = null) {
+  //   stanza: per la prima scrittura (appuntiCorpo)
+  async function appuntiFai(c, fai, cambia = null, stanza = null) {
     let r = await fai(await appuntiCorpo(c, "leggi"));
     if (r.stato === 404) r = { stato: 200, json: { v: 0, blob: "" } };
     for (let giro = 0; giro < 5; giro++) {
@@ -269,7 +274,7 @@
       const v = r.json.v | 0, doc = await appuntiApri(c, r.json.blob);
       if (!cambia) return { v, doc };
       const nuovo = appuntiUnisci(cambia(doc), null);
-      r = await fai(await appuntiCorpo(c, "scrivi", v, await appuntiCifra(c, nuovo)));
+      r = await fai(await appuntiCorpo(c, "scrivi", v, await appuntiCifra(c, nuovo), Date.now(), stanza));
       if (r.stato === 200) return { v: r.json.v | 0, doc: nuovo };
       if (r.stato === 404) r = { stato: 409, json: { v: 0, blob: "" } };
     }

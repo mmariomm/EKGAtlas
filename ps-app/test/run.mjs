@@ -6015,8 +6015,9 @@ async function scenarioPromemoria(browser) {
   await page.clock.fastForward("04:30");
   check(scen, (await voceLi("EGA").count()) === 1 && (await voci()).includes("EGA"), "dopo 4 minuti e mezzo la voce fatta c'è ancora");
   await page.clock.fastForward("01:00");
-  check(scen, (await voceLi("EGA").count()) === 0 && !(await voci()).includes("EGA") && (await $panel(page, ".dfpop .dfi").count()) === 2,
-    `passati i 5 minuti se ne va, dalla lista aperta e dalla memoria (got: ${(await voci()).join(" | ")})`);
+  // (3.90) leggere non scrive: dalla memoria se ne va con la scrittura dopo (il testo cambiato, qui sotto)
+  check(scen, (await voceLi("EGA").count()) === 0 && (await voci()).includes("EGA") && (await $panel(page, ".dfpop .dfi").count()) === 2,
+    `passati i 5 minuti se ne va dalla lista aperta; in memoria resta fino alla prossima scrittura, perché leggere non scrive (got: ${(await voci()).join(" | ")})`);
   // un tocco sul testo lo modifica: Invio salva, Esc lascia com'era; ✕ cancella
   await voceLi("chiamare la figlia").locator(".dftx").click();
   await $panel(page, ".dfpop .dfmod").fill("chiamare la figlia stasera");

@@ -19,7 +19,7 @@ import { join, normalize, extname, dirname, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { WebSocketServer } from "ws";
 import { Stanza, Registro, PONTE, PING, PONG, FILE_APP, leggiStanza, intestazioniApp, leggiProvaRegistro, INTESTAZIONI_ANNUNCIO,
-  Appunti, APPUNTI, leggiAppunti, INTESTAZIONI_APPUNTI } from "../../worker/ponte-logica.js";
+  Appunti, APPUNTI, leggiAppunti, INTESTAZIONI_APPUNTI, ammettiAppunti, leggiProvaAppunti } from "../../worker/ponte-logica.js";
 
 const APP = join(dirname(fileURLToPath(import.meta.url)), "../../public/ponte");
 const TIPI = {
@@ -65,8 +65,9 @@ export async function avviaRelay({ porta = 0, osserva = null, ipProva = false } 
 
   // Il registro dei PC (come il Durable Object «registro», worker/ponte.js): l'elenco in memoria, e per i test
   // ogni annuncio e ogni lettura (con chi, e com'è andata)
-  let salvato = null;
-  const registro = new Registro({ leggi: () => structuredClone(salvato), scrivi: (v) => { salvato = structuredClone(v); }, ip: new Map() });
+  let salvato = null, nuovi = null;
+  const registro = new Registro({ leggi: () => structuredClone(salvato), scrivi: (v) => { salvato = structuredClone(v); }, ip: new Map(),
+    nuovi: { leggi: () => structuredClone(nuovi), scrivi: (v) => { nuovi = structuredClone(v); } } });
   const regLog = [];
   const corpo = (req, max) => new Promise((ok) => {
     let t = "", troppo = false;
@@ -106,8 +107,13 @@ export async function avviaRelay({ porta = 0, osserva = null, ipProva = false } 
     if (t == null) { fine(413, "{}"); return; }
     const m = leggiAppunti(t);
     if (!m) { fine(400, "{}"); return; }
+    // un id nuovo: prima la stanza che porta (la prova), poi i tetti nel registro (come il Worker)
+    const ip = (ipProva && req.headers["x-prova-ip"]) || req.socket.remoteAddress || "";
+    const ok = await ammettiAppunti(m, async (r, c) => { const x = logica(r).provaAppunti(leggiProvaAppunti(c), Date.now()); return x.ok ? 200 : x.stato; },
+      async () => registro.nuoviAppunti(ip, Date.now()).stato);
+    if (ok && ok !== true) { fine(ok.stato, "{}"); return; }
     const a = di(appArchivi, m.id);
-    const r = new Appunti({ leggi: (k) => a.get(k) ?? null, scrivi: (k, v) => a.set(k, v), svuota: () => a.clear(), conti: di(appConti, m.id) }).richiesta(m, Date.now());
+    const r = new Appunti({ leggi: (k) => a.get(k) ?? null, scrivi: (k, v) => a.set(k, v), svuota: () => a.clear(), conti: di(appConti, m.id) }).richiesta(m, Date.now(), ok === true);
     fine(r.stato, r.corpo);
   }
 

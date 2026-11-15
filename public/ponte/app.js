@@ -519,9 +519,12 @@
       if (S.chiaviProssima) S.chiaviProssima = { ...S.chiaviProssima, stanza: S.wsStanza };
       salvaPcs();
     }
-    // …il PC non c'è: fra poco, l'altra stanza (se ce n'è un'altra)
+    // …il PC non c'è: fra poco, l'altra stanza (se ce n'è un'altra) — o, con una sola, di nuovo la stessa: il
+    // ripetitore dice «non c'è» anche di un PC che tace da troppo (addormentato), e quando batte di nuovo lo dice
+    // solo a chi entra (3.90)
     clearTimeout(S.tGiro);
-    if (!pari && S.stanze && S.stanze.length > 1) {
+    if (pari && S.stanze && S.stanze.length === 1) S.giro = 0;
+    if (!pari && S.stanze && S.stanze.length) {
       const ws = S.ws;
       S.tGiro = setTimeout(() => { if (S.ws === ws && S.pari !== true) { S.giro = (S.giro || 0) + 1; chiudiPresa(); collega(); } },
         Math.min(60e3, (S.canale ? 3 : 1) * GIRO_MS * 2 ** Math.floor((S.giro || 0) / 2)));   // (un PC spento: sempre più di rado; con una sessione aperta si aspetta di più — un PC che si rifà la presa torna in un attimo)
@@ -691,7 +694,7 @@
     if (d.evento === "stampa" && d.stampa && typeof d.stampa === "object") { if (S.catalogo) { S.catalogo = { ...S.catalogo, stampa: d.stampa }; render(); } return; }
     if (d.evento === "avviso") avviso(d.testo);
   }
-  const errDa = (d) => Object.assign(new Error(d.errore || "Non riuscito sul PC"), { dati: d.dati, incerto: !!d.incerto, dimesso: !!d.dimesso, scaduta: !!d.scaduto, smart: d.smart || null,
+  const errDa = (d) => Object.assign(new Error(d.errore || "Non riuscito sul PC"), { dati: d.dati, incerto: !!d.incerto, dimesso: !!d.dimesso, scaduta: !!d.scaduto, smart: d.smart || null, occupato: !!d.occupato,
     ricarica: Array.isArray(d.cambiati) || Array.isArray(d.chiusi) ? [...(d.cambiati || []), ...(d.chiusi || [])] : null });
   // Un comando al PC. `auto`: lo manda l'app da sé (non il medico), e non
   // tiene aperta la sessione — né qui né sul PC. `tempo`: quanto può volerci,
@@ -711,7 +714,21 @@
   // («areaApri» cambia l'area della sessione del gestionale: anche lei)
   const SCRITTURE_TEL = new Set(["ordina", "cartellaSalva", "terapiaAggiungi", "accetta", "areaApri", "registrazioneVia", "dfAggiungi", "dfSpunta", "dfTogli", "posto", "stazioneCollega",
     "etichetta"]);   // (l'etichetta libera stampa: un tocco del medico, mai su un PC di sola lettura)
+  // (3.90) Una lettura che arriva mentre il PC manda un ordine: il PC risponde subito «occupato» (ponte-sw.js,
+  // ponteOccupato) — la scheda del gestionale aspetterebbe la fine dell'ordine. Qui si tiene quello che c'è e si
+  // chiede di nuovo fra OCCUPATO_MS, finché l'ordine finisce (al più OCCUPATO_GIRI volte: un ordine dura al più
+  // 4 minuti); mai «il PC non risponde». Solo le letture: una scrittura (`o.rq`) non si rifà da sé.
+  const OCCUPATO_MS = 4e3, OCCUPATO_GIRI = 60;
   function chiedi(cmd, args = {}, tempo = TEMPO, auto = false, o = {}) {
+    if (o.rq) return chiediUna(cmd, args, tempo, auto, o);
+    const giro = (n) => chiediUna(cmd, args, tempo, auto, o).catch((e) => {
+      if (!e || !e.occupato || n >= OCCUPATO_GIRI) throw e;
+      if (n === 0 && !auto) avviso("Il PC sta mandando un ordine: riprovo");
+      return new Promise((ok) => setTimeout(ok, OCCUPATO_MS)).then(() => giro(n + 1));
+    });
+    return giro(0);
+  }
+  function chiediUna(cmd, args = {}, tempo = TEMPO, auto = false, o = {}) {
     return new Promise((si, no) => {
       if (solaLettura() && SCRITTURE_TEL.has(cmd)) { no(Object.assign(new Error("Sola lettura: su questo PC non si scrive"), { solaLettura: true })); return; }
       if (!S.canale) { no(new Error("Sessione chiusa")); return; }
@@ -2578,7 +2595,8 @@
     const t = await appuntiTenuta();
     if (!t) return;
     try {
-      S.pins = (await P.appuntiFai(t.c, appuntiPosta, (d) => { const pin = { ...d.pin }; delete pin[k]; return { ...d, pin, via: { ...d.via, [k]: Date.now() } }; })).doc.pin;
+      S.pins = (await P.appuntiFai(t.c, appuntiPosta, (d) => { const pin = { ...d.pin }; delete pin[k]; return { ...d, pin, via: { ...d.via, [k]: Date.now() } }; },
+        S.chiavi && S.entra && S.entra.length ? { r: stanzaOra(), entra: S.entra } : null)).doc.pin;   // (la prova della stanza: se gli appunti lassù non ci sono ancora)
       S.pinFoglio = "";
       avviso("Tolto dal da rivedere", "ok");
     } catch { avviso("Ponte non raggiungibile: pin non tolto", "err"); }

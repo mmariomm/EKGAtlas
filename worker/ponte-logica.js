@@ -33,13 +33,13 @@
 export const PONTE = {
   frameMax: 1 << 20,          // un messaggio non supera 1 MB
   alMinuto: 1200,             // messaggi per minuto per presa, oltre si chiude
-  // Una presa che tace da 75 secondi (tre battiti persi: i client ne mandano
-  // uno ogni 20, e senza «pong» in 10 si rifanno da soli) è morta: non conta
-  // più per chi c'è (di chi entra si ritirano solo le vecchie del suo ruolo). Nessuna sveglia apposta.
+  // Una presa che tace da 75 secondi (due battiti persi e mezzo: i client ne mandano uno ogni 30, e senza
+  // «pong» in 15 si rifanno da soli) è muta: al telefono che entra, il PC così si dice assente (Stanza.muta,
+  // in ammetti) — la presa resta, e conta per tutto il resto. Nessuna sveglia apposta.
   inattivoMs: 75e3,
-  // un telefono che ha battuto da meno di 30 secondi (uno ogni 20) è davanti a qualcuno: se un'altra
-  // scheda prende il suo posto, la chiusura gli arriva subito; se no è in sottofondo, o morto — si ritira
-  vivoMs: 30e3,
+  // una presa che ha battuto da meno di 45 secondi (uno ogni 30, e uno può tardare) è davanti a qualcuno: se
+  // un'altra scheda prende il suo posto, la chiusura le arriva subito; se no è in sottofondo, o morta — si ritira
+  vivoMs: 45e3,
   // le prese ritirate che Cloudflare non ha ancora buttato: oltre queste, le più
   // vecchie si chiudono davvero (solo un tetto: un client che si rifà ogni
   // minuto e mezzo ne lascia una ventina finché le connessioni cadono)
@@ -299,7 +299,7 @@ export class Stanza {
     // telefono — o chi conosce il numero della stanza ed entra al posto del PC o
     // della stazione) è viva: la chiusura le arriva subito, e un PC o una stazione
     // così riprova da sé e si riprende il posto (mai sorda per sempre: il suo
-    // battito lo risponde il ripetitore, non passa di qui). Zitta da più di 30 s
+    // battito lo risponde il ripetitore, non passa di qui). Zitta da più di 45 s
     // è in sottofondo o morta: si ritira, e se torna e parla la chiusura le
     // arriva allora (a una presa morta non si manda niente: costa).
     for (const p of tutte) {
@@ -319,7 +319,11 @@ export class Stanza {
       }
     }
     const altra = this.presa(altroRuolo(ruolo), presa);
-    this.io.invia(presa, presenza(!!altra));
+    // (3.90) Al telefono che entra, un PC che tace da più di inattivoMs (nemmeno il battito: addormentato, una
+    // rete caduta senza dirlo) è assente: un ordine aspetta «In coda» e scade pulito, invece di partire verso
+    // nessuno. Solo la presenza: la presa del PC resta com'è (sopra). Solo al telefono: è lui che rientra da sé
+    // finché il PC non c'è (public/ponte/app.js, presenza), e così lo ritrova appena batte di nuovo.
+    this.io.invia(presa, presenza(!!altra && !(ruolo === "tel" && this.muta(altra, this.io.leggi(altra), ora))));
     if (altra) this.io.invia(altra, presenza(true));
   }
   // La risposta alla sfida: `prova` (una o più HMAC, una per chiave che il client ha), e — dal PC —
@@ -459,6 +463,19 @@ export class Stanza {
     if (!m.prova.some((p) => note.some((c) => uguali(p, provaDi(c, sfida))))) return { ok: false, stato: 403 };
     try { a.scrivi("registro:t", m.t); } catch { return { ok: false, stato: 503 }; }
     return { ok: true };
+  }
+  // (gli appunti, più sotto) La prima scrittura di un id di appunti: chi la manda prova questa stanza — l'HMAC con
+  // una sua chiave d'entrata `pc` o `tel` (non scaduta) su «appunti.<id>.<t>», con t vicino all'ora del ripetitore.
+  // L'id è nella prova: non serve a crearne un altro. { ok } o { ok: false, stato }. Nessuna presa.
+  provaAppunti(m, ora) {
+    if (!m) return { ok: false, stato: 400 };
+    if (this.oltre("appunti", 1, APPUNTI.nuoviAlMinuto, ora)) return { ok: false, stato: 429 };
+    if (Math.abs(ora - m.t) > APPUNTI.provaMs) return { ok: false, stato: 403 };
+    let note;
+    try { note = [...this.chiavi("pc", ora), ...this.chiavi("tel", ora)]; } catch { return { ok: false, stato: 503 }; }
+    if (!this.io.archivio || !note.length) return { ok: false, stato: 403 };
+    const sfida = APPUNTI_ETICHETTA + m.id + "." + m.t;
+    return m.prova.some((p) => note.some((c) => uguali(p, provaDi(c, sfida)))) ? { ok: true } : { ok: false, stato: 403 };
   }
 }
 
@@ -642,6 +659,20 @@ export class Registro {
     l.sort((x, y) => x.fa - y.fa);
     return { stato: 200, corpo: JSON.stringify({ pc: l }) };
   }
+  // (gli appunti, più sotto) Un id di appunti nuovo, già provato da una stanza (Stanza.provaAppunti): i tetti — per
+  // IP all'ora (in memoria), e per tutti al giorno (su disco: `io.nuovi`, un valore { g, n }). { stato, corpo }
+  nuoviAppunti(ip, ora) {
+    if (this.contaIp(ip, "p", APPUNTI.nuoviPerIp, 3600e3, ora)) return { stato: 429, corpo: "troppi nuovi da qui" };
+    const io = this.io.nuovi;
+    if (!io) return { stato: 503, corpo: "archivio" };
+    const g = Math.floor(ora / 864e5);
+    let x;
+    try { x = io.leggi(); } catch { return { stato: 503, corpo: "archivio" }; }
+    if (!x || x.g !== g || !Number.isSafeInteger(x.n)) x = { g, n: 0 };
+    if (x.n >= APPUNTI.nuoviAlGiorno) return { stato: 429, corpo: "troppi nuovi oggi" };
+    try { io.scrivi({ g, n: x.n + 1 }); } catch { return { stato: 503, corpo: "archivio" }; }
+    return { stato: 200, corpo: "ok" };
+  }
 }
 // Le intestazioni di un annuncio: chiunque può annunciarsi (anche una pagina), e la risposta non dice niente
 export const INTESTAZIONI_ANNUNCIO = { "access-control-allow-origin": "*", "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" };
@@ -650,7 +681,7 @@ export const INTESTAZIONI_ANNUNCIO = { "access-control-allow-origin": "*", "cont
 /*
  * Gli appunti del medico («Da rivedere»: i pazienti con un pin e una nota), cifrati da un capo all'altro.
  *
- *   POST /ponte/appunti   { id, op: leggi|scrivi|elimina, t, v, blob?, chiave?, prova }
+ *   POST /ponte/appunti   { id, op: leggi|scrivi|elimina, t, v, blob?, chiave?, stanza?, prova }
  *
  * Un Durable Object per `id` (32 cifre esadecimali, dalla chiave degli appunti A: public/ponte/cripto.js), con UN
  * valore cifrato (`blob`: AES-GCM con una chiave che qui non arriva mai) e la sua versione (`v`, per il
@@ -660,13 +691,23 @@ export const INTESTAZIONI_ANNUNCIO = { "access-control-allow-origin": "*", "cont
  * SHA-256 del blob. La chiave della prova arriva qui con la prima scrittura (v = 0, a id vuoto) e resta: senza la
  * prova giusta niente si legge e niente si scrive. Una prova vale una volta, e solo vicino all'ora del ripetitore.
  * I tetti: il corpo, il blob, e le richieste al minuto per id. «Elimina» porta via tutto (anche la chiave della prova).
+ * Un id nuovo (la prima scrittura: crea qualcosa lassù, e resta) non lo crea chiunque: la richiesta porta anche
+ * `stanza` ({ r, prova }: una stanza del ponte e l'HMAC con una sua chiave d'entrata `pc` o `tel` su
+ * «appunti.<id>.<t>», Stanza.provaAppunti — la stessa specie di prova del registro), e passa i tetti per stanza,
+ * per IP e per tutti (Registro.nuoviAppunti). Solo allora gli appunti la accettano (`nuovoOk`). Gli id che ci
+ * sono già funzionano come prima.
  */
 export const APPUNTI = {
   corpo: 200000,              // caratteri di una richiesta
   blob: 150000,               // caratteri del valore cifrato (≈ 110 KB: qualche centinaio di pin)
   alMinuto: 60,               // richieste al minuto per id (le letture del PC sono già messe insieme: appunti-sw.js)
   provaMs: 5 * 60e3,          // l'ora della prova: al più tanto lontana da quella del ripetitore
+  // gli id nuovi (una coppia ne crea uno, una volta): per stanza al minuto, per IP all'ora, per tutti al giorno
+  nuoviAlMinuto: 5,
+  nuoviPerIp: 10,
+  nuoviAlGiorno: 200,
 };
+export const APPUNTI_ETICHETTA = "appunti.";   // la «sfida» della prova della stanza: appunti.<id>.<ora in ms>
 const OP_APPUNTI = new Set(["leggi", "scrivi", "elimina"]);
 // una richiesta, dal testo del POST: { id, op, t, v, blob, chiave, prova } o null
 export function leggiAppunti(testo) {
@@ -674,12 +715,45 @@ export function leggiAppunti(testo) {
   let m;
   try { m = JSON.parse(testo); } catch { return null; }
   if (!m || typeof m !== "object" || Array.isArray(m)) return null;
-  for (const k of Object.keys(m)) if (!["id", "op", "t", "v", "blob", "chiave", "prova"].includes(k)) return null;
+  for (const k of Object.keys(m)) if (!["id", "op", "t", "v", "blob", "chiave", "stanza", "prova"].includes(k)) return null;
   if (!/^[0-9a-f]{32}$/.test(m.id || "") || !OP_APPUNTI.has(m.op) || !Number.isSafeInteger(m.t) || m.t <= 0) return null;
   if (!Number.isSafeInteger(m.v) || m.v < 0 || typeof m.prova !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(m.prova)) return null;
   if (m.op === "scrivi" ? !(typeof m.blob === "string" && /^[A-Za-z0-9_-]{40,}$/.test(m.blob)) : m.blob != null) return null;
   if (m.chiave != null && !chiaveValida(m.chiave)) return null;
-  return { id: m.id, op: m.op, t: m.t, v: m.v, blob: m.blob || "", chiave: m.chiave || "", prova: m.prova };
+  const stanza = m.stanza == null ? null : provaStanzaAppunti(m.stanza);
+  if (m.stanza != null && !stanza) return null;
+  return { id: m.id, op: m.op, t: m.t, v: m.v, blob: m.blob || "", chiave: m.chiave || "", stanza, prova: m.prova };
+}
+// la prova della stanza di una richiesta: { r, prova: [...] }, o null
+function provaStanzaAppunti(x) {
+  if (!x || typeof x !== "object" || Array.isArray(x) || !/^[0-9a-f]{32}$/.test(x.r || "")) return null;
+  for (const k of Object.keys(x)) if (k !== "r" && k !== "prova") return null;
+  const prova = (Array.isArray(x.prova) ? x.prova : []).filter((p) => typeof p === "string" && p.length < 100).slice(0, 4);
+  return prova.length ? { r: x.r, prova } : null;
+}
+// una richiesta che crea l'id, se è nuovo: la prima scrittura, con la chiave della prova
+export const appuntiNuovo = (m) => !!m && m.op === "scrivi" && m.v === 0 && !!m.chiave;
+// quello che la stanza deve vedere per la prova (piccolo: mai il blob), e com'è riletto da lei
+export const corpoProvaAppunti = (m) => JSON.stringify({ id: m.id, t: m.t, r: m.stanza.r, prova: m.stanza.prova });
+export function leggiProvaAppunti(testo) {
+  if (typeof testo !== "string" || testo.length > 1000) return null;
+  let m;
+  try { m = JSON.parse(testo); } catch { return null; }
+  if (!m || typeof m !== "object" || !/^[0-9a-f]{32}$/.test(m.id || "") || !Number.isSafeInteger(m.t) || m.t <= 0) return null;
+  const s = provaStanzaAppunti({ r: m.r, prova: m.prova });
+  return s ? { id: m.id, t: m.t, prova: s.prova } : null;
+}
+// Davanti agli appunti (il Worker e il ripetitore Node, uguali): una richiesta che crea un id passa prima dalla
+// stanza che porta (la prova) e poi dai tetti; true se può creare, o { stato } per rispondere subito.
+//   stanza(r, corpo) → Promise<status HTTP>     tetti() → Promise<status HTTP>
+export async function ammettiAppunti(m, stanza, tetti) {
+  if (!appuntiNuovo(m)) return false;
+  if (!m.stanza) return { stato: 403 };
+  const s = await stanza(m.stanza.r, corpoProvaAppunti(m));
+  if (s !== 200) return { stato: s === 429 || s === 503 ? s : 403 };
+  const t = await tetti();
+  if (t !== 200) return { stato: t === 429 ? 429 : 503 };
+  return true;
 }
 // la prova giusta per una richiesta, con la chiave della prova (base64url): la stessa di cripto.js (appuntiProva)
 export function provaAppunti(chiave, m) {
@@ -695,7 +769,8 @@ export function provaAppunti(chiave, m) {
  */
 export class Appunti {
   constructor(io) { this.io = io; }
-  richiesta(m, ora) {
+  // `nuovoOk`: chi sta davanti (ammettiAppunti) ha già controllato la prova della stanza e i tetti
+  richiesta(m, ora, nuovoOk = false) {
     const no = (stato, perche) => ({ stato, corpo: JSON.stringify({ errore: perche }) });
     if (!m) return no(400, "richiesta non valida");
     if (m.blob.length > APPUNTI.blob) return no(413, "troppo grande");
@@ -713,7 +788,8 @@ export class Appunti {
     try { chiave = this.io.leggi("chiave"); v = Number(this.io.leggi("v")) || 0; blob = this.io.leggi("blob") || ""; } catch { return no(503, "archivio"); }
     // la prima scrittura porta la chiave della prova; prima di lei non c'è niente da leggere
     const nuovo = !chiave;
-    if (nuovo && !(m.op === "scrivi" && m.v === 0 && m.chiave)) return no(404, "vuoto");
+    if (nuovo && !appuntiNuovo(m)) return no(404, "vuoto");
+    if (nuovo && !nuovoOk) return no(403, "stanza");
     if (!uguali(m.prova, provaAppunti(nuovo ? m.chiave : chiave, m))) return no(403, "prova");
     viste.set(m.prova, ora);
     const stato = (s) => ({ stato: s, corpo: JSON.stringify({ v, blob }) });

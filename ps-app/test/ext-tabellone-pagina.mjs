@@ -174,6 +174,63 @@ try {
     `il Da fare generale scritto nel tabellone finisce nella memoria del gestionale (got ${JSON.stringify(await lsGest(gest, "dafare.generale.v1"))})`);
   await sospendi(600);
   check(/chiamare il laboratorio/.test(await $p(tab, '.tdcard [data-tdl="gen"]').innerText().catch(() => "")), "e resta nel tabellone, dallo specchio");
+
+  // --- (3.90) il tabellone che disegna non scrive niente; quando scrive, manda il cambio, non il valore intero
+  {
+    // quello che il tabellone manda al gestionale
+    await tab.evaluate(() => {
+      window.__scritture = [];
+      const vero = chrome.runtime.sendMessage.bind(chrome.runtime);
+      chrome.runtime.sendMessage = (m, ...r) => { if (m && m.t === "tabellone" && m.cosa === "scrivi") window.__scritture.push(m.kv); return vero(m, ...r); };
+    });
+    // lo specchio porta una voce scaduta, un «Da fare» generale spuntato da tanto, uno stato vecchio: il tabellone li legge e li disegna
+    await tab.evaluate(async () => {
+      const sp = (await chrome.storage.local.get("tabellone.specchio"))["tabellone.specchio"], kv = { ...sp.kv }, ora = Date.now();
+      kv["dafare.v1"] = JSON.stringify({ 700001: [{ id: "dvecchia", testo: "scaduta", t: null, fatto: ora - 3600e3, ord: 0, ts: ora - 3600e3 }, { id: "dviva", testo: "da fare", t: null, fatto: null, ord: 1, ts: ora }] });
+      kv["dafare.generale.v1"] = JSON.stringify([...JSON.parse(kv["dafare.generale.v1"] || "[]"), { id: "gvecchia", testo: "fatta da tanto", fatto: ora - 3600e3, ts: ora - 3600e3 }]);
+      kv["stato.v1"] = JSON.stringify({ ...JSON.parse(kv["stato.v1"] || "{}"), 799999: { agg: 1 } });
+      await chrome.storage.local.set({ "tabellone.specchio": { kv } });
+    });
+    await sospendi(1500);
+    check((await tab.evaluate(() => window.__scritture.length)) === 0, `il tabellone che legge e disegna (voci scadute comprese) non scrive niente al gestionale (got ${JSON.stringify(await tab.evaluate(() => window.__scritture))})`);
+    // il gestionale toglie ROSSI dal suo letto, e lo specchio non lo sa ancora (scritto di nascosto); il medico, sul
+    // tabellone (che ha la copia di prima), mette NERI in un letto libero
+    const posti = () => lsGest(gest, "stanza.alta.posti.v1"), gen = () => lsGest(gest, "dafare.generale.v1");
+    await gest.evaluate(() => {
+      const kp = "psassist:stanza.alta.posti.v1", posti = JSON.parse(localStorage.getItem(kp) || "{}");
+      delete posti["700001"];
+      localStorage.setItem(kp, JSON.stringify(posti));
+    });
+    await $p(tab, '.pzrow[data-pz="700003"] .pzmetti').click();
+    const letto = await tab.evaluate(() => [...document.getElementById("psassist-host").shadowRoot.querySelectorAll('.stmi[data-dove^="letto:"]')]
+      .map((x) => x.getAttribute("data-dove")).find((d) => !/letto:(a1|rossa)\b/.test(d)) || "");
+    await $p(tab, `.stmi[data-dove="${letto}"]`).click();
+    await finche(async () => !!(await posti())?.["700003"], 6000);
+    const p = await posti();
+    check(!!p?.["700003"] && !p["700001"] && !!p["700002"],
+      `NERI messo a letto dal tabellone; ROSSI, tolto dal letto nel gestionale intanto, non torna (got ${JSON.stringify(p)})`);
+    // lo stesso per una riga: una voce generale scritta nel gestionale (di nascosto), poi una scritta sul tabellone
+    await sospendi(600);
+    await gest.evaluate(() => {
+      const kg = "psassist:dafare.generale.v1";
+      localStorage.setItem(kg, JSON.stringify([...JSON.parse(localStorage.getItem(kg) || "[]"), { id: "dgest", testo: "scritta nel gestionale", fatto: null, ts: Date.now() }]));
+    });
+    await $p(tab, "#tdin").fill("dal tabellone, dopo");
+    await $p(tab, "#tdin").press("Enter");
+    await finche(async () => (await gen())?.some((x) => x.testo === "dal tabellone, dopo"), 6000);
+    const g = (await gen()) || [];
+    check(g.some((x) => x.id === "dgest") && g.some((x) => x.testo === "dal tabellone, dopo") && g.some((x) => x.testo === "chiamare il laboratorio"),
+      `il Da fare generale: la voce scritta nel gestionale intanto resta, accanto a quella del tabellone (got ${g.map((x) => x.testo).join(" | ")})`);
+    const ultimo = (await tab.evaluate(() => window.__scritture)).flat();
+    check(ultimo.length > 0 && ultimo.every((x) => Array.isArray(x) && typeof x[1] === "object" && x[1] !== null),
+      "il tabellone ha mandato i cambi, non i valori interi");
+    // (com'era: NERI senza letto, per le prove dopo — la pagina del gestionale ricaricata qui sotto rifà lo specchio)
+    await gest.evaluate(() => {
+      const kp = "psassist:stanza.alta.posti.v1", posti = JSON.parse(localStorage.getItem(kp) || "{}");
+      delete posti["700003"];
+      localStorage.setItem(kp, JSON.stringify(posti));
+    });
+  }
   await gest.reload();
   await gest.waitForSelector("#psassist-host #expand", { state: "attached", timeout: 15000 });
   await $p(gest, "#expand").click();

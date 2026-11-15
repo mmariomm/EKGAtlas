@@ -115,8 +115,8 @@ const finto = () => {
   const esce = (st, p, ora) => { p.aperta = false; st.esce(p, ora); p.uscita = true; };
   return { io, nuova, esce, st: new Stanza(io) };
 };
-check(PONTE.inattivoMs === 75e3 && !("prossimaSveglia" in L) && !/sveglia/i.test(Object.keys(PONTE).join()),
-  "muta da 75 secondi (tre battiti persi: i client battono ogni 20); nessuna sveglia del ripetitore");
+check(PONTE.inattivoMs >= 75e3 && PONTE.vivoMs >= 45e3 && PONTE.vivoMs < PONTE.inattivoMs && !("prossimaSveglia" in L) && !/sveglia/i.test(Object.keys(PONTE).join()),
+  "i client battono ogni 30 s: muta dopo 75 (due battiti e mezzo), viva fino a 45 (uno può tardare); nessuna sveglia del ripetitore");
 {
   const { io, nuova, esce, st } = finto();
   const pc = nuova("pc"), tel = nuova("tel");
@@ -218,7 +218,7 @@ check(PONTE.inattivoMs === 75e3 && !("prossimaSveglia" in L) && !/sveglia/i.test
   const tel = nuova("tel");
   st.entra(tel, "tel", 0);
   const vecchie = [nuova("pc1"), nuova("pc2"), nuova("pc3")];
-  for (const v of vecchie) { v.st = { ruolo: "pc", inizio: 0, n: 0, ultimo: 0 }; v.battito = 20e3; }   // (entrate senza che nessuna ritirasse l'altra; zitte da 40 s)
+  for (const v of vecchie) { v.st = { ruolo: "pc", inizio: 0, n: 0, ultimo: 0 }; v.battito = 10e3; }   // (entrate senza che nessuna ritirasse l'altra; zitte da 50 s)
   io.inviati.length = 0;
   const nuovaPc = nuova("pc4");
   tel.battito = 50e3;
@@ -243,6 +243,34 @@ check(PONTE.inattivoMs === 75e3 && !("prossimaSveglia" in L) && !/sveglia/i.test
   io.inviati.length = 0;
   st.messaggio(tel, new Uint8Array([9]), dopo + 1);
   check(!io.chiusi.length && io.inviati.some(([n]) => n === "pc"), "il telefono torna e parla: il messaggio arriva al PC, nessuna chiusura");
+}
+// (3.90) Il PC muto (addormentato, una rete caduta senza dirlo): al telefono che entra si dice assente — e solo
+// questo: la presa del PC resta in stanza, niente chiusure, e appena batte di nuovo il telefono che rientra lo trova.
+{
+  const { io, nuova, st } = finto();
+  const pc = nuova("pc"), tel = nuova("tel"), tel2 = nuova("tel2"), tel3 = nuova("tel3"), dati = new Uint8Array([5]);
+  st.entra(pc, "pc", 0);
+  pc.battito = 10e3;
+  st.entra(tel, "tel", 10e3 + PONTE.inattivoMs - 1);
+  check(io.inviati.some(([n, d]) => n === "tel" && d === '{"pari":true}'), "il telefono entra: il PC ha battuto meno di 75 s fa, c'è");
+  io.inviati.length = 0;
+  st.entra(tel2, "tel", 10e3 + PONTE.inattivoMs + 1);
+  check(io.inviati.some(([n, d]) => n === "tel2" && d === '{"pari":false}') && !io.inviati.some(([n, d]) => n === "tel2" && d === '{"pari":true}'),
+    "il telefono rientra: il PC tace da più di 75 s (nemmeno il battito), «non c'è»");
+  check(!pc.st.via && !io.chiusi.some(([n]) => n === "pc") && st.presa("pc") === pc, "…ma la presa del PC resta in stanza: nessuna chiusura, non ritirata");
+  io.inviati.length = 0;
+  st.messaggio(pc, dati, 10e3 + PONTE.inattivoMs + 2);
+  check(io.inviati.length === 1 && io.inviati[0][0] === "tel2", "il PC si risveglia e parla: arriva al telefono");
+  pc.battito = 10e3 + PONTE.inattivoMs + 3;
+  io.inviati.length = 0;
+  st.entra(tel3, "tel", 10e3 + PONTE.inattivoMs + 5);
+  check(io.inviati.some(([n, d]) => n === "tel3" && d === '{"pari":true}'), "il PC batte di nuovo: il telefono che rientra lo trova");
+  // il PC che entra con un telefono muto: lo sa come prima (solo il telefono rientra da sé)
+  const b = finto();
+  const t = b.nuova("tel"), p = b.nuova("pc");
+  b.st.entra(t, "tel", 0);
+  b.st.entra(p, "pc", PONTE.inattivoMs + 10e3);
+  check(b.io.inviati.some(([n, d]) => n === "pc" && d === '{"pari":true}'), "(il PC che entra con un telefono muto: «c'è», come prima)");
 }
 // Il client della 3.85.2 sui PC dove Chrome ferma il service worker: si rifà
 // ogni ~85 secondi, e la presa vecchia muore — con la chiusura che arriva, o
@@ -352,9 +380,9 @@ await blocco(async () => {
     const r1 = await entra("pc");
     check(r1.status === 101 && ctx.auto && ctx.auto.q === "ping" && ctx.auto.r === "pong" && prese[0].att?.ruolo === "pc" && prese[0].mandati[0] === '{"pari":false}',
       "il Durable Object: la presa entra (101), il battito lo risponde Cloudflare («ping» → «pong»)");
-    battiti.set(prese[0], Date.now() - 40e3);
-    prese[0].att = { ...prese[0].att, inizio: Date.now() - 40e3, ultimo: Date.now() - 40e3 };
-    await entra("pc");   // il service worker del PC è ripartito: la presa vecchia è morta (zitta da 40 s), e nessuno l'ha detto
+    battiti.set(prese[0], Date.now() - 50e3);
+    prese[0].att = { ...prese[0].att, inizio: Date.now() - 50e3, ultimo: Date.now() - 50e3 };
+    await entra("pc");   // il service worker del PC è ripartito: la presa vecchia è morta (zitta da 50 s), e nessuno l'ha detto
     check(prese[0].att.via === 4001 && prese[0].chiusa === null && prese[1].att.ruolo === "pc", "un PC che si rifà: la presa vecchia ritirata, nessuna chiusura mandata");
     const tel = await entra("tel");
     check(tel.status === 101 && prese[2].mandati[0] === '{"pari":true}' && prese[1].mandati.at(-1) === '{"pari":true}' && !prese[0].mandati.includes('{"pari":true}'),
