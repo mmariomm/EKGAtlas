@@ -15146,14 +15146,8 @@
         }
         clearTimeout(this._resetArmatoT);
         this._resetArmato = 0; this.menuAperto = false;
+        // (i pin «Da rivedere» non sono del turno: restano — se ne vanno solo con «Elimina tutti i pin»)
         this.resetDatiPazienti();
-        // i pin «Da rivedere» non sono del turno: si chiede se togliere anche la loro copia su questo PC (quella
-        // cifrata sul ponte resta: se ne va solo con «Elimina tutti i pin»)
-        if (hasExt() && this.pinN() && window.confirm(`Togliere da questo PC anche la copia dei ${this.pinN()} pin «Da rivedere»?\n(La copia cifrata per l'iPhone resta: si elimina solo da ⋯ → Da rivedere → Elimina tutti i pin.)`)) {
-          ask({ t: "appunti", azione: "dimentica" }).catch(() => {});
-          this.pins = {};
-          this.render();
-        }
       });
       $("#pinmenu")?.addEventListener("click", (e) => { e.stopPropagation(); this.menuAperto = false; this.render(); this.pinMenu(this.root.querySelector("#menubtn")); });
       this.root.querySelectorAll("[data-rz]").forEach((el) => this.attachResize(el));

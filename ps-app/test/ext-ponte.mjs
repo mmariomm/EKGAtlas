@@ -3721,6 +3721,25 @@ check(!altriHost.length, `nessun altro sito, nessun UDP: solo la presa del ponte
 await shot(prova, "pc-4-prova-rete");
 await prova.close();
 
+// ===========================================================================
+sezione("«Dimentica i dati…» non tocca i pin «Da rivedere»");
+{
+  const copiaPin = () => sw.evaluate(async () => Object.keys(((await chrome.storage.local.get("appunti.copia"))["appunti.copia"] || {}).pin || {}).length);
+  const n0 = await copiaPin();
+  let dialoghi = 0;
+  const conta = (d) => { dialoghi++; d.dismiss().catch(() => {}); };
+  doc.on("dialog", conta);
+  await doc.bringToFront();
+  if (!(await $panel(doc, ".card").count())) { await $panel(doc, "#expand").click(); await sospendi(400); }
+  if (!(await $panel(doc, "#resetpaz").count())) await $panel(doc, "#menubtn").click();
+  await $panel(doc, "#resetpaz").click();
+  await $panel(doc, "#resetpaz").click();
+  await sospendi(9500);   // (passati gli 8 secondi dell'Annulla: anche l'estensione ha dimenticato)
+  doc.off("dialog", conta);
+  const n1 = await copiaPin();
+  check(n0 >= 1 && dialoghi === 0 && n1 === n0, `due tocchi su «Dimentica i dati…»: nessuna domanda sui pin, e i pin restano (got ${n0} → ${n1}, ${dialoghi} dialoghi)`);
+}
+
 await telBrowser.close();
 await ctx.close();
 await relay.chiudi();

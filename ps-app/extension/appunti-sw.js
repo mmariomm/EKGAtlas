@@ -118,7 +118,8 @@ async function appuntiPinDalTel(d) {
   return x.ok ? { ok: true } : x;
 }
 
-// Dalle pagine del gestionale (il pannello): { t: "appunti", azione: leggi|aggiungi|togli|elimina|dimentica }
+// Dalle pagine del gestionale (il pannello): { t: "appunti", azione: leggi|aggiungi|togli|elimina|copia }
+// («Dimentica i dati…» non tocca i pin: non sono del turno — se ne vanno solo con «Elimina tutti i pin»)
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   if (!msg || msg.t !== "appunti" || !sender || !sender.tab || !sulGestionale(sender.url)) return;
   const fai = (p) => { p.then(reply, (e) => reply({ ok: false, errore: corto(e && e.message || e, 80) })); return true; };
@@ -126,8 +127,6 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   if (msg.azione === "aggiungi" && msg.pin && typeof msg.pin === "object") return fai(appAggiungi(msg.pin));
   if (msg.azione === "togli" && typeof msg.k === "string" && /^[\w-]{1,20}$/.test(msg.k)) return fai(appTogli(msg.k));
   if (msg.azione === "elimina") return fai(appElimina());
-  // «Dimentica i dati…»: la copia su questo PC (solo se il medico ha detto sì); quella lassù resta
-  if (msg.azione === "dimentica") return fai(chrome.storage.local.remove(APP_COPIA).then(() => ({ ok: true })));
   if (msg.azione === "copia") return fai(appCopia().then((c) => ({ ok: true, pin: c.pin || {} })));
 });
 /* exported appuntiDalTel, appuntiPinDalTel, cassaTogli */
