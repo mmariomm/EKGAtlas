@@ -2561,10 +2561,61 @@
       Promise.resolve().then(() => {
         const chiavi = [...inoltroAtteso];
         inoltroAtteso = null;
-        tabelloneScrive(chiavi.map((c) => [c, MEM.getItem(NS + c)]));
+        // (3.90) il cambio, non il valore intero: fra lo specchio (quello che il gestionale aveva) e la memoria di qui
+        const cambi = chiavi.map((c) => [c, cambioDi(jsonDi(specchioKv[c]), jsonDi(MEM.getItem(NS + c)))]).filter(([, x]) => x);
+        if (cambi.length) tabelloneScrive(cambi);
       });
     }
     inoltroAtteso.add(k);
+  }
+  // (3.90) Dal tabellone al gestionale non va più il valore intero di una chiave — quello della sua copia, che può
+  // essere indietro: riscriverlo cancellava quello che il gestionale aveva cambiato intanto —, ma il CAMBIO che il
+  // medico ha fatto qui (fra lo specchio e la memoria del tabellone), e la scheda del gestionale lo applica al
+  // valore che ha adesso (cambioApplica). Riga per riga: una riga con un `id` o un `ep` si riconosce, e di lei
+  // cambia solo il campo cambiato; una riga che di là non c'è più non torna (chi l'ha tolta vince).
+  //   { v: valore }  questo, al posto di quello che c'è      { x: 1 }  via
+  //   { o: { chiave: cambio } }  un oggetto, chiave per chiave   { r: { id: cambio }, per: "id"|"ep" }  righe
+  const jsonDi = (t) => { if (t == null) return undefined; try { return JSON.parse(t); } catch { return undefined; } };
+  const oggetto = (x) => !!x && typeof x === "object" && !Array.isArray(x);
+  const righeCon = (l, c) => l.every((x) => oggetto(x) && (typeof x[c] === "string" || typeof x[c] === "number")) && new Set(l.map((x) => String(x[c]))).size === l.length;
+  function cambioDi(b, m) {
+    if (JSON.stringify(b) === JSON.stringify(m)) return null;
+    if (m === undefined) return { x: 1 };
+    if (oggetto(b) && oggetto(m)) {
+      const o = {};
+      for (const k of new Set([...Object.keys(b), ...Object.keys(m)])) { const c = cambioDi(b[k], m[k]); if (c) o[k] = c; }
+      return { o };
+    }
+    const per = Array.isArray(b) && Array.isArray(m) ? ["id", "ep"].find((c) => righeCon(b, c) && righeCon(m, c)) : "";
+    if (!per) return { v: m };
+    const di = (l) => new Map(l.map((x) => [String(x[per]), x])), B = di(b), M = di(m), r = {};
+    for (const [k, x] of M) { const c = B.has(k) ? cambioDi(B.get(k), x) : { v: x }; if (c) r[k] = c; }
+    for (const k of B.keys()) if (!M.has(k)) r[k] = { x: 1 };
+    return { r, per };
+  }
+  // il cambio sul valore di adesso (`t`): il valore nuovo, undefined (via), o `t` stesso se non c'è niente da fare
+  function cambioApplica(t, c, prof = 0) {
+    if (!oggetto(c) || prof > 16) return t;
+    if (c.x) return undefined;
+    if ("v" in c) return c.v;
+    if (oggetto(c.o)) {
+      if (!oggetto(t)) return t;   // (di là non c'è più: niente pezzi di qualcosa che non c'è)
+      const out = { ...t };
+      for (const [k, s] of Object.entries(c.o)) { const v = cambioApplica(out[k], s, prof + 1); if (v === undefined) delete out[k]; else out[k] = v; }
+      return out;
+    }
+    if (oggetto(c.r) && (c.per === "id" || c.per === "ep")) {
+      if (!Array.isArray(t)) return t;
+      const out = t.slice();
+      for (const [k, s] of Object.entries(c.r)) {
+        const i = out.findIndex((x) => oggetto(x) && String(x[c.per]) === k);
+        if (oggetto(s) && s.x) { if (i >= 0) out.splice(i, 1); }
+        else if (oggetto(s) && "v" in s) { if (i >= 0) out[i] = s.v; else out.push(s.v); }
+        else if (i >= 0) out[i] = cambioApplica(out[i], s, prof + 1);
+      }
+      return out;
+    }
+    return t;
   }
   const store = TABELLONE ? magazzino(MEM, inoltra) : magazzino(localStorage, specchia);
   // il presidio del giro: chi lo tiene, su quale richiesta, e da quando
@@ -3930,9 +3981,8 @@
     const s = store.get(STATO, {});
     const tutti = s && typeof s === "object" && !Array.isArray(s) ? s : {};
     const ora = Date.now();
-    let pulito = false;
-    for (const k of Object.keys(tutti)) if (!tutti[k] || ora - (tutti[k].agg || 0) > STATO_TTL) { delete tutti[k]; pulito = true; }
-    if (pulito) store.set(STATO, tutti);
+    // (3.90) una lettura non scrive: gli scaduti restano fuori, e se ne vanno alla prossima scrittura voluta (scriviStato)
+    for (const k of Object.keys(tutti)) if (!tutti[k] || ora - (tutti[k].agg || 0) > STATO_TTL) delete tutti[k];
     return tutti;
   }
   const statoDi = (ep) => (ep ? statoTutti()[ep] || null : null);
@@ -4147,9 +4197,8 @@
   function segniTutti() {
     const s = store.get(segniKey, {});
     const ora = Date.now();
-    let pulito = false;
-    for (const k of Object.keys(s)) if (ora - (s[k]?.ts || 0) > NOTA_TTL) { delete s[k]; pulito = true; }
-    if (pulito) store.set(segniKey, s);
+    // (3.90) una lettura non scrive: gli scaduti restano fuori, e se ne vanno alla prossima scrittura voluta
+    for (const k of Object.keys(s)) if (ora - (s[k]?.ts || 0) > NOTA_TTL) delete s[k];
     return s;
   }
   const leggiSegni = (chiave) => (chiave ? (segniTutti()[chiave]?.celle || {}) : {});
@@ -4286,23 +4335,30 @@
   const dfValida = (x) => x && typeof x.id === "string" && typeof x.testo === "string"
     && (x.t == null || Number.isFinite(x.t)) && (x.fatto == null || Number.isFinite(x.fatto));
   // Le voci di tutti, ognuna nel suo ordine; quelle scadute e quelle spuntate
-  // da più di 5 minuti se ne vanno qui, alla lettura.
+  // da più di 5 minuti restano fuori.
+  // (3.90) Una lettura non scrive: ogni scheda la fa a ogni disegno, il tabellone compreso, e scrivere qui era
+  // riscrivere il valore intero dalla propria copia. Le scadute se ne vanno davvero alla prossima scrittura voluta
+  // (dfScrivi parte da qui). Solo le voci di una versione di prima (dfMigra) si portano qui, una volta per pagina.
+  let dfMigrate = false;
   function dfTutti(ora = Date.now()) {
+    if (!dfMigrate) { dfMigrate = true; if (!TABELLONE) dfMigraUnaVolta(ora); }
     let raw = store.get(PROM, {});
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) raw = {};
-    let cambiato = dfMigra(raw, ora);
     const tutti = {};
     for (const [ep, l] of Object.entries(raw)) {
       const vive = /^[\w.-]{1,40}$/.test(ep) && Array.isArray(l)
         ? l.filter((x) => dfValida(x) && !(x.fatto && ora - x.fatto > DF_FATTO)
             && (x.t != null ? ora - x.t <= PROM_TTL : ora - (x.ts || 0) <= DF_TTL))
         : [];
-      if (vive.length !== (Array.isArray(l) ? l.length : -1)) cambiato = true;
       vive.sort((x, y) => (x.ord ?? 0) - (y.ord ?? 0));
       if (vive.length) tutti[ep] = vive.map((x, i) => ({ id: x.id, testo: x.testo, t: x.t ?? null, fatto: x.fatto ?? null, ord: i, ts: x.ts || ora }));
     }
-    if (cambiato) store.set(PROM, tutti);
     return tutti;
+  }
+  function dfMigraUnaVolta(ora) {
+    let raw = store.get(PROM, {});
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) raw = {};
+    if (dfMigra(raw, ora)) store.set(PROM, raw);
   }
   // La nota (per paziente) e i promemoria (per episodio) di prima: la nota
   // diventa la prima voce, senza ora, dell'episodio più recente di quel
@@ -4413,7 +4469,7 @@
     const raw = store.get(DF_GEN, []), l = Array.isArray(raw) ? raw : [];
     const vive = l.filter((x) => x && typeof x.id === "string" && typeof x.testo === "string"
       && (x.fatto == null || Number.isFinite(x.fatto)) && !(x.fatto && ora - x.fatto > DF_FATTO));
-    if (vive.length !== l.length) store.set(DF_GEN, vive);
+    // (3.90) una lettura non scrive: le spuntate da tanto restano fuori, e se ne vanno alla prossima scrittura voluta
     return vive.map((x) => ({ id: x.id, testo: x.testo, t: null, fatto: x.fatto ?? null, ts: x.ts || ora }));
   }
   function genAggiungi(testo) {
@@ -19154,13 +19210,18 @@
     if (classify(document) === "login") return { no: "login" };
     if (LAVORO || PONTE_VALORI) return { no: "lavoro" };
     if (m.cosa === "scrivi") {
-      const json = (v) => { try { JSON.parse(v); return true; } catch { return false; } };
+      // (3.90) i cambi del tabellone (cambioDi), applicati a quello che c'è adesso qui — mai il suo valore intero
       const kv = Array.isArray(m.kv) ? m.kv : [];
-      if (!kv.length || !kv.every((x) => Array.isArray(x) && typeof x[0] === "string" && specchiata(x[0]) && (x[1] === null || (typeof x[1] === "string" && json(x[1]))))) {
+      if (!kv.length || !kv.every((x) => Array.isArray(x) && typeof x[0] === "string" && specchiata(x[0]) && oggetto(x[1]))) {
         return { ok: false, why: "scrittura inattesa" };
       }
-      try { for (const [k, v] of kv) { if (v === null) localStorage.removeItem(NS + k); else localStorage.setItem(NS + k, v); } }
-      catch { return { ok: false, why: "la memoria del browser è piena o bloccata" }; }
+      try {
+        for (const [k, c] of kv) {
+          const prima = jsonDi(localStorage.getItem(NS + k)), dopo = cambioApplica(prima, c);
+          if (dopo === prima) continue;
+          if (dopo === undefined) localStorage.removeItem(NS + k); else localStorage.setItem(NS + k, JSON.stringify(dopo));
+        }
+      } catch { return { ok: false, why: "la memoria del browser è piena o bloccata" }; }
       specchia(null);
       if (kv.some(([k]) => k === DIMESSI)) panel.mostraDimessi();
       panel.aggiornaDaFuori();
