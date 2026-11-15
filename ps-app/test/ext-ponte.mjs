@@ -2975,16 +2975,16 @@ const finta = (k, scade = Date.now() + 5 * 60e3) => `${relay.url}/ponte/#k=${P.b
 const listaK = () => lnk.evaluate(() => { const o = JSON.parse(localStorage.getItem("psassist.ponte.pcs.v1") || "null"); return o ? o.v.map((p) => p.stanza) : []; });
 const KX = P.casuale(32), KY = P.casuale(32);
 await lnk.goto(finta(KX));
-await aspettaTel(lnk, /Mi collego|non risponde/, 10000);
+await aspettaTel(lnk, /Mi collego|non raggiungibile|non risponde/, 10000);
 const cx = await chiaveTel(lnk);
-check(!cx && !(await listaK()).length && /Mi collego|non risponde/.test(await testoTel(lnk)), "un link del QR di un PC che non risponde: il telefono ci prova, ma su disco niente (P2-7: si salva quando il PC saluta)");
+check(!cx && !(await listaK()).length && /Mi collego|non raggiungibile|non risponde/.test(await testoTel(lnk)), "un link del QR di un PC che non risponde: il telefono ci prova, ma su disco niente (P2-7: si salva quando il PC saluta)");
 {
   // (3.87) un link che dice di valere 100 anni non è di un PC di PS Assist (un adesivo, un link mandato): non si usa
   await lnk.goto(finta(P.casuale(32), Date.now() + 100 * 365 * 86400e3));
   check(/QR non valido/.test(await aspettaTel(lnk, /QR non valido/, 10000)) && !(await listaK()).length, "un link con una scadenza di 100 anni: «QR non valido», e niente salvato");
 }
 await lnk.goto(finta(KY));
-await aspettaTel(lnk, /Mi collego|non risponde/, 10000);
+await aspettaTel(lnk, /Mi collego|non raggiungibile|non risponde/, 10000);
 check(!(await listaK()).length, "un altro QR che non risponde: nemmeno lui su disco (la lista si riempie solo di PC che hanno salutato)");
 await linkCtx.close();
 // l'associazione non scade: passate le 14 ore (e il PC controlla), la chiave c'è ancora, sul PC e sul telefono, e il telefono riapre

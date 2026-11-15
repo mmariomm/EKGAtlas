@@ -1204,6 +1204,13 @@ await blocco(async () => {
     "si apre su visibilitychange, pageshow e online; si chiude su visibilitychange e pagehide");
   check(/e\.code === 4001\) return altrove\(\)/.test(app) && /e\.code === 4403\) return scollegato\(\)/.test(app) && /case "scollegato":[\s\S]{0,120}"Scollegato"/.test(app),
     "4001: nessun tentativo da sé; 4403: ci si ferma e si legge «Scollegato»");
+  // (3.90) un'azione principale per schermata: «Non raggiungo il ponte» e «PC non raggiungibile» Riprova (il QR quieto);
+  // «Scollegato» prima «Serve un QR nuovo» e Scansiona (Riprova quieto)
+  const pcScr = /case "pc":([\s\S]*?)case "altrove":/.exec(app)[1], scoll = /case "scollegato":([\s\S]*?)case "chiusa":/.exec(app)[1];
+  const principali = (t) => (t.match(/class="grande"|scansiona\(\)/g) || []).length;
+  check(principali(pcScr) === 2 && (pcScr.match(/scansiona\(true\)/g) || []).length === 2 && /"PC non raggiungibile"/.test(pcScr)
+    && principali(scoll) === 1 && /\$\{scansiona\(\)\}/.test(scoll) && /grande quiet" data-a="riapri"/.test(scoll) && /Serve un QR nuovo/.test(scoll),
+    "un bottone principale per schermata: Riprova su «Non raggiungo il ponte» e «PC non raggiungibile», «Scansiona il QR» su «Scollegato» (che dice prima «Serve un QR nuovo»)");
   check(/const BATTITO = 30e3, PONG = 15e3;/.test(app), "il battito: ogni 30 s, morta dopo 15 s senza «pong» (come nel progetto)");
 });
 
