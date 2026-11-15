@@ -2658,7 +2658,7 @@
   // cinque minuti si rinuncia (false: non parte niente).
   const ATTESA_MOTORE_MAX = 5 * 60e3;
   async function prendiMotore(id, ui) {
-    if (!hasExt()) return true;
+    if (!hasExt()) return !extPersa();   // (il pannello di prima di un aggiornamento: mai un motore senza il service worker)
     const fine = Date.now() + ATTESA_MOTORE_MAX;
     let persi = 0, detto = false;
     try {
@@ -7336,6 +7336,13 @@
     store.set(IMPARATI, Object.fromEntries(Object.entries(tutti).filter(([k]) => vivi.has(k) || k in nuovi)));
   }
   const hasExt = () => { try { return !!(chrome && chrome.runtime && chrome.runtime.id); } catch { return false; } };
+  // L'estensione c'era quando la pagina è nata e adesso non c'è più (aggiornata
+  // da sé, o ricaricata, con la pagina aperta): questo pannello è quello di
+  // prima. Non fa più niente — niente ordini, niente stampe, niente «Dimentica»
+  // a metà: solo «Ricarica la pagina». (Il bookmarklet non l'ha mai avuta: lui
+  // lavora come sempre.)
+  const EXT_AVVIO = hasExt();
+  const extPersa = () => EXT_AVVIO && !hasExt();
   // (nessuna risposta = `perso`: il service worker non l'ha detta, non ha detto di no)
   const ask = (msg) => new Promise((res) => {
     try { chrome.runtime.sendMessage(msg, (r) => { void chrome.runtime.lastError; res(r || { ok: false, perso: true }); }); }
@@ -7444,6 +7451,17 @@
       this.host.id = "psassist-host";
       this.root = this.host.attachShadow({ mode: "open" });
       document.documentElement.appendChild(this.host);
+      // Dopo un aggiornamento questo pannello non tocca più niente: il primo
+      // tocco (o tasto) lo ferma prima di ogni suo gestore, e lo ridisegna.
+      if (EXT_AVVIO) {
+        const ferma = (e) => {
+          if (!extPersa() || e.target?.closest?.("#psscaduta")) return;
+          e.stopImmediatePropagation(); e.preventDefault();
+          this.render();
+        };
+        for (const t of ["click", "contextmenu", "keydown", "submit", "change"]) this.root.addEventListener(t, ferma, true);
+        const veglia = setInterval(() => { if (extPersa()) { clearInterval(veglia); this.render(); } }, 2000);
+      }
       // Aperto o ridotto, a ogni pagina. Il gestionale ricarica la pagina a
       // ogni clic: se ci è arrivato il medico dal gestionale voleva VEDERE il
       // gestionale, e la finestra all'85% glielo coprirebbe — si parte dalla
@@ -9563,6 +9581,7 @@
 
     // ---- run starters ----
     startPlan(base) {
+      if (extPersa()) return this.render();
       if (this.runState === "running" || this._delegando || this._motoreAtteso) return;
       if (!base.dalLavoro) tabStore.set(PREMUTO, Date.now());
       // La scheda di un ordine che gira fa solo quell'ordine: un altro, da
@@ -9758,12 +9777,27 @@
       const off = this.root.getElementById("solaoff");
       if (off) off.addEventListener("click", (e) => { e.stopPropagation(); ask({ t: "ponteScollega" }); });
     }
+    // Il pannello di prima di un aggiornamento: una riga, e un tocco riapre la
+    // pagina con una GET dello stesso indirizzo (come la pillola di
+    // aggiornata.js: mai un «ricarica» che rimanderebbe un modulo).
+    renderScaduta() {
+      if (this.root.getElementById("psscaduta")) return;
+      const leggibile = leggibilePagina(location.href);
+      this.root.innerHTML = `<style>:host{all:initial}
+        button{position:fixed;right:12px;bottom:12px;z-index:2147483646;border:0;border-radius:999px;padding:9px 15px;
+          font:600 13px -apple-system,"Segoe UI",Roboto,Arial,sans-serif;color:#fff;background:#0B5CAD;box-shadow:0 6px 20px rgba(9,42,74,.25);cursor:pointer}
+        button:focus-visible{outline:2px solid #fff;outline-offset:-4px}</style>
+        <button type="button" id="psscaduta" title="Questo pannello è quello di prima dell'aggiornamento: non manda ordini e non stampa">${
+          leggibile ? "PS Assist aggiornata · Ricarica la pagina" : "PS Assist aggiornata · Riapri la pagina dal gestionale"}</button>`;
+      this.root.getElementById("psscaduta").addEventListener("click", () => { if (leggibile) location.assign(location.href.split("#")[0]); });
+    }
     render() {
       // La build mini non ha il pannello degli ordini: solo un distintivo
       // discreto «sola lettura», che diventa «iPhone collegato · Scollega»
       // quando una sessione del telefono è aperta (chi passa davanti al PC lo
       // sa e la può chiudere). Ogni chiamata a render() finisce qui.
       if (SOLA_LETTURA) return this.renderBadge();
+      if (extPersa()) return this.renderScaduta();
       const patientName = this.pageType === "vista" ? this.nomePaziente() : nomeInPagina();
       // (su una pagina «altra» l'episodio è quello che il pannello ha
       // riconosciuto, o nessuno: non il primo link che la pagina porta)
@@ -14559,6 +14593,7 @@
     // (referti salvati, schede cliniche, ordini finiti, registrazioni) si
     // puliscono finiti gli 8 secondi — o subito, se la pagina se ne va prima.
     async resetDatiPazienti() {
+      if (extPersa()) return this.render();   // (qui pulirebbe la pagina sola, e direbbe «dimenticati»)
       if (this.giroQui()) return;
       this.fermaAuto();   // (il caricamento da solo non riscrive quello che si cancella)
       this._resetFuori?.();   // (un reset di prima ancora nei suoi 8 secondi: il suo resto adesso)
@@ -16383,6 +16418,7 @@
   // Senza stampa automatica: il PDF in una cornice invisibile e il dialogo di
   // stampa del browser (la stampante la sceglie il medico).
   function stampaDialogoPdf(buf) {
+    if (extPersa()) return;
     const url = URL.createObjectURL(new Blob([new Uint8Array(buf).slice()], { type: "application/pdf" }));
     const f = document.createElement("iframe");
     f.id = "psassist-stampa-referto";
@@ -16866,6 +16902,7 @@
   // (tre volte, con lo stesso numero: una stampa sola): non si sa se è
   // partita — mai un dialogo da solo, lo si dice con «Ristampa».
   async function stampaAltrove(jobs, opzioni) {
+    if (extPersa()) return false;
     const { panel = null, tag = "Stampa", fine = null, title = "" } = opzioni;
     const ep = String(opzioni.ep || "");
     const job = { id: opzioni.jobId || `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`, ep, tag,
@@ -16895,7 +16932,7 @@
   function openPrintWizard(jobs, opzioni = {}) {
     const { title = "", onClose, panel = null, tag = "Stampa", fine = null } = opzioni;
     let ultimaDiag = null;   // l'ultimo visualizzatore non catturato, per «⧉ Diagnosi»
-    if (wizardOpen || !jobs.length) return;
+    if (wizardOpen || !jobs.length || extPersa()) return;
     wizardOpen = true;
     // di chi sono i fogli: «ROSSI M. · 68 M», sulla striscia e in testa alla scheda
     const { chi, testata } = (() => {
@@ -17414,6 +17451,7 @@
 
   const PARZIALI = new Set();   // (le richieste già segnalate «meno esami in pagina», una volta per pagina)
   function maybeAutoPrint(panel, doc = document, url = location.href) {
+    if (extPersa()) return false;
     const flag = tabStore.get("print.v1", null);
     if (!flag) return false;
     // never print for an episode other than the page in front of the user
@@ -17982,6 +18020,7 @@
   // (come un referto senza stampa automatica): niente scheda nuova, la
   // stampante la sceglie il medico. `no`: il dialogo non si è aperto.
   function stampaTesto(titolo, righe, no = () => {}) {
+    if (extPersa()) return;
     document.getElementById("psassist-stampa-testo")?.remove();
     const f = document.createElement("iframe");
     f.id = "psassist-stampa-testo";

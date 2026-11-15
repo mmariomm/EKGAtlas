@@ -512,6 +512,11 @@ console.log("\naggiorna: da sé, quando è il momento — anche con la scheda de
   if (nuovo) sw = nuovo;
   const pill = await finche(() => doc.evaluate(() => document.getElementById("psassist-aggiornata")?.shadowRoot?.querySelector("button")?.textContent || ""), 15000);
   check(pill === "PS Assist aggiornata · Ricarica la pagina", `nella scheda aperta, col pannello vecchio: la pillola (got «${pill}»)`);
+  // il pannello vecchio non lavora più come un bookmarklet: una riga sola, niente ⋯, niente Conferma, niente «Dimentica»
+  const ferma = await finche(async () => (await $panel(doc, "#psscaduta").count()) ? $panel(doc, "#psscaduta").textContent() : null, 6000);
+  const resti = await doc.evaluate(() => [...document.getElementById("psassist-host").shadowRoot.querySelectorAll("button")].map((b) => b.id || b.textContent.trim()));
+  check(ferma === "PS Assist aggiornata · Ricarica la pagina" && resti.length === 1,
+    `il pannello vecchio si ferma su «PS Assist aggiornata · Ricarica la pagina», senza altri bottoni (got «${ferma}», ${JSON.stringify(resti)})`);
   // il telefono, intanto: la scheda col pannello vecchio non gli risponde più, e lo si dice
   const SI = "PS Assist si è aggiornato: sul PC tocca «Ricarica la pagina»";
   const tel = await finche(async () => { const e = (await sw.evaluate(() => ponteSuScheda("pazienti", {}))).errore; return e === SI ? e : null; }, 10000)
