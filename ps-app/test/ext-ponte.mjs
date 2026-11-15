@@ -3668,8 +3668,8 @@ sezione("il PC muto (addormentato, rete caduta senza dirlo): per il telefono è 
   await sospendi(4000);
   relay.taglia("tel");   // il telefono rientra: il PC tace da più di inattivoMs
   const pill = () => tel.evaluate(() => document.querySelector(".statopc")?.textContent || "").catch(() => "");
-  const assente = await finche(async () => /PC assente/.test(await pill()), 15000);
-  check(fuori && assente, `il telefono rientra e il ripetitore dice che il PC non c'è: «PC assente» (presa nel documento fuori schermo: ${fuori})`);
+  const assente = await finche(async () => /PC non raggiungibile/.test(await pill()), 15000);
+  check(fuori && assente, `il telefono rientra e il ripetitore dice che il PC non c'è: «PC non raggiungibile» (presa nel documento fuori schermo: ${fuori})`);
   const e1 = relay.entrate().tel;
   await tocca(tel, '[data-a="esame"]:has-text("TROPONINA US")');
   await tel.locator("#quesito").fill("pc muto");
@@ -3679,14 +3679,14 @@ sezione("il PC muto (addormentato, rete caduta senza dirlo): per il telefono è 
   const scaduta = await finche(async () => /Scaduta: non inviata/.test(await coda()), 45000);
   check(inCoda && scaduta && !/Non so se l'ordine/.test(await testoTel(tel)),
     `l'ordine verso il PC muto: «In coda», poi «Scaduta: non inviata» — mai «Non so se l'ordine è partito» (${(await coda()).replace(/\s+/g, " ").slice(0, 80)})`);
-  const ancora = await finche(async () => /PC assente/.test(await pill()), 15000);
+  const ancora = await finche(async () => /PC non raggiungibile/.test(await pill()), 15000);
   check(relay.entrate().tel - e1 >= 2 && ancora, `col PC assente il telefono rientra da sé, di tanto in tanto, e il PC resta assente (prese: +${relay.entrate().tel - e1})`);
   // il PC si risveglia: la sua presa cade e si rifà; il telefono lo ritrova
   await sw.evaluate(async () => { FUORI.prova = true; await fuoriRegola({ battito: 30e3, pong: 15e3 }); FUORI.prova = false; });
   PONTE.inattivoMs = inattivo;
   relay.taglia("pc");
   const torna = await finche(async () => !(await pill()), 60000);
-  check(torna, "il PC torna: il telefono lo ritrova da sé (niente più «PC assente»)");
+  check(torna, "il PC torna: il telefono lo ritrova da sé (niente più «PC non raggiungibile»)");
   await tocca(tel, '.coda [data-a="codaVia"]').catch(() => {});
   await tel.reload();
   await aspettaTel(tel, /ROSSI MARIO/, 20000);
