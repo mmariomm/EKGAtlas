@@ -6432,7 +6432,7 @@ async function scenarioEo(browser) {
   await page.waitForSelector("#psassist-host #eoreset", { timeout: 8000 });
   await $panel(page, "#eoreset").click();
   await page.waitForTimeout(150);
-  check(scen, /Confermi/.test(await $panel(page, "#eoreset").innerText()), "↺ Originale chiede conferma");
+  check(scen, /Tocca di nuovo/.test(await $panel(page, "#eoreset").innerText()), "↺ Originale chiede il secondo tocco (dueTocchi)");
   await $panel(page, "#eoreset").click();
   await page.waitForSelector('#psassist-host [data-eocopy="base"]', { timeout: 8000 });
   check(scen, (await $panel(page, '[data-eocopy="base"] .dmod').count()) === 0, "e torna l'originale, senza punto");
@@ -6513,7 +6513,7 @@ async function scenarioDimissioni(browser) {
   await page.waitForSelector("#psassist-host #dimreset", { timeout: 8000 });
   await $panel(page, "#dimreset").click();          // one tap only asks
   await page.waitForTimeout(150);
-  check(scen, /Confermi/.test(await $panel(page, "#dimreset").innerText()),
+  check(scen, /Tocca di nuovo/.test(await $panel(page, "#dimreset").innerText()),
     "↺ Originale chiede conferma prima di buttare il testo del medico");
   check(scen, await $panel(page, "#dimarea").isVisible(), "e intanto non ha cancellato niente");
   await $panel(page, "#dimreset").click();          // the second confirms
@@ -6647,7 +6647,7 @@ async function scenarioDimissioni(browser) {
   await page.waitForSelector("#psassist-host #dimreset", { timeout: 8000 });
   await $panel(page, "#dimreset").click();
   await page.waitForTimeout(150);
-  check(scen, /Elimino/.test(await $panel(page, "#dimreset").innerText()), "eliminarlo chiede conferma");
+  check(scen, /Elimino il foglio\? Tocca di nuovo/.test(await $panel(page, "#dimreset").innerText()), "eliminarlo chiede il secondo tocco (dueTocchi)");
   await $panel(page, "#dimreset").click();
   await page.waitForSelector("#psassist-host .drow", { timeout: 8000 });
   check(scen, !/Vertigine/.test(await $panel(page, ".dlist").innerText()) && /eliminato/.test(await $panel(page, ".bd").innerText()),

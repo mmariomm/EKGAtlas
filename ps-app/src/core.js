@@ -6463,7 +6463,7 @@
     .regrow .rr4 { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
     .regrow .rr4 .mini { float: none; margin: 0; }
     .regrow .rr4 .mini.via { color: var(--err); }
-    .regrow .rr4 .mini.armato { background: var(--err-f); border-color: var(--err); color: var(--err); }
+    .regrow .rr4 .mini.armato, #eoreset.armato, #dimreset.armato { background: var(--err-f); border-color: var(--err); color: var(--err); }
     .regriep { white-space: pre-wrap; font: 11px/1.45 ui-monospace, Menlo, Consolas, monospace; color: #35506B; background: #F4F8FB; border: 1px solid #E3E8EF;
                border-radius: 8px; padding: 8px 10px; margin: 8px 0 0; max-height: 260px; overflow: auto; }
     .tnow { display: flex; align-items: center; gap: 10px; background: var(--ok-f); border: 1px solid #BCE0C9;
@@ -13830,7 +13830,7 @@
       const bottoni = `
             <button class="mini" id="dimcopy" title="Copia questo testo senza salvarlo">⧉ Copia</button>
             <button class="mini" id="dimsave" title="${nuovo ? "Aggiungi questo foglio ai tuoi" : "Tieni questo testo per le prossime dimissioni"}">✓ Salva</button>
-            ${d.modificato && !nuovo ? `<button class="mini" id="dimreset" title="${d.mio ? "Elimina questo foglio" : "Butta le tue modifiche e riprendi l'originale"}">${d.mio ? "✕ Elimina" : "↺ Originale"}</button>` : ""}`;
+            ${d.modificato && !nuovo ? `<button class="mini${this.armatoDi("dimreset:" + this.viewId) ? " armato" : ""}" id="dimreset" title="${d.mio ? "Elimina questo foglio" : "Butta le tue modifiche e riprendi l'originale"}">${this.armatoDi("dimreset:" + this.viewId) ? (d.mio ? DIM_VIA_ARMATO : EO_RESET_ARMATO) : d.mio ? "✕ Elimina" : "↺ Originale"}</button>` : ""}`;
       // i fogli tuoi si possono anche rinominare; quelli del pannello no
       const testa = d.mio
         ? `<div class="dhd"><input class="dtit" id="dimnome" type="text" maxlength="60" value="${esc(nome)}" spellcheck="false" autocomplete="off"
@@ -14577,7 +14577,7 @@
           <div class="lbl">${esc(v.nome)}
             <button class="mini" id="eocopia" title="Copia questo testo senza salvarlo">⧉ Copia</button>
             <button class="mini" id="eosave" title="Tieni questo testo per le prossime volte">✓ Salva</button>
-            ${v.modificato ? `<button class="mini" id="eoreset" title="Butta le tue modifiche e riprendi l'originale">↺ Originale</button>` : ""}
+            ${v.modificato ? `<button class="mini${this.armatoDi("eoreset:" + this.viewId) ? " armato" : ""}" id="eoreset" title="Butta le tue modifiche e riprendi l'originale">${this.armatoDi("eoreset:" + this.viewId) ? EO_RESET_ARMATO : "↺ Originale"}</button>` : ""}
           </div>
           ${v.aggiornato ? `<div class="banner warn">L'originale è cambiato dopo la tua modifica: ↺ Originale per la versione nuova.</div>` : ""}
           ${testo !== v.testo ? `<div class="banner ok">Bozza non salvata.</div>` : ""}
@@ -15450,14 +15450,11 @@
           : `«${v.nome}» NON salvato: la memoria di questo browser è piena o bloccata.`);
       });
       $("#eoreset")?.addEventListener("click", (ev) => {
-        const b = ev.currentTarget, v = eoVoci()[this.viewId] || {};
-        // un tocco non deve poter buttare un testo scritto dal medico
-        if (b.dataset.sicuro !== "1") {
-          const etichetta = b.textContent;
-          b.dataset.sicuro = "1"; b.textContent = "Confermi?";
-          setTimeout(() => { if (b.isConnected && b.dataset.sicuro === "1") { b.dataset.sicuro = ""; b.textContent = etichetta; } }, 4000);
-          return;
-        }
+        const v = eoVoci()[this.viewId] || {}, k = "eoreset:" + this.viewId;
+        // un tocco non deve poter buttare un testo scritto dal medico: due tocchi (dueTocchi), il bottone cambiato
+        // sul posto (un render rifarebbe la casella sotto le dita)
+        const mostra = () => { const x = this.root.querySelector("#eoreset"); if (!x) return; const a = this.armatoDi(k); x.textContent = a ? EO_RESET_ARMATO : "↺ Originale"; x.classList.toggle("armato", a); };
+        if (!this.dueTocchi(k, mostra)) return;
         const scritto = ripristinaEo(this.viewId);
         tabStore.set(this.eoDraftKey(this.viewId), null);
         this.setView("eo", null, scritto ? { ok: `«${v.nome || "Testo"}» riportato all'originale.` } : "Non ripristinato: la memoria di questo browser è bloccata.");
@@ -15506,16 +15503,11 @@
           : { ok: `«${nome}» salvato: sarà questo il testo copiato d'ora in poi.` });
       });
       $("#dimreset")?.addEventListener("click", (ev) => {
-        const b = ev.currentTarget;
-        const d = dimissioni()[this.viewId] || {};
-        const etichetta = b.textContent;
-        // one tap must not be able to destroy a text the doctor wrote
-        if (b.dataset.sicuro !== "1") {
-          b.dataset.sicuro = "1";
-          b.textContent = d.mio ? "Elimino?" : "Confermi?";
-          setTimeout(() => { if (b.isConnected && b.dataset.sicuro === "1") { b.dataset.sicuro = ""; b.textContent = etichetta; } }, 4000);
-          return;
-        }
+        const d = dimissioni()[this.viewId] || {}, k = "dimreset:" + this.viewId;
+        // un tocco non deve poter buttare un testo scritto dal medico: due tocchi (dueTocchi), sul posto come sopra
+        const mostra = () => { const x = this.root.querySelector("#dimreset"); if (!x) return; const a = this.armatoDi(k);
+          x.textContent = a ? (d.mio ? DIM_VIA_ARMATO : EO_RESET_ARMATO) : d.mio ? "✕ Elimina" : "↺ Originale"; x.classList.toggle("armato", a); };
+        if (!this.dueTocchi(k, mostra)) return;
         const nome = d.nome || this.viewId;
         const scritto = ripristinaDimissione(this.viewId);
         tabStore.set(this.dimDraftKey(this.viewId), null);
@@ -18019,6 +18011,7 @@
   // L'episodio resta solo un indizio. Tutto questo viaggia e sta cifrato: il ripetitore non lo vede.
   const PIN_NOTA_MAX = 500;   // (come APP_NOTA_MAX, appunti-sw.js)
   const DUE_TOCCHI_MS = 6000;   // il secondo tocco di un'azione che non si annulla (dueTocchi)
+  const EO_RESET_ARMATO = "↺ Riprendo l'originale? Tocca di nuovo", DIM_VIA_ARMATO = "✕ Elimino il foglio? Tocca di nuovo";
   const PIN_PART = /^(DE|DI|DA|DEL|DELLA|DELLE|DELLO|DEI|DEGLI|DAL|DALLA|DALLE|DALLO|LA|LO|LE|LI|SAN|SANTA|SANTO|VAN|VON|MC|MAC|DOS|DAS|DU)$/i;
   function pinDati(p) {
     const w = String(p.name || "").trim().split(/\s+/).filter(Boolean);
