@@ -167,9 +167,6 @@
   // (P2-6: un errore della cassa arriva a chi chiama — un rinnovo che non si salva non si fa)
   const salvaChiave = (p) => (senzaCassa ? Promise.resolve() : cassaScrivi(p.id, perCassa(p)));
   const nuovoDev = () => P.b64u(P.casuale(16));
-  // (3.90) Il PC di sola lettura non c'è più (la mini è solo stazione dalla 3.88): sempre no. Resta solo per
-  // `chiedi`, che si tocca a parte; un PC che dicesse ancora «lettura» rifiuta le scritture da sé.
-  const solaLettura = () => false;
   // da un link: la chiave (l'associazione non scade: finisce con «Scollega» qui o con la revoca sul PC),
   // fin quando il link vale per il primo scambio, e un numero nuovo per questo telefono
   // (3.87) un QR vale pochi minuti: il PC scrive l'ora di fine a 5 minuti da quando lo mostra. Uno che dice
@@ -735,12 +732,6 @@
   //   o.grosso quanti byte porta la risposta (per il battito, su una rete lenta)
   //   o.scade  (un ordine) l'ora oltre la quale, se non è ancora partita, non parte più
   //   o.partita quando parte davvero (la prima volta)
-  // i comandi che SCRIVONO nel gestionale: su un PC di sola lettura non partono
-  // nemmeno dal telefono (il PC li rifiuterebbe comunque: «Questo PC è in sola
-  // lettura»). «stampa»/«ristampa» no: stampano, non scrivono.
-  // («areaApri» cambia l'area della sessione del gestionale: anche lei)
-  const SCRITTURE_TEL = new Set(["ordina", "cartellaSalva", "terapiaAggiungi", "accetta", "areaApri", "registrazioneVia", "dfAggiungi", "dfSpunta", "dfTogli", "posto", "stazioneCollega",
-    "etichetta"]);   // (l'etichetta libera stampa: un tocco del medico, mai su un PC di sola lettura)
   // (3.90) Una lettura che arriva mentre il PC manda un ordine: il PC risponde subito «occupato» (ponte-sw.js,
   // ponteOccupato) — la scheda del gestionale aspetterebbe la fine dell'ordine. Qui si tiene quello che c'è e si
   // chiede di nuovo fra OCCUPATO_MS, finché l'ordine finisce (al più OCCUPATO_GIRI volte: un ordine dura al più
@@ -757,11 +748,10 @@
   }
   function chiediUna(cmd, args = {}, tempo = TEMPO, auto = false, o = {}) {
     return new Promise((si, no) => {
-      if (solaLettura() && SCRITTURE_TEL.has(cmd)) { no(Object.assign(new Error("Sola lettura: su questo PC non si scrive"), { solaLettura: true })); return; }
       if (!S.canale) { no(new Error("Sessione chiusa")); return; }
       if (!o.rq && !pronto()) {
         S.rinfresca = true;
-        no(Object.assign(new Error(inLinea() ? "Il PC non è raggiungibile" : "Senza rete"), { offline: true }));
+        no(Object.assign(new Error(inLinea() ? "PC non raggiungibile" : "Senza rete"), { offline: true }));
         return;
       }
       if (!auto) S.ultimo = Date.now();

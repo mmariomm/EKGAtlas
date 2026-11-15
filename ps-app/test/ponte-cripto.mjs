@@ -1250,7 +1250,8 @@ await blocco(async () => {
   const sw = leggi("extension/ponte-sw.js"), app = leggi("../public/ponte/app.js");
   const lettura = /const PONTE_LETTURA = new Set\(\[([\s\S]*?)\]\);/.exec(sw)[1];
   check(!/"etichetta"/.test(lettura), "«etichetta» NON è in PONTE_LETTURA: il mini la rifiuta");
-  check(/"etichetta"/.test(/const SCRITTURE_TEL = new Set\(\[([\s\S]*?)\]\);/.exec(app)[1]), "…e il telefono la tiene fra le scritture (SCRITTURE_TEL): su un PC di sola lettura non parte");
+  check(/chiedi\("etichetta", [^\n]*\n\s*\{ rq: e\.rq,/.test(app) && !/SCRITTURE_TEL|solaLettura\(\)/.test(app),
+    "…e il telefono la manda come scrittura (col suo rq, mai rifatta da «occupato»); niente più muro della sola lettura sul telefono");
   check(!/"etichetta"/.test(/const PONTE_RQ_PROPRI = new Set\(\[([^\]]*)\]\)/.exec(sw)[1]), "…col suo rq nel giro comune: rimandata dopo un riavvio, «non si sa», mai rifatta");
   check(leggi("extension/etichetta.js") === leggi("../public/ponte/etichetta.js"), "l'estensione e il telefono impaginano con lo stesso file (extension/etichetta.js = public/ponte/etichetta.js)");
   await import(join(root, "../public/ponte/etichetta.js"));
