@@ -690,6 +690,34 @@ await blocco(async () => {
   const t5 = await telFinto(pc, k, DEV);
   check((await t5.manda({ id: 1, cmd: "ciao" })).some((x) => x.re === 1 && x.ok), "rientrati nel gestionale, lo stesso telefono riapre: la stessa associazione, niente QR nuovo");
 });
+// (3.90) Il telefono chiuso per i 3 minuti si riapre da sé: «esci» della sessione di prima e il saluto nuovo partono
+// insieme (cifrati in parallelo: possono arrivare in qualsiasi ordine). Se la sessione nuova nasce mentre il PC
+// risponde ancora all'«esci», l'«esci» chiude solo la SUA sessione — mai quella nuova (ext-ponte, «a 4 minuti
+// dall'ultimo comando…», rossa una volta ogni tanto: il telefono restava su una sessione chiusa dal PC).
+await blocco(async () => {
+  const pc = await pcFinto();
+  const k = kDalQr((await pc.pagina({ t: "ponteAssocia" })).qr);
+  await sospendi(30);
+  const t1 = await telFinto(pc, k, DEV);
+  await t1.manda({ id: 1, cmd: "ciao" });
+  const s1 = pc.pt().sessione;
+  // la risposta all'«esci» tarda (la cifratura, il service worker sotto carico): intanto il saluto nuovo e il primo
+  // messaggio della sessione nuova
+  let lascia = null;
+  const fermo = new Promise((ok) => { lascia = ok; });
+  const cifra = s1.canale.cifra.bind(s1.canale);
+  s1.canale.cifra = async (o) => { if (o && o.re === 2) await fermo; return cifra(o); };
+  await pc.consegna(await t1.canale.cifra({ id: 2, cmd: "esci", auto: true }));
+  const t2 = await telFinto(pc, k, DEV);
+  const ciao = await t2.manda({ id: 1, cmd: "ciao" });
+  const s2 = pc.pt().sessione;
+  lascia();
+  await sospendi(100);
+  check(ciao.some((x) => x.re === 1 && x.ok) && s2 && s2 !== s1 && pc.pt().sessione === s2 && !pc.pt().fine,
+    "«esci» della sessione di prima, arrivato prima del saluto nuovo e finito dopo: chiude solo la sua — la sessione nuova resta");
+  const dopo = await t2.manda({ id: 2, cmd: "pazienti" });
+  check(dopo.some((x) => x.re === 2 && x.ok) && !dopo.some((x) => x.evento === "fine"), "…e risponde, senza un «fine»");
+});
 // Un PC lasciato acceso senza il gestionale (la notte, il PC delle infermiere):
 // non sta sul ponte, e non ci torna a ogni risveglio del service worker. Con
 // la 3.85.2 ogni avvio apriva una presa: con Chrome che lo ferma ogni ~85 s,

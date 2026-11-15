@@ -2830,7 +2830,7 @@ const dalDi = () => sw.evaluate(() => pt.sessione && pt.sessione.dal);   // (il 
 const riaperta = await finche(async () => (await dalDi()) !== sess1 && /ROSSI MARIO/.test(await testoTel(tel)), 15000);
 await tel.evaluate(() => { Date.now = window.__oraVera; });
 check(riaperta && await dalDi() !== sess1,
-  "…ma non conta: a 4 minuti dall'ultimo comando del medico la sessione di prima è chiusa (via i pazienti), e se ne apre un'altra da sola");
+  `…ma non conta: a 4 minuti dall'ultimo comando del medico la sessione di prima è chiusa (via i pazienti), e se ne apre un'altra da sola${riaperta ? "" : ` (registro: ${(await registroPonte()).slice(-240).replace(/\s+/g, " ")})`}`);
 check(!(await tel.evaluate(() => window.__chiusa)), "e «Sessione chiusa» non si è visto nemmeno per un attimo");
 
 // ===========================================================================

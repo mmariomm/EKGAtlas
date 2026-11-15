@@ -1007,8 +1007,15 @@ async function ponteComandoOra(s, d) {
   s.n++;
   ponteSessioneSalva().catch(() => {});
   const rispondi = (r) => ponteInvia(s, { re: d.id, ...r });
-  // (il telefono che chiude per i 3 minuti e si riapre subito: il suo saluto nuovo, se è già qui, resta)
-  if (d.cmd === "esci") { await rispondi({ ok: true }); const a = pt.attesa; await ponteFine("chiusa dall'iPhone"); if (a && pt.coppia) { pt.attesa = a; ponteSessioneSalva().catch(() => {}); } return; }
+  // (il telefono che chiude per i 3 minuti e si riapre subito: il suo saluto nuovo, se è già qui, resta — e la
+  // sessione che ne è già nata mentre si rispondeva qui, anche: si chiude solo quella dell'«esci», 3.90)
+  if (d.cmd === "esci") {
+    await rispondi({ ok: true });
+    if (pt.sessione !== s) return;
+    const a = pt.attesa; await ponteFine("chiusa dall'iPhone");
+    if (a && pt.coppia && !pt.sessione && !pt.attesa) { pt.attesa = a; ponteSessioneSalva().catch(() => {}); }
+    return;
+  }
   // «Scollega» sul telefono (3.87): l'associazione finisce anche qui, come con «Revoca»
   if (d.cmd === "scollega") { await rispondi({ ok: true }); await ponteVia("scollegata dall'iPhone", "L'iPhone si è scollegato: associazione chiusa (per riassociarlo serve un QR nuovo)"); return; }
   // Una scrittura porta il suo numero (rq): rimandata dal telefono dopo una
