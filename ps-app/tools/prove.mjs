@@ -21,7 +21,7 @@ import { fileURLToPath } from "node:url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 export const PROVE = [
-  "tools/verifica-esempi.mjs",
+  "tools/verifica-esempi.mjs", "test/nodo/tutte.mjs",
   "test/valori.mjs", "test/pdftesto.mjs", "test/registra-anonimo.mjs", "test/registra-siss.mjs",
   "test/storico.mjs", "test/editor.mjs", "test/ponte-cripto.mjs", "test/ponte-sicurezza.mjs",
   "test/presa.mjs", "test/run.mjs", "test/aree.mjs", "test/tabellone.mjs",
