@@ -727,12 +727,17 @@ async function stzComando(s, d) {
 const stzRqValido = (rq) => (typeof rq === "string" && /^[\w-]{8,48}$/.test(rq) ? rq : "");
 let stzFilaRq = Promise.resolve();
 const stzRqTutti = async () => (await chrome.storage.local.get(STA.rq))[STA.rq] || {};
-const stzRqScrivi = (rq, x) => (stzFilaRq = stzFilaRq.then(async () => {
-  const t = await stzRqTutti();
-  t[rq] = x;
-  const tieni = Object.entries(t).filter(([, v]) => staOra() - (v.ts || 0) < 24 * 3600e3).sort((a, b) => (a[1].ts || 0) - (b[1].ts || 0)).slice(-200);
-  await chrome.storage.local.set({ [STA.rq]: Object.fromEntries(tieni) });
-}));
+// (questa può fallire, e chi stampa lo deve sapere: ma un guasto non ferma i fogli dopo)
+function stzRqScrivi(rq, x) {
+  const p = stzFilaRq.then(async () => {
+    const t = await stzRqTutti();
+    t[rq] = x;
+    const tieni = Object.entries(t).filter(([, v]) => staOra() - (v.ts || 0) < 24 * 3600e3).sort((a, b) => (a[1].ts || 0) - (b[1].ts || 0)).slice(-200);
+    await chrome.storage.local.set({ [STA.rq]: Object.fromEntries(tieni) });
+  });
+  stzFilaRq = p.catch(() => {});
+  return p;
+}
 async function stzEsito(d) {
   const rq = stzRqValido(d.rq);
   if (!rq) return { ok: false, errore: "Foglio senza numero" };
