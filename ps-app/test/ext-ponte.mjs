@@ -3581,6 +3581,47 @@ sezione("la rete del telefono: ascensore, 5G, presa tagliata, rete lenta");
 }
 
 // ===========================================================================
+sezione("il PC muto (addormentato, rete caduta senza dirlo): per il telefono è assente, l'ordine scade pulito (3.90)");
+{
+  const { PONTE } = await import("../../worker/ponte-logica.js");   // (lo stesso modulo del ripetitore di questa prova)
+  const inattivo = PONTE.inattivoMs;
+  const fuori = await sw.evaluate(() => !fuoriRipiego());
+  // (sulle Richieste di BIANCHI, col PC ancora lì)
+  await tocca(tel, '.paz[data-ep="999002"]');
+  await tocca(tel, '[data-a="scheda"][data-s="richieste"]');
+  await aspettaTel(tel, /Dol th/, 10000);
+  // il PC smette di battere (il suo battito: ogni 10 minuti) e il ripetitore non ne sente più niente
+  await sw.evaluate(async () => { FUORI.prova = true; await fuoriRegola({ battito: 600e3, pong: 600e3 }); FUORI.prova = false; });
+  PONTE.inattivoMs = 3000;
+  relay.muta("pc");
+  await sospendi(4000);
+  relay.taglia("tel");   // il telefono rientra: il PC tace da più di inattivoMs
+  const pill = () => tel.evaluate(() => document.querySelector(".statopc")?.textContent || "").catch(() => "");
+  const assente = await finche(async () => /PC assente/.test(await pill()), 15000);
+  check(fuori && assente, `il telefono rientra e il ripetitore dice che il PC non c'è: «PC assente» (presa nel documento fuori schermo: ${fuori})`);
+  const e1 = relay.entrate().tel;
+  await tocca(tel, '[data-a="esame"]:has-text("TROPONINA US")');
+  await tel.locator("#quesito").fill("pc muto");
+  await tocca(tel, "#ordina"); await sospendi(900); await tocca(tel, "#ordina");
+  const coda = () => tel.locator(".coda").first().innerText().catch(() => "");
+  const inCoda = await finche(async () => /In coda/.test(await coda()), 5000);
+  const scaduta = await finche(async () => /Scaduta: non inviata/.test(await coda()), 45000);
+  check(inCoda && scaduta && !/Non so se l'ordine/.test(await testoTel(tel)),
+    `l'ordine verso il PC muto: «In coda», poi «Scaduta: non inviata» — mai «Non so se l'ordine è partito» (${(await coda()).replace(/\s+/g, " ").slice(0, 80)})`);
+  const ancora = await finche(async () => /PC assente/.test(await pill()), 15000);
+  check(relay.entrate().tel - e1 >= 2 && ancora, `col PC assente il telefono rientra da sé, di tanto in tanto, e il PC resta assente (prese: +${relay.entrate().tel - e1})`);
+  // il PC si risveglia: la sua presa cade e si rifà; il telefono lo ritrova
+  await sw.evaluate(async () => { FUORI.prova = true; await fuoriRegola({ battito: 30e3, pong: 15e3 }); FUORI.prova = false; });
+  PONTE.inattivoMs = inattivo;
+  relay.taglia("pc");
+  const torna = await finche(async () => !(await pill()), 60000);
+  check(torna, "il PC torna: il telefono lo ritrova da sé (niente più «PC assente»)");
+  await tocca(tel, '.coda [data-a="codaVia"]').catch(() => {});
+  await tel.reload();
+  await aspettaTel(tel, /ROSSI MARIO/, 20000);
+}
+
+// ===========================================================================
 sezione("«Scansiona il QR» dentro l'app");
 {
   // un QR in un video finto per la fotocamera di Chromium (y4m, in grigio)

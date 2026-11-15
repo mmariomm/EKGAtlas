@@ -519,9 +519,12 @@
       if (S.chiaviProssima) S.chiaviProssima = { ...S.chiaviProssima, stanza: S.wsStanza };
       salvaPcs();
     }
-    // …il PC non c'è: fra poco, l'altra stanza (se ce n'è un'altra)
+    // …il PC non c'è: fra poco, l'altra stanza (se ce n'è un'altra) — o, con una sola, di nuovo la stessa: il
+    // ripetitore dice «non c'è» anche di un PC che tace da troppo (addormentato), e quando batte di nuovo lo dice
+    // solo a chi entra (3.90)
     clearTimeout(S.tGiro);
-    if (!pari && S.stanze && S.stanze.length > 1) {
+    if (pari && S.stanze && S.stanze.length === 1) S.giro = 0;
+    if (!pari && S.stanze && S.stanze.length) {
       const ws = S.ws;
       S.tGiro = setTimeout(() => { if (S.ws === ws && S.pari !== true) { S.giro = (S.giro || 0) + 1; chiudiPresa(); collega(); } },
         Math.min(60e3, (S.canale ? 3 : 1) * GIRO_MS * 2 ** Math.floor((S.giro || 0) / 2)));   // (un PC spento: sempre più di rado; con una sessione aperta si aspetta di più — un PC che si rifà la presa torna in un attimo)

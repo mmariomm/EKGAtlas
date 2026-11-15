@@ -33,13 +33,13 @@
 export const PONTE = {
   frameMax: 1 << 20,          // un messaggio non supera 1 MB
   alMinuto: 1200,             // messaggi per minuto per presa, oltre si chiude
-  // Una presa che tace da 75 secondi (tre battiti persi: i client ne mandano
-  // uno ogni 20, e senza «pong» in 10 si rifanno da soli) è morta: non conta
-  // più per chi c'è (di chi entra si ritirano solo le vecchie del suo ruolo). Nessuna sveglia apposta.
+  // Una presa che tace da 75 secondi (due battiti persi e mezzo: i client ne mandano uno ogni 30, e senza
+  // «pong» in 15 si rifanno da soli) è muta: al telefono che entra, il PC così si dice assente (Stanza.muta,
+  // in ammetti) — la presa resta, e conta per tutto il resto. Nessuna sveglia apposta.
   inattivoMs: 75e3,
-  // un telefono che ha battuto da meno di 30 secondi (uno ogni 20) è davanti a qualcuno: se un'altra
-  // scheda prende il suo posto, la chiusura gli arriva subito; se no è in sottofondo, o morto — si ritira
-  vivoMs: 30e3,
+  // una presa che ha battuto da meno di 45 secondi (uno ogni 30, e uno può tardare) è davanti a qualcuno: se
+  // un'altra scheda prende il suo posto, la chiusura le arriva subito; se no è in sottofondo, o morta — si ritira
+  vivoMs: 45e3,
   // le prese ritirate che Cloudflare non ha ancora buttato: oltre queste, le più
   // vecchie si chiudono davvero (solo un tetto: un client che si rifà ogni
   // minuto e mezzo ne lascia una ventina finché le connessioni cadono)
@@ -299,7 +299,7 @@ export class Stanza {
     // telefono — o chi conosce il numero della stanza ed entra al posto del PC o
     // della stazione) è viva: la chiusura le arriva subito, e un PC o una stazione
     // così riprova da sé e si riprende il posto (mai sorda per sempre: il suo
-    // battito lo risponde il ripetitore, non passa di qui). Zitta da più di 30 s
+    // battito lo risponde il ripetitore, non passa di qui). Zitta da più di 45 s
     // è in sottofondo o morta: si ritira, e se torna e parla la chiusura le
     // arriva allora (a una presa morta non si manda niente: costa).
     for (const p of tutte) {
@@ -319,7 +319,11 @@ export class Stanza {
       }
     }
     const altra = this.presa(altroRuolo(ruolo), presa);
-    this.io.invia(presa, presenza(!!altra));
+    // (3.90) Al telefono che entra, un PC che tace da più di inattivoMs (nemmeno il battito: addormentato, una
+    // rete caduta senza dirlo) è assente: un ordine aspetta «In coda» e scade pulito, invece di partire verso
+    // nessuno. Solo la presenza: la presa del PC resta com'è (sopra). Solo al telefono: è lui che rientra da sé
+    // finché il PC non c'è (public/ponte/app.js, presenza), e così lo ritrova appena batte di nuovo.
+    this.io.invia(presa, presenza(!!altra && !(ruolo === "tel" && this.muta(altra, this.io.leggi(altra), ora))));
     if (altra) this.io.invia(altra, presenza(true));
   }
   // La risposta alla sfida: `prova` (una o più HMAC, una per chiave che il client ha), e — dal PC —
