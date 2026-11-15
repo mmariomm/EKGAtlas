@@ -23,7 +23,8 @@ con accanto un **codice di sei cifre** («482 913»): lo inquadri dall'app PS As
 solo se l'app non è sulla Home) e
 si apre il pannello, già collegato, e per un momento lo stesso codice («Associato · codice 482 913»: dopo
 non serve, e non si vede più). L'associazione
-**non scade**: dura finché non la togli (**Revoca** sul PC, **«Scollega»** nel ⋯ del telefono, o un QR nuovo), e vale per **quel telefono solo**: il
+**non scade**: dura finché non la togli (**Revoca** sul PC, **«Scollega»** nel ⋯ del telefono — due tocchi: il primo
+arma, «Scollego? Tocca di nuovo: servirà un QR nuovo», e un doppio tocco per sbaglio non vale —, o un QR nuovo), e vale per **quel telefono solo**: il
 primo che entra. Un altro telefono che inquadra lo stesso QR si sente dire «Il PC è associato a un
 altro telefono», con **«Usa questo telefono»**: due tocchi (il primo arma, «Usa questo telefono? Tocca
 di nuovo»; un doppio tocco per sbaglio non vale) e quel telefono diventa l'associato (il primo esce,
@@ -34,10 +35,10 @@ aperto con la Fotocamera (Safari) e poi l'icona della Home, che ha una memoria s
 telefono è entrato; dopo, «Associa» ne fa uno nuovo (e il telefono di prima esce). Conviene
 aggiungerlo alla schermata Home (Condividi → Aggiungi alla schermata Home): l'icona riapre il pannello.
 
-Il QR si inquadra anche **dall'app**: **⋯ → 📷 Scansiona il QR**, sempre (anche su un PC di sola lettura),
+Il QR si inquadra anche **dall'app**: **⋯ → 📷 Scansiona il QR**, sempre,
 e senza un'associazione buona (nessuna, QR scaduto, chiusa, revocata, o un altro telefono al suo posto,
-e accanto a «Riprova» quando il PC non risponde) un bottone **«Scansiona il QR»**: apre la fotocamera
-nella pagina. Un QR solo per tutto: il QR dice che cos'è — un PC completo, un PC di sola lettura, una
+e accanto a «Riprova» quando il PC non è raggiungibile) un bottone **«Scansiona il QR»**: apre la fotocamera
+nella pagina. Un QR solo per tutto: il QR dice che cos'è — un PC o una
 stazione di stampa. Serve
 all'app della schermata Home, che ha una memoria sua: il QR letto con la Fotocamera si apre in Safari,
 e lì la chiave non arriva. Senza fotocamera: «Fotocamera non disponibile: inquadra il QR con la
@@ -45,19 +46,17 @@ Fotocamera dell'iPhone».
 
 Il link del QR vale per il primo scambio solo pochi minuti (5) e una volta sola: dopo, serve un QR nuovo.
 
-**Più PC: uno completo e le porte di sola lettura.** Il telefono tiene una **lista** di PC
-associati, non solo uno: il PC completo (💻, dove si ordina, si prescrive, si scrive in cartella) e
-un numero qualsiasi di **PC «di sola lettura»** (👁️, la [build mini](../README.md#ps-assist--lettura-e-stampa-la-build-mini-di-sola-lettura): si vede
-tutto — pazienti, esiti, cartella, referti — e si stampa, ma non si scrive). Ognuno ha la **sua
-chiave**: una non apre gli altri, e un PC in mano a un altro non espone i tuoi. Si scansiona ogni PC
-**una volta sola**: il suo QR **aggiunge** quel PC alla lista (lo stesso PC riscansionato, o un altro
-dello stesso nome, lo sostituisce; il QR del PC completo sostituisce il completo). Da lì si passa
-dall'uno all'altro da un **menu** (⋯ sul telefono: l'attivo in cima, gli altri sotto col loro nome e
-tipo, «attivo adesso» quando la sessione è viva; un tocco cambia, 🗑️ «Scollega» per riga). Con un PC
-solo il menu non c'è: meno è meglio. Su un PC di sola lettura la testata ha un 👁️ piccolo e quieto, accanto
-a ⋯ — niente che distragga —; la scritta («Sola lettura · gestionale di …», il collega loggato lì, solo per
-saperlo) sta nel suo nome e in fondo al ⋯, e i controlli di scrittura
-non ci sono: si legge, si ristampa, si stampa un PDF.
+**Un PC per telefono.** Il telefono lavora con **un** PC: il QR di un altro PC ne prende il posto, e
+prima lo chiede («Sostituisco «PC reparto»?», col codice da guardare sul PC). Ogni PC ha la **sua
+chiave**: una non apre gli altri. Può restare in lista un secondo PC solo se il suo QR era di un PC già
+associato a un altro telefono (la sua chiave si tiene, per «Usa questo telefono»): allora nel ⋯ c'è la lista (l'attivo in
+cima, «attivo adesso» quando la sessione è viva; un tocco cambia), e per riga un 🗑️ che scollega quel PC
+con **due tocchi**, come «Scollega» («Scollego? Tocca di nuovo»). Con un PC solo la lista non c'è.
+
+Il **PC di sola lettura** (la build mini fino alla 3.87, 👁️) non c'è più: dalla 3.88 la mini è solo
+[stazione di stampa](#la-stazione-di-stampa). Dalla 3.90 l'app del telefono non ne ha più traccia: una
+riga di un PC di sola lettura rimasta sul telefono se ne va da sola all'apertura, con la sua chiave; il
+`kind` che un PC dice al saluto non conta (un PC 3.87 ancora di sola lettura rifiuta le scritture da sé).
 
 **Poi.** Apri il pannello dall'iPhone: si collega da solo, niente QR. L'elenco si rilegge
 da solo ogni volta che torni sull'app («Aggiornato alle 14:32»), e se eri su un paziente anche i suoi
@@ -155,8 +154,7 @@ sessione. Vedi:
   promemoria le voci aperte con l'ora. **✓ Fatto** aspetta 5 secondi, con **Annulla**, prima di
   spuntarlo sul PC.
 - **Scansiona il QR** (⋯) — il QR di una [stazione di stampa](#la-stazione-di-stampa):
-  una carta con il suo nome e il codice, **Collega**, «Collegata al PC» (con un PC di sola lettura
-  attivo, la carta dice di passare al PC completo: è lui che stampa). Sopra «Conferma e stampa»,
+  una carta con il suo nome e il codice, **Collega**, «Collegata al PC». Sopra «Conferma e stampa»,
   poi, «Stampa: PC · Infermeria»: parte dalla scelta del PC e **si ricorda**, per ogni PC associato (sul
   telefono, `psassist.ponte.dove.v1`) — l'ultima toccata vale per ordini, ristampe, «Stampa PDF» e il
   🖨️ dei referti. Senza stazione la scelta non c'è.
@@ -184,19 +182,27 @@ sessione. Vedi:
   PC»). **Cancella** chiede «Cancello dal PC? Tocca di nuovo» e la toglie dal PC. Il PC dà e
   cancella solo quelle elencate nella sessione; il registro del ponte annota elenco, scarico e
   cancellazione.
-- **Dispositivi** (⋯) — i PC associati a questo telefono, una riga ciascuno, l'attivo in cima: il nome e
-  il tipo (**PC**, o **Lettura e stampa**: la build mini), la versione di PS Assist, e com'è adesso —
-  «Collegato a questo iPhone» (la sessione viva), «Disponibile», o «Non disponibile · visto alle 14:32»
+- **Dispositivi** (⋯) — i PC associati a questo telefono, una riga ciascuno, l'attivo in cima: il nome,
+  la versione di PS Assist, e com'è adesso —
+  «Collegato a questo iPhone» (la sessione viva), «Disponibile», o «PC non raggiungibile · visto alle 14:32»
   (l'ultima volta che il telefono l'ha sentito) —; sotto, la sua **stazione di stampa**, se ne ha una: il
   nome, se il PC la raggiunge, e l'ultimo foglio mandato lì («stampato alle 14:32», «mandato», «forse
   stampato», «non arrivato», «NON stampato»). Si guarda e basta. Il PC della sessione lo dice nella
   sessione; gli altri il telefono li prova **solo quando si apre questa pagina**, con una presa breve
   per PC che si chiude subito (riaperta entro 20 secondi, la risposta di prima): mai in sottofondo,
   perché ogni presa sveglia il ripetitore. Un PC che in quel momento non è sul ponte (spento, il browser
-  chiuso, il ponte a riposo) è «Non disponibile».
+  chiuso, il ponte a riposo) è «PC non raggiungibile» — lo stesso nome della testata e della schermata.
+  Sotto, **Altri PC con PS Assist**: le righe del [registro dei PC](#il-registro-dei-pc) che non sono di
+  questo telefono («PC», «Lettura e stampa» per una mini 3.87 che si annuncia ancora, «Stazione»), con
+  «Associato a un altro telefono» o «Non associato» e quando si è annunciato. Il registro si legge solo
+  da qui, al tocco.
+- **Da rivedere** (⋯, e il 📌 nella testata di un paziente) — i [pin](#i-pin-da-rivedere): un paziente da
+  rivedere fra qualche giorno, con una nota. Si leggono anche col PC non raggiungibile; il 🗑️ di una
+  riga lo toglie.
 
-Il **⋯** tiene solo quello che non c'è altrove: i PC (con due o più), **Stampa PDF**, **Scansiona il
-QR**, **Registrazioni** e **Scollega** (la chiave di questo PC via dal telefono: servirà un QR nuovo).
+Il **⋯** tiene solo quello che non c'è altrove: i PC (con due o più), **Stampa PDF**, **Etichetta**,
+**Scansiona il QR**, **Dispositivi**, **Da rivedere**, **Registrazioni** e **Scollega** (due tocchi: la
+chiave di questo PC via dal telefono, servirà un QR nuovo).
 L'elenco si rilegge da solo a ogni ritorno sull'app, e la sessione finisce da sola: niente «Aggiorna»,
 niente «Chiudi sessione».
 
@@ -262,15 +268,18 @@ Che cosa entra nel deploy:
 | File | Che cosa |
 |---|---|
 | `worker/index.js` | l'ingresso del Worker: `/ponte/…` al ponte, il resto a `worker/metrics.js` (il gestore di sempre) |
-| `worker/ponte.js` | il ripetitore: il Durable Object `PonteStanza` (`/ponte/ws`) e i file dell'app del telefono, solo quelli, con le loro intestazioni di sicurezza |
-| `worker/ponte-logica.js` | la logica del ripetitore, senza Cloudflare (la stanza, il ruolo, i file dell'app): la stessa che usa il ripetitore Node dei test |
+| `worker/ponte.js` | il ripetitore: i Durable Object `PonteStanza` (`/ponte/ws`), `PonteRegistro` (`/ponte/registro`, il [registro dei PC](#il-registro-dei-pc)) e `PonteAppunti` (`/ponte/appunti`, i [pin](#i-pin-da-rivedere)), e i file dell'app del telefono, solo quelli, con le loro intestazioni di sicurezza |
+| `worker/ponte-logica.js` | la logica del ripetitore, senza Cloudflare (la stanza, il ruolo, il registro, i pin, i file dell'app): la stessa che usa il ripetitore Node dei test |
 | `public/ponte/` | l'app del telefono (`index.html`, `app.js`, `app.css`, `cripto.js`, `jsqr.min.js`, `sw.js`, manifest, icone): Vite la copia in `dist/ponte/` |
-| `wrangler.jsonc` | `main: worker/index.js`; il binding `PONTE` e la migrazione `new_sqlite_classes` (Durable Object su SQLite: va anche col piano gratuito); `run_worker_first` solo per `/ponte/*` e `/api/*`: le pagine del sito arrivano dai file statici senza svegliare il Worker; i log senza una riga per richiesta (`invocation_logs: false`) |
+| `wrangler.jsonc` | `main: worker/index.js`; i binding `PONTE`, `REGISTRO` e `APPUNTI` e le loro migrazioni `new_sqlite_classes` (Durable Object su SQLite: va anche col piano gratuito; controllato da `ponte-cripto`); `run_worker_first` solo per `/ponte/*` e `/api/*`: le pagine del sito arrivano dai file statici senza svegliare il Worker; i log senza una riga per richiesta (`invocation_logs: false`) |
 | `vite.config.ts` | il service worker del sito resta fuori da `/ponte/` (né in cache né nel suo ripiego di navigazione) |
 
 Il sito resta com'era: le sue pagine, il ripiego SPA e `POST /api/metrics` (stessi codici di
 risposta di prima). Un file che l'app del telefono non ha, sotto `/ponte/`, è un 404, mai la pagina
-del sito. Nell'app pubblica c'è **solo codice**: nessun dato di nessun paziente passa o resta sul sito.
+del sito. Nell'app pubblica c'è **solo codice**. Sul ripetitore i messaggi dei pazienti passano cifrati e
+non restano; **restano**, cifrati da un capo all'altro, i [pin «Da rivedere»](#i-pin-da-rivedere) del
+medico (anche con nomi di pazienti: Cloudflare vede solo byte), e il [registro dei PC](#il-registro-dei-pc)
+(nessun paziente). Il dettaglio per l'IT: [Che cosa resta su Cloudflare](#che-cosa-resta-su-cloudflare).
 
 **Contro gli abusi.** Il Worker rifiuta una stanza malformata (non 32 cifre esadecimali, o un ruolo
 che non è `pc`/`tel` o, per la [stazione di stampa](#la-stazione-di-stampa), `medico`/`stazione`) prima di svegliare un Durable Object, e il ripetitore chiude una presa che
@@ -310,6 +319,56 @@ proxy che ispeziona lo vede — con quello chiunque può occupare il posto del P
 niente: solo farlo tacere). Il gestionale non vede niente di nuovo: le
 pagine che l'estensione apre o legge per un comando sono le stesse, con le stesse richieste, di quando
 il medico usa il pannello.
+
+Verso **lo stesso host**, oltre alla presa, partono due tipi di **POST HTTPS** piccoli (testo, senza
+cookie né credenziali), niente di nuovo da permettere:
+
+- **`/ponte/registro`** — l'annuncio del PC al [registro dei PC](#il-registro-dei-pc): al più **uno ogni
+  30 minuti** di lavoro (solo con il gestionale aperto, o la pagina della stazione), più uno subito
+  quando cambia quello che dice (un'associazione fatta o tolta, il nome). Al più 48 al giorno per PC.
+  Sulla pagina ⋯ → iPhone, «Non comparire nella lista» toglie la riga e smette di annunciare.
+- **`/ponte/appunti`** — i [pin «Da rivedere»](#i-pin-da-rivedere): una lettura quando il pannello la
+  chiede (le pagine aperte entro 30 secondi l'una dall'altra ne fanno una sola), una scrittura a ogni
+  pin aggiunto o tolto. Dal telefono: una lettura all'apertura e su «Da rivedere».
+
+### Che cosa resta su Cloudflare
+
+I messaggi del ponte e i fogli della stazione **passano** cifrati e non restano. **Restano**, nei Durable
+Object su SQLite del Worker (finché qualcuno non li toglie):
+
+| Che cosa | Dove | Che cosa c'è | Per quanto | Come si toglie |
+|---|---|---|---|---|
+| **La stanza** di ogni coppia | `PonteStanza`, una per stanza | le chiavi d'entrata (HMAC) di PC, telefono e stazione, per provare chi entra; nessun messaggio, nessun paziente | nessuna scadenza; le sostituisce ogni nuova chiave (un rinnovo, un QR nuovo) | da sole non aprono niente: servono solo a entrare in quella stanza |
+| **Il registro dei PC** | `PonteRegistro`, uno | per PC: un numero a caso dell'installazione, il nome del PC, il tipo, la versione, tre impronte opache (SHA-256) e quando si è annunciato; **nessun paziente**, nessun utente del gestionale, nessuna chiave | 7 giorni dall'ultimo annuncio; al più 500 righe | «Non comparire nella lista» (⋯ → iPhone sul PC) |
+| **I pin «Da rivedere»** del medico | `PonteAppunti`, uno per medico | **un solo valore cifrato** (AES-256-GCM) con, per ogni pin: cognome e nome, codice fiscale e data di nascita (quando il PC li sa), l'indirizzo della pagina del paziente, la nota e la data; più un numero opaco, la chiave della prova (HMAC: dice chi può leggere e scrivere, non apre niente) e un contatore | **nessuna scadenza**: un pin lo toglie il medico | un pin: 🗑️ su «Da rivedere» (PC o telefono); **tutti**: sul PC ⋯ → **Da rivedere** → **«Elimina tutti i pin…»** (due tocchi): il valore lassù se ne va |
+
+La chiave dei pin la crea il telefono e la danno solo i dispositivi del medico, dentro la sessione
+cifrata: **né Cloudflare né l'IT possono leggerli**; senza la chiave non si risale nemmeno al medico.
+Una copia in chiaro dei pin resta anche sul PC (`storage.local` dell'estensione, per vederli senza rete):
+«Dimentica i dati…» chiede se toglierla.
+
+### Il registro dei PC
+
+Ogni PS Assist (PC del medico, stazione di stampa) si **annuncia** al ripetitore (`registro-sw.js`):
+il suo nome, il tipo (`pc`, `stazione`; `lettura` per una mini 3.87 non ancora aggiornata), la versione,
+un numero a caso dell'installazione e tre impronte opache — della stanza del telefono associato (`tel`),
+della stazione dove stampa (`sta`), della stazione che è (`stz`). **Mai pazienti, mai chi è nel
+gestionale, mai chiavi, mai il numero della stanza.** Al più ogni 30 minuti di lavoro, e solo con una
+pagina aperta (mai di notte a gestionale chiuso). Lo legge solo un telefono associato, provando di avere
+la chiave d'entrata di una sua stanza (un HMAC sull'ora), da ⋯ → Dispositivi: così il telefono riconosce i
+suoi PC (dalle impronte) e vede gli altri come «Associato a un altro telefono» o «Non associato». Una riga
+non annunciata da 7 giorni se ne va; il registro tiene al più 500 righe, e il Worker conta gli annunci e le
+righe nuove per IP. «Non comparire nella lista» (⋯ → iPhone sul PC) toglie la riga e smette di annunciare.
+
+### I pin «Da rivedere»
+
+Un **pin** (📌 sul PC e sul telefono) è un paziente da rivedere fra qualche giorno, con una nota. Sta sul
+ripetitore (`/ponte/appunti`, `appunti-sw.js`) **cifrato** con la chiave degli appunti, che il telefono
+crea e dà ai suoi PC dentro la sessione cifrata (perso il telefono, un PC la ridà al nuovo). Il
+ripetitore vede un numero opaco e byte; le scritture sono compare-and-set (409 se un altro dispositivo ha
+scritto intanto: si rilegge, si unisce pin per pin, si riscrive). **Non scadono**: un pin lo toglie il
+medico (🗑️), e **«Elimina tutti i pin…»** (sul PC, ⋯ → Da rivedere, due tocchi) toglie anche il valore
+lassù. Nel registro del pannello: «pin aggiunto/tolto», mai il nome, la nota o il codice fiscale.
 
 ## Come è fatto
 
@@ -401,8 +460,9 @@ in quest'ordine:
 3. **Le stazioni di stampa**: ognuna ha salutato il PC del medico con la 3.87 (`staProva`). Una
    stazione che non l'ha fatto, dopo il taglio, aspetta che il medico entri (il PC le dà la chiave con
    `q=`): non resta fuori, ma conviene vederla funzionare prima.
-4. **Il Durable Object ha l'SQLite** (`new_sqlite_classes` in `wrangler.toml`, controllato da
-   `ponte-cripto`): senza, dopo questa versione, la stanza è chiusa per tutti (1011).
+4. **I Durable Object hanno l'SQLite** (`new_sqlite_classes` in `wrangler.jsonc` per `PonteStanza`,
+   `PonteRegistro` e `PonteAppunti`, controllato da `ponte-cripto`): senza, la stanza è chiusa per tutti
+   (1011), e il registro e i pin rispondono 503.
 5. Allora `PONTE.senzaProva = false` in `worker/ponte-logica.js`, il test `ponte-sicurezza` aggiornato
    («il taglio non è ancora arrivato»), e il deploy del Worker. Un telefono o una stazione di una
    coppia che non era mai passata (punto 2) aspetta: quando entra il suo PC, entra anche lui.
@@ -823,22 +883,16 @@ suo aiutante non l'ha stampato (e il suo file temporaneo, come per ogni foglio).
   stanza, e quel telefono non entra più (4403, «Scollegato»). Serve un QR nuovo con l'app aggiornata.
 - **WebCrypto**: una CryptoKey HKDF non estraibile serve comunque a ricavare bit (`deriveBits`): uno
   script che girasse nell'origine potrebbe usarla finché è lì — non copiarla.
-- **Più PC, chiavi separate.** Ogni PC associato (il completo e ogni porta di sola lettura) ha la
+- **Più PC, chiavi separate.** Ogni PC associato ha la
   **sua** chiave e la sua stanza: una non apre gli altri, e il telefono parla con uno alla volta.
-  Compromettere un PC — o la sua chiave sul telefono — espone *quel* PC, non gli altri. Scansionare un
-  QR nuovo **aggiunge** quel PC (o aggiorna il suo, o sostituisce il completo): non toglie di nascosto
-  un'associazione che c'è già; quelle restano in lista, e si dimenticano una per una dal menu.
-- **Un PC di sola lettura** (la build mini) è una **porta d'ingresso**: dal telefono si vede tutto
-  quello che la sessione del gestionale aperta lì espone — i pazienti che il collega loggato sta già
-  gestendo — e si stampa, ma **non si scrive**. Ogni comando di scrittura del gestionale (ordine,
-  terapia, cartella, accettazione, Da fare, mappa) è rifiutato **sul PC** («Questo PC è in sola
-  lettura»), nel service worker prima di toccare una scheda, e di nuovo nella scheda (e nelle schede di
-  sottofondo) prima di toccare il gestionale. Dalla build è tolta solo la ricetta SISS (il suo content
-  script); il resto del codice di scrittura c'è, ma spento dalla bandiera della build (`sola-lettura.js`):
-  niente pannello degli ordini, e ogni comando di scrittura si ferma a quei muri. La testata del telefono dice chi è
-  loggato nel gestionale su quel PC: informazione, non un blocco — l'accesso resta attribuito, dal
-  gestionale, al collega loggato lì, come quando è lui a guardare la pagina. Un PC di sola lettura non
-  può mandare comandi né al telefono né al PC completo.
+  Compromettere un PC — o la sua chiave sul telefono — espone *quel* PC, non gli altri. Un QR nuovo
+  **sostituisce** il PC di prima, e prima lo chiede: non toglie di nascosto un'associazione che c'è già.
+  Un PC rimasto in lista (il QR di un PC associato a un altro telefono) si dimentica dal menu, con due tocchi.
+- **Il PC di sola lettura** (la build mini fino alla 3.87) non c'è più: dalla 3.88 la mini è solo
+  stazione di stampa, e dalla 3.90 l'app del telefono non lo conosce più (le sue righe se ne vanno
+  all'apertura). Sul PC la bandiera della build (`sola-lettura.js`) resta, e con lei i muri: ogni comando
+  di scrittura del gestionale è rifiutato **sul PC** («Questo PC è in sola lettura»), nel service worker
+  prima di toccare una scheda — una mini 3.87 non ancora aggiornata non scrive, qualunque cosa chieda il telefono.
 - **L'aggiornamento della build mini è senza mani** (non c'è un pannello da cui premere): all'avvio e
   ogni sei ore si guarda GitHub e, se c'è una versione nuova e il PC è libero, si applica da sé — con
   **ogni** controllo di sempre (versione == `VERSION.txt`, **stessa chiave** della build mini,

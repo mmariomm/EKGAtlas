@@ -377,6 +377,11 @@ const jsonc = (t) => JSON.parse(t.replace(/^\s*\/\/.*$/gm, "").replace(/\s\/\/ .
 const cfg = jsonc(readFileSync(join(root, "../wrangler.jsonc"), "utf8"));
 check(cfg.main === "worker/index.js" && cfg.migrations.some((m) => (m.new_sqlite_classes || []).includes("PonteStanza"))
   && cfg.assets.not_found_handling === "single-page-application", "wrangler.jsonc: il Worker, il Durable Object su SQLite, il sito resta una SPA");
+// (tutti e tre su SQLite, ognuno col suo binding: senza, il registro e i pin rispondono 503)
+const legati = Object.fromEntries((cfg.durable_objects.bindings || []).map((b) => [b.name, b.class_name]));
+const suSqlite = (c) => cfg.migrations.some((m) => (m.new_sqlite_classes || []).includes(c));
+check(legati.PONTE === "PonteStanza" && legati.REGISTRO === "PonteRegistro" && legati.APPUNTI === "PonteAppunti" && ["PonteStanza", "PonteRegistro", "PonteAppunti"].every(suSqlite),
+  `wrangler.jsonc: PonteStanza, PonteRegistro e PonteAppunti legati e su SQLite (${JSON.stringify(legati)})`);
 check(String(cfg.compatibility_date) >= "2026-04-07", `compatibility_date ${cfg.compatibility_date}: dal 2026-04-07 Cloudflare risponde da sé alle chiusure (web_socket_auto_reply_to_close), e il Durable Object non manda ws.close()`);
 check(cfg.observability.logs && cfg.observability.logs.invocation_logs === false, "nessuna riga di log per richiesta: l'indirizzo della presa porta la stanza");
 check(JSON.stringify(cfg.assets.run_worker_first) === '["/ponte/*","/api/*"]',
