@@ -613,10 +613,10 @@ lette stanno in `sessionStorage` (`smart.giro.v1`) e muoiono con lei.
    **solo quando un RX è scelto**. La barra **«Conferma per ROSSI M. · N esami»** (piena, ferma
    in fondo) c'è **solo quando qualcosa è scelto**; **Ctrl+Invio** la preme (lo dice, piccolo,
    dentro la barra), e **solo carrello** le sta accanto, piccolo. Un clic sulla scheda Richieste
-   col quesito vuoto mette già il cursore nel quesito. Le ristampe, in fondo, quiete, sono due:
+   col quesito vuoto mette già il cursore nel quesito. In fondo, quieta, la ristampa:
    **Ristampa** — l'ultimo ordine intero: tutte le sue richieste (una per erogatore), etichette,
-   lista esami e RX, una volta ciascuno — e **Altre…**, le richieste di prima una per una (la
-   sezione Stampa). Per tutto il
+   lista esami e RX, una volta ciascuno. Le richieste di prima, una per una: ⋯ → **Stampa le
+   richieste** (la sezione Stampa). Per tutto il
    resto: la casella in cima, con la tendina su tutti i laboratori. Lo stesso esame delle
    Urgenze e del laboratorio centrale (le Urgenze ne sono un sottomenu) è **una riga sola**,
    quella delle Urgenze — la stessa che usano i pacchetti. I selezionati restano in alto, una
@@ -912,7 +912,7 @@ lette stanno in `sessionStorage` (`smart.giro.v1`) e muoiono con lei.
    pagina, una dopo l'altra, con **una sola** stampa finale: etichette → liste → la prenotazione
    RX; lì le richieste vivono nella memoria del pannello, a metà non si riprendono, e il browser
    avvisa prima di cambiare pagina.
-5. **Stampa** («Altre…» in fondo alle Richieste): ogni richiesta con data, ora e la lista compatta degli esami, e «Ristampa». Sull'iPhone la stessa lista è **«Richieste fatte»**, in fondo alle Richieste, con il suo «Ristampa» (comandi `ristampe` e `ristampa`, solo stampa: mai Conferma né Registra).
+5. **Stampa** (⋯ → «Stampa le richieste»): ogni richiesta con data, ora e la lista compatta degli esami, e «Ristampa». Sull'iPhone la stessa lista è **«Richieste fatte»**, in fondo alle Richieste, con il suo «Ristampa» (comandi `ristampe` e `ristampa`, solo stampa: mai Conferma né Registra).
 
 ### Esiti
 Il **Workup**, come in Epic: **Lab · ECG · Imaging** in un posto solo, tre sezioni distinte, ognuna
@@ -1574,7 +1574,7 @@ che non può leggere niente: cifrato da un capo all'altro, nessun dato su nessun
   Dentro: cognome e nome, codice fiscale e data di nascita (quando il PC li sa), l'indirizzo della pagina,
   la nota, la data. **Non scadono**: un pin si toglie col suo 🗑️, e **tutti**, anche lassù, con ⋯ → Da
   rivedere → «Elimina tutti i pin…» (due tocchi). Sul PC ne resta una copia in chiaro per vederli senza
-  rete (`appunti.copia`): «Dimentica i dati…» chiede se toglierla. Dettagli: [`ponte/README.md`](ponte/README.md#i-pin-da-rivedere).
+  rete (`appunti.copia`): «Dimentica i dati…» non la tocca (i pin non sono del turno); se ne va solo con «Elimina tutti i pin…». Dettagli: [`ponte/README.md`](ponte/README.md#i-pin-da-rivedere).
 - **Il registro dei PC** (⋯ → Dispositivi sul telefono): ogni PS Assist si annuncia al ripetitore
   (`/ponte/registro`, un POST piccolo al più ogni 30 minuti di lavoro, mai a gestionale chiuso) con il
   nome del PC, il tipo, la versione e tre impronte opache — **nessun paziente**, nessun utente, nessuna
@@ -1677,7 +1677,7 @@ quella di prima della Conferma: la richiesta nuova non c'è. Prima si ricaricava
 finita (nelle registrazioni vere, tre ricariche in mezzo minuto, e ognuna si portava via
 scorrimento e campi); ora no. La scheda dell'ordine ha già letto la pagina del paziente per la
 prova: i fogli che quella elenca (solo numeri, indirizzi della pagina e nomi di esami, per
-episodio, in memoria condivisa) arrivano al pannello, e **Ristampa** e **Altre…** vedono la
+episodio, in memoria condivisa) arrivano al pannello, e **Ristampa** e **Stampa le richieste** vedono la
 richiesta nuova; lo stato degli esami (✓, ⏳) lo scrive già la stessa lettura. L'«Aggiorna» del
 gestionale resta quello di sempre: un tuo tocco.
 
@@ -1709,7 +1709,7 @@ Richieste **Ristampa** rifà l'ultimo ordine — la richiesta più recente e le 
 su Conferma, come le ha annotate chi le ha stampate — la scheda dell'ordine, o la tua: le richieste
 stampate insieme dopo una Conferma (fino a quattro: POC, laboratorio, RX; mai a
 occhio dall'ora — un'aggiunta di tre minuti dopo è un altro ordine —, e senza annotazione la più recente
-sola), etichette prima —, e **Altre…**
+sola), etichette prima —, e ⋯ → **Stampa le richieste**
 apre la sezione Stampa: ogni richiesta della pagina — **anche quelle non fatte dall'estensione** —
 con **data e ora**, la **lista compatta degli esami** e il suo **«Ristampa»** (etichette e foglio
 di quella richiesta). Con la stampa automatica, senza dialogo.

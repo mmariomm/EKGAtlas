@@ -345,7 +345,8 @@ Object su SQLite del Worker (finché qualcuno non li toglie):
 La chiave dei pin la crea il telefono e la danno solo i dispositivi del medico, dentro la sessione
 cifrata: **né Cloudflare né l'IT possono leggerli**; senza la chiave non si risale nemmeno al medico.
 Una copia in chiaro dei pin resta anche sul PC (`storage.local` dell'estensione, per vederli senza rete):
-«Dimentica i dati…» chiede se toglierla.
+«Dimentica i dati…» non la tocca (i pin non sono del turno): se ne va, con quella lassù, solo con
+«Elimina tutti…» di Da rivedere.
 
 ### Il registro dei PC
 
@@ -530,7 +531,7 @@ telefono, `{v, eco, no}` come sempre. Avuta la risposta (o dopo 6 secondi) la pr
 (`close(1000)`). Un PC più vecchio risponde alla sonda come a un saluto qualunque: c'è, e il telefono
 non ne sa di più (l'attesa del saluto, sul PC, scade da sola).
 
-**Vivi o morti.** Tutte e due le parti battono: il PC ogni 20 secondi, il telefono ogni 30 secondi
+**Vivi o morti.** Tutte e due le parti battono ogni 30 secondi: il PC sempre, il telefono
 mentre l'app è davanti e subito quando ci torna. Se il `pong` non torna entro 15 secondi (il telefono)
 la presa è morta anche se sembra aperta (un proxy che la lascia cadere senza dirlo), e se ne apre
 un'altra; il telefono la rifà anche quando una risposta non arriva in tempo. Una presa chiusa dal
@@ -734,10 +735,12 @@ controllare».
 telefono — o, nella stanza di una stazione di stampa, una del PC del medico e una della stazione (`medico`,
 `stazione`): ognuno parla solo col suo pari — (una nuova dello stesso ruolo prende il posto di **tutte** le
 vecchie, 4001); inoltra solo il binario, così com'è; messaggi oltre 1 MB o più di 1200 al minuto chiudono la
-presa. Una presa muta da 75 secondi (tre battiti persi) *dovrebbe* non contare più: la regola c'è
-(`Stanza.muta`), ma oggi nessuno la chiama — una presa muta conta finché Cloudflare non chiude la
-connessione o una nuova dello stesso ruolo non la sostituisce. Serve dell'app del telefono solo i suoi
-file (`FILE_APP`). Niente su disco, niente sveglie, niente nei log: il Durable Object usa l'ibernazione delle
+presa. Un PC muto da 75 secondi (due battiti persi e mezzo: nemmeno il «ping») è **assente** per il
+telefono che entra (`Stanza.muta`, in `ammetti`: `pari:false`), e il telefono riprova da sé finché non
+torna; la sua presa non si chiude e conta per tutto il resto, finché Cloudflare non la chiude o una nuova
+dello stesso ruolo non la sostituisce. Serve dell'app del telefono solo i suoi
+file (`FILE_APP`). Dei messaggi niente su disco, niente sveglie, niente nei log (su disco solo le chiavi
+d'entrata della stanza): il Durable Object usa l'ibernazione delle
 WebSocket, il battito lo risponde Cloudflare senza svegliarlo, e lo svegliano solo una presa che entra, una che
 esce e un messaggio cifrato. **Nessuna chiusura a chi non può rispondere**: una presa sostituita (di un PC il
 cui service worker è ripartito) si *ritira* — fuori dai conti subito, senza scrivere niente sulla rete —

@@ -15,7 +15,7 @@
  * (`compilato`). La stessa domanda due volte (stesso id) è la stessa ricetta.
  * Nessuna richiesta al SISS da qui: solo messaggi alle schede.
  *
- * I «Farmaci frequenti» (storage.local «ricetta.preferiti.v1», per PC): i
+ * I «Preferiti» del SISS (storage.local «ricetta.preferiti.v1», per PC): i
  * farmaci visti davvero in un'Anteprima del SISS — codice, descrizione,
  * quantità, «non sostituibile», i campi della riga che il medico ha scritto a
  * mano (posologia, note: `campi`), quante volte (`n`) e l'ultima (`ts`), al più
@@ -183,7 +183,7 @@ async function ricAvvia(j) {
   }
   await ricScrivi(j);
 }
-// I farmaci frequenti: uno per codice, quante volte e l'ultima, al più 50
+// I «Preferiti» (farmaci, visite, esami): uno per codice, quante volte e l'ultima, al più 50
 // (via i meno usati, poi i più vecchi). Quelli fissati dal medico (`pin`: il
 // suo ordine, 1, 2, …) stanno davanti e non se ne vanno mai. Un farmaco: codice, descrizione,
 // quantità, «non sostituibile» e i campi scritti a mano, dall'Anteprima; una
