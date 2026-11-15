@@ -19,7 +19,10 @@
  *     di fare non deve credere di averlo annotato), e la fila va avanti;
  *   - `tutti()` / `leggi(rq)`: una lettura com'è adesso (fuori dalla fila,
  *     come prima). Un errore di lettura rifiuta: chi legge prima di fare, non fa;
- *   - `cambia(fn)`: un giro a mano nella stessa fila (fn torna vero → si scrive);
+ *   - `cambia(fn)`: un giro a mano nella stessa fila (fn torna vero → si scrive).
+ *     fn è SINCRONA e non rientra nella fila (scrivi/cambia della stessa
+ *     chiave): aspetterebbe sé stessa per sempre. Chi lo fa ha un errore
+ *     subito, e niente scritto; una fn che torna una promessa, lo stesso;
  *   - `gia(rq)` / `segna(rq, x)`: la forma corta del «già fatto?». Nella fila,
  *     e CHIUSE sull'errore: `gia` con la memoria rotta dice «sì, già» (non si
  *     fa), `segna` torna true SOLO se il numero era nuovo ed è scritto davvero
@@ -43,6 +46,7 @@ globalThis.PsaArchivio = globalThis.PsaArchivio || (function () {
   });
   const AREE = new Set(["local", "session"]);
   const FILE = new Map();   // area+chiave → la coda delle scritture (in memoria: muore col service worker, la chiave no)
+  const DENTRO = new Set(); // area+chiave → la funzione di un `cambia` sta girando adesso (per chi rientra nella fila)
 
   function registro(o) {
     const { area, chiave, n, ms } = o || {};
@@ -53,7 +57,12 @@ globalThis.PsaArchivio = globalThis.PsaArchivio || (function () {
     const deposito = () => chrome.storage[area];
     // (la fila è della CHIAVE, non di chi la chiede: due registri sulla stessa chiave fanno la stessa fila)
     const k = area + " " + chiave;
-    const inFila = (fn) => { const p = (FILE.get(k) || Promise.resolve()).then(fn); FILE.set(k, p.catch(() => {})); return p; };
+    // (chi rientra nella fila dalla funzione di un `cambia` aspetterebbe sé stesso per sempre: errore subito, si chiude)
+    const rientro = () => new Error(`archivio: ${k} — un cambia rientra nella sua stessa fila (la fermerebbe per sempre): niente fatto`);
+    const inFila = (fn) => {
+      if (DENTRO.has(k)) throw rientro();
+      const p = (FILE.get(k) || Promise.resolve()).then(fn); FILE.set(k, p.catch(() => {})); return p;
+    };
     const tutti = async () => (await deposito().get(chiave))[chiave] || {};
     // (i più giovani di `ms`, e di quelli gli `n` più recenti: lo stesso giro dei registri del ponte — ma quello
     // appena scritto resta sempre: con l'orologio tornato indietro sarebbe l'ultimo, e prende il posto dell'n-esimo)
@@ -73,9 +82,14 @@ globalThis.PsaArchivio = globalThis.PsaArchivio || (function () {
       tutti,
       leggi: async (rq) => (await tutti())[rq],
       scrivi: (rq, x) => inFila(() => scriviOra(rq, x)),
+      // (fn sincrona: dentro la fila non si aspetta niente — una che aspetta potrebbe aspettare la sua fila)
       cambia: (fn) => inFila(async () => {
         const m = await tutti();
-        if (await fn(m)) await deposito().set({ [chiave]: m });
+        let si;
+        DENTRO.add(k);
+        try { si = fn(m); } finally { DENTRO.delete(k); }
+        if (si && typeof si.then === "function") { si.then(null, () => {}); throw new Error(`archivio: ${k} — cambia vuole una funzione sincrona (una che aspetta, se rientra nella sua fila, la ferma per sempre): niente fatto`); }
+        if (si) await deposito().set({ [chiave]: m });
       }),
       gia: (rq) => inFila(async () => !!(await tutti())[rq]).catch(() => true),
       segna: (rq, x = {}) => inFila(async () => {

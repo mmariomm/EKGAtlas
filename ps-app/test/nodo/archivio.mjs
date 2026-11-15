@@ -135,6 +135,18 @@ console.log("\narchivio.js: il registro");
   await sw.R.cambia((m) => { m.nuovo003.x = 1; return true; });
   check(disco.scritture === n0 + 1 && disco.session["prova.rq"].nuovo003.x === 1, "cambia: scrive solo se la funzione dice sì");
 }
+{
+  // cambia che rientra nella sua stessa fila: un errore chiaro, subito — mai una fila ferma per sempre
+  const disco = discoNuovo(), sw = conRegistro(disco);
+  await sw.R.scrivi("rientro1", {});
+  const finita = async (p) => { let r = null; esito(p).then((x) => { r = x; }); await giri(50); return r; };
+  const a = await finita(sw.R.cambia(async (m) => { await sw.R.scrivi("rientro2", {}); m.rientro1.x = 1; return true; }));
+  check(a && !a.ok && /sincrona/.test(a.e), `cambia che aspetta una scrittura della sua fila: rifiuta con un errore chiaro (${a ? a.e : "ferma per sempre"})`);
+  const b = await finita(sw.R.cambia((m) => { sw.R.scrivi("rientro3", {}); return true; }));
+  check(b && !b.ok && /rientra/.test(b.e) && !("rientro3" in disco.session["prova.rq"]), "cambia che rientra senza aspettare: rifiuta, e niente scritto");
+  const c = await finita(sw.R.scrivi("rientro4", {}));
+  check(c && c.ok && "rientro4" in disco.session["prova.rq"] && !disco.session["prova.rq"].rientro1.x, "dopo: la fila va avanti, e il cambio rifiutato non ha scritto niente");
+}
 
 console.log(`\n${ko ? "ARCHIVIO: " + ko + " NON VANNO" : "ARCHIVIO: TUTTO OK"} (${ok} controlli)`);
 process.exit(ko ? 1 : 0);
