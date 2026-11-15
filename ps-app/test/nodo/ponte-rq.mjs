@@ -151,7 +151,7 @@ console.log("\nponte-sw.js (vero, in una vm): i comandi del telefono una volta p
 const disco = discoNuovo();
 let pc = pcFinto(disco);
 await pc.ev("ponteCaricato");
-check(pc.ev("typeof ponteAreaApri === 'function' && typeof ponteAreaRq !== 'undefined' && typeof ponteAreaRq.segna === 'function'"), "il service worker del ponte si carica con archivio.js (e i suoi tre registri)");
+check(pc.ev("typeof ponteAreaApri === 'function' && typeof ponteAreaRq !== 'undefined' && typeof ponteAreaRq.scrivi === 'function'"), "il service worker del ponte si carica con archivio.js (e i suoi tre registri)");
 
 // --- Passa il PC all'area
 semina(disco, "ponte.area.rq", "area-inviato-1", { fase: "inviato" });

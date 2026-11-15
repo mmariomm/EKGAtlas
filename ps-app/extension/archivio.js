@@ -23,13 +23,7 @@
  *   - `cambia(fn)`: un giro a mano nella stessa fila (fn torna vero → si scrive).
  *     fn è SINCRONA e non rientra nella fila (scrivi/cambia della stessa
  *     chiave): aspetterebbe sé stessa per sempre. Chi lo fa ha un errore
- *     subito, e niente scritto; una fn che torna una promessa, lo stesso;
- *   - `gia(rq)` / `segna(rq, x)`: la forma corta del «già fatto?». Nella fila,
- *     e CHIUSE sull'errore: `gia` con la memoria rotta dice «sì, già» (non si
- *     fa), `segna` torna true SOLO se il numero era nuovo ed è scritto davvero
- *     (già visto, o memoria rotta: false — non si fa). Due `segna` dello stesso
- *     numero: uno solo torna true. Un record scaduto conta finché la scrittura
- *     dopo non lo toglie (il lato sicuro).
+ *     subito, e niente scritto; una fn che torna una promessa, lo stesso.
  *
  * E `cambia(area, chiave, fn)`: lo stesso giro a mano, nella stessa fila, su una
  * chiave che non è un registro (un elenco: «Ultimi fogli» della stazione):
@@ -108,12 +102,6 @@ globalThis.PsaArchivio = globalThis.PsaArchivio || (function () {
         const m = mappa(v), si = fn(m);
         return si && typeof si.then === "function" ? si : si ? m : undefined;
       }),
-      gia: (rq) => inFila(k, async () => !!(await tutti())[rq]).catch(() => true),
-      segna: (rq, x = {}) => inFila(k, async () => {
-        if ((await tutti())[rq]) return false;
-        await scriviOra(rq, x);
-        return true;
-      }).catch(() => false),
     };
   }
 

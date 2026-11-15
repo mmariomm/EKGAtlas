@@ -2,8 +2,9 @@
 /*
  * archivio.js senza browser (npm run test:nodo): il registro da solo, su un
  * chrome.storage finto (chrome-finto.mjs) con guasti, ritardi e riavvii del
- * service worker — fondere, la fila, il tetto, la scadenza, gia/segna chiusi
- * sull'errore, due segna dello stesso numero, il riavvio a metà scrittura.
+ * service worker — fondere, la fila, il tetto, la scadenza, l'orologio
+ * indietro, «__proto__», la memoria rotta, il riavvio a metà scrittura, cambia
+ * e chi ci rientra.
  *
  * Deterministica: niente orologio vero (l'ora è un numero), niente timer (i
  * ritardi sono giri di setImmediate). Meno di un secondo.
@@ -55,13 +56,13 @@ console.log("\narchivio.js: il registro");
   // `__proto__` come numero (passa /^[\w-]{8,40}$/): una chiave come le altre, mai il prototipo
   const disco = discoNuovo(), sw = conRegistro(disco);
   const prima = await esito(sw.R.leggi("__proto__"));
-  check(prima.ok && prima.v === null && await sw.R.gia("__proto__") === false, "«__proto__» mai scritto: leggi non trova niente, gia dice no");
+  check(prima.ok && prima.v === null, "«__proto__» mai scritto: leggi non trova niente");
   await sw.R.scrivi("__proto__", { fase: "inviato" });
   await sw.R.scrivi("normale1", {});
   const x = await sw.R.leggi("__proto__"), t = await sw.R.tutti();
   check(x && x.fase === "inviato" && Object.hasOwn(t, "__proto__") && Object.keys(disco.session["prova.rq"]).includes("__proto__"),
     "«__proto__» scritto: è sul disco, leggi e tutti lo trovano come un numero qualsiasi");
-  check(await sw.R.segna("__proto__") === false && t.fase === undefined, "…segna no, e nessun prototipo cambiato");
+  check(t.fase === undefined && Object.getPrototypeOf(t) === null, "…e nessun prototipo cambiato");
 }
 {
   // il tetto (i 5 più recenti) e la scadenza (10 ore), a ogni scrittura
@@ -73,11 +74,11 @@ console.log("\narchivio.js: il registro");
   await sw.R.scrivi("numero-8", {});
   const k2 = Object.keys(disco.session["prova.rq"]);
   check(json(k2) === json(["numero-8", "numero-7", "numero-6", "numero-5"]), `scadenza: più vecchi di 10 ore, via alla scrittura dopo (${k2.join(",")})`);
-  // un record scaduto ma non ancora tolto (nessuna scrittura dopo): gia dice sì — il lato sicuro
+  // un record scaduto ma non ancora tolto (nessuna scrittura dopo): leggi lo trova ancora — il lato sicuro
   sw.ora += 20 * H;
-  check(await sw.R.gia("numero-8") === true, "scaduto ma ancora sul disco: «già», finché una scrittura non lo toglie");
-  await sw.R.segna("numero-9");
-  check(json(Object.keys(disco.session["prova.rq"])) === json(["numero-9"]) && await sw.R.gia("numero-8") === false, "…e dopo la scrittura non c'è più");
+  check(!!(await sw.R.leggi("numero-8")), "scaduto ma ancora sul disco: leggi lo trova, finché una scrittura non lo toglie");
+  await sw.R.scrivi("numero-9", {});
+  check(json(Object.keys(disco.session["prova.rq"])) === json(["numero-9"]) && await sw.R.leggi("numero-8") === undefined, "…e dopo la scrittura non c'è più");
 }
 {
   // l'orologio torna indietro (60 s) con già `n` record più nuovi: quello appena scritto resta comunque
@@ -88,7 +89,6 @@ console.log("\narchivio.js: il registro");
   const k = Object.keys(disco.session["prova.rq"]);
   check(k.length === 5 && k.includes("indietro") && (await sw.R.leggi("indietro"))?.fase === "inviato",
     `orologio indietro di 60 s: il record appena scritto resta, il tetto pure (${k.join(",")})`);
-  check(await sw.R.segna("indietr2") === true && await sw.R.segna("indietr2") === false, "orologio indietro: segna dello stesso numero due volte, un solo «sì»");
 }
 {
   // la fila: dieci scritture insieme, coi ritardi, una dietro l'altra — nessuna persa
@@ -102,50 +102,39 @@ console.log("\narchivio.js: il registro");
   check(["altro-001", "altro-002", "altro-003", "altro-004"].every((k) => k in disco.local["fila.rq"]), "due registri sulla stessa chiave: una fila sola, nessuna scrittura persa");
 }
 {
-  // due segna dello stesso numero, insieme: uno solo vince
-  const disco = discoNuovo(), sw = conRegistro(disco, { ritardo: (op) => (op === "get" ? 4 : 2) });
-  const r = await Promise.all([sw.R.segna("doppio01", { da: "a" }), sw.R.segna("doppio01", { da: "b" }), sw.R.segna("doppio01", { da: "c" })]);
-  check(json(r) === json([true, false, false]) && disco.session["prova.rq"].doppio01.da === "a", `tre segna dello stesso numero insieme: uno vince (${json(r)})`);
-  check(await sw.R.gia("doppio01") === true && await sw.R.segna("doppio01") === false, "dopo: gia sì, segna no");
-}
-{
-  // il riavvio: quello che è scritto resta, la memoria no — segna non ridà il via
+  // il riavvio: quello che è scritto resta, la memoria no
   const disco = discoNuovo();
   let sw = conRegistro(disco);
-  check(await sw.R.segna("riavvio1", { fase: "inviato" }) === true, "prima del riavvio: segnato");
+  await sw.R.scrivi("riavvio1", { fase: "inviato" });
   sw = sw.riavvia(); sw.carica("extension/archivio.js");
   sw.codice(`globalThis.R = PsaArchivio.registro({ area: "session", chiave: "prova.rq", n: 5, ms: ${10 * H}, ora: () => __ora });`);
   const R = sw.ev("R");
-  check(await R.gia("riavvio1") === true && await R.segna("riavvio1") === false && (await R.leggi("riavvio1")).fase === "inviato",
-    "dopo il riavvio del service worker: già visto, segna no, la fase «inviato» è lì");
+  check((await R.leggi("riavvio1"))?.fase === "inviato", "dopo il riavvio del service worker: la fase «inviato» è lì");
   // morto a metà di una scrittura: Chrome l'ha già scritta (alla chiamata), si perde solo la risposta — il
-  // vecchio non ha mai avuto il via, e il nuovo la trova: segna no (niente fatto due volte)
+  // vecchio non ha mai avuto il via, e il nuovo la trova (niente fatto due volte)
   const disco2 = discoNuovo();
   const sw2 = conRegistro(disco2, { ritardo: (op) => (op === "set" ? 6 : 0) });
   let via = null;
-  sw2.R.segna("ameta001").then((v) => { via = v; });
+  sw2.R.scrivi("ameta001", { fase: "inviato" }).then(() => { via = true; });
   await giri(2);
   const dopo = sw2.riavvia(); dopo.carica("extension/archivio.js");
   dopo.codice(`globalThis.R = PsaArchivio.registro({ area: "session", chiave: "prova.rq", n: 5, ms: ${10 * H}, ora: () => __ora });`);
   await giri(20);
-  check(via === null && !!disco2.session["prova.rq"]?.ameta001 && await dopo.ev("R").segna("ameta001") === false,
-    "morto a metà della scrittura: il vecchio non ha mai avuto il via, la scrittura è sul disco, il nuovo segna no (niente fatto due volte)");
+  check(via === null && (await dopo.ev("R").leggi("ameta001"))?.fase === "inviato",
+    "morto a metà della scrittura: il vecchio non ha mai avuto il via, il nuovo trova «inviato» (niente fatto due volte)");
 }
 {
-  // la memoria rotta: CHIUSI — gia «sì», segna «no», scrivi/tutti rifiutano, la fila va avanti
+  // la memoria rotta: CHIUSI — scrivi/tutti/leggi rifiutano, la fila va avanti
   let rompi = new Set();
   const disco = discoNuovo(), sw = conRegistro(disco, { guasto: (op) => rompi.has(op) });
   await sw.R.scrivi("primo001", {});
   rompi = new Set(["get"]);
-  check(await sw.R.gia("mai-visto") === true, "lettura rotta: gia dice «già» (non si fa), mai «non visto»");
-  check(await sw.R.segna("mai-visto") === false, "lettura rotta: segna dice no");
   check(!(await esito(sw.R.tutti())).ok && !(await esito(sw.R.leggi("primo001"))).ok, "lettura rotta: tutti / leggi rifiutano (chi legge prima di fare, non fa)");
   rompi = new Set(["set"]);
-  check(await sw.R.segna("nuovo001") === false && !("nuovo001" in disco.session["prova.rq"]), "scrittura rotta: segna dice no, e niente sul disco");
   const s = await esito(sw.R.scrivi("nuovo002", { fase: "inviato" }));
-  check(!s.ok && /guasto finto/.test(s.e), "scrittura rotta: scrivi rifiuta (chi annota «inviato» prima di fare lo sa)");
+  check(!s.ok && /guasto finto/.test(s.e) && !("nuovo002" in disco.session["prova.rq"]), "scrittura rotta: scrivi rifiuta, e niente sul disco (chi annota «inviato» prima di fare lo sa)");
   rompi = new Set();
-  check(await sw.R.segna("nuovo003") === true && "nuovo003" in disco.session["prova.rq"], "dopo il guasto la fila va avanti: la scrittura dopo passa");
+  check((await esito(sw.R.scrivi("nuovo003", {}))).ok && "nuovo003" in disco.session["prova.rq"], "dopo il guasto la fila va avanti: la scrittura dopo passa");
   // cambia: il giro a mano nella stessa fila (scrive solo se fn dice sì)
   const n0 = disco.scritture;
   await sw.R.cambia(() => false);
