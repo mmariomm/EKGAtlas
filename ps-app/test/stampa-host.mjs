@@ -84,8 +84,11 @@ const check = (c, m) => { console.log((c ? "  ✓ " : "  ✗ ") + m); if (!c) fa
 
 const PWSH = process.env.PWSH || "pwsh";
 if (spawnSync(PWSH, ["-NoProfile", "-Command", "exit 0"], { stdio: ["ignore", "ignore", "ignore"] }).status !== 0) {
-  console.log(fail ? `\nSTAMPA-HOST: ${fail} CHECK FALLITI (e PowerShell non trovato: il resto saltato)\n` : "\nSTAMPA-HOST: PowerShell non trovato (PWSH o pwsh): il resto della prova saltato\n");
-  process.exit(fail ? 1 : 0);
+  // Senza PowerShell host.ps1 e installa.ps1 non girano: non è una prova
+  // passata. Uscita 77 = «saltato» (tools/prove.mjs lo conta a parte).
+  console.log(fail ? `\nSTAMPA-HOST: ${fail} CHECK FALLITI (e SALTATO il resto: PowerShell assente)\n`
+    : "\nSTAMPA-HOST: SALTATO: PowerShell assente (PWSH o pwsh). Provati solo i testi; host.ps1 e installa.ps1 NON provati.\n");
+  process.exit(fail ? 1 : 77);
 }
 
 // Le opzioni con cui host.cmd avvia PowerShell: le stesse, qui.
