@@ -56,7 +56,15 @@ export function swNuovo(disco, opz = {}) {
         if (rotta) throw new Error(`storage.${nome}.set: guasto finto`);
         if (!sw.vivo) return new Promise(() => {});   // morto a metà: scritta, ma nessuna risposta
       },
-      remove: async (k) => { await prima("remove", [].concat(k)); if (sw.vivo) for (const x of [].concat(k)) delete d()[x]; },
+      remove: async (k) => {
+        // come set: Chrome la fa alla chiamata, il service worker morto perde solo la risposta
+        const ks = [].concat(k);
+        const rotta = !!(sw.opz.guasto && sw.opz.guasto("remove", nome, ks));
+        if (!rotta) for (const x of ks) delete d()[x];
+        await giri(sw.opz.ritardo ? sw.opz.ritardo("remove", nome, ks) : 0);
+        if (rotta) throw new Error(`storage.${nome}.remove: guasto finto`);
+        if (!sw.vivo) return new Promise(() => {});
+      },
     };
   };
   const nuovoContesto = () => {
